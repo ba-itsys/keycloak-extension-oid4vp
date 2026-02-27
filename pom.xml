@@ -10,7 +10,7 @@
   <name>keycloak-extension-wallet</name>
   <description>Keycloak-Extension for ID-Wallets (EUDI)</description>
 
-  <url>https://github.com/ba-itsys/keycloak-extension-wallet</url>
+  <url>https://github.com/opdt/keycloak-extension-wallet</url>
 
   <licenses>
     <license>
@@ -28,21 +28,20 @@
   </developers>
 
   <scm>
-    <connection>scm:git:git://github.com/ba-itsys/keycloak-extension-wallet.git</connection>
-    <developerConnection>scm:git:git@github.com:ba-itsys/keycloak-extension-wallet.git</developerConnection>
-    <url>https://github.com/ba-itsys/keycloak-extension-wallet/tree/main/</url>
+    <connection>scm:git:git://github.com/opdt/keycloak-extension-wallet.git</connection>
+    <developerConnection>scm:git:git@github.com:opdt/keycloak-extension-wallet.git</developerConnection>
+    <url>https://github.com/opdt/keycloak-extension-wallet/tree/main/</url>
   </scm>
 
   <properties>
-    <!-- general settings -->
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <java.version>21</java.version>
     <maven.compiler.source>${java.version}</maven.compiler.source>
     <maven.compiler.target>${java.version}</maven.compiler.target>
 
-    <!-- keycloak -->
-    <keycloak.version>26.4.7</keycloak.version>
-
+    <keycloak.version>26.5.4</keycloak.version>
+    <testcontainers.version>2.0.2</testcontainers.version>
+    <playwright.version>1.49.0</playwright.version>
   </properties>
 
   <dependencies>
@@ -55,11 +54,113 @@
       <optional>true</optional>
     </dependency>
 
+    <!-- Keycloak SPI (provided at runtime) -->
     <dependency>
       <groupId>org.keycloak</groupId>
-      <artifactId>keycloak-common</artifactId>
+      <artifactId>keycloak-server-spi</artifactId>
       <version>${keycloak.version}</version>
       <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.keycloak</groupId>
+      <artifactId>keycloak-server-spi-private</artifactId>
+      <version>${keycloak.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.keycloak</groupId>
+      <artifactId>keycloak-services</artifactId>
+      <version>${keycloak.version}</version>
+      <scope>provided</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>org.jboss.slf4j</groupId>
+          <artifactId>slf4j-jboss-logmanager</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
+    <!-- QR code generation for cross-device flow -->
+    <dependency>
+      <groupId>com.google.zxing</groupId>
+      <artifactId>core</artifactId>
+      <version>3.5.3</version>
+    </dependency>
+
+    <!-- Test dependencies -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.11.4</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <version>3.26.3</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <version>5.14.2</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>ch.qos.logback</groupId>
+      <artifactId>logback-classic</artifactId>
+      <version>1.5.21</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Testcontainers -->
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers</artifactId>
+      <version>${testcontainers.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-junit-jupiter</artifactId>
+      <version>${testcontainers.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.github.dominikschlosser</groupId>
+      <artifactId>testcontainers-oid4vc</artifactId>
+      <version>1.1.0</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Browser automation for E2E tests -->
+    <dependency>
+      <groupId>com.microsoft.playwright</groupId>
+      <artifactId>playwright</artifactId>
+      <version>${playwright.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- HTTP client for test interactions -->
+    <dependency>
+      <groupId>org.apache.httpcomponents.client5</groupId>
+      <artifactId>httpclient5</artifactId>
+      <version>5.3.1</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Certificate generation in tests -->
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcpkix-jdk18on</artifactId>
+      <version>1.78.1</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcprov-jdk18on</artifactId>
+      <version>1.78.1</version>
+      <scope>test</scope>
     </dependency>
 
   </dependencies>
@@ -131,6 +232,17 @@
 
     <plugins>
       <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.14.0</version>
+        <configuration>
+          <source>${java.version}</source>
+          <target>${java.version}</target>
+          <release>${java.version}</release>
+        </configuration>
+      </plugin>
+
+      <plugin>
         <groupId>com.diffplug.spotless</groupId>
         <artifactId>spotless-maven-plugin</artifactId>
         <version>2.44.3</version>
@@ -149,7 +261,6 @@
               </indent>
             </format>
           </formats>
-          <!-- define a language-specific format -->
           <java>
             <palantirJavaFormat/>
             <importOrder/>
@@ -169,6 +280,78 @@
             </goals>
           </execution>
         </executions>
+      </plugin>
+
+      <!-- Copy runtime dependencies to providers/ for Keycloak deployment -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.8.1</version>
+        <executions>
+          <execution>
+            <id>copy-keycloak-provider-deps</id>
+            <goals>
+              <goal>copy-dependencies</goal>
+            </goals>
+            <phase>package</phase>
+            <configuration>
+              <outputDirectory>${project.build.directory}/providers</outputDirectory>
+              <includeScope>runtime</includeScope>
+              <excludeGroupIds>
+                org.springframework,org.springframework.boot,
+                ch.qos.logback,org.apache.logging.log4j,org.slf4j,
+                org.jboss.logging,org.hibernate.validator,jakarta.validation,
+                com.fasterxml.jackson.core,com.fasterxml,
+                org.yaml,io.micrometer,jakarta.annotation,
+                org.apache.tomcat.embed,commons-logging,org.jspecify,
+                com.google.errorprone
+              </excludeGroupIds>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Copy provider JAR to providers/ directory -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
+          <execution>
+            <id>copy-provider-jar</id>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <phase>package</phase>
+            <configuration>
+              <target>
+                <mkdir dir="${project.build.directory}/providers"/>
+                <copy file="${project.build.directory}/${project.build.finalName}.jar" tofile="${project.build.directory}/providers/${project.build.finalName}.jar"/>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Integration tests -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <version>3.5.2</version>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <redirectTestOutputToFile>false</redirectTestOutputToFile>
+          <includes>
+            <include>**/*IT.java</include>
+          </includes>
+        </configuration>
       </plugin>
     </plugins>
   </build>
