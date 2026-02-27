@@ -52,6 +52,8 @@ import org.keycloak.models.SingleUseObjectProvider;
 import org.keycloak.services.managers.AuthenticationSessionManager;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.sessions.RootAuthenticationSessionModel;
+import org.keycloak.util.JsonSerialization;
+import org.keycloak.utils.StringUtil;
 
 @Vetoed
 @Path("")
@@ -63,6 +65,9 @@ public class Oid4vpIdentityProviderEndpoint {
     private static final String DEFERRED_IDENTITY_NOTE = "OID4VP_DEFERRED_IDENTITY";
     private static final String DEFERRED_CLAIMS_NOTE = "OID4VP_DEFERRED_CLAIMS";
     private static final long CROSS_DEVICE_COMPLETE_TTL_SECONDS = 300;
+    // SSE polling: 60 iterations * 2s sleep = 120s max thread hold time
+    private static final int SSE_MAX_ITERATIONS = 60;
+    private static final int SSE_POLL_INTERVAL_MS = 2000;
 
     private final KeycloakSession session;
     private final RealmModel realm;
@@ -70,6 +75,7 @@ public class Oid4vpIdentityProviderEndpoint {
     private final AbstractIdentityProvider.AuthenticationCallback callback;
     private final EventBuilder event;
     private final Oid4vpRequestObjectStore requestObjectStore;
+    private final Oid4vpAuthSessionResolver authSessionResolver;
 
     public Oid4vpIdentityProviderEndpoint(
             KeycloakSession session,
@@ -84,6 +90,7 @@ public class Oid4vpIdentityProviderEndpoint {
         this.callback = callback;
         this.event = event;
         this.requestObjectStore = requestObjectStore;
+        this.authSessionResolver = new Oid4vpAuthSessionResolver(session, realm, requestObjectStore);
     }
 
     private IdentityProviderModel getIdpModel() {
@@ -98,10 +105,10 @@ public class Oid4vpIdentityProviderEndpoint {
 
         AuthenticationSessionModel authSession = session.getContext().getAuthenticationSession();
         if (authSession == null && state != null) {
-            authSession = resolveAuthSessionFromStore(state, null);
+            authSession = authSessionResolver.resolveFromStore(state, null);
         }
 
-        if (error != null && !error.isBlank()) {
+        if (StringUtil.isNotBlank(error)) {
             if (authSession != null) {
                 return handleError(state, error, errorDescription, authSession, false, false);
             }
@@ -143,10 +150,7 @@ public class Oid4vpIdentityProviderEndpoint {
                     errorDescription);
         } catch (Exception e) {
             LOG.errorf(e, "Uncaught exception in handlePost: %s", e.getMessage());
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity("{\"error\":\"server_error\",\"error_description\":\"" + jsonEscape(e.getMessage()) + "\"}")
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
+            return jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", e.getMessage());
         }
     }
 
@@ -163,12 +167,11 @@ public class Oid4vpIdentityProviderEndpoint {
             String errorDescription) {
 
         boolean isCrossDeviceFlow = "cross_device".equals(flow);
-        String state = queryState != null && !queryState.isBlank() ? queryState : formState;
-        boolean hasError = error != null && !error.isBlank();
-        boolean hadEncryptedResponse = encryptedResponse != null && !encryptedResponse.isBlank();
+        String state = StringUtil.isNotBlank(queryState) ? queryState : formState;
+        boolean hasError = StringUtil.isNotBlank(error);
 
         String preDecryptedMdocGeneratedNonce = null;
-        if ((state == null || state.isBlank()) && encryptedResponse != null && !encryptedResponse.isBlank()) {
+        if (StringUtil.isBlank(state) && StringUtil.isNotBlank(encryptedResponse)) {
             try {
                 JWEObject jwe = JWEObject.parse(encryptedResponse);
                 String kid = jwe.getHeader().getKeyID();
@@ -182,7 +185,7 @@ public class Oid4vpIdentityProviderEndpoint {
                         String payload = jwe.getPayload().toString();
 
                         @SuppressWarnings("unchecked")
-                        Map<String, Object> payloadMap = provider.objectMapper.readValue(payload, Map.class);
+                        Map<String, Object> payloadMap = JsonSerialization.readValue(payload, Map.class);
 
                         com.nimbusds.jose.util.Base64URL apu = jwe.getHeader().getAgreementPartyUInfo();
                         if (apu != null) {
@@ -193,7 +196,7 @@ public class Oid4vpIdentityProviderEndpoint {
                             Object vpTokenObj = payloadMap.get("vp_token");
                             vpToken = vpTokenObj instanceof String
                                     ? (String) vpTokenObj
-                                    : provider.objectMapper.writeValueAsString(vpTokenObj);
+                                    : JsonSerialization.writeValueAsString(vpTokenObj);
                             encryptedResponse = null;
                         }
                         if (payloadMap.containsKey("error")) {
@@ -211,9 +214,9 @@ public class Oid4vpIdentityProviderEndpoint {
         }
 
         boolean isDirectPostFlow = isCrossDeviceFlow;
-        AuthenticationSessionModel authSession = resolveAuthSession(state, tabId, sessionCode, clientData);
+        AuthenticationSessionModel authSession = authSessionResolver.resolve(state, tabId, callback);
         if (authSession == null && state != null) {
-            authSession = resolveAuthSessionFromStore(state, null);
+            authSession = authSessionResolver.resolveFromStore(state, null);
             if (authSession != null) {
                 isDirectPostFlow = true;
             }
@@ -221,10 +224,7 @@ public class Oid4vpIdentityProviderEndpoint {
 
         if (authSession == null) {
             event.event(EventType.LOGIN_ERROR).error(Errors.SESSION_EXPIRED);
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("{\"error\":\"session_expired\"}")
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
+            return jsonErrorResponse(Response.Status.BAD_REQUEST, "session_expired", null);
         }
 
         if (preDecryptedMdocGeneratedNonce != null) {
@@ -256,13 +256,13 @@ public class Oid4vpIdentityProviderEndpoint {
     @Path("/request-object/{id}")
     @Produces("application/oauth-authz-req+jwt")
     public Response getRequestObject(@PathParam("id") String id) {
-        if (id == null || id.isBlank()) {
-            return badRequest("Missing request object id");
+        if (StringUtil.isBlank(id)) {
+            return jsonErrorResponse(Response.Status.BAD_REQUEST, "invalid_request", "Missing request object id");
         }
 
         Oid4vpRequestObjectStore.StoredRequestObject stored = requestObjectStore.resolve(session, id);
         if (stored == null) {
-            return notFound("Request object not found or expired");
+            return jsonErrorResponse(Response.Status.NOT_FOUND, "not_found", "Request object not found or expired");
         }
 
         return Response.ok(stored.requestObjectJwt())
@@ -279,16 +279,16 @@ public class Oid4vpIdentityProviderEndpoint {
             @FormParam("wallet_metadata") String walletMetadata,
             @FormParam("wallet_nonce") String walletNonce) {
 
-        if (id == null || id.isBlank()) {
-            return badRequest("Missing request object id");
+        if (StringUtil.isBlank(id)) {
+            return jsonErrorResponse(Response.Status.BAD_REQUEST, "invalid_request", "Missing request object id");
         }
 
         Oid4vpRequestObjectStore.StoredRequestObject stored = requestObjectStore.resolve(session, id);
         if (stored == null) {
-            return notFound("Request object not found or expired");
+            return jsonErrorResponse(Response.Status.NOT_FOUND, "not_found", "Request object not found or expired");
         }
 
-        if (walletNonce != null && !walletNonce.isBlank() && stored.rebuildParams() != null) {
+        if (StringUtil.isNotBlank(walletNonce) && stored.rebuildParams() != null) {
             return rebuildRequestObjectWithWalletNonce(stored, walletNonce);
         }
 
@@ -301,8 +301,8 @@ public class Oid4vpIdentityProviderEndpoint {
     @Path("/cross-device/status")
     @Produces("text/event-stream")
     public Response crossDeviceStatus(@QueryParam("state") String state) {
-        if (state == null || state.isBlank()) {
-            return badRequest("Missing state parameter");
+        if (StringUtil.isBlank(state)) {
+            return jsonErrorResponse(Response.Status.BAD_REQUEST, "invalid_request", "Missing state parameter");
         }
 
         KeycloakSessionFactory sessionFactory = session.getKeycloakSessionFactory();
@@ -310,7 +310,7 @@ public class Oid4vpIdentityProviderEndpoint {
 
         StreamingOutput stream = output -> {
             try {
-                for (int i = 0; i < 300; i++) {
+                for (int i = 0; i < SSE_MAX_ITERATIONS; i++) {
                     try (KeycloakSession pollingSession = sessionFactory.create()) {
                         pollingSession.getTransactionManager().begin();
                         try {
@@ -324,7 +324,11 @@ public class Oid4vpIdentityProviderEndpoint {
                             if (entry != null) {
                                 String completeAuthUrl = entry.get("complete_auth_url");
                                 if (completeAuthUrl != null) {
-                                    writeSseEvent(output, "complete", "{\"redirect_uri\":\"" + completeAuthUrl + "\"}");
+                                    writeSseEvent(
+                                            output,
+                                            "complete",
+                                            JsonSerialization.writeValueAsString(
+                                                    Map.of("redirect_uri", completeAuthUrl)));
                                     pollingSession.getTransactionManager().commit();
                                     return;
                                 }
@@ -339,7 +343,7 @@ public class Oid4vpIdentityProviderEndpoint {
                         writeSseEvent(output, "ping", "{}");
                     }
 
-                    Thread.sleep(1000);
+                    Thread.sleep(SSE_POLL_INTERVAL_MS);
                 }
 
                 writeSseEvent(output, "timeout", "{\"error\":\"timeout\"}");
@@ -361,8 +365,8 @@ public class Oid4vpIdentityProviderEndpoint {
     @GET
     @Path("/cross-device/complete")
     public Response crossDeviceComplete(@QueryParam("token") String token, @QueryParam("source") String source) {
-        if (token == null || token.isBlank()) {
-            return badRequest("Missing token parameter");
+        if (StringUtil.isBlank(token)) {
+            return jsonErrorResponse(Response.Status.BAD_REQUEST, "invalid_request", "Missing token parameter");
         }
 
         Map<String, String> entry = session.singleUseObjects().get(CROSS_DEVICE_COMPLETE_PREFIX + token);
@@ -376,14 +380,24 @@ public class Oid4vpIdentityProviderEndpoint {
         String redirectUri = entry.get("redirect_uri");
         String rootSessionId = entry.get("root_session_id");
 
-        if (redirectUri == null || redirectUri.isBlank()) {
+        if (StringUtil.isBlank(redirectUri)) {
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity("Authentication failed. Please try again.")
                     .type(MediaType.TEXT_PLAIN)
                     .build();
         }
 
-        if (rootSessionId != null && !rootSessionId.isBlank()) {
+        // Validate redirect URI starts with Keycloak base URI to prevent open redirect
+        String baseUri = session.getContext().getUri().getBaseUri().toString();
+        if (!redirectUri.startsWith(baseUri)) {
+            LOG.warnf("Redirect URI does not start with base URI: %s", redirectUri);
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Invalid redirect URI.")
+                    .type(MediaType.TEXT_PLAIN)
+                    .build();
+        }
+
+        if (StringUtil.isNotBlank(rootSessionId)) {
             try {
                 new AuthenticationSessionManager(session).setAuthSessionCookie(rootSessionId);
             } catch (Exception e) {
@@ -412,8 +426,8 @@ public class Oid4vpIdentityProviderEndpoint {
     @GET
     @Path("/complete-auth")
     public Response completeAuth(@QueryParam("state") String state) {
-        if (state == null || state.isBlank()) {
-            return badRequest("Missing state parameter");
+        if (StringUtil.isBlank(state)) {
+            return jsonErrorResponse(Response.Status.BAD_REQUEST, "invalid_request", "Missing state parameter");
         }
 
         Map<String, String> signal = session.singleUseObjects().get(DEFERRED_AUTH_PREFIX + state);
@@ -440,7 +454,7 @@ public class Oid4vpIdentityProviderEndpoint {
             RootAuthenticationSessionModel rootSession =
                     session.authenticationSessions().getRootAuthenticationSession(realm, rootSessionId);
             if (rootSession != null && tabId != null) {
-                authSession = findAuthSessionInRoot(rootSession, tabId);
+                authSession = authSessionResolver.findAuthSessionInRoot(rootSession, tabId);
             }
         }
         if (authSession == null) {
@@ -470,7 +484,7 @@ public class Oid4vpIdentityProviderEndpoint {
         if (claimsJson != null) {
             try {
                 @SuppressWarnings("unchecked")
-                Map<String, Object> claims = org.keycloak.util.JsonSerialization.readValue(claimsJson, Map.class);
+                Map<String, Object> claims = JsonSerialization.readValue(claimsJson, Map.class);
                 context.getContextData().put("oid4vp_claims", claims);
             } catch (Exception e) {
                 LOG.warnf("Failed to deserialize claims: %s", e.getMessage());
@@ -519,10 +533,7 @@ public class Oid4vpIdentityProviderEndpoint {
                     state, "identity_provider_error", e.getMessage(), authSession, isDirectPostFlow, isCrossDeviceFlow);
         } catch (Exception e) {
             LOG.errorf(e, "Failed to process VP token: %s", e.getMessage());
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity("{\"error\":\"server_error\",\"error_description\":\"" + jsonEscape(e.getMessage()) + "\"}")
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
+            return jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", e.getMessage());
         }
     }
 
@@ -548,7 +559,7 @@ public class Oid4vpIdentityProviderEndpoint {
                 (Map<String, Object>) context.getContextData().get("oid4vp_claims");
         if (claims != null) {
             try {
-                String claimsJson = org.keycloak.util.JsonSerialization.writeValueAsString(claims);
+                String claimsJson = JsonSerialization.writeValueAsString(claims);
                 authSession.setAuthNote(DEFERRED_CLAIMS_NOTE, claimsJson);
             } catch (Exception e) {
                 LOG.warnf("Failed to serialize claims: %s", e.getMessage());
@@ -585,14 +596,7 @@ public class Oid4vpIdentityProviderEndpoint {
                 .error(Errors.IDENTITY_PROVIDER_ERROR);
 
         if (isDirectPostFlow) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("{\"error\":\"" + jsonEscape(error) + "\""
-                            + (errorDescription != null
-                                    ? ",\"error_description\":\"" + jsonEscape(errorDescription) + "\""
-                                    : "")
-                            + "}")
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
+            return jsonErrorResponse(Response.Status.BAD_REQUEST, error, errorDescription);
         }
 
         String message = error + (errorDescription != null ? ": " + errorDescription : "");
@@ -614,60 +618,8 @@ public class Oid4vpIdentityProviderEndpoint {
                     .build();
         } catch (Exception e) {
             LOG.errorf(e, "Failed to rebuild request object with wallet_nonce: %s", e.getMessage());
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity("{\"error\":\"server_error\"}")
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
+            return jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", null);
         }
-    }
-
-    private AuthenticationSessionModel resolveAuthSession(
-            String state, String tabId, String sessionCode, String clientData) {
-        AuthenticationSessionModel authSession = session.getContext().getAuthenticationSession();
-        if (authSession != null) {
-            return authSession;
-        }
-        if (tabId != null && !tabId.isBlank()) {
-            try {
-                return callback.getAndVerifyAuthenticationSession(state);
-            } catch (Exception e) {
-                LOG.debugf("Failed to resolve auth session via callback: %s", e.getMessage());
-            }
-        }
-        return null;
-    }
-
-    private AuthenticationSessionModel resolveAuthSessionFromStore(String state, String tabIdHint) {
-        if (state == null) return null;
-
-        Oid4vpRequestObjectStore.StoredRequestObject stored = requestObjectStore.resolveByState(session, state);
-        if (stored == null || stored.rootSessionId() == null) {
-            return null;
-        }
-
-        RootAuthenticationSessionModel rootSession =
-                session.authenticationSessions().getRootAuthenticationSession(realm, stored.rootSessionId());
-        if (rootSession == null) {
-            return null;
-        }
-
-        // Extract tabId from state format: {tabId}.{randomData}
-        String tabId = tabIdHint;
-        if (tabId == null && state.contains(".")) {
-            tabId = state.substring(0, state.indexOf('.'));
-        }
-
-        return tabId != null ? findAuthSessionInRoot(rootSession, tabId) : null;
-    }
-
-    private AuthenticationSessionModel findAuthSessionInRoot(RootAuthenticationSessionModel rootSession, String tabId) {
-        for (Map.Entry<String, AuthenticationSessionModel> entry :
-                rootSession.getAuthenticationSessions().entrySet()) {
-            if (entry.getKey().equals(tabId)) {
-                return entry.getValue();
-            }
-        }
-        return null;
     }
 
     private String buildCompleteAuthUrl(String state) {
@@ -678,16 +630,6 @@ public class Oid4vpIdentityProviderEndpoint {
         return baseUri + "realms/" + realm.getName() + "/broker/"
                 + provider.getConfig().getAlias() + "/endpoint/complete-auth?state="
                 + java.net.URLEncoder.encode(state, StandardCharsets.UTF_8);
-    }
-
-    private String buildBridgeUrl(String bridgeToken) {
-        String baseUri = session.getContext().getUri().getBaseUri().toString();
-        if (!baseUri.endsWith("/")) {
-            baseUri += "/";
-        }
-        return baseUri + "realms/" + realm.getName() + "/broker/"
-                + provider.getConfig().getAlias() + "/endpoint/cross-device/complete?token="
-                + java.net.URLEncoder.encode(bridgeToken, StandardCharsets.UTF_8);
     }
 
     private String stripWalletQueryParams(String uri) {
@@ -720,30 +662,33 @@ public class Oid4vpIdentityProviderEndpoint {
     }
 
     private Response jsonRedirectResponse(String redirectUri) {
-        return Response.ok("{\"redirect_uri\":\"" + jsonEscape(redirectUri) + "\"}")
-                .type(MediaType.APPLICATION_JSON)
-                .build();
+        try {
+            String json = JsonSerialization.writeValueAsString(Map.of("redirect_uri", redirectUri));
+            return Response.ok(json).type(MediaType.APPLICATION_JSON).build();
+        } catch (Exception e) {
+            return Response.ok("{\"redirect_uri\":\"\"}")
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
     }
 
-    private Response badRequest(String message) {
-        return Response.status(Response.Status.BAD_REQUEST)
-                .entity("{\"error\":\"invalid_request\",\"error_description\":\"" + jsonEscape(message) + "\"}")
-                .type(MediaType.APPLICATION_JSON)
-                .build();
-    }
-
-    private Response notFound(String message) {
-        return Response.status(Response.Status.NOT_FOUND)
-                .entity("{\"error\":\"not_found\",\"error_description\":\"" + jsonEscape(message) + "\"}")
-                .type(MediaType.APPLICATION_JSON)
-                .build();
-    }
-
-    private String jsonEscape(String value) {
-        if (value == null) return "";
-        return value.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r");
+    private Response jsonErrorResponse(Response.Status status, String error, String description) {
+        try {
+            Map<String, String> body = new HashMap<>();
+            body.put("error", error);
+            if (description != null) {
+                body.put("error_description", description);
+            }
+            String json = JsonSerialization.writeValueAsString(body);
+            return Response.status(status)
+                    .entity(json)
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        } catch (Exception e) {
+            return Response.status(status)
+                    .entity("{\"error\":\"" + error + "\"}")
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
     }
 }

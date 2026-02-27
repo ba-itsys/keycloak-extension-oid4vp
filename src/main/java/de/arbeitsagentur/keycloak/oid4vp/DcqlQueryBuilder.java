@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.keycloak.utils.StringUtil;
 
 public class DcqlQueryBuilder {
 
@@ -168,7 +169,7 @@ public class DcqlQueryBuilder {
 
     private Map<String, Object> buildCredentialSet(List<String> credentialIds) {
         Map<String, Object> credentialSet = new LinkedHashMap<>();
-        if (purpose != null && !purpose.isBlank()) {
+        if (StringUtil.isNotBlank(purpose)) {
             credentialSet.put("purpose", purpose);
         }
 
@@ -186,7 +187,7 @@ public class DcqlQueryBuilder {
     }
 
     static List<Object> splitClaimPath(String path, String format, String type) {
-        if (path == null || path.isBlank()) {
+        if (StringUtil.isBlank(path)) {
             return List.of();
         }
         if (path.contains(PATH_SEPARATOR)) {

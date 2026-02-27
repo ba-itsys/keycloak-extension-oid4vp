@@ -40,6 +40,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.jboss.logging.Logger;
+import org.keycloak.utils.StringUtil;
 
 public class SdJwtVerifier {
 
@@ -77,7 +78,7 @@ public class SdJwtVerifier {
 
             Map<String, Object> claims = extractDisclosedClaims(jwt, parts);
 
-            if (parts.keyBindingJwt() != null && !parts.keyBindingJwt().isBlank()) {
+            if (StringUtil.isNotBlank(parts.keyBindingJwt())) {
                 verifyKeyBinding(parts, jwt, expectedAudience, expectedNonce);
             }
 
@@ -103,14 +104,7 @@ public class SdJwtVerifier {
             }
         }
 
-        // Try JWK from header
-        com.nimbusds.jose.jwk.JWK jwk = jwt.getHeader().getJWK();
-        if (jwk != null) {
-            verifyWithPublicKey(jwt, jwk.toPublicJWK().toECKey().toPublicKey());
-            return;
-        }
-
-        LOG.warnf("No key found for signature verification, skipping");
+        throw new IllegalStateException("No key material available for SD-JWT signature verification");
     }
 
     private void verifyWithPublicKey(SignedJWT jwt, PublicKey publicKey) throws Exception {
@@ -149,11 +143,33 @@ public class SdJwtVerifier {
 
         Map<String, Object> claims = new LinkedHashMap<>(payload);
 
+        // Collect _sd digests for verification
+        List<String> sdDigests = new ArrayList<>();
+        if (payload.containsKey("_sd") && payload.get("_sd") instanceof List<?> sdArray) {
+            for (Object digest : sdArray) {
+                if (digest instanceof String s) {
+                    sdDigests.add(s);
+                }
+            }
+        }
+
         // Process disclosures
         String hashAlg = payload.containsKey("_sd_alg") ? payload.get("_sd_alg").toString() : "sha-256";
+        String javaHashAlg = hashAlg.replace("-", "");
 
         for (String disclosure : parts.disclosures()) {
-            if (disclosure == null || disclosure.isBlank()) continue;
+            if (StringUtil.isBlank(disclosure)) continue;
+
+            // Verify disclosure digest is in _sd array
+            if (!sdDigests.isEmpty()) {
+                MessageDigest md = MessageDigest.getInstance(javaHashAlg);
+                byte[] disclosureHash = md.digest(disclosure.getBytes(StandardCharsets.US_ASCII));
+                String computedDigest = Base64.getUrlEncoder().withoutPadding().encodeToString(disclosureHash);
+                if (!sdDigests.contains(computedDigest)) {
+                    throw new IllegalStateException("Disclosure digest not found in _sd array");
+                }
+            }
+
             try {
                 byte[] decoded = Base64.getUrlDecoder().decode(disclosure);
                 List<Object> disclosureArray = objectMapper.readValue(decoded, List.class);
@@ -162,6 +178,8 @@ public class SdJwtVerifier {
                     Object claimValue = disclosureArray.get(2);
                     claims.put(claimName, claimValue);
                 }
+            } catch (IllegalStateException e) {
+                throw e;
             } catch (Exception e) {
                 LOG.debugf("Failed to decode disclosure: %s", e.getMessage());
             }
@@ -183,21 +201,22 @@ public class SdJwtVerifier {
         JWTClaimsSet credClaims = credentialJwt.getJWTClaimsSet();
         @SuppressWarnings("unchecked")
         Map<String, Object> cnf = (Map<String, Object>) credClaims.getClaim("cnf");
-        if (cnf != null && cnf.containsKey("jwk")) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> jwkMap = (Map<String, Object>) cnf.get("jwk");
-            String jwkJson = objectMapper.writeValueAsString(jwkMap);
-            com.nimbusds.jose.jwk.JWK holderKey = com.nimbusds.jose.jwk.JWK.parse(jwkJson);
-            PublicKey holderPublicKey;
-            if (holderKey instanceof ECKey ecKey) {
-                holderPublicKey = ecKey.toPublicKey();
-            } else if (holderKey instanceof RSAKey rsaKey) {
-                holderPublicKey = rsaKey.toPublicKey();
-            } else {
-                throw new IllegalStateException("Unsupported holder key type");
-            }
-            verifyWithPublicKey(kbJwt, holderPublicKey);
+        if (cnf == null || !cnf.containsKey("jwk")) {
+            throw new IllegalStateException("KB-JWT present but cnf.jwk missing in credential");
         }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> jwkMap = (Map<String, Object>) cnf.get("jwk");
+        String jwkJson = objectMapper.writeValueAsString(jwkMap);
+        com.nimbusds.jose.jwk.JWK holderKey = com.nimbusds.jose.jwk.JWK.parse(jwkJson);
+        PublicKey holderPublicKey;
+        if (holderKey instanceof ECKey ecKey) {
+            holderPublicKey = ecKey.toPublicKey();
+        } else if (holderKey instanceof RSAKey rsaKey) {
+            holderPublicKey = rsaKey.toPublicKey();
+        } else {
+            throw new IllegalStateException("Unsupported holder key type");
+        }
+        verifyWithPublicKey(kbJwt, holderPublicKey);
 
         JWTClaimsSet kbClaims = kbJwt.getJWTClaimsSet();
 
@@ -216,16 +235,18 @@ public class SdJwtVerifier {
                     kbClaims.getAudience() != null && !kbClaims.getAudience().isEmpty()
                             ? kbClaims.getAudience().get(0)
                             : null;
-            if (kbAud != null && !kbAud.equals(expectedAudience)) {
-                LOG.warnf("KB-JWT audience mismatch: expected=%s, got=%s", expectedAudience, kbAud);
+            if (kbAud == null || !kbAud.equals(expectedAudience)) {
+                throw new IllegalStateException(
+                        "KB-JWT audience mismatch: expected=" + expectedAudience + ", got=" + kbAud);
             }
         }
 
         // Validate nonce
         if (expectedNonce != null) {
             String kbNonce = kbClaims.getStringClaim("nonce");
-            if (kbNonce != null && !kbNonce.equals(expectedNonce)) {
-                LOG.warnf("KB-JWT nonce mismatch: expected=%s, got=%s", expectedNonce, kbNonce);
+            if (kbNonce == null || !kbNonce.equals(expectedNonce)) {
+                throw new IllegalStateException(
+                        "KB-JWT nonce mismatch: expected=" + expectedNonce + ", got=" + kbNonce);
             }
         }
 
@@ -234,7 +255,7 @@ public class SdJwtVerifier {
         if (sdHash != null) {
             String presentationWithoutKb = parts.signedJwt();
             for (String disc : parts.disclosures()) {
-                if (disc != null && !disc.isBlank()) {
+                if (StringUtil.isNotBlank(disc)) {
                     presentationWithoutKb += "~" + disc;
                 }
             }

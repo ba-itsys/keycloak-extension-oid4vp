@@ -4,3 +4,6 @@
 target/
 dependency-reduced-pom.xml
 pom.xml.versionsBackup
+
+realm-wallet-demo-local.json
+docker-compose.local.yml

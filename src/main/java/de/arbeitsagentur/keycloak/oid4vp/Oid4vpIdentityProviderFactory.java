@@ -18,8 +18,6 @@ package de.arbeitsagentur.keycloak.oid4vp;
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
 import java.io.ByteArrayInputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
 import java.security.cert.CertificateFactory;
@@ -36,6 +34,7 @@ import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.provider.ProviderConfigurationBuilder;
+import org.keycloak.utils.StringUtil;
 
 public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFactory<Oid4vpIdentityProvider> {
 
@@ -116,17 +115,11 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .defaultValue("true")
                 .add()
                 .property()
-                .name(Oid4vpIdentityProviderConfig.SAME_DEVICE_WALLET_URL)
-                .label("Wallet URL (HTTPS)")
-                .helpText("HTTPS URL of the wallet's OID4VP authorization endpoint. Required for same-device flow.")
-                .type(ProviderConfigProperty.STRING_TYPE)
-                .add()
-                .property()
-                .name(Oid4vpIdentityProviderConfig.SAME_DEVICE_WALLET_SCHEME)
+                .name(Oid4vpIdentityProviderConfig.WALLET_SCHEME)
                 .label("Wallet URL Scheme")
-                .helpText(
-                        "Custom URL scheme for native wallet apps (e.g., openid4vp://, haip://). Leave empty to use HTTPS URL.")
+                .helpText("Custom URL scheme for wallet apps (e.g., openid4vp://, haip://).")
                 .type(ProviderConfigProperty.STRING_TYPE)
+                .defaultValue("openid4vp://")
                 .add()
                 .property()
                 .name(Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME)
@@ -142,19 +135,6 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .helpText("PEM-encoded X.509 certificate chain for x509 client ID schemes. "
                         + "May include a PRIVATE KEY block for auto-generation of signing key JWK.")
                 .type(ProviderConfigProperty.TEXT_TYPE)
-                .add()
-                .property()
-                .name(Oid4vpIdentityProviderConfig.X509_CERTIFICATE_FILE)
-                .label("X.509 Certificate File Path")
-                .helpText(
-                        "Path to a combined PEM file (cert chain + private key) on disk. Takes precedence over inline PEM.")
-                .type(ProviderConfigProperty.STRING_TYPE)
-                .add()
-                .property()
-                .name(Oid4vpIdentityProviderConfig.VERIFIER_INFO_FILE)
-                .label("Verifier Info File")
-                .helpText("Path to JSON file containing verifier attestations. Takes precedence over inline JSON.")
-                .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
                 .name(Oid4vpIdentityProviderConfig.VERIFIER_INFO)
@@ -192,8 +172,7 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
     public Oid4vpIdentityProvider create(KeycloakSession session, IdentityProviderModel model) {
         Oid4vpIdentityProviderConfig config = new Oid4vpIdentityProviderConfig(model);
 
-        resolveX509FromFile(config);
-        resolveVerifierInfoFromFile(config);
+        resolveX509SigningKey(config);
 
         return new Oid4vpIdentityProvider(session, config);
     }
@@ -208,46 +187,21 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
         return CONFIG_PROPERTIES;
     }
 
-    public static void resolveX509FromFile(Oid4vpIdentityProviderConfig config) {
+    public static void resolveX509SigningKey(Oid4vpIdentityProviderConfig config) {
         String existingJwk = config.getX509SigningKeyJwk();
-        if (existingJwk != null && !existingJwk.isBlank()) {
+        if (StringUtil.isNotBlank(existingJwk)) {
             return;
         }
 
-        String pem = null;
-        String source = null;
-
-        String x509File = config.getX509CertificateFile();
-        if (x509File != null && !x509File.isBlank()) {
-            Path filePath = Path.of(x509File);
-            if (Files.exists(filePath)) {
-                try {
-                    pem = Files.readString(filePath);
-                    source = "file " + x509File;
-                } catch (Exception e) {
-                    LOG.warnf("Failed to read x509CertificateFile %s: %s", x509File, e.getMessage());
-                }
-            } else {
-                LOG.warnf("x509CertificateFile not found: %s", x509File);
-            }
-        }
-
-        if (pem == null) {
-            String inlinePem = config.getX509CertificatePem();
-            if (inlinePem != null && inlinePem.contains("-----BEGIN PRIVATE KEY-----")) {
-                pem = inlinePem;
-                source = "inline x509CertificatePem";
-            }
-        }
-
-        if (pem == null) {
+        String pem = config.getX509CertificatePem();
+        if (pem == null || !pem.contains("-----BEGIN PRIVATE KEY-----")) {
             return;
         }
 
         try {
             List<X509Certificate> certChain = parseCertificateChain(pem);
             if (certChain.isEmpty()) {
-                LOG.warnf("No certificates found in %s", source);
+                LOG.warn("No certificates found in x509CertificatePem");
                 return;
             }
 
@@ -256,7 +210,7 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
 
             String privBody = extractPemBlockBody(pem, "PRIVATE KEY");
             if (privBody == null) {
-                LOG.infof("No private key in %s (cert-only mode)", source);
+                LOG.info("No private key in x509CertificatePem (cert-only mode)");
                 return;
             }
 
@@ -285,30 +239,11 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
 
             config.setX509SigningKeyJwk(ecKey.toJSONString());
             LOG.infof(
-                    "Resolved x509 signing key from %s (chain size=%d, kid=%s)",
-                    source, certChain.size(), ecKey.getKeyID());
+                    "Resolved x509 signing key from inline PEM (chain size=%d, kid=%s)",
+                    certChain.size(), ecKey.getKeyID());
 
         } catch (Exception e) {
-            LOG.errorf(e, "Failed to resolve x509 from %s", source);
-        }
-    }
-
-    public static void resolveVerifierInfoFromFile(Oid4vpIdentityProviderConfig config) {
-        String file = config.getVerifierInfoFile();
-        if (file == null || file.isBlank()) {
-            return;
-        }
-        Path filePath = Path.of(file);
-        if (!Files.exists(filePath)) {
-            LOG.warnf("verifierInfoFile not found: %s", file);
-            return;
-        }
-        try {
-            String json = Files.readString(filePath).trim();
-            config.setVerifierInfo(json);
-            LOG.infof("Loaded verifier info from file %s (%d chars)", file, json.length());
-        } catch (Exception e) {
-            LOG.warnf("Failed to read verifierInfoFile %s: %s", file, e.getMessage());
+            LOG.errorf(e, "Failed to resolve x509 signing key from inline PEM");
         }
     }
 

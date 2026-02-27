@@ -37,10 +37,12 @@ import org.keycloak.models.FederatedIdentityModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
+import org.keycloak.utils.StringUtil;
 
 public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdentityProviderConfig> {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProvider.class);
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     static final String SESSION_STATE = "oid4vp_state";
     static final String SESSION_NONCE = "oid4vp_nonce";
@@ -55,6 +57,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     private final Oid4vpRedirectFlowService redirectFlowService;
     private final Oid4vpQrCodeService qrCodeService;
     private final VpTokenProcessor vpTokenProcessor;
+    private final Oid4vpResponseDecryptor responseDecryptor;
     private final Oid4vpRequestObjectStore requestObjectStore;
     private final int loginTimeoutSeconds;
 
@@ -64,6 +67,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         this.redirectFlowService = new Oid4vpRedirectFlowService(session, objectMapper);
         this.qrCodeService = new Oid4vpQrCodeService();
         this.vpTokenProcessor = new VpTokenProcessor(objectMapper);
+        this.responseDecryptor = new Oid4vpResponseDecryptor();
 
         RealmModel realm = session.getContext().getRealm();
         this.loginTimeoutSeconds = realm != null ? realm.getAccessCodeLifespanLogin() : 1800;
@@ -127,30 +131,26 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
             throw new IdentityBrokerException("Invalid state parameter");
         }
 
-        if (error != null && !error.isBlank()) {
-            String message =
-                    errorDescription != null && !errorDescription.isBlank() ? error + ": " + errorDescription : error;
+        if (StringUtil.isNotBlank(error)) {
+            String message = StringUtil.isNotBlank(errorDescription) ? error + ": " + errorDescription : error;
             throw new IdentityBrokerException("Wallet returned error: " + message);
         }
 
-        String mdocGeneratedNonce = null;
-        if ((vpToken == null || vpToken.isBlank()) && encryptedResponse != null && !encryptedResponse.isBlank()) {
+        String mdocGeneratedNonce = authSession.getAuthNote(SESSION_MDOC_GENERATED_NONCE);
+        if (mdocGeneratedNonce != null) {
+            authSession.removeAuthNote(SESSION_MDOC_GENERATED_NONCE);
+        }
+
+        if (StringUtil.isBlank(vpToken) && StringUtil.isNotBlank(encryptedResponse)) {
             String encryptionKey = authSession.getAuthNote(SESSION_ENCRYPTION_KEY);
             try {
-                vpToken = decryptResponse(encryptedResponse, encryptionKey);
+                vpToken = responseDecryptor.decryptVpToken(encryptedResponse, encryptionKey);
             } catch (Exception e) {
                 throw new IdentityBrokerException("Failed to decrypt response: " + e.getMessage(), e);
             }
         }
 
-        if (mdocGeneratedNonce == null) {
-            mdocGeneratedNonce = authSession.getAuthNote(SESSION_MDOC_GENERATED_NONCE);
-            if (mdocGeneratedNonce != null) {
-                authSession.removeAuthNote(SESSION_MDOC_GENERATED_NONCE);
-            }
-        }
-
-        if (vpToken == null || vpToken.isBlank()) {
+        if (StringUtil.isBlank(vpToken)) {
             throw new IdentityBrokerException("Missing vp_token");
         }
 
@@ -169,11 +169,22 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 responseUri,
                 trustX5c,
                 skipSignatureVerification,
-                redirectFlowResponseUri);
+                redirectFlowResponseUri,
+                mdocGeneratedNonce);
 
         VpTokenProcessor.VerifiedCredential primary = vpResult.getPrimaryCredential();
         if (primary == null) {
             throw new IdentityBrokerException("No valid credential found in VP token");
+        }
+
+        String issuer = primary.issuer() != null ? primary.issuer() : "unknown";
+        String credentialType = primary.credentialType();
+
+        if (!getConfig().isIssuerAllowed(issuer)) {
+            throw new IdentityBrokerException("Issuer not allowed: " + issuer);
+        }
+        if (!getConfig().isCredentialTypeAllowed(credentialType)) {
+            throw new IdentityBrokerException("Credential type not allowed: " + credentialType);
         }
 
         Map<String, Object> claims = vpResult.isMultiCredential() ? vpResult.mergedClaims() : primary.claims();
@@ -183,14 +194,13 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         String userMappingClaimName = getConfig().getUserMappingClaimForFormat(credentialFormat);
         String subject = extractNestedClaim(claims, userMappingClaimName);
 
-        if (subject == null || subject.isBlank()) {
+        if (StringUtil.isBlank(subject)) {
             throw new IdentityBrokerException("Missing subject claim '" + userMappingClaimName + "' in credential");
         }
 
-        String issuer = primary.issuer() != null ? primary.issuer() : "unknown";
-        String credentialType = primary.credentialType();
+        String identityKey = FederatedIdentityKeyGenerator.generate(issuer, credentialType, subject);
 
-        BrokeredIdentityContext context = new BrokeredIdentityContext(subject, getConfig());
+        BrokeredIdentityContext context = new BrokeredIdentityContext(identityKey, getConfig());
         context.setIdp(this);
         context.setUsername(subject);
         context.getContextData().put("oid4vp_claims", claims);
@@ -206,7 +216,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
     protected String buildDcqlQueryFromConfig() {
         String manual = getConfig().getDcqlQuery();
-        if (manual != null && !manual.isBlank()) {
+        if (StringUtil.isNotBlank(manual)) {
             return manual;
         }
 
@@ -261,13 +271,13 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
             String redirectUri, String state, String tabId, String sessionCode, String clientData) {
         UriBuilder builder = UriBuilder.fromUri(stripQueryParams(redirectUri));
         builder.queryParam("state", state);
-        if (tabId != null && !tabId.isEmpty()) {
+        if (StringUtil.isNotBlank(tabId)) {
             builder.queryParam("tab_id", tabId);
         }
-        if (sessionCode != null && !sessionCode.isEmpty()) {
+        if (StringUtil.isNotBlank(sessionCode)) {
             builder.queryParam("session_code", sessionCode);
         }
-        if (clientData != null && !clientData.isEmpty()) {
+        if (StringUtil.isNotBlank(clientData)) {
             builder.queryParam("client_data", clientData);
         }
         return builder.build().toString();
@@ -319,10 +329,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
                 sameDeviceWalletUrl = redirectFlowService
                         .buildWalletAuthorizationUrl(
-                                getConfig().getSameDeviceWalletUrl(),
-                                getConfig().getSameDeviceWalletScheme(),
-                                effectiveClientId,
-                                sameDeviceRequestUri)
+                                getConfig().getWalletScheme(), effectiveClientId, sameDeviceRequestUri)
                         .toString();
             } catch (Exception e) {
                 LOG.errorf(e, "Failed to build same-device request object: %s", e.getMessage());
@@ -345,7 +352,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                         indexesStored);
 
                 crossDeviceWalletUrl = redirectFlowService
-                        .buildWalletAuthorizationUrl(null, "openid4vp://", effectiveClientId, crossDeviceRequestUri)
+                        .buildWalletAuthorizationUrl("openid4vp://", effectiveClientId, crossDeviceRequestUri)
                         .toString();
                 qrCodeBase64 = qrCodeService.generateQrCode(crossDeviceWalletUrl, 250, 250);
             } catch (Exception e) {
@@ -425,9 +432,9 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     private String computeEffectiveClientId(String clientId) {
         String clientIdScheme = getConfig().getClientIdScheme();
         String x509Pem = getConfig().getX509CertificatePem();
-        if ("x509_san_dns".equalsIgnoreCase(clientIdScheme) && x509Pem != null && !x509Pem.isBlank()) {
+        if ("x509_san_dns".equalsIgnoreCase(clientIdScheme) && StringUtil.isNotBlank(x509Pem)) {
             return redirectFlowService.computeX509SanDnsClientId(x509Pem);
-        } else if ("x509_hash".equalsIgnoreCase(clientIdScheme) && x509Pem != null && !x509Pem.isBlank()) {
+        } else if ("x509_hash".equalsIgnoreCase(clientIdScheme) && StringUtil.isNotBlank(x509Pem)) {
             return redirectFlowService.computeX509HashClientId(x509Pem);
         }
         return clientId;
@@ -489,7 +496,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     }
 
     byte[] computeJwkThumbprint(String jwkJson) {
-        if (jwkJson == null || jwkJson.isBlank()) {
+        if (StringUtil.isBlank(jwkJson)) {
             return null;
         }
         try {
@@ -501,36 +508,14 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         }
     }
 
-    private String decryptResponse(String encryptedResponse, String encryptionKeyJson) throws Exception {
-        if (encryptionKeyJson == null || encryptionKeyJson.isBlank()) {
-            throw new IllegalStateException("No encryption key available for decryption");
-        }
-        com.nimbusds.jose.jwk.ECKey decryptionKey = com.nimbusds.jose.jwk.ECKey.parse(encryptionKeyJson);
-        com.nimbusds.jose.JWEObject jwe = com.nimbusds.jose.JWEObject.parse(encryptedResponse);
-        jwe.decrypt(new com.nimbusds.jose.crypto.ECDHDecrypter(decryptionKey));
-        String payload = jwe.getPayload().toString();
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> payloadMap = objectMapper.readValue(payload, Map.class);
-
-        if (payloadMap.containsKey("error")) {
-            String err = payloadMap.get("error").toString();
-            String desc = payloadMap.containsKey("error_description")
-                    ? payloadMap.get("error_description").toString()
-                    : "";
-            throw new IdentityBrokerException("Wallet error: " + err + (desc.isEmpty() ? "" : " - " + desc));
-        }
-
-        if (!payloadMap.containsKey("vp_token")) {
-            throw new IdentityBrokerException("Missing vp_token in encrypted response");
-        }
-
-        Object vpTokenObj = payloadMap.get("vp_token");
-        return vpTokenObj instanceof String ? (String) vpTokenObj : objectMapper.writeValueAsString(vpTokenObj);
-    }
-
     private String extractNestedClaim(Map<String, Object> claims, String claimPath) {
         if (claims == null || claimPath == null) return null;
+
+        // Try exact key match first (handles mDoc flat keys like "namespace/element")
+        Object direct = claims.get(claimPath);
+        if (direct != null) return direct.toString();
+
+        // Fall back to nested path navigation
         String[] pathParts = claimPath.split("/");
         Object current = claims;
         for (String part : pathParts) {
@@ -563,17 +548,17 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 String claimPath = mapper.getConfig().get("claim");
                 boolean isOptional = "true".equalsIgnoreCase(mapper.getConfig().get("optional"));
 
-                if (format == null || format.isBlank()) {
+                if (StringUtil.isBlank(format)) {
                     format = Oid4vpIdentityProviderConfig.FORMAT_SD_JWT_VC;
                 }
-                if (type == null || type.isBlank()) {
+                if (StringUtil.isBlank(type)) {
                     return;
                 }
 
                 String typeKey = format + DcqlQueryBuilder.TYPE_KEY_DELIMITER + type;
                 formatByType.put(typeKey, format);
 
-                if (claimPath != null && !claimPath.isBlank()) {
+                if (StringUtil.isNotBlank(claimPath)) {
                     DcqlQueryBuilder.ClaimSpec claimSpec = new DcqlQueryBuilder.ClaimSpec(claimPath, isOptional);
                     claimsByType
                             .computeIfAbsent(typeKey, k -> new ArrayList<>())
@@ -592,7 +577,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                         ? mdocUserMappingClaim
                         : sdJwtUserMappingClaim;
 
-                if (userMappingClaim != null && !userMappingClaim.isBlank()) {
+                if (StringUtil.isNotBlank(userMappingClaim)) {
                     boolean alreadyPresent =
                             claims.stream().anyMatch(spec -> spec.path().equals(userMappingClaim));
                     if (!alreadyPresent) {
@@ -638,7 +623,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
     private static String randomState() {
         byte[] bytes = new byte[32];
-        new SecureRandom().nextBytes(bytes);
+        SECURE_RANDOM.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 

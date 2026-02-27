@@ -4,9 +4,9 @@
         Sign in with Wallet
     <#elseif section = "form">
         <form id="oid4vpForm"
-              action="${formActionUrl!}"
+              action="${formActionUrl!''}"
               method="post">
-            <input type="hidden" id="state" name="state" value="${state!}"/>
+            <input type="hidden" id="state" name="state" value="${state!''}"/>
             <input type="hidden" id="vp_token" name="vp_token"/>
             <input type="hidden" id="response" name="response"/>
             <input type="hidden" id="error" name="error"/>
@@ -18,9 +18,9 @@
         </div>
 
         <#-- Same-device redirect button -->
-        <#if sameDeviceEnabled!false && (sameDeviceWalletUrl!)?has_content>
+        <#if (sameDeviceEnabled!false) && (sameDeviceWalletUrl!'')?has_content>
             <div class="${properties.kcFormGroupClass!}">
-                <a href="${sameDeviceWalletUrl!}"
+                <a href="${sameDeviceWalletUrl!''}"
                    class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!} ${properties.kcButtonBlockClass!} ${properties.kcButtonLargeClass!}"
                    style="display: block; text-align: center; text-decoration: none;">
                     Open Wallet App
@@ -29,15 +29,16 @@
         </#if>
 
         <#-- Cross-device QR code -->
-        <#if crossDeviceEnabled!false && (qrCodeBase64!)?has_content>
+        <#if (crossDeviceEnabled!false) && (qrCodeBase64!'')?has_content>
             <div class="${properties.kcFormGroupClass!}" style="text-align: center; margin-top: 20px;">
-                <#if sameDeviceEnabled!false>
+                <#if (sameDeviceEnabled!false)>
                     <p style="margin-bottom: 10px;">Or scan with your phone:</p>
                 <#else>
                     <p style="margin-bottom: 10px;">Scan with your wallet app:</p>
                 </#if>
-                <img src="data:image/png;base64,${qrCodeBase64!}"
+                <img src="data:image/png;base64,${qrCodeBase64!''}"
                      alt="QR Code for wallet login"
+                     data-wallet-url="${crossDeviceWalletUrl!''}"
                      style="max-width: 250px; border: 1px solid #ddd; padding: 10px; background: white;"/>
                 <p style="font-size: 12px; color: #666; margin-top: 10px;">
                     Scan this QR code with your wallet app
@@ -65,13 +66,13 @@
         </#if>
 
         <#-- SSE: auto-redirect when wallet completes authentication -->
-        <#if (crossDeviceStatusUrl!)?has_content && ((crossDeviceEnabled!false) || (sameDeviceEnabled!false))>
+        <#if (crossDeviceStatusUrl!'')?has_content && ((crossDeviceEnabled!false) || (sameDeviceEnabled!false))>
             <script nonce="${cspNonce!}">
                 (function() {
                     var state = document.getElementById('state').value;
                     if (!state) return;
 
-                    var statusUrl = '${crossDeviceStatusUrl!}' + '?state=' + encodeURIComponent(state);
+                    var statusUrl = '${crossDeviceStatusUrl!''}' + '?state=' + encodeURIComponent(state);
                     var es = new EventSource(statusUrl);
 
                     es.addEventListener('complete', function(e) {

@@ -33,7 +33,6 @@ final class Oid4vpTestKeycloakSetup {
                   "format": "dc+sd-jwt",
                   "meta": { "vct_values": ["urn:eudi:pid:1"] },
                   "claims": [
-                    { "path": ["document_number"] },
                     { "path": ["family_name"] },
                     { "path": ["given_name"] },
                     { "path": ["birthdate"] }
@@ -44,7 +43,6 @@ final class Oid4vpTestKeycloakSetup {
                   "format": "mso_mdoc",
                   "meta": { "doctype_value": "eu.europa.ec.eudi.pid.1" },
                   "claims": [
-                    { "path": ["eu.europa.ec.eudi.pid.1", "document_number"] },
                     { "path": ["eu.europa.ec.eudi.pid.1", "family_name"] },
                     { "path": ["eu.europa.ec.eudi.pid.1", "given_name"] },
                     { "path": ["eu.europa.ec.eudi.pid.1", "birth_date"] }
@@ -99,8 +97,8 @@ final class Oid4vpTestKeycloakSetup {
         config.put("clientId", "not-used");
         config.put("clientSecret", "not-used");
         config.put(Oid4vpIdentityProviderConfig.DCQL_QUERY, DEFAULT_DCQL_QUERY);
-        config.put(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM, "document_number");
-        config.put(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM_MDOC, "document_number");
+        config.put(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM, "family_name");
+        config.put(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM_MDOC, "eu.europa.ec.eudi.pid.1/family_name");
         config.put(Oid4vpIdentityProviderConfig.SKIP_TRUST_LIST_VERIFICATION, "true");
         config.put(Oid4vpIdentityProviderConfig.TRUST_X5C_FROM_CREDENTIAL, "true");
         idpConfig.put("config", config);
@@ -121,15 +119,11 @@ final class Oid4vpTestKeycloakSetup {
         admin.putJson("/admin/realms/" + realm + "/identity-provider/instances/oid4vp", idp);
     }
 
-    static void configureSameDeviceFlow(
-            KeycloakAdminClient admin, String realm, boolean enabled, String walletAuthEndpoint) throws Exception {
+    static void configureSameDeviceFlow(KeycloakAdminClient admin, String realm, boolean enabled) throws Exception {
         Map<String, Object> idp = admin.getJson("/admin/realms/" + realm + "/identity-provider/instances/oid4vp");
         @SuppressWarnings("unchecked")
         Map<String, String> config = (Map<String, String>) idp.get("config");
         config.put(Oid4vpIdentityProviderConfig.SAME_DEVICE_ENABLED, String.valueOf(enabled));
-        if (walletAuthEndpoint != null) {
-            config.put(Oid4vpIdentityProviderConfig.SAME_DEVICE_WALLET_URL, walletAuthEndpoint);
-        }
         admin.putJson("/admin/realms/" + realm + "/identity-provider/instances/oid4vp", idp);
     }
 

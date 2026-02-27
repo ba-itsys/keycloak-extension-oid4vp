@@ -16,6 +16,7 @@
 package de.arbeitsagentur.keycloak.oid4vp;
 
 import org.keycloak.models.IdentityProviderModel;
+import org.keycloak.utils.StringUtil;
 
 public class Oid4vpIdentityProviderConfig extends IdentityProviderModel {
 
@@ -28,16 +29,13 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel {
 
     public static final String SAME_DEVICE_ENABLED = "sameDeviceEnabled";
     public static final String CROSS_DEVICE_ENABLED = "crossDeviceEnabled";
-    public static final String SAME_DEVICE_WALLET_URL = "sameDeviceWalletUrl";
-    public static final String SAME_DEVICE_WALLET_SCHEME = "sameDeviceWalletScheme";
+    public static final String WALLET_SCHEME = "walletScheme";
 
     public static final String CLIENT_ID_SCHEME = "clientIdScheme";
     public static final String X509_CERTIFICATE_PEM = "x509CertificatePem";
     public static final String X509_SIGNING_KEY_JWK = "x509SigningKeyJwk";
-    public static final String X509_CERTIFICATE_FILE = "x509CertificateFile";
 
     public static final String VERIFIER_INFO = "verifierInfo";
-    public static final String VERIFIER_INFO_FILE = "verifierInfoFile";
 
     public static final String CREDENTIAL_SET_MODE = "credentialSetMode";
     public static final String CREDENTIAL_SET_MODE_OPTIONAL = "optional";
@@ -47,6 +45,9 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel {
     public static final String TRUST_X5C_FROM_CREDENTIAL = "trustX5cFromCredential";
     public static final String ADDITIONAL_TRUSTED_CERTIFICATES = "additionalTrustedCertificates";
     public static final String SKIP_TRUST_LIST_VERIFICATION = "skipTrustListVerification";
+
+    public static final String ALLOWED_ISSUERS = "allowedIssuers";
+    public static final String ALLOWED_CREDENTIAL_TYPES = "allowedCredentialTypes";
 
     public static final String ENFORCE_HAIP = "enforceHaip";
     public static final String HAIP_SIGNING_ALGORITHM = "ES256";
@@ -71,7 +72,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel {
 
     public String getUserMappingClaim() {
         String claim = getConfig().get(USER_MAPPING_CLAIM);
-        return claim != null && !claim.isBlank() ? claim : "sub";
+        return StringUtil.isNotBlank(claim) ? claim : "sub";
     }
 
     public void setUserMappingClaim(String userMappingClaim) {
@@ -80,7 +81,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel {
 
     public String getUserMappingClaimMdoc() {
         String claim = getConfig().get(USER_MAPPING_CLAIM_MDOC);
-        return claim != null && !claim.isBlank() ? claim : getUserMappingClaim();
+        return StringUtil.isNotBlank(claim) ? claim : getUserMappingClaim();
     }
 
     public void setUserMappingClaimMdoc(String userMappingClaimMdoc) {
@@ -112,26 +113,18 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel {
         getConfig().put(CROSS_DEVICE_ENABLED, String.valueOf(enabled));
     }
 
-    public String getSameDeviceWalletUrl() {
-        return getConfig().get(SAME_DEVICE_WALLET_URL);
+    public String getWalletScheme() {
+        String scheme = getConfig().get(WALLET_SCHEME);
+        return StringUtil.isNotBlank(scheme) ? scheme : "openid4vp://";
     }
 
-    public void setSameDeviceWalletUrl(String url) {
-        getConfig().put(SAME_DEVICE_WALLET_URL, url);
-    }
-
-    public String getSameDeviceWalletScheme() {
-        String scheme = getConfig().get(SAME_DEVICE_WALLET_SCHEME);
-        return scheme != null && !scheme.isBlank() ? scheme : "";
-    }
-
-    public void setSameDeviceWalletScheme(String scheme) {
-        getConfig().put(SAME_DEVICE_WALLET_SCHEME, scheme);
+    public void setWalletScheme(String scheme) {
+        getConfig().put(WALLET_SCHEME, scheme);
     }
 
     public String getClientIdScheme() {
         String scheme = getConfig().get(CLIENT_ID_SCHEME);
-        return scheme != null && !scheme.isBlank() ? scheme : "x509_san_dns";
+        return StringUtil.isNotBlank(scheme) ? scheme : "x509_san_dns";
     }
 
     public void setClientIdScheme(String scheme) {
@@ -154,14 +147,6 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel {
         getConfig().put(X509_SIGNING_KEY_JWK, jwk);
     }
 
-    public String getX509CertificateFile() {
-        return getConfig().get(X509_CERTIFICATE_FILE);
-    }
-
-    public void setX509CertificateFile(String path) {
-        getConfig().put(X509_CERTIFICATE_FILE, path);
-    }
-
     public String getVerifierInfo() {
         return getConfig().get(VERIFIER_INFO);
     }
@@ -170,17 +155,9 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel {
         getConfig().put(VERIFIER_INFO, verifierInfo);
     }
 
-    public String getVerifierInfoFile() {
-        return getConfig().get(VERIFIER_INFO_FILE);
-    }
-
-    public void setVerifierInfoFile(String path) {
-        getConfig().put(VERIFIER_INFO_FILE, path);
-    }
-
     public String getCredentialSetMode() {
         String mode = getConfig().get(CREDENTIAL_SET_MODE);
-        return mode != null && !mode.isBlank() ? mode : CREDENTIAL_SET_MODE_OPTIONAL;
+        return StringUtil.isNotBlank(mode) ? mode : CREDENTIAL_SET_MODE_OPTIONAL;
     }
 
     public void setCredentialSetMode(String mode) {
@@ -244,5 +221,44 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel {
             return false;
         }
         return isTrustX5cFromCredential();
+    }
+
+    public String getAllowedIssuers() {
+        return getConfig().get(ALLOWED_ISSUERS);
+    }
+
+    public void setAllowedIssuers(String issuers) {
+        getConfig().put(ALLOWED_ISSUERS, issuers);
+    }
+
+    public String getAllowedCredentialTypes() {
+        return getConfig().get(ALLOWED_CREDENTIAL_TYPES);
+    }
+
+    public void setAllowedCredentialTypes(String types) {
+        getConfig().put(ALLOWED_CREDENTIAL_TYPES, types);
+    }
+
+    public boolean isIssuerAllowed(String issuer) {
+        return isValueAllowed(issuer, getAllowedIssuers());
+    }
+
+    public boolean isCredentialTypeAllowed(String credentialType) {
+        return isValueAllowed(credentialType, getAllowedCredentialTypes());
+    }
+
+    private boolean isValueAllowed(String value, String allowedList) {
+        if (StringUtil.isBlank(allowedList) || "*".equals(allowedList.trim())) {
+            return true;
+        }
+        if (value == null) {
+            return false;
+        }
+        for (String entry : allowedList.split(",")) {
+            if (entry.trim().equals(value)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

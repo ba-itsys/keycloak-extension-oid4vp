@@ -15,22 +15,26 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp;
 
+import COSE.OneKey;
+import COSE.Sign1Message;
 import com.upokecenter.cbor.CBORObject;
 import com.upokecenter.cbor.CBORType;
 import java.io.ByteArrayInputStream;
+import java.security.PublicKey;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.jboss.logging.Logger;
+import org.keycloak.utils.StringUtil;
 
 public class MdocVerifier {
 
     private static final Logger LOG = Logger.getLogger(MdocVerifier.class);
 
     public boolean isMdoc(String token) {
-        if (token == null || token.isBlank()) return false;
+        if (StringUtil.isBlank(token)) return false;
         try {
             byte[] bytes = decodeBase64(token);
             CBORObject root = CBORObject.DecodeFromBytes(bytes);
@@ -45,6 +49,7 @@ public class MdocVerifier {
             String expectedClientId,
             String expectedNonce,
             String expectedResponseUri,
+            String mdocGeneratedNonce,
             boolean trustX5cFromCredential,
             boolean skipSignatureVerification) {
 
@@ -68,8 +73,12 @@ public class MdocVerifier {
             String docType = extractDocType(document);
             Map<String, Object> claims = extractClaims(document);
 
-            if (!skipSignatureVerification && trustX5cFromCredential) {
-                verifyIssuerSignature(document);
+            if (!skipSignatureVerification) {
+                if (trustX5cFromCredential) {
+                    verifyIssuerSignature(document);
+                } else {
+                    throw new IllegalStateException("No key material available for mDoc signature verification");
+                }
             }
 
             return new VerificationResult(claims, docType);
@@ -88,14 +97,20 @@ public class MdocVerifier {
         if (issuerSigned != null && issuerSigned.ContainsKey("issuerAuth")) {
             try {
                 CBORObject issuerAuth = issuerSigned.get("issuerAuth");
-                byte[] issuerAuthBytes = issuerAuth.getType() == CBORType.Array
-                        ? issuerAuth.EncodeToBytes()
-                        : issuerAuth.GetByteString();
-                CBORObject sign1 = CBORObject.DecodeFromBytes(issuerAuthBytes);
+                CBORObject sign1;
+                if (issuerAuth.getType() == CBORType.Array && issuerAuth.size() == 4) {
+                    sign1 = issuerAuth;
+                } else {
+                    sign1 = CBORObject.DecodeFromBytes(issuerAuth.GetByteString());
+                }
                 CBORObject payload = sign1.get(2);
-                CBORObject mso = payload.HasMostOuterTag(24)
-                        ? CBORObject.DecodeFromBytes(payload.GetByteString())
-                        : CBORObject.DecodeFromBytes(payload.GetByteString());
+                CBORObject mso;
+                if (payload.HasMostOuterTag(24)) {
+                    mso = CBORObject.DecodeFromBytes(
+                            CBORObject.DecodeFromBytes(payload.EncodeToBytes()).GetByteString());
+                } else {
+                    mso = CBORObject.DecodeFromBytes(payload.GetByteString());
+                }
                 if (mso.ContainsKey("docType")) {
                     return mso.get("docType").AsString();
                 }
@@ -145,7 +160,8 @@ public class MdocVerifier {
                 if (item.ContainsKey("elementIdentifier") && item.ContainsKey("elementValue")) {
                     String elementId = item.get("elementIdentifier").AsString();
                     Object value = cborToJava(item.get("elementValue"));
-                    claims.put(elementId, value);
+                    // Namespace-prefix claims to prevent collisions
+                    claims.put(namespace + "/" + elementId, value);
                 }
             }
         }
@@ -154,56 +170,88 @@ public class MdocVerifier {
     }
 
     private void verifyIssuerSignature(CBORObject document) {
-        try {
-            CBORObject issuerSigned = document.get("issuerSigned");
-            if (issuerSigned == null || !issuerSigned.ContainsKey("issuerAuth")) {
-                LOG.warnf("No issuerAuth found for signature verification");
-                return;
-            }
-
-            CBORObject issuerAuth = issuerSigned.get("issuerAuth");
-            // IssuerAuth is a COSE_Sign1 structure: [protected, unprotected, payload, signature]
-            CBORObject sign1;
-            if (issuerAuth.getType() == CBORType.Array && issuerAuth.size() == 4) {
-                sign1 = issuerAuth;
-            } else {
-                sign1 = CBORObject.DecodeFromBytes(issuerAuth.GetByteString());
-            }
-
-            // Extract x5c from unprotected headers
-            CBORObject protectedHeader = CBORObject.DecodeFromBytes(sign1.get(0).GetByteString());
-            CBORObject unprotectedHeader = sign1.get(1);
-
-            CBORObject x5cCbor = null;
-            if (unprotectedHeader != null && unprotectedHeader.ContainsKey(CBORObject.FromObject(33))) {
-                x5cCbor = unprotectedHeader.get(CBORObject.FromObject(33));
-            }
-            if (x5cCbor == null && protectedHeader.ContainsKey(CBORObject.FromObject(33))) {
-                x5cCbor = protectedHeader.get(CBORObject.FromObject(33));
-            }
-
-            if (x5cCbor != null) {
-                byte[] certBytes;
-                if (x5cCbor.getType() == CBORType.Array && x5cCbor.size() > 0) {
-                    certBytes = x5cCbor.get(0).GetByteString();
-                } else {
-                    certBytes = x5cCbor.GetByteString();
-                }
-
-                CertificateFactory cf = CertificateFactory.getInstance("X.509");
-                X509Certificate issuerCert =
-                        (X509Certificate) cf.generateCertificate(new ByteArrayInputStream(certBytes));
-                LOG.infof(
-                        "mDoc issuer certificate: %s",
-                        issuerCert.getSubjectX500Principal().getName());
-            }
-        } catch (Exception e) {
-            LOG.warnf("mDoc signature verification skipped: %s", e.getMessage());
+        CBORObject issuerSigned = document.get("issuerSigned");
+        if (issuerSigned == null || !issuerSigned.ContainsKey("issuerAuth")) {
+            throw new IllegalStateException("No issuerAuth found for signature verification");
         }
+
+        CBORObject issuerAuth = issuerSigned.get("issuerAuth");
+        try {
+            // IssuerAuth is a COSE_Sign1 structure: [protected, unprotected, payload, signature]
+            byte[] sign1Bytes;
+            if (issuerAuth.getType() == CBORType.Array && issuerAuth.size() == 4) {
+                sign1Bytes = issuerAuth.EncodeToBytes();
+            } else {
+                sign1Bytes = issuerAuth.GetByteString();
+            }
+
+            Sign1Message sign1Msg = (Sign1Message) Sign1Message.DecodeFromBytes(sign1Bytes);
+
+            // Extract x5c certificate from headers
+            X509Certificate issuerCert = extractCertificateFromSign1(issuerAuth);
+            if (issuerCert == null) {
+                throw new IllegalStateException("No x5c certificate found in issuerAuth headers");
+            }
+
+            PublicKey publicKey = issuerCert.getPublicKey();
+            OneKey coseKey = new OneKey(publicKey, null);
+            sign1Msg.validate(coseKey);
+
+            LOG.debugf(
+                    "mDoc issuer signature verified, certificate: %s",
+                    issuerCert.getSubjectX500Principal().getName());
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalStateException("mDoc COSE_Sign1 signature verification failed: " + e.getMessage(), e);
+        }
+    }
+
+    private X509Certificate extractCertificateFromSign1(CBORObject issuerAuth) throws Exception {
+        CBORObject sign1;
+        if (issuerAuth.getType() == CBORType.Array && issuerAuth.size() == 4) {
+            sign1 = issuerAuth;
+        } else {
+            sign1 = CBORObject.DecodeFromBytes(issuerAuth.GetByteString());
+        }
+
+        CBORObject protectedHeader = CBORObject.DecodeFromBytes(sign1.get(0).GetByteString());
+        CBORObject unprotectedHeader = sign1.get(1);
+
+        // COSE header label 33 = x5chain
+        CBORObject x5cCbor = null;
+        if (unprotectedHeader != null && unprotectedHeader.ContainsKey(CBORObject.FromObject(33))) {
+            x5cCbor = unprotectedHeader.get(CBORObject.FromObject(33));
+        }
+        if (x5cCbor == null && protectedHeader.ContainsKey(CBORObject.FromObject(33))) {
+            x5cCbor = protectedHeader.get(CBORObject.FromObject(33));
+        }
+
+        if (x5cCbor == null) {
+            return null;
+        }
+
+        byte[] certBytes;
+        if (x5cCbor.getType() == CBORType.Array && x5cCbor.size() > 0) {
+            certBytes = x5cCbor.get(0).GetByteString();
+        } else {
+            certBytes = x5cCbor.GetByteString();
+        }
+
+        CertificateFactory cf = CertificateFactory.getInstance("X.509");
+        return (X509Certificate) cf.generateCertificate(new ByteArrayInputStream(certBytes));
     }
 
     private Object cborToJava(CBORObject obj) {
         if (obj == null || obj.isNull() || obj.isUndefined()) return null;
+
+        // Handle tagged values first (before switch on type)
+        if (obj.HasMostOuterTag(0)) {
+            return obj.AsString();
+        }
+        if (obj.HasMostOuterTag(1004)) {
+            return obj.AsString();
+        }
 
         switch (obj.getType()) {
             case TextString:
@@ -230,13 +278,6 @@ public class MdocVerifier {
                 }
                 return map;
             default:
-                // Handle tagged values (e.g., CBOR tag 0 = date-time string, tag 1003/1004 = date)
-                if (obj.HasMostOuterTag(0)) {
-                    return obj.AsString();
-                }
-                if (obj.HasMostOuterTag(1004)) {
-                    return obj.AsString();
-                }
                 return obj.toString();
         }
     }

@@ -22,6 +22,7 @@ import java.util.UUID;
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.SingleUseObjectProvider;
+import org.keycloak.utils.StringUtil;
 
 public class Oid4vpRequestObjectStore {
 
@@ -86,15 +87,15 @@ public class Oid4vpRequestObjectStore {
 
         store.put(KEY_PREFIX + id, lifespanSeconds, notes);
 
-        if (!skipIndexes) {
-            if (state != null && !state.isBlank()) {
-                store.put(STATE_INDEX_PREFIX + state, lifespanSeconds, Map.of("id", id));
-            }
-            if (encryptionKeyJson != null) {
-                String kid = extractKidFromJwk(encryptionKeyJson);
-                if (kid != null) {
-                    store.put(KID_INDEX_PREFIX + kid, lifespanSeconds, Map.of("id", id));
-                }
+        if (!skipIndexes && StringUtil.isNotBlank(state)) {
+            store.put(STATE_INDEX_PREFIX + state, lifespanSeconds, Map.of("id", id));
+        }
+        // Always store kid index: each request object has a unique encryption key,
+        // so the kid index must exist for encrypted wallet responses (e.g. mDoc JWE)
+        if (encryptionKeyJson != null) {
+            String kid = extractKidFromJwk(encryptionKeyJson);
+            if (kid != null) {
+                store.put(KID_INDEX_PREFIX + kid, lifespanSeconds, Map.of("id", id));
             }
         }
 
@@ -103,7 +104,7 @@ public class Oid4vpRequestObjectStore {
     }
 
     public StoredRequestObject resolveByState(KeycloakSession session, String state) {
-        if (state == null || state.isBlank()) {
+        if (StringUtil.isBlank(state)) {
             return null;
         }
         Map<String, String> indexEntry = session.singleUseObjects().get(STATE_INDEX_PREFIX + state);
@@ -115,7 +116,7 @@ public class Oid4vpRequestObjectStore {
     }
 
     public StoredRequestObject resolveByKid(KeycloakSession session, String kid) {
-        if (kid == null || kid.isBlank()) {
+        if (StringUtil.isBlank(kid)) {
             return null;
         }
         Map<String, String> indexEntry = session.singleUseObjects().get(KID_INDEX_PREFIX + kid);
@@ -127,7 +128,7 @@ public class Oid4vpRequestObjectStore {
     }
 
     public StoredRequestObject resolve(KeycloakSession session, String id) {
-        if (id == null || id.isBlank()) {
+        if (StringUtil.isBlank(id)) {
             return null;
         }
         Map<String, String> notes = session.singleUseObjects().get(KEY_PREFIX + id);
@@ -135,14 +136,14 @@ public class Oid4vpRequestObjectStore {
     }
 
     public void remove(KeycloakSession session, String id) {
-        if (id == null || id.isBlank()) {
+        if (StringUtil.isBlank(id)) {
             return;
         }
         SingleUseObjectProvider store = session.singleUseObjects();
         Map<String, String> notes = store.get(KEY_PREFIX + id);
         if (notes != null) {
             String state = notes.get(KEY_STATE);
-            if (state != null && !state.isBlank()) {
+            if (StringUtil.isNotBlank(state)) {
                 store.remove(STATE_INDEX_PREFIX + state);
             }
             String encKeyJson = notes.get(KEY_ENCRYPTION_KEY_JSON);
@@ -157,14 +158,14 @@ public class Oid4vpRequestObjectStore {
     }
 
     public void removeByState(KeycloakSession session, String state) {
-        if (state == null || state.isBlank()) {
+        if (StringUtil.isBlank(state)) {
             return;
         }
         SingleUseObjectProvider store = session.singleUseObjects();
         Map<String, String> indexEntry = store.get(STATE_INDEX_PREFIX + state);
         if (indexEntry != null) {
             String id = indexEntry.get("id");
-            if (id != null && !id.isBlank()) {
+            if (StringUtil.isNotBlank(id)) {
                 Map<String, String> notes = store.get(KEY_PREFIX + id);
                 if (notes != null) {
                     String encKeyJson = notes.get(KEY_ENCRYPTION_KEY_JSON);
@@ -183,15 +184,7 @@ public class Oid4vpRequestObjectStore {
 
     private static String extractKidFromJwk(String jwkJson) {
         try {
-            int kidIdx = jwkJson.indexOf("\"kid\"");
-            if (kidIdx < 0) return null;
-            int colon = jwkJson.indexOf(':', kidIdx + 5);
-            if (colon < 0) return null;
-            int firstQuote = jwkJson.indexOf('"', colon + 1);
-            if (firstQuote < 0) return null;
-            int secondQuote = jwkJson.indexOf('"', firstQuote + 1);
-            if (secondQuote < 0) return null;
-            return jwkJson.substring(firstQuote + 1, secondQuote);
+            return com.nimbusds.jose.jwk.ECKey.parse(jwkJson).getKeyID();
         } catch (Exception e) {
             return null;
         }

@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.IdentityBrokerException;
+import org.keycloak.utils.StringUtil;
 
 public class VpTokenProcessor {
 
@@ -43,7 +44,8 @@ public class VpTokenProcessor {
             String responseUri,
             boolean trustX5c,
             boolean skipSignatureVerification,
-            String alternateResponseUri) {
+            String alternateResponseUri,
+            String mdocGeneratedNonce) {
 
         try {
             // Detect format: single credential or multi-credential JSON wrapper
@@ -55,7 +57,8 @@ public class VpTokenProcessor {
                         responseUri,
                         trustX5c,
                         skipSignatureVerification,
-                        alternateResponseUri);
+                        alternateResponseUri,
+                        mdocGeneratedNonce);
             }
 
             return processSingleCredential(
@@ -65,7 +68,8 @@ public class VpTokenProcessor {
                     responseUri,
                     trustX5c,
                     skipSignatureVerification,
-                    alternateResponseUri);
+                    alternateResponseUri,
+                    mdocGeneratedNonce);
 
         } catch (IdentityBrokerException e) {
             throw e;
@@ -81,7 +85,8 @@ public class VpTokenProcessor {
             String responseUri,
             boolean trustX5c,
             boolean skipSignatureVerification,
-            String alternateResponseUri) {
+            String alternateResponseUri,
+            String mdocGeneratedNonce) {
 
         if (sdJwtVerifier.isSdJwt(vpToken)) {
             SdJwtVerifier.VerificationResult result = verifySdJwtWithFallback(
@@ -102,7 +107,13 @@ public class VpTokenProcessor {
 
         if (mdocVerifier.isMdoc(vpToken)) {
             MdocVerifier.VerificationResult result = mdocVerifier.verify(
-                    vpToken, clientId, expectedNonce, responseUri, trustX5c, skipSignatureVerification);
+                    vpToken,
+                    clientId,
+                    expectedNonce,
+                    responseUri,
+                    mdocGeneratedNonce,
+                    trustX5c,
+                    skipSignatureVerification);
 
             Map<String, VerifiedCredential> credentials = new LinkedHashMap<>();
             credentials.put(
@@ -123,7 +134,8 @@ public class VpTokenProcessor {
             String responseUri,
             boolean trustX5c,
             boolean skipSignatureVerification,
-            String alternateResponseUri) {
+            String alternateResponseUri,
+            String mdocGeneratedNonce) {
 
         try {
             Map<String, Object> wrapper = objectMapper.readValue(vpToken, Map.class);
@@ -165,7 +177,13 @@ public class VpTokenProcessor {
                     mergedClaims.putAll(result.claims());
                 } else if (mdocVerifier.isMdoc(credential)) {
                     MdocVerifier.VerificationResult result = mdocVerifier.verify(
-                            credential, clientId, expectedNonce, responseUri, trustX5c, skipSignatureVerification);
+                            credential,
+                            clientId,
+                            expectedNonce,
+                            responseUri,
+                            mdocGeneratedNonce,
+                            trustX5c,
+                            skipSignatureVerification);
 
                     credentials.put(
                             credentialId,
@@ -198,7 +216,7 @@ public class VpTokenProcessor {
         try {
             return sdJwtVerifier.verify(sdJwt, clientId, expectedNonce, trustX5c, skipSignatureVerification);
         } catch (Exception primaryError) {
-            if (alternateResponseUri != null && !alternateResponseUri.isBlank()) {
+            if (StringUtil.isNotBlank(alternateResponseUri)) {
                 try {
                     LOG.debugf(
                             "Primary verification failed, retrying with alternate audience: %s", alternateResponseUri);
