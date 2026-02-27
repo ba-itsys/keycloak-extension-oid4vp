@@ -1,0 +1,35 @@
+{
+  "realm": "wallet-demo",
+  "enabled": true,
+  "loginTheme": "oid4vp",
+  "registrationAllowed": false,
+  "clients": [
+    {
+      "clientId": "wallet-mock",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["*"],
+      "webOrigins": ["*"],
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "admin",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["default-roles-wallet-demo"]
+    }
+  ]
+}
