@@ -1,0 +1,19 @@
+{
+  "privateJwk" : {
+    "kty" : "EC",
+    "d" : "ChQ9KAoAtHx5UDUWlDBtzDCFqcrM2aZcXT6Ms6QkqAg",
+    "crv" : "P-256",
+    "kid" : "mock-issuer-es256",
+    "alg" : "ES256",
+    "x" : "JIajTZ80niKXIglWydH3RQy8ESFsPGm8g39f5GrjL2o",
+    "y" : "jCA35Inbwm5jF0toypoov4aagJGaRkwzmvOy1JMlamI"
+  },
+  "publicJwk" : {
+    "kty" : "EC",
+    "crv" : "P-256",
+    "kid" : "mock-issuer-es256",
+    "alg" : "ES256",
+    "x" : "JIajTZ80niKXIglWydH3RQy8ESFsPGm8g39f5GrjL2o",
+    "y" : "jCA35Inbwm5jF0toypoov4aagJGaRkwzmvOy1JMlamI"
+  }
+}
