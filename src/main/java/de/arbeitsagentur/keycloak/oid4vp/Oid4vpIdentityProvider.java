@@ -54,6 +54,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     protected final ObjectMapper objectMapper;
     private final Oid4vpRedirectFlowService redirectFlowService;
     private final Oid4vpQrCodeService qrCodeService;
+    private final VpTokenProcessor vpTokenProcessor;
     private final Oid4vpRequestObjectStore requestObjectStore;
     private final int loginTimeoutSeconds;
 
@@ -62,6 +63,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         this.objectMapper = new ObjectMapper();
         this.redirectFlowService = new Oid4vpRedirectFlowService(session, objectMapper);
         this.qrCodeService = new Oid4vpQrCodeService();
+        this.vpTokenProcessor = new VpTokenProcessor(objectMapper);
 
         RealmModel realm = session.getContext().getRealm();
         this.loginTimeoutSeconds = realm != null ? realm.getAccessCodeLifespanLogin() : 1800;
@@ -156,20 +158,37 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         String responseUri = authSession.getAuthNote(SESSION_RESPONSE_URI);
         String effectiveClientId = authSession.getAuthNote(SESSION_EFFECTIVE_CLIENT_ID);
         String clientId = effectiveClientId != null ? effectiveClientId : authSession.getAuthNote(SESSION_CLIENT_ID);
+        String redirectFlowResponseUri = authSession.getAuthNote(SESSION_REDIRECT_FLOW_RESPONSE_URI);
+        boolean trustX5c = getConfig().getEffectiveTrustX5cFromCredential();
+        boolean skipSignatureVerification = getConfig().isSkipTrustListVerification();
 
-        // VP token verification will be implemented in tasks 11/12
-        // For now, extract claims from the raw SD-JWT/mDoc token
-        Map<String, Object> claims = extractClaimsFromVpToken(vpToken);
+        VpTokenProcessor.Result vpResult = vpTokenProcessor.process(
+                vpToken,
+                clientId,
+                expectedNonce,
+                responseUri,
+                trustX5c,
+                skipSignatureVerification,
+                redirectFlowResponseUri);
 
-        String format = detectFormat(vpToken);
-        String userMappingClaimName = getConfig().getUserMappingClaimForFormat(format);
+        VpTokenProcessor.VerifiedCredential primary = vpResult.getPrimaryCredential();
+        if (primary == null) {
+            throw new IdentityBrokerException("No valid credential found in VP token");
+        }
+
+        Map<String, Object> claims = vpResult.isMultiCredential() ? vpResult.mergedClaims() : primary.claims();
+        String credentialFormat = primary.presentationType() == VpTokenProcessor.PresentationType.MDOC
+                ? Oid4vpIdentityProviderConfig.FORMAT_MSO_MDOC
+                : Oid4vpIdentityProviderConfig.FORMAT_SD_JWT_VC;
+        String userMappingClaimName = getConfig().getUserMappingClaimForFormat(credentialFormat);
         String subject = extractNestedClaim(claims, userMappingClaimName);
 
         if (subject == null || subject.isBlank()) {
             throw new IdentityBrokerException("Missing subject claim '" + userMappingClaimName + "' in credential");
         }
 
-        String issuer = claims.get("iss") != null ? claims.get("iss").toString() : "unknown";
+        String issuer = primary.issuer() != null ? primary.issuer() : "unknown";
+        String credentialType = primary.credentialType();
 
         BrokeredIdentityContext context = new BrokeredIdentityContext(subject, getConfig());
         context.setIdp(this);
@@ -177,6 +196,9 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         context.getContextData().put("oid4vp_claims", claims);
         context.getContextData().put("oid4vp_issuer", issuer);
         context.getContextData().put("oid4vp_subject", subject);
+        context.getContextData().put("oid4vp_credential_type", credentialType);
+        context.getContextData()
+                .put("oid4vp_presentation_type", primary.presentationType().name());
 
         clearSessionNotes(authSession);
         return context;
@@ -507,41 +529,6 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         return vpTokenObj instanceof String ? (String) vpTokenObj : objectMapper.writeValueAsString(vpTokenObj);
     }
 
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> extractClaimsFromVpToken(String vpToken) {
-        // Basic SD-JWT claim extraction (full verification in tasks 11/12)
-        try {
-            String[] parts = vpToken.split("~");
-            String jwtPart = parts[0];
-            String[] jwtSegments = jwtPart.split("\\.");
-            if (jwtSegments.length >= 2) {
-                String payloadJson = new String(
-                        Base64.getUrlDecoder().decode(jwtSegments[1]), java.nio.charset.StandardCharsets.UTF_8);
-                Map<String, Object> payload = objectMapper.readValue(payloadJson, Map.class);
-
-                // Process SD-JWT disclosures
-                Map<String, Object> claims = new LinkedHashMap<>(payload);
-                for (int i = 1; i < parts.length; i++) {
-                    if (parts[i] != null && !parts[i].isBlank()) {
-                        try {
-                            String disclosureJson = new String(
-                                    Base64.getUrlDecoder().decode(parts[i]), java.nio.charset.StandardCharsets.UTF_8);
-                            List<Object> disclosure = objectMapper.readValue(disclosureJson, List.class);
-                            if (disclosure.size() >= 3) {
-                                claims.put(disclosure.get(1).toString(), disclosure.get(2));
-                            }
-                        } catch (Exception ignored) {
-                        }
-                    }
-                }
-                return claims;
-            }
-        } catch (Exception e) {
-            LOG.warnf("Failed to extract claims from vp_token: %s", e.getMessage());
-        }
-        return Map.of();
-    }
-
     private String extractNestedClaim(Map<String, Object> claims, String claimPath) {
         if (claims == null || claimPath == null) return null;
         String[] pathParts = claimPath.split("/");
@@ -555,13 +542,6 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
             }
         }
         return current != null ? current.toString() : null;
-    }
-
-    private String detectFormat(String vpToken) {
-        if (vpToken != null && vpToken.contains("~")) {
-            return Oid4vpIdentityProviderConfig.FORMAT_SD_JWT_VC;
-        }
-        return Oid4vpIdentityProviderConfig.FORMAT_MSO_MDOC;
     }
 
     private Map<String, DcqlQueryBuilder.CredentialTypeSpec> aggregateMappersByCredentialType() {
