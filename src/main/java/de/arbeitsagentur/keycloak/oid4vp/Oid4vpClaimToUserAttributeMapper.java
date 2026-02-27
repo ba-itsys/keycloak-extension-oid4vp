@@ -26,6 +26,7 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.provider.ProviderConfigProperty;
+import org.keycloak.utils.StringUtil;
 
 public class Oid4vpClaimToUserAttributeMapper extends AbstractIdentityProviderMapper {
 
@@ -131,7 +132,7 @@ public class Oid4vpClaimToUserAttributeMapper extends AbstractIdentityProviderMa
         String userAttribute = mapperModel.getConfig().get(USER_ATTRIBUTE);
         boolean isOptional = Boolean.parseBoolean(mapperModel.getConfig().getOrDefault(OPTIONAL, "false"));
 
-        if (claimPath == null || claimPath.isBlank() || userAttribute == null || userAttribute.isBlank()) {
+        if (StringUtil.isBlank(claimPath) || StringUtil.isBlank(userAttribute)) {
             return;
         }
 
@@ -158,7 +159,7 @@ public class Oid4vpClaimToUserAttributeMapper extends AbstractIdentityProviderMa
         String userAttribute = mapperModel.getConfig().get(USER_ATTRIBUTE);
         boolean isOptional = Boolean.parseBoolean(mapperModel.getConfig().getOrDefault(OPTIONAL, "false"));
 
-        if (claimPath == null || claimPath.isBlank() || userAttribute == null || userAttribute.isBlank()) {
+        if (StringUtil.isBlank(claimPath) || StringUtil.isBlank(userAttribute)) {
             return;
         }
 

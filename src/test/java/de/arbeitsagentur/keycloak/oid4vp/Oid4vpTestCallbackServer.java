@@ -31,7 +31,7 @@ final class Oid4vpTestCallbackServer implements AutoCloseable {
     private volatile URI lastRequestUri;
 
     Oid4vpTestCallbackServer() throws IOException {
-        this.server = HttpServer.create(new InetSocketAddress("0.0.0.0", 0), 0);
+        this.server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         this.port = server.getAddress().getPort();
         server.createContext("/callback", this::handleCallback);
         server.start();

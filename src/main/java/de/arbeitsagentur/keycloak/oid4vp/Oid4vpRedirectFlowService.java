@@ -51,6 +51,7 @@ import org.keycloak.jose.jwk.JWKBuilder;
 import org.keycloak.jose.jws.JWSBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.utils.StringUtil;
 
 public class Oid4vpRedirectFlowService {
 
@@ -65,19 +66,14 @@ public class Oid4vpRedirectFlowService {
         this.objectMapper = Objects.requireNonNull(objectMapper);
     }
 
-    public URI buildWalletAuthorizationUrl(String walletBaseUrl, String walletScheme, String clientId, URI requestUri) {
-        StringBuilder url = new StringBuilder();
-        if (walletBaseUrl != null && !walletBaseUrl.isBlank() && walletBaseUrl.startsWith("http")) {
-            url.append(walletBaseUrl);
-            url.append(walletBaseUrl.contains("?") ? "&" : "?");
-        } else {
-            String scheme = walletScheme != null && !walletScheme.isBlank() ? walletScheme : "openid4vp://";
-            if (!scheme.endsWith("://")) {
-                scheme = scheme + "://";
-            }
-            url.append(scheme).append("?");
+    public URI buildWalletAuthorizationUrl(String walletScheme, String clientId, URI requestUri) {
+        String scheme = StringUtil.isNotBlank(walletScheme) ? walletScheme : "openid4vp://";
+        if (!scheme.endsWith("://")) {
+            scheme = scheme + "://";
         }
 
+        StringBuilder url = new StringBuilder();
+        url.append(scheme).append("?");
         url.append("client_id=").append(urlEncode(clientId));
         url.append("&request_uri=").append(urlEncode(requestUri.toString()));
         return URI.create(url.toString());
@@ -100,7 +96,7 @@ public class Oid4vpRedirectFlowService {
         KeyWrapper signingKey = null;
         boolean useNimbusSigning = false;
 
-        if (x509SigningKeyJwk != null && !x509SigningKeyJwk.isBlank()) {
+        if (StringUtil.isNotBlank(x509SigningKeyJwk)) {
             try {
                 ecSigningKey = ECKey.parse(x509SigningKeyJwk);
                 useNimbusSigning = true;
@@ -112,7 +108,7 @@ public class Oid4vpRedirectFlowService {
         }
 
         ECKey responseEncryptionKey;
-        if (existingEncryptionKeyJson != null && !existingEncryptionKeyJson.isBlank()) {
+        if (StringUtil.isNotBlank(existingEncryptionKeyJson)) {
             try {
                 responseEncryptionKey = ECKey.parse(existingEncryptionKeyJson);
             } catch (Exception e) {
@@ -143,10 +139,10 @@ public class Oid4vpRedirectFlowService {
             claims.put("client_metadata", clientMeta);
         }
 
-        if (dcqlQuery != null && !dcqlQuery.isBlank()) {
+        if (StringUtil.isNotBlank(dcqlQuery)) {
             claims.put("dcql_query", parseJsonClaim(dcqlQuery));
         }
-        if (verifierInfo != null && !verifierInfo.isBlank()) {
+        if (StringUtil.isNotBlank(verifierInfo)) {
             Object parsed = parseJsonClaim(verifierInfo);
             if (parsed != null) {
                 claims.put("verifier_info", parsed);
@@ -181,8 +177,7 @@ public class Oid4vpRedirectFlowService {
         KeyWrapper signingKey = null;
         boolean useNimbusSigning = false;
 
-        if (rebuildParams.x509SigningKeyJwk() != null
-                && !rebuildParams.x509SigningKeyJwk().isBlank()) {
+        if (StringUtil.isNotBlank(rebuildParams.x509SigningKeyJwk())) {
             try {
                 ecSigningKey = ECKey.parse(rebuildParams.x509SigningKeyJwk());
                 useNimbusSigning = true;
@@ -226,11 +221,10 @@ public class Oid4vpRedirectFlowService {
             }
         }
 
-        if (rebuildParams.dcqlQuery() != null && !rebuildParams.dcqlQuery().isBlank()) {
+        if (StringUtil.isNotBlank(rebuildParams.dcqlQuery())) {
             claims.put("dcql_query", parseJsonClaim(rebuildParams.dcqlQuery()));
         }
-        if (rebuildParams.verifierInfo() != null
-                && !rebuildParams.verifierInfo().isBlank()) {
+        if (StringUtil.isNotBlank(rebuildParams.verifierInfo())) {
             Object parsed = parseJsonClaim(rebuildParams.verifierInfo());
             if (parsed != null) {
                 claims.put("verifier_info", parsed);
@@ -327,7 +321,7 @@ public class Oid4vpRedirectFlowService {
         if (realm == null) {
             throw new IllegalStateException("Missing realm context");
         }
-        if (preferredKid != null && !preferredKid.isBlank()) {
+        if (StringUtil.isNotBlank(preferredKid)) {
             return session.keys()
                     .getKeysStream(realm)
                     .filter(key -> preferredKid.equals(key.getKid()))
@@ -397,7 +391,7 @@ public class Oid4vpRedirectFlowService {
     }
 
     private Object parseJsonClaim(String json) {
-        if (json == null || json.isBlank()) {
+        if (StringUtil.isBlank(json)) {
             return null;
         }
         try {

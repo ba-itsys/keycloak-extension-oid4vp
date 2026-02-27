@@ -139,6 +139,7 @@ if [ "$NGROK_ONLY" = "true" ]; then
 
 To start Keycloak with this hostname, run in another terminal:
   KC_HOSTNAME=$public_url KC_PROXY_HEADERS=xforwarded docker compose up keycloak
+  (Add '-f docker-compose.local.yml' if you have a local realm config)
 
 Press Ctrl+C to stop ngrok.
 EOF
@@ -150,4 +151,9 @@ echo ""
 echo "Starting Keycloak via docker compose..."
 
 cd "$ROOT_DIR"
-KC_HOSTNAME="$public_url" KC_PROXY_HEADERS=xforwarded docker compose up keycloak
+COMPOSE_FILES="-f docker-compose.yml"
+if [ -f "$ROOT_DIR/docker-compose.local.yml" ]; then
+  COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.local.yml"
+  echo "Using local realm override (docker-compose.local.yml)"
+fi
+KC_HOSTNAME="$public_url" KC_PROXY_HEADERS=xforwarded docker compose $COMPOSE_FILES up keycloak

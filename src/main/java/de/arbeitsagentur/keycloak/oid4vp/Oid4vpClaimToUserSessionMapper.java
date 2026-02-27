@@ -26,6 +26,7 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.provider.ProviderConfigProperty;
+import org.keycloak.utils.StringUtil;
 
 public class Oid4vpClaimToUserSessionMapper extends AbstractIdentityProviderMapper {
 
@@ -130,7 +131,7 @@ public class Oid4vpClaimToUserSessionMapper extends AbstractIdentityProviderMapp
         String sessionNote = mapperModel.getConfig().get(SESSION_NOTE);
         boolean isOptional = Boolean.parseBoolean(mapperModel.getConfig().getOrDefault(OPTIONAL, "false"));
 
-        if (claimPath == null || claimPath.isBlank() || sessionNote == null || sessionNote.isBlank()) {
+        if (StringUtil.isBlank(claimPath) || StringUtil.isBlank(sessionNote)) {
             return;
         }
 

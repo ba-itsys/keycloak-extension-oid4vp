@@ -119,7 +119,7 @@ class KeycloakOid4vpE2eIT {
         adminClient = KeycloakAdminClient.login(OBJECT_MAPPER, kcHostUrl, "admin", "admin");
 
         Oid4vpTestKeycloakSetup.configureOid4vpIdentityProvider(adminClient, REALM);
-        Oid4vpTestKeycloakSetup.configureSameDeviceFlow(adminClient, REALM, true, wallet.getAuthorizeUrl());
+        Oid4vpTestKeycloakSetup.configureSameDeviceFlow(adminClient, REALM, true);
         Oid4vpTestKeycloakSetup.addRedirectUriToClient(adminClient, REALM, "wallet-mock", callbackUrl);
 
         LOG.info("Setup complete. KC: {}, Wallet: {}", kcHostUrl, wallet.getBaseUrl());
@@ -447,12 +447,29 @@ class KeycloakOid4vpE2eIT {
 
         String redirectUri = walletResponse.redirectUri();
 
-        if (redirectUri != null) {
+        // The wallet POSTs directly (not through the browser), so the server stores a
+        // completion signal. The SSE listener in the page may navigate the browser
+        // automatically. Wait briefly for SSE-driven navigation before falling back to
+        // manual redirect_uri navigation.
+        boolean sseNavigated = false;
+        try {
+            page.waitForURL(
+                    url -> url.startsWith(callbackUrl)
+                            || url.contains("/first-broker-login")
+                            || url.contains("/login-actions/")
+                            || url.contains("/complete-auth")
+                            || page.locator("input[name='username']").count() > 0,
+                    new Page.WaitForURLOptions().setTimeout(10000));
+            sseNavigated = true;
+            LOG.info("[Test] SSE navigated browser to: {}", page.url());
+        } catch (Exception ignored) {
+            LOG.info("[Test] SSE did not navigate within timeout, falling back to manual redirect");
+        }
+
+        if (!sseNavigated && redirectUri != null) {
             LOG.info("[Test] Navigating to redirect_uri: {}", redirectUri);
             page.navigate(redirectUri);
             page.waitForLoadState(LoadState.NETWORKIDLE);
-        } else {
-            LOG.warn("[Test] No redirect_uri in wallet response! Body: {}", walletResponse.rawBody());
         }
 
         try {
@@ -477,6 +494,9 @@ class KeycloakOid4vpE2eIT {
     }
 
     private String convertToOpenid4vpUri(String walletUrl) {
+        if (walletUrl.startsWith("openid4vp://")) {
+            return walletUrl;
+        }
         return walletUrl.replace(wallet.getAuthorizeUrl() + "?", "openid4vp://authorize?");
     }
 
