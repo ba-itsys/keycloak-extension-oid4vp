@@ -80,6 +80,14 @@
       </exclusions>
     </dependency>
 
+    <!-- Nimbus JOSE+JWT (provided by Keycloak runtime) -->
+    <dependency>
+      <groupId>com.nimbusds</groupId>
+      <artifactId>nimbus-jose-jwt</artifactId>
+      <version>9.40</version>
+      <scope>provided</scope>
+    </dependency>
+
     <!-- QR code generation for cross-device flow -->
     <dependency>
       <groupId>com.google.zxing</groupId>
@@ -297,15 +305,13 @@
             <configuration>
               <outputDirectory>${project.build.directory}/providers</outputDirectory>
               <includeScope>runtime</includeScope>
-              <excludeGroupIds>
-                org.springframework,org.springframework.boot,
+              <excludeGroupIds>org.springframework,org.springframework.boot,
                 ch.qos.logback,org.apache.logging.log4j,org.slf4j,
                 org.jboss.logging,org.hibernate.validator,jakarta.validation,
                 com.fasterxml.jackson.core,com.fasterxml,
                 org.yaml,io.micrometer,jakarta.annotation,
                 org.apache.tomcat.embed,commons-logging,org.jspecify,
-                com.google.errorprone
-              </excludeGroupIds>
+                com.google.errorprone</excludeGroupIds>
             </configuration>
           </execution>
         </executions>
@@ -338,6 +344,12 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-failsafe-plugin</artifactId>
         <version>3.5.2</version>
+        <configuration>
+          <redirectTestOutputToFile>false</redirectTestOutputToFile>
+          <includes>
+            <include>**/*IT.java</include>
+          </includes>
+        </configuration>
         <executions>
           <execution>
             <goals>
@@ -346,12 +358,6 @@
             </goals>
           </execution>
         </executions>
-        <configuration>
-          <redirectTestOutputToFile>false</redirectTestOutputToFile>
-          <includes>
-            <include>**/*IT.java</include>
-          </includes>
-        </configuration>
       </plugin>
     </plugins>
   </build>
