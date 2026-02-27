@@ -1,0 +1,19 @@
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.5.4
+    command:
+      - start-dev
+      - --verbose
+      - --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+      KC_LOG_LEVEL: info,de.arbeitsagentur:debug
+      KC_HOSTNAME: ${KC_HOSTNAME:-}
+      KC_PROXY_HEADERS: ${KC_PROXY_HEADERS:-}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./target/providers:/opt/keycloak/providers:ro
+      - ./src/test/resources:/opt/keycloak/data/import:ro

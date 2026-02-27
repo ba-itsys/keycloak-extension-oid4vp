@@ -1,0 +1,153 @@
+#!/bin/sh
+set -eu
+
+ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/run-keycloak-ngrok.sh [--domain <name>] [--ngrok-only]
+
+Starts ngrok and Keycloak (via docker compose) with a public HTTPS URL.
+Keycloak is configured with KC_HOSTNAME so it generates correct endpoint URLs.
+
+Prerequisites:
+  - mvn package must have been run first (to build target/providers/)
+  - ngrok must be installed and authenticated
+  - docker must be running
+
+Options:
+  --domain <name>  Use a custom ngrok domain (registered in your ngrok account).
+  --ngrok-only     Start only ngrok and print env vars.
+
+Examples:
+  scripts/run-keycloak-ngrok.sh
+  scripts/run-keycloak-ngrok.sh --domain mykeycloak.ngrok-free.app
+  scripts/run-keycloak-ngrok.sh --ngrok-only
+EOF
+}
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Missing required command: $1" >&2
+    exit 1
+  fi
+}
+
+KC_PORT=8080
+NGROK_ONLY=false
+NGROK_DOMAIN=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --domain)
+      if [ $# -lt 2 ]; then
+        echo "Missing value for --domain" >&2
+        usage >&2
+        exit 2
+      fi
+      NGROK_DOMAIN="$2"
+      shift 2
+      ;;
+    --ngrok-only|--tunnel-only)
+      NGROK_ONLY=true
+      shift
+      ;;
+    *)
+      echo "Unexpected argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+require_cmd ngrok
+require_cmd curl
+require_cmd jq
+require_cmd docker
+
+# Check that providers have been built
+if [ ! -d "$ROOT_DIR/target/providers" ]; then
+  echo "target/providers/ not found. Run 'mvn package -DskipTests' first." >&2
+  exit 1
+fi
+
+tmp_log="$(mktemp -t keycloak-ngrok.XXXXXX.log)"
+
+cleanup() {
+  if [ -n "${NGROK_PID:-}" ]; then
+    kill "${NGROK_PID}" >/dev/null 2>&1 || true
+  fi
+  rm -f "$tmp_log" >/dev/null 2>&1 || true
+}
+
+trap cleanup INT TERM EXIT
+
+# Start ngrok
+NGROK_ARGS="http $KC_PORT --log=stdout --log-format=json"
+if [ -n "$NGROK_DOMAIN" ]; then
+  NGROK_ARGS="$NGROK_ARGS --url=$NGROK_DOMAIN"
+fi
+ngrok $NGROK_ARGS >"$tmp_log" 2>&1 &
+NGROK_PID="$!"
+
+get_public_url() {
+  curl -fsS "http://127.0.0.1:4040/api/tunnels" 2>/dev/null \
+    | jq -r '.tunnels[] | select(.proto=="https") | .public_url' 2>/dev/null \
+    | head -n 1
+}
+
+# Wait for ngrok to be ready
+i=0
+public_url=""
+while [ "$i" -lt 120 ]; do
+  public_url="$(get_public_url || true)"
+  if [ -n "$public_url" ] && [ "$public_url" != "null" ]; then
+    break
+  fi
+  i=$((i + 1))
+  sleep 0.25
+done
+
+if [ -z "$public_url" ] || [ "$public_url" = "null" ]; then
+  echo "Failed to obtain ngrok public URL. See: $tmp_log" >&2
+  exit 1
+fi
+
+cat <<EOF
+ngrok is running (pid $NGROK_PID)
+
+Keycloak public URL:
+  $public_url
+
+Keycloak admin console:
+  $public_url/admin
+
+ngrok dashboard:
+  http://127.0.0.1:4040
+
+Env vars:
+  KC_HOSTNAME=$public_url
+  KC_PROXY_HEADERS=xforwarded
+EOF
+
+if [ "$NGROK_ONLY" = "true" ]; then
+  cat <<EOF
+
+To start Keycloak with this hostname, run in another terminal:
+  KC_HOSTNAME=$public_url KC_PROXY_HEADERS=xforwarded docker compose up keycloak
+
+Press Ctrl+C to stop ngrok.
+EOF
+  wait "$NGROK_PID"
+  exit 0
+fi
+
+echo ""
+echo "Starting Keycloak via docker compose..."
+
+cd "$ROOT_DIR"
+KC_HOSTNAME="$public_url" KC_PROXY_HEADERS=xforwarded docker compose up keycloak
