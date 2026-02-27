@@ -44,6 +44,18 @@
     <playwright.version>1.49.0</playwright.version>
   </properties>
 
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.keycloak</groupId>
+        <artifactId>keycloak-parent</artifactId>
+        <version>${keycloak.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
   <dependencies>
 
     <dependency>
@@ -54,23 +66,20 @@
       <optional>true</optional>
     </dependency>
 
-    <!-- Keycloak SPI (provided at runtime) -->
+    <!-- Keycloak SPI (provided at runtime, version managed by keycloak-parent BOM) -->
     <dependency>
       <groupId>org.keycloak</groupId>
       <artifactId>keycloak-server-spi</artifactId>
-      <version>${keycloak.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.keycloak</groupId>
       <artifactId>keycloak-server-spi-private</artifactId>
-      <version>${keycloak.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.keycloak</groupId>
       <artifactId>keycloak-services</artifactId>
-      <version>${keycloak.version}</version>
       <scope>provided</scope>
       <exclusions>
         <exclusion>
@@ -80,11 +89,10 @@
       </exclusions>
     </dependency>
 
-    <!-- Nimbus JOSE+JWT (provided by Keycloak runtime) -->
+    <!-- Nimbus JOSE+JWT (provided by Keycloak runtime, version managed by BOM) -->
     <dependency>
       <groupId>com.nimbusds</groupId>
       <artifactId>nimbus-jose-jwt</artifactId>
-      <version>9.40</version>
       <scope>provided</scope>
     </dependency>
 
