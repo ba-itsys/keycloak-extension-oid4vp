@@ -27,10 +27,12 @@ public class VpTokenProcessor {
     private static final Logger LOG = Logger.getLogger(VpTokenProcessor.class);
 
     private final SdJwtVerifier sdJwtVerifier;
+    private final MdocVerifier mdocVerifier;
     private final ObjectMapper objectMapper;
 
     public VpTokenProcessor(ObjectMapper objectMapper) {
         this.sdJwtVerifier = new SdJwtVerifier(objectMapper);
+        this.mdocVerifier = new MdocVerifier();
         this.objectMapper = objectMapper;
     }
 
@@ -98,7 +100,18 @@ public class VpTokenProcessor {
             return new Result(credentials, result.claims());
         }
 
-        // For non-SD-JWT tokens (mDoc will be handled in task 12)
+        if (mdocVerifier.isMdoc(vpToken)) {
+            MdocVerifier.VerificationResult result = mdocVerifier.verify(
+                    vpToken, clientId, expectedNonce, responseUri, trustX5c, skipSignatureVerification);
+
+            Map<String, VerifiedCredential> credentials = new LinkedHashMap<>();
+            credentials.put(
+                    "cred1",
+                    new VerifiedCredential("cred1", null, result.docType(), result.claims(), PresentationType.MDOC));
+
+            return new Result(credentials, result.claims());
+        }
+
         throw new IdentityBrokerException("Unsupported VP token format");
     }
 
@@ -148,6 +161,16 @@ public class VpTokenProcessor {
                                     result.credentialType(),
                                     result.claims(),
                                     PresentationType.SD_JWT));
+
+                    mergedClaims.putAll(result.claims());
+                } else if (mdocVerifier.isMdoc(credential)) {
+                    MdocVerifier.VerificationResult result = mdocVerifier.verify(
+                            credential, clientId, expectedNonce, responseUri, trustX5c, skipSignatureVerification);
+
+                    credentials.put(
+                            credentialId,
+                            new VerifiedCredential(
+                                    credentialId, null, result.docType(), result.claims(), PresentationType.MDOC));
 
                     mergedClaims.putAll(result.claims());
                 }
