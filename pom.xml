@@ -40,8 +40,8 @@
     <maven.compiler.target>${java.version}</maven.compiler.target>
 
     <keycloak.version>26.5.4</keycloak.version>
-    <testcontainers.version>2.0.2</testcontainers.version>
-    <playwright.version>1.49.0</playwright.version>
+    <testcontainers.version>2.0.3</testcontainers.version>
+    <playwright.version>1.58.0</playwright.version>
   </properties>
 
   <dependencyManagement>
@@ -61,7 +61,7 @@
     <dependency>
       <groupId>org.projectlombok</groupId>
       <artifactId>lombok</artifactId>
-      <version>1.18.36</version>
+      <version>1.18.42</version>
       <scope>provided</scope>
       <optional>true</optional>
     </dependency>
@@ -96,11 +96,23 @@
       <scope>provided</scope>
     </dependency>
 
+    <!-- CBOR/COSE for mDoc credential verification -->
+    <dependency>
+      <groupId>com.upokecenter</groupId>
+      <artifactId>cbor</artifactId>
+      <version>4.5.6</version>
+    </dependency>
+    <dependency>
+      <groupId>com.augustcellars.cose</groupId>
+      <artifactId>cose-java</artifactId>
+      <version>1.1.0</version>
+    </dependency>
+
     <!-- QR code generation for cross-device flow -->
     <dependency>
       <groupId>com.google.zxing</groupId>
       <artifactId>core</artifactId>
-      <version>3.5.3</version>
+      <version>3.5.4</version>
     </dependency>
 
     <!-- Test dependencies -->
@@ -113,19 +125,19 @@
     <dependency>
       <groupId>org.assertj</groupId>
       <artifactId>assertj-core</artifactId>
-      <version>3.26.3</version>
+      <version>3.27.7</version>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.mockito</groupId>
       <artifactId>mockito-core</artifactId>
-      <version>5.14.2</version>
+      <version>5.21.0</version>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>ch.qos.logback</groupId>
       <artifactId>logback-classic</artifactId>
-      <version>1.5.21</version>
+      <version>1.5.32</version>
       <scope>test</scope>
     </dependency>
 
@@ -161,7 +173,7 @@
     <dependency>
       <groupId>org.apache.httpcomponents.client5</groupId>
       <artifactId>httpclient5</artifactId>
-      <version>5.3.1</version>
+      <version>5.5.2</version>
       <scope>test</scope>
     </dependency>
 
@@ -169,13 +181,13 @@
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcpkix-jdk18on</artifactId>
-      <version>1.78.1</version>
+      <version>1.83</version>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcprov-jdk18on</artifactId>
-      <version>1.78.1</version>
+      <version>1.83</version>
       <scope>test</scope>
     </dependency>
 
@@ -261,7 +273,7 @@
       <plugin>
         <groupId>com.diffplug.spotless</groupId>
         <artifactId>spotless-maven-plugin</artifactId>
-        <version>2.44.3</version>
+        <version>3.2.1</version>
         <configuration>
           <formats>
             <format>
