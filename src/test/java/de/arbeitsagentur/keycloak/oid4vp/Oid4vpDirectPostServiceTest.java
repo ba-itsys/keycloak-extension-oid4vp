@@ -47,6 +47,7 @@ class Oid4vpDirectPostServiceTest {
         when(session.singleUseObjects()).thenReturn(singleUseObjects);
         when(realm.getName()).thenReturn("test-realm");
         when(config.getAlias()).thenReturn("oid4vp");
+        when(config.getCrossDeviceCompleteTtlSeconds()).thenReturn(300);
 
         KeycloakContext context = mock(KeycloakContext.class);
         KeycloakUriInfo uriInfo = mock(KeycloakUriInfo.class);
