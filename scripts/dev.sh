@@ -13,7 +13,7 @@ usage() {
 Usage: scripts/dev.sh [options]
 
 One-command local development: builds the extension, generates realm config
-from sandbox certificates, and starts Keycloak behind an ngrok tunnel.
+from sandbox certificates, and starts Keycloak (optionally behind an ngrok tunnel).
 
 Options:
   --pem <file>             Combined PEM file (cert chain + private key)
@@ -25,6 +25,7 @@ Options:
   --no-build               Skip Maven build (use existing target/providers/)
   --skip-realm             Skip realm generation (use existing local realm)
   --no-proxy               Disable oid4vc-dev proxy even if available
+  --no-ngrok               Run Keycloak without ngrok (localhost only)
   --ngrok-only             Start only ngrok tunnel, no Keycloak
   -h, --help               Show this help
 
@@ -34,6 +35,7 @@ Environment variables (override defaults):
 
 Examples:
   scripts/dev.sh                                       # Everything with defaults
+  scripts/dev.sh --no-ngrok                            # Local only, no tunnel
   scripts/dev.sh --no-build                            # Skip rebuild
   scripts/dev.sh --pem /tmp/my.pem --domain foo.ngrok-free.app
   SANDBOX_DIR=/opt/certs scripts/dev.sh                # Custom cert location
@@ -47,6 +49,7 @@ DOMAIN_EXPLICIT=false
 DO_BUILD=true
 DO_REALM=true
 DO_PROXY=true
+DO_NGROK=true
 NGROK_ONLY=false
 
 while [ $# -gt 0 ]; do
@@ -58,6 +61,7 @@ while [ $# -gt 0 ]; do
     --no-build)    DO_BUILD=false; shift ;;
     --skip-realm)  DO_REALM=false; shift ;;
     --no-proxy)    DO_PROXY=false; shift ;;
+    --no-ngrok)    DO_NGROK=false; shift ;;
     --ngrok-only)  NGROK_ONLY=true; shift ;;
     *)             echo "Unexpected argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -95,7 +99,7 @@ else
 fi
 
 # Extract ngrok domain from cert SAN if not explicitly set
-if [ "$DOMAIN_EXPLICIT" = "false" ] && [ -f "$PEM_FILE" ] && command -v openssl >/dev/null 2>&1; then
+if [ "$DO_NGROK" = "true" ] && [ "$DOMAIN_EXPLICIT" = "false" ] && [ -f "$PEM_FILE" ] && command -v openssl >/dev/null 2>&1; then
   SAN_DNS="$(openssl x509 -in "$PEM_FILE" -noout -ext subjectAltName 2>/dev/null \
     | grep -o 'DNS:[^ ,]*' | head -n1 | cut -d: -f2 || true)"
   if [ -n "$SAN_DNS" ]; then
@@ -104,7 +108,7 @@ if [ "$DOMAIN_EXPLICIT" = "false" ] && [ -f "$PEM_FILE" ] && command -v openssl 
   fi
 fi
 
-# Step 3: Optionally start oid4vc-dev proxy (ngrok -> proxy:9090 -> keycloak:8080)
+# Step 3: Optionally start oid4vc-dev proxy
 PROXY_PID=""
 PROXY_PORT=9090
 KC_PORT=8080
@@ -123,17 +127,24 @@ if [ "$DO_PROXY" = "true" ] && command -v oid4vc-dev >/dev/null 2>&1; then
   export NGROK_TARGET_PORT="$PROXY_PORT"
   echo "    oid4vc-dev dashboard: http://localhost:9091"
 elif [ "$DO_PROXY" = "true" ]; then
-  echo "==> oid4vc-dev not found, skipping proxy (ngrok -> Keycloak directly)"
+  echo "==> oid4vc-dev not found, skipping proxy"
 fi
 
-# Step 4: Start ngrok + Keycloak
-echo "==> Starting ngrok + Keycloak..."
-NGROK_ARGS=""
-if [ -n "$NGROK_DOMAIN" ]; then
-  NGROK_ARGS="--domain $NGROK_DOMAIN"
+# Step 4: Start Keycloak (with or without ngrok)
+if [ "$DO_NGROK" = "false" ]; then
+  echo "==> Starting Keycloak (localhost only)..."
+  cd "$ROOT_DIR"
+  echo "    Keycloak: http://localhost:$KC_PORT"
+  echo "    Admin console: http://localhost:$KC_PORT/admin"
+  docker compose up keycloak
+else
+  echo "==> Starting ngrok + Keycloak..."
+  NGROK_ARGS=""
+  if [ -n "$NGROK_DOMAIN" ]; then
+    NGROK_ARGS="--domain $NGROK_DOMAIN"
+  fi
+  if [ "$NGROK_ONLY" = "true" ]; then
+    NGROK_ARGS="$NGROK_ARGS --ngrok-only"
+  fi
+  "$ROOT_DIR/scripts/run-keycloak-ngrok.sh" $NGROK_ARGS
 fi
-if [ "$NGROK_ONLY" = "true" ]; then
-  NGROK_ARGS="$NGROK_ARGS --ngrok-only"
-fi
-
-"$ROOT_DIR/scripts/run-keycloak-ngrok.sh" $NGROK_ARGS
