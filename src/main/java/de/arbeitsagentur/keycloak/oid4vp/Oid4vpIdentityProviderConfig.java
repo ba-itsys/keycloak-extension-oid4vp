@@ -49,6 +49,16 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel {
     public static final String ALLOWED_ISSUERS = "allowedIssuers";
     public static final String ALLOWED_CREDENTIAL_TYPES = "allowedCredentialTypes";
 
+    public static final String SSE_POLL_INTERVAL_MS = "ssePollIntervalMs";
+    public static final String SSE_TIMEOUT_SECONDS = "sseTimeoutSeconds";
+    public static final String SSE_PING_INTERVAL_SECONDS = "ssePingIntervalSeconds";
+    public static final String CROSS_DEVICE_COMPLETE_TTL_SECONDS = "crossDeviceCompleteTtlSeconds";
+
+    public static final int DEFAULT_SSE_POLL_INTERVAL_MS = 2000;
+    public static final int DEFAULT_SSE_TIMEOUT_SECONDS = 120;
+    public static final int DEFAULT_SSE_PING_INTERVAL_SECONDS = 10;
+    public static final int DEFAULT_CROSS_DEVICE_COMPLETE_TTL_SECONDS = 300;
+
     public static final String ENFORCE_HAIP = "enforceHaip";
     public static final String HAIP_SIGNING_ALGORITHM = "ES256";
     public static final String HAIP_RESPONSE_MODE = "direct_post.jwt";
@@ -245,6 +255,50 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel {
 
     public boolean isCredentialTypeAllowed(String credentialType) {
         return isValueAllowed(credentialType, getAllowedCredentialTypes());
+    }
+
+    public int getSsePollIntervalMs() {
+        return getIntConfig(SSE_POLL_INTERVAL_MS, DEFAULT_SSE_POLL_INTERVAL_MS);
+    }
+
+    public void setSsePollIntervalMs(int ms) {
+        getConfig().put(SSE_POLL_INTERVAL_MS, String.valueOf(ms));
+    }
+
+    public int getSseTimeoutSeconds() {
+        return getIntConfig(SSE_TIMEOUT_SECONDS, DEFAULT_SSE_TIMEOUT_SECONDS);
+    }
+
+    public void setSseTimeoutSeconds(int seconds) {
+        getConfig().put(SSE_TIMEOUT_SECONDS, String.valueOf(seconds));
+    }
+
+    public int getSsePingIntervalSeconds() {
+        return getIntConfig(SSE_PING_INTERVAL_SECONDS, DEFAULT_SSE_PING_INTERVAL_SECONDS);
+    }
+
+    public void setSsePingIntervalSeconds(int seconds) {
+        getConfig().put(SSE_PING_INTERVAL_SECONDS, String.valueOf(seconds));
+    }
+
+    public int getCrossDeviceCompleteTtlSeconds() {
+        return getIntConfig(CROSS_DEVICE_COMPLETE_TTL_SECONDS, DEFAULT_CROSS_DEVICE_COMPLETE_TTL_SECONDS);
+    }
+
+    public void setCrossDeviceCompleteTtlSeconds(int seconds) {
+        getConfig().put(CROSS_DEVICE_COMPLETE_TTL_SECONDS, String.valueOf(seconds));
+    }
+
+    private int getIntConfig(String key, int defaultValue) {
+        String value = getConfig().get(key);
+        if (StringUtil.isBlank(value)) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
     }
 
     private boolean isValueAllowed(String value, String allowedList) {

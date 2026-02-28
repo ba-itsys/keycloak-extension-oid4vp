@@ -29,11 +29,7 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.StreamingOutput;
-import java.io.IOException;
-import java.io.OutputStream;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import org.jboss.logging.Logger;
@@ -45,9 +41,7 @@ import org.keycloak.events.EventBuilder;
 import org.keycloak.events.EventType;
 import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
-import org.keycloak.models.SingleUseObjectProvider;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
@@ -57,9 +51,6 @@ import org.keycloak.utils.StringUtil;
 public class Oid4vpIdentityProviderEndpoint {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProviderEndpoint.class);
-    // SSE polling: 60 iterations * 2s sleep = 120s max thread hold time
-    private static final int SSE_MAX_ITERATIONS = 60;
-    private static final int SSE_POLL_INTERVAL_MS = 2000;
 
     private final KeycloakSession session;
     private final RealmModel realm;
@@ -70,6 +61,7 @@ public class Oid4vpIdentityProviderEndpoint {
     private final Oid4vpAuthSessionResolver authSessionResolver;
     private final Oid4vpResponseDecryptor responseDecryptor;
     private final Oid4vpDirectPostService directPostService;
+    private final Oid4vpCrossDeviceSseService sseService;
 
     public Oid4vpIdentityProviderEndpoint(
             KeycloakSession session,
@@ -88,6 +80,7 @@ public class Oid4vpIdentityProviderEndpoint {
         this.responseDecryptor = new Oid4vpResponseDecryptor();
         this.directPostService = new Oid4vpDirectPostService(
                 session, realm, provider.getConfig(), authSessionResolver, requestObjectStore);
+        this.sseService = new Oid4vpCrossDeviceSseService(session, realm, provider.getConfig());
     }
 
     private IdentityProviderModel getIdpModel() {
@@ -278,61 +271,7 @@ public class Oid4vpIdentityProviderEndpoint {
             return jsonErrorResponse(Response.Status.BAD_REQUEST, "invalid_request", "Missing state parameter");
         }
 
-        KeycloakSessionFactory sessionFactory = session.getKeycloakSessionFactory();
-        String realmName = realm.getName();
-
-        StreamingOutput stream = output -> {
-            try {
-                for (int i = 0; i < SSE_MAX_ITERATIONS; i++) {
-                    try (KeycloakSession pollingSession = sessionFactory.create()) {
-                        pollingSession.getTransactionManager().begin();
-                        try {
-                            RealmModel pollingRealm = pollingSession.realms().getRealmByName(realmName);
-                            if (pollingRealm == null) {
-                                writeSseEvent(output, "error", "{\"error\":\"realm_not_found\"}");
-                                return;
-                            }
-                            SingleUseObjectProvider store = pollingSession.singleUseObjects();
-                            Map<String, String> entry = store.get(CROSS_DEVICE_COMPLETE_PREFIX + state);
-                            if (entry != null) {
-                                String completeAuthUrl = entry.get("complete_auth_url");
-                                if (completeAuthUrl != null) {
-                                    writeSseEvent(
-                                            output,
-                                            "complete",
-                                            JsonSerialization.writeValueAsString(
-                                                    Map.of("redirect_uri", completeAuthUrl)));
-                                    pollingSession.getTransactionManager().commit();
-                                    return;
-                                }
-                            }
-                            pollingSession.getTransactionManager().commit();
-                        } catch (Exception e) {
-                            pollingSession.getTransactionManager().rollback();
-                        }
-                    }
-
-                    if (i % 5 == 0) {
-                        writeSseEvent(output, "ping", "{}");
-                    }
-
-                    Thread.sleep(SSE_POLL_INTERVAL_MS);
-                }
-
-                writeSseEvent(output, "timeout", "{\"error\":\"timeout\"}");
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            } catch (IOException e) {
-                // Client disconnected
-            }
-        };
-
-        return Response.ok(stream)
-                .type("text/event-stream")
-                .header("Cache-Control", "no-cache")
-                .header("Connection", "keep-alive")
-                .header("X-Accel-Buffering", "no")
-                .build();
+        return sseService.buildSseResponse(state);
     }
 
     @GET
@@ -453,12 +392,6 @@ public class Oid4vpIdentityProviderEndpoint {
         } catch (Exception e) {
             return uri;
         }
-    }
-
-    private void writeSseEvent(OutputStream output, String eventType, String data) throws IOException {
-        output.write(("event: " + eventType + "\n").getBytes(StandardCharsets.UTF_8));
-        output.write(("data: " + data + "\n\n").getBytes(StandardCharsets.UTF_8));
-        output.flush();
     }
 
     private Response jsonErrorResponse(Response.Status status, String error, String description) {

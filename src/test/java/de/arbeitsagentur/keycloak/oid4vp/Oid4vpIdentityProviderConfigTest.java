@@ -137,4 +137,34 @@ class Oid4vpIdentityProviderConfigTest {
         config.setTrustX5cFromCredential(true);
         assertThat(config.getEffectiveTrustX5cFromCredential()).isTrue();
     }
+
+    @Test
+    void sseDefaults() {
+        assertThat(config.getSsePollIntervalMs()).isEqualTo(2000);
+        assertThat(config.getSseTimeoutSeconds()).isEqualTo(120);
+        assertThat(config.getSsePingIntervalSeconds()).isEqualTo(10);
+        assertThat(config.getCrossDeviceCompleteTtlSeconds()).isEqualTo(300);
+    }
+
+    @Test
+    void sseCustomValues() {
+        config.setSsePollIntervalMs(500);
+        config.setSseTimeoutSeconds(60);
+        config.setSsePingIntervalSeconds(5);
+        config.setCrossDeviceCompleteTtlSeconds(600);
+
+        assertThat(config.getSsePollIntervalMs()).isEqualTo(500);
+        assertThat(config.getSseTimeoutSeconds()).isEqualTo(60);
+        assertThat(config.getSsePingIntervalSeconds()).isEqualTo(5);
+        assertThat(config.getCrossDeviceCompleteTtlSeconds()).isEqualTo(600);
+    }
+
+    @Test
+    void sseInvalidIntFallsBackToDefault() {
+        config.getConfig().put("ssePollIntervalMs", "not-a-number");
+        config.getConfig().put("sseTimeoutSeconds", "");
+
+        assertThat(config.getSsePollIntervalMs()).isEqualTo(2000);
+        assertThat(config.getSseTimeoutSeconds()).isEqualTo(120);
+    }
 }

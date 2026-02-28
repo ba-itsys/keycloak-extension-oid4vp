@@ -43,7 +43,7 @@ class Oid4vpDirectPostService {
     static final String DEFERRED_AUTH_PREFIX = "oid4vp_deferred:";
     static final String DEFERRED_IDENTITY_NOTE = "OID4VP_DEFERRED_IDENTITY";
     static final String DEFERRED_CLAIMS_NOTE = "OID4VP_DEFERRED_CLAIMS";
-    static final long CROSS_DEVICE_COMPLETE_TTL_SECONDS = 300;
+    private final long crossDeviceCompleteTtlSeconds;
 
     private final KeycloakSession session;
     private final RealmModel realm;
@@ -62,6 +62,7 @@ class Oid4vpDirectPostService {
         this.config = config;
         this.authSessionResolver = authSessionResolver;
         this.requestObjectStore = requestObjectStore;
+        this.crossDeviceCompleteTtlSeconds = config.getCrossDeviceCompleteTtlSeconds();
     }
 
     Response storeAndSignal(AuthenticationSessionModel authSession, String state, BrokeredIdentityContext context) {
@@ -91,12 +92,12 @@ class Oid4vpDirectPostService {
         Map<String, String> deferredSignal = new HashMap<>();
         deferredSignal.put("root_session_id", rootSessionId != null ? rootSessionId : "");
         deferredSignal.put("tab_id", tabId != null ? tabId : "");
-        session.singleUseObjects().put(DEFERRED_AUTH_PREFIX + state, CROSS_DEVICE_COMPLETE_TTL_SECONDS, deferredSignal);
+        session.singleUseObjects().put(DEFERRED_AUTH_PREFIX + state, crossDeviceCompleteTtlSeconds, deferredSignal);
 
         Map<String, String> completeEntry = new HashMap<>();
         completeEntry.put("complete_auth_url", completeAuthUrl);
         session.singleUseObjects()
-                .put(CROSS_DEVICE_COMPLETE_PREFIX + state, CROSS_DEVICE_COMPLETE_TTL_SECONDS, completeEntry);
+                .put(CROSS_DEVICE_COMPLETE_PREFIX + state, crossDeviceCompleteTtlSeconds, completeEntry);
 
         return jsonRedirectResponse(completeAuthUrl);
     }
