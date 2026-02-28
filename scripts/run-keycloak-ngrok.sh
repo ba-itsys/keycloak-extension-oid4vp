@@ -33,7 +33,7 @@ require_cmd() {
   fi
 }
 
-KC_PORT=8080
+KC_PORT="${NGROK_TARGET_PORT:-8080}"
 NGROK_ONLY=false
 NGROK_DOMAIN=""
 
