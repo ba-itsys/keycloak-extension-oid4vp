@@ -108,24 +108,17 @@ if [ "$DO_NGROK" = "true" ] && [ "$DOMAIN_EXPLICIT" = "false" ] && [ -f "$PEM_FI
   fi
 fi
 
-# Step 3: Optionally start oid4vc-dev proxy
-PROXY_PID=""
+# Step 3: Prepare oid4vc-dev proxy wrapper (runs Keycloak as subprocess)
 PROXY_PORT=9090
 KC_PORT=8080
 
-cleanup_proxy() {
-  if [ -n "$PROXY_PID" ]; then
-    kill "$PROXY_PID" >/dev/null 2>&1 || true
-  fi
-}
-trap cleanup_proxy INT TERM EXIT
-
+# KC_WRAPPER is prepended to the docker compose command so the proxy can
+# capture Keycloak's stdout (enc keys, credentials) for its dashboard.
 if [ "$DO_PROXY" = "true" ] && command -v oid4vc-dev >/dev/null 2>&1; then
-  echo "==> Starting oid4vc-dev proxy (port $PROXY_PORT -> Keycloak port $KC_PORT)..."
-  oid4vc-dev proxy --target "http://localhost:$KC_PORT" --port "$PROXY_PORT" &
-  PROXY_PID="$!"
-  export NGROK_TARGET_PORT="$PROXY_PORT"
+  echo "==> oid4vc-dev proxy will wrap Keycloak (port $PROXY_PORT -> $KC_PORT)"
   echo "    oid4vc-dev dashboard: http://localhost:9091"
+  export KC_WRAPPER="oid4vc-dev proxy --target http://localhost:$KC_PORT --port $PROXY_PORT --"
+  export NGROK_TARGET_PORT="$PROXY_PORT"
 elif [ "$DO_PROXY" = "true" ]; then
   echo "==> oid4vc-dev not found, skipping proxy"
 fi
@@ -136,7 +129,7 @@ if [ "$DO_NGROK" = "false" ]; then
   cd "$ROOT_DIR"
   echo "    Keycloak: http://localhost:$KC_PORT"
   echo "    Admin console: http://localhost:$KC_PORT/admin"
-  docker compose up keycloak
+  ${KC_WRAPPER:-} docker compose up keycloak
 else
   echo "==> Starting ngrok + Keycloak..."
   NGROK_ARGS=""

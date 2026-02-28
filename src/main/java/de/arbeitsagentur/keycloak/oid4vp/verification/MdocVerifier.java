@@ -169,12 +169,18 @@ public class MdocVerifier {
         CBORObject issuerAuth = issuerSigned.get("issuerAuth");
         try {
             // IssuerAuth is a COSE_Sign1 structure: [protected, unprotected, payload, signature]
-            byte[] sign1Bytes;
+            // It may or may not be tagged with CBOR tag 18 (COSE_Sign1).
+            // The COSE library requires the tag, so add it if missing.
+            CBORObject sign1Cbor;
             if (issuerAuth.getType() == CBORType.Array && issuerAuth.size() == 4) {
-                sign1Bytes = issuerAuth.EncodeToBytes();
+                sign1Cbor = issuerAuth;
             } else {
-                sign1Bytes = issuerAuth.GetByteString();
+                sign1Cbor = CBORObject.DecodeFromBytes(issuerAuth.GetByteString());
             }
+            if (!sign1Cbor.HasMostOuterTag(18)) {
+                sign1Cbor = CBORObject.FromObjectAndTag(sign1Cbor, 18);
+            }
+            byte[] sign1Bytes = sign1Cbor.EncodeToBytes();
 
             Sign1Message sign1Msg = (Sign1Message) Sign1Message.DecodeFromBytes(sign1Bytes);
 

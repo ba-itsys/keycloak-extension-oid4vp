@@ -27,7 +27,6 @@ import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpRedirectFlowService;
 import de.arbeitsagentur.keycloak.oid4vp.util.DcqlQueryBuilder;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpQrCodeService;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
-import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpResponseDecryptor;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriBuilder;
@@ -69,7 +68,6 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 config,
                 config,
                 this,
-                new Oid4vpResponseDecryptor(),
                 new VpTokenProcessor(
                         objectMapper,
                         session,
@@ -302,6 +300,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 getConfig().getX509CertificatePem(),
                 getConfig().getX509SigningKeyJwk(),
                 null,
+                getConfig().isEnforceHaip(),
                 loginTimeoutSeconds);
 
         authSession.setAuthNote(SESSION_REDIRECT_FLOW_RESPONSE_URI, responseUri);
