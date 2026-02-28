@@ -36,14 +36,23 @@ public final class Oid4vpMapperUtils {
             return null;
         }
 
+        return getNestedValue(claims, claimPath);
+    }
+
+    static Object getNestedValue(Map<String, Object> claims, String claimPath) {
+        if (claims == null || claimPath == null) return null;
+
+        // Try exact key match first (handles mDoc flat keys like "namespace/element")
+        Object direct = claims.get(claimPath);
+        if (direct != null) return direct;
+
+        // Fall back to nested path navigation
         String[] pathParts = claimPath.split("/");
         Object current = claims;
         for (String part : pathParts) {
             if (current instanceof Map) {
                 current = ((Map<?, ?>) current).get(part);
-                if (current == null) {
-                    return null;
-                }
+                if (current == null) return null;
             } else {
                 return null;
             }

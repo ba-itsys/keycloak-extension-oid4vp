@@ -22,9 +22,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.jboss.logging.Logger;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
 import org.keycloak.utils.StringUtil;
 
 public class DcqlQueryBuilder {
+
+    private static final Logger LOG = Logger.getLogger(DcqlQueryBuilder.class);
 
     public static final String PATH_SEPARATOR = "/";
     public static final String TYPE_KEY_DELIMITER = "|";
@@ -115,6 +120,78 @@ public class DcqlQueryBuilder {
             builder.credentialTypes.add(spec);
         }
         return builder;
+    }
+
+    static Map<String, CredentialTypeSpec> aggregateFromMappers(
+            KeycloakSession session, Oid4vpIdentityProviderConfig config) {
+        Map<String, CredentialTypeSpec> result = new LinkedHashMap<>();
+
+        try {
+            RealmModel realm = session.getContext().getRealm();
+            if (realm == null) {
+                return result;
+            }
+
+            String idpAlias = config.getAlias();
+            Map<String, List<ClaimSpec>> claimsByType = new LinkedHashMap<>();
+            Map<String, String> formatByType = new LinkedHashMap<>();
+
+            realm.getIdentityProviderMappersByAliasStream(idpAlias).forEach(mapper -> {
+                String format = mapper.getConfig().get("credential.format");
+                String type = mapper.getConfig().get("credential.type");
+                String claimPath = mapper.getConfig().get("claim");
+                boolean isOptional = "true".equalsIgnoreCase(mapper.getConfig().get("optional"));
+
+                if (StringUtil.isBlank(format)) {
+                    format = Oid4vpIdentityProviderConfig.FORMAT_SD_JWT_VC;
+                }
+                if (StringUtil.isBlank(type)) {
+                    return;
+                }
+
+                String typeKey = format + TYPE_KEY_DELIMITER + type;
+                formatByType.put(typeKey, format);
+
+                if (StringUtil.isNotBlank(claimPath)) {
+                    ClaimSpec claimSpec = new ClaimSpec(claimPath, isOptional);
+                    claimsByType
+                            .computeIfAbsent(typeKey, k -> new ArrayList<>())
+                            .add(claimSpec);
+                }
+            });
+
+            String sdJwtUserMappingClaim = config.getUserMappingClaim();
+            String mdocUserMappingClaim = config.getUserMappingClaimMdoc();
+
+            for (String typeKey : formatByType.keySet()) {
+                String format = formatByType.get(typeKey);
+                List<ClaimSpec> claims = claimsByType.computeIfAbsent(typeKey, k -> new ArrayList<>());
+
+                String userMappingClaim = Oid4vpIdentityProviderConfig.FORMAT_MSO_MDOC.equals(format)
+                        ? mdocUserMappingClaim
+                        : sdJwtUserMappingClaim;
+
+                if (StringUtil.isNotBlank(userMappingClaim)) {
+                    boolean alreadyPresent =
+                            claims.stream().anyMatch(spec -> spec.path().equals(userMappingClaim));
+                    if (!alreadyPresent) {
+                        claims.add(new ClaimSpec(userMappingClaim, false));
+                    }
+                }
+            }
+
+            for (Map.Entry<String, List<ClaimSpec>> entry : claimsByType.entrySet()) {
+                String typeKey = entry.getKey();
+                String[] keyParts = typeKey.split("\\" + TYPE_KEY_DELIMITER, 2);
+                String format = formatByType.get(typeKey);
+                String type = keyParts.length > 1 ? keyParts[1] : keyParts[0];
+                result.put(typeKey, new CredentialTypeSpec(format, type, entry.getValue()));
+            }
+        } catch (Exception e) {
+            LOG.warnf("Failed to aggregate mappers: %s", e.getMessage());
+        }
+
+        return result;
     }
 
     private Map<String, Object> buildCredentialEntry(CredentialTypeSpec typeSpec, String credId) {

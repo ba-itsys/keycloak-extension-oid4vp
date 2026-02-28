@@ -1,0 +1,27 @@
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="STDOUT"/>
+    </root>
+
+    <!-- Testcontainers: keep useful output, suppress internals -->
+    <logger name="org.testcontainers" level="INFO"/>
+    <logger name="com.github.dockerjava" level="WARN"/>
+    <logger name="com.github.dockerjava.zerodep.shaded" level="WARN"/>
+
+    <!-- HTTP/network noise -->
+    <logger name="org.apache.http" level="WARN"/>
+    <logger name="org.apache.hc" level="WARN"/>
+
+    <!-- Keycloak internals -->
+    <logger name="org.jboss.resteasy" level="WARN"/>
+    <logger name="org.keycloak" level="WARN"/>
+
+    <!-- Project classes at INFO -->
+    <logger name="de.arbeitsagentur.keycloak.oid4vp" level="INFO"/>
+</configuration>
