@@ -15,9 +15,9 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp;
 
+import static de.arbeitsagentur.keycloak.oid4vp.Oid4vpDirectPostService.*;
 import static de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProvider.*;
 
-import com.nimbusds.jose.JWEObject;
 import jakarta.enterprise.inject.Vetoed;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.FormParam;
@@ -37,7 +37,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import org.jboss.logging.Logger;
-import org.keycloak.authentication.authenticators.broker.util.SerializedBrokeredIdentityContext;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.broker.provider.IdentityBrokerException;
@@ -49,9 +48,7 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.SingleUseObjectProvider;
-import org.keycloak.services.managers.AuthenticationSessionManager;
 import org.keycloak.sessions.AuthenticationSessionModel;
-import org.keycloak.sessions.RootAuthenticationSessionModel;
 import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 
@@ -60,11 +57,6 @@ import org.keycloak.utils.StringUtil;
 public class Oid4vpIdentityProviderEndpoint {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProviderEndpoint.class);
-    static final String CROSS_DEVICE_COMPLETE_PREFIX = "oid4vp_complete:";
-    private static final String DEFERRED_AUTH_PREFIX = "oid4vp_deferred:";
-    private static final String DEFERRED_IDENTITY_NOTE = "OID4VP_DEFERRED_IDENTITY";
-    private static final String DEFERRED_CLAIMS_NOTE = "OID4VP_DEFERRED_CLAIMS";
-    private static final long CROSS_DEVICE_COMPLETE_TTL_SECONDS = 300;
     // SSE polling: 60 iterations * 2s sleep = 120s max thread hold time
     private static final int SSE_MAX_ITERATIONS = 60;
     private static final int SSE_POLL_INTERVAL_MS = 2000;
@@ -76,6 +68,8 @@ public class Oid4vpIdentityProviderEndpoint {
     private final EventBuilder event;
     private final Oid4vpRequestObjectStore requestObjectStore;
     private final Oid4vpAuthSessionResolver authSessionResolver;
+    private final Oid4vpResponseDecryptor responseDecryptor;
+    private final Oid4vpDirectPostService directPostService;
 
     public Oid4vpIdentityProviderEndpoint(
             KeycloakSession session,
@@ -91,6 +85,9 @@ public class Oid4vpIdentityProviderEndpoint {
         this.event = event;
         this.requestObjectStore = requestObjectStore;
         this.authSessionResolver = new Oid4vpAuthSessionResolver(session, realm, requestObjectStore);
+        this.responseDecryptor = new Oid4vpResponseDecryptor();
+        this.directPostService = new Oid4vpDirectPostService(
+                session, realm, provider.getConfig(), authSessionResolver, requestObjectStore);
     }
 
     private IdentityProviderModel getIdpModel() {
@@ -172,45 +169,21 @@ public class Oid4vpIdentityProviderEndpoint {
 
         String preDecryptedMdocGeneratedNonce = null;
         if (StringUtil.isBlank(state) && StringUtil.isNotBlank(encryptedResponse)) {
-            try {
-                JWEObject jwe = JWEObject.parse(encryptedResponse);
-                String kid = jwe.getHeader().getKeyID();
-                if (kid != null) {
-                    Oid4vpRequestObjectStore.StoredRequestObject stored = requestObjectStore.resolveByKid(session, kid);
-                    if (stored != null && stored.encryptionKeyJson() != null) {
-                        state = stored.state();
-                        com.nimbusds.jose.jwk.ECKey decryptionKey =
-                                com.nimbusds.jose.jwk.ECKey.parse(stored.encryptionKeyJson());
-                        jwe.decrypt(new com.nimbusds.jose.crypto.ECDHDecrypter(decryptionKey));
-                        String payload = jwe.getPayload().toString();
-
-                        @SuppressWarnings("unchecked")
-                        Map<String, Object> payloadMap = JsonSerialization.readValue(payload, Map.class);
-
-                        com.nimbusds.jose.util.Base64URL apu = jwe.getHeader().getAgreementPartyUInfo();
-                        if (apu != null) {
-                            preDecryptedMdocGeneratedNonce = apu.toString();
-                        }
-
-                        if (payloadMap.containsKey("vp_token")) {
-                            Object vpTokenObj = payloadMap.get("vp_token");
-                            vpToken = vpTokenObj instanceof String
-                                    ? (String) vpTokenObj
-                                    : JsonSerialization.writeValueAsString(vpTokenObj);
-                            encryptedResponse = null;
-                        }
-                        if (payloadMap.containsKey("error")) {
-                            error = payloadMap.get("error").toString();
-                            errorDescription = payloadMap.containsKey("error_description")
-                                    ? payloadMap.get("error_description").toString()
-                                    : null;
-                            hasError = true;
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                LOG.warnf("JWE kid lookup/decrypt failed: %s", e.getMessage());
+            Oid4vpResponseDecryptor.PreDecryptionResult preDecrypt =
+                    responseDecryptor.tryPreDecrypt(encryptedResponse, requestObjectStore, session);
+            if (preDecrypt.state() != null) {
+                state = preDecrypt.state();
             }
+            if (preDecrypt.vpToken() != null) {
+                vpToken = preDecrypt.vpToken();
+                encryptedResponse = null;
+            }
+            if (preDecrypt.error() != null) {
+                error = preDecrypt.error();
+                errorDescription = preDecrypt.errorDescription();
+                hasError = true;
+            }
+            preDecryptedMdocGeneratedNonce = preDecrypt.mdocGeneratedNonce();
         }
 
         boolean isDirectPostFlow = isCrossDeviceFlow;
@@ -368,59 +341,7 @@ public class Oid4vpIdentityProviderEndpoint {
         if (StringUtil.isBlank(token)) {
             return jsonErrorResponse(Response.Status.BAD_REQUEST, "invalid_request", "Missing token parameter");
         }
-
-        Map<String, String> entry = session.singleUseObjects().get(CROSS_DEVICE_COMPLETE_PREFIX + token);
-        if (entry == null) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Session expired. Please try again.")
-                    .type(MediaType.TEXT_PLAIN)
-                    .build();
-        }
-
-        String redirectUri = entry.get("redirect_uri");
-        String rootSessionId = entry.get("root_session_id");
-
-        if (StringUtil.isBlank(redirectUri)) {
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity("Authentication failed. Please try again.")
-                    .type(MediaType.TEXT_PLAIN)
-                    .build();
-        }
-
-        // Validate redirect URI starts with Keycloak base URI to prevent open redirect
-        String baseUri = session.getContext().getUri().getBaseUri().toString();
-        if (!redirectUri.startsWith(baseUri)) {
-            LOG.warnf("Redirect URI does not start with base URI: %s", redirectUri);
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Invalid redirect URI.")
-                    .type(MediaType.TEXT_PLAIN)
-                    .build();
-        }
-
-        if (StringUtil.isNotBlank(rootSessionId)) {
-            try {
-                new AuthenticationSessionManager(session).setAuthSessionCookie(rootSessionId);
-            } catch (Exception e) {
-                LOG.warnf("Failed to set AUTH_SESSION_ID cookie: %s", e.getMessage());
-            }
-        }
-
-        if ("wallet".equals(source)) {
-            String html = "<!DOCTYPE html><html><head><title>Login Complete</title>"
-                    + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-                    + "<style>body{font-family:sans-serif;display:flex;justify-content:center;"
-                    + "align-items:center;min-height:100vh;margin:0;background:#f5f5f5;}"
-                    + ".card{text-align:center;padding:40px;background:white;border-radius:8px;"
-                    + "box-shadow:0 2px 8px rgba(0,0,0,0.1);}"
-                    + "h1{color:#333;margin-bottom:10px;}p{color:#666;}</style></head>"
-                    + "<body><div class=\"card\"><h1>Login Complete</h1>"
-                    + "<p>Authentication successful. You can close this tab.</p></div></body></html>";
-            return Response.ok(html).type(MediaType.TEXT_HTML).build();
-        }
-
-        return Response.status(Response.Status.FOUND)
-                .location(URI.create(redirectUri))
-                .build();
+        return directPostService.handleCompletion(token, source);
     }
 
     @GET
@@ -429,81 +350,7 @@ public class Oid4vpIdentityProviderEndpoint {
         if (StringUtil.isBlank(state)) {
             return jsonErrorResponse(Response.Status.BAD_REQUEST, "invalid_request", "Missing state parameter");
         }
-
-        Map<String, String> signal = session.singleUseObjects().get(DEFERRED_AUTH_PREFIX + state);
-        if (signal == null) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Authentication data not found. Please try again.")
-                    .type(MediaType.TEXT_PLAIN)
-                    .build();
-        }
-
-        String rootSessionId = signal.get("root_session_id");
-        String tabId = signal.get("tab_id");
-
-        if (rootSessionId != null) {
-            try {
-                new AuthenticationSessionManager(session).setAuthSessionCookie(rootSessionId);
-            } catch (Exception e) {
-                LOG.warnf("Failed to set AUTH_SESSION_ID cookie: %s", e.getMessage());
-            }
-        }
-
-        AuthenticationSessionModel authSession = null;
-        if (rootSessionId != null) {
-            RootAuthenticationSessionModel rootSession =
-                    session.authenticationSessions().getRootAuthenticationSession(realm, rootSessionId);
-            if (rootSession != null && tabId != null) {
-                authSession = authSessionResolver.findAuthSessionInRoot(rootSession, tabId);
-            }
-        }
-        if (authSession == null) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Authentication session not found. Please try again.")
-                    .type(MediaType.TEXT_PLAIN)
-                    .build();
-        }
-
-        SerializedBrokeredIdentityContext serializedCtx =
-                SerializedBrokeredIdentityContext.readFromAuthenticationSession(authSession, DEFERRED_IDENTITY_NOTE);
-        if (serializedCtx == null) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Authentication data not found. Please try again.")
-                    .type(MediaType.TEXT_PLAIN)
-                    .build();
-        }
-
-        session.getContext().setAuthenticationSession(authSession);
-        session.getContext().setClient(authSession.getClient());
-
-        BrokeredIdentityContext context = serializedCtx.deserialize(session, authSession);
-        context.setAuthenticationSession(authSession);
-        context.getContextData().keySet().removeIf(key -> key.startsWith("user.attributes."));
-
-        String claimsJson = authSession.getAuthNote(DEFERRED_CLAIMS_NOTE);
-        if (claimsJson != null) {
-            try {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> claims = JsonSerialization.readValue(claimsJson, Map.class);
-                context.getContextData().put("oid4vp_claims", claims);
-            } catch (Exception e) {
-                LOG.warnf("Failed to deserialize claims: %s", e.getMessage());
-            }
-            authSession.removeAuthNote(DEFERRED_CLAIMS_NOTE);
-        }
-
-        authSession.removeAuthNote(DEFERRED_IDENTITY_NOTE);
-
-        event.event(EventType.LOGIN);
-        Response response = callback.authenticated(context);
-
-        try {
-            requestObjectStore.removeByState(session, state);
-        } catch (Exception e) {
-            LOG.warnf("Failed to clean up request objects: %s", e.getMessage());
-        }
-
-        return response;
+        return directPostService.completeAuth(state, callback, event);
     }
 
     private Response processVpToken(
@@ -517,8 +364,8 @@ public class Oid4vpIdentityProviderEndpoint {
             boolean isCrossDeviceFlow) {
 
         try {
-            BrokeredIdentityContext context =
-                    provider.processCallback(authSession, state, vpToken, encryptedResponse, error, errorDescription);
+            BrokeredIdentityContext context = provider.getCallbackProcessor()
+                    .process(authSession, state, vpToken, encryptedResponse, error, errorDescription);
 
             if (isDirectPostFlow) {
                 return handleDirectPostAuthentication(authSession, state, context, isCrossDeviceFlow);
@@ -542,44 +389,7 @@ public class Oid4vpIdentityProviderEndpoint {
             String state,
             BrokeredIdentityContext context,
             boolean isCrossDeviceFlow) {
-
-        String rootSessionId = authSession.getParentSession() != null
-                ? authSession.getParentSession().getId()
-                : null;
-        String tabId = authSession.getTabId();
-
-        // Store identity in auth session for deferred browser-side completion
-        context.setAuthenticationSession(authSession);
-        SerializedBrokeredIdentityContext serialized = SerializedBrokeredIdentityContext.serialize(context);
-        serialized.saveToAuthenticationSession(authSession, DEFERRED_IDENTITY_NOTE);
-
-        // Store claims separately (they don't survive contextData serialization)
-        @SuppressWarnings("unchecked")
-        Map<String, Object> claims =
-                (Map<String, Object>) context.getContextData().get("oid4vp_claims");
-        if (claims != null) {
-            try {
-                String claimsJson = JsonSerialization.writeValueAsString(claims);
-                authSession.setAuthNote(DEFERRED_CLAIMS_NOTE, claimsJson);
-            } catch (Exception e) {
-                LOG.warnf("Failed to serialize claims: %s", e.getMessage());
-            }
-        }
-
-        // Store deferred auth signal
-        String completeAuthUrl = buildCompleteAuthUrl(state);
-        Map<String, String> deferredSignal = new HashMap<>();
-        deferredSignal.put("root_session_id", rootSessionId != null ? rootSessionId : "");
-        deferredSignal.put("tab_id", tabId != null ? tabId : "");
-        session.singleUseObjects().put(DEFERRED_AUTH_PREFIX + state, CROSS_DEVICE_COMPLETE_TTL_SECONDS, deferredSignal);
-
-        // Signal SSE listeners
-        Map<String, String> completeEntry = new HashMap<>();
-        completeEntry.put("complete_auth_url", completeAuthUrl);
-        session.singleUseObjects()
-                .put(CROSS_DEVICE_COMPLETE_PREFIX + state, CROSS_DEVICE_COMPLETE_TTL_SECONDS, completeEntry);
-
-        return jsonRedirectResponse(completeAuthUrl);
+        return directPostService.storeAndSignal(authSession, state, context);
     }
 
     private Response handleError(
@@ -622,16 +432,6 @@ public class Oid4vpIdentityProviderEndpoint {
         }
     }
 
-    private String buildCompleteAuthUrl(String state) {
-        String baseUri = session.getContext().getUri().getBaseUri().toString();
-        if (!baseUri.endsWith("/")) {
-            baseUri += "/";
-        }
-        return baseUri + "realms/" + realm.getName() + "/broker/"
-                + provider.getConfig().getAlias() + "/endpoint/complete-auth?state="
-                + java.net.URLEncoder.encode(state, StandardCharsets.UTF_8);
-    }
-
     private String stripWalletQueryParams(String uri) {
         if (uri == null) return null;
         try {
@@ -659,17 +459,6 @@ public class Oid4vpIdentityProviderEndpoint {
         output.write(("event: " + eventType + "\n").getBytes(StandardCharsets.UTF_8));
         output.write(("data: " + data + "\n\n").getBytes(StandardCharsets.UTF_8));
         output.flush();
-    }
-
-    private Response jsonRedirectResponse(String redirectUri) {
-        try {
-            String json = JsonSerialization.writeValueAsString(Map.of("redirect_uri", redirectUri));
-            return Response.ok(json).type(MediaType.APPLICATION_JSON).build();
-        } catch (Exception e) {
-            return Response.ok("{\"redirect_uri\":\"\"}")
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
-        }
     }
 
     private Response jsonErrorResponse(Response.Status status, String error, String description) {

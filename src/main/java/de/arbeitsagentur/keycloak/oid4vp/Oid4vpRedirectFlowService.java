@@ -92,32 +92,58 @@ public class Oid4vpRedirectFlowService {
             String existingEncryptionKeyJson,
             int lifespanSeconds) {
 
-        ECKey ecSigningKey = null;
-        KeyWrapper signingKey = null;
-        boolean useNimbusSigning = false;
+        ResolvedSigningKey resolved = resolveSigningMaterial(x509SigningKeyJwk);
 
+        ECKey responseEncryptionKey = parseOrCreateEncryptionKey(existingEncryptionKeyJson);
+
+        var claims = buildBaseClaims(clientId, responseUri, state, nonce, lifespanSeconds);
+        addClientMetadataClaim(claims, responseEncryptionKey);
+        addDcqlAndVerifierInfo(claims, dcqlQuery, verifierInfo);
+
+        String jwt = signClaims(resolved, clientIdScheme, x509CertPem, claims);
+        return new SignedRequestObject(jwt, responseEncryptionKey.toJSONString(), state, nonce);
+    }
+
+    public SignedRequestObject rebuildWithWalletNonce(
+            Oid4vpRequestObjectStore.RebuildParams rebuildParams,
+            String state,
+            String nonce,
+            String walletNonce,
+            int lifespanSeconds) {
+
+        ResolvedSigningKey resolved = resolveSigningMaterial(rebuildParams.x509SigningKeyJwk());
+
+        ECKey encryptionKey = parseEncryptionKey(rebuildParams.encryptionPublicKeyJson());
+
+        var claims = buildBaseClaims(
+                rebuildParams.effectiveClientId(), rebuildParams.responseUri(), state, nonce, lifespanSeconds);
+        claims.put("wallet_nonce", walletNonce);
+        addClientMetadataClaim(claims, encryptionKey);
+        addDcqlAndVerifierInfo(claims, rebuildParams.dcqlQuery(), rebuildParams.verifierInfo());
+
+        String jwt = signClaims(resolved, rebuildParams.clientIdScheme(), rebuildParams.x509CertPem(), claims);
+        return new SignedRequestObject(jwt, null, state, nonce);
+    }
+
+    private record ResolvedSigningKey(ECKey ecKey, KeyWrapper keycloakKey) {
+        boolean useNimbus() {
+            return ecKey != null;
+        }
+    }
+
+    private ResolvedSigningKey resolveSigningMaterial(String x509SigningKeyJwk) {
         if (StringUtil.isNotBlank(x509SigningKeyJwk)) {
             try {
-                ecSigningKey = ECKey.parse(x509SigningKeyJwk);
-                useNimbusSigning = true;
+                return new ResolvedSigningKey(ECKey.parse(x509SigningKeyJwk), null);
             } catch (Exception e) {
                 throw new IllegalStateException("Failed to parse x509 signing key JWK", e);
             }
-        } else {
-            signingKey = resolveSigningKey(null);
         }
+        return new ResolvedSigningKey(null, resolveSigningKey(null));
+    }
 
-        ECKey responseEncryptionKey;
-        if (StringUtil.isNotBlank(existingEncryptionKeyJson)) {
-            try {
-                responseEncryptionKey = ECKey.parse(existingEncryptionKeyJson);
-            } catch (Exception e) {
-                responseEncryptionKey = createResponseEncryptionKey();
-            }
-        } else {
-            responseEncryptionKey = createResponseEncryptionKey();
-        }
-
+    private LinkedHashMap<String, Object> buildBaseClaims(
+            String clientId, String responseUri, String state, String nonce, int lifespanSeconds) {
         long issuedAt = Instant.now().getEpochSecond();
         long expiresAt = Instant.now().plusSeconds(lifespanSeconds).getEpochSecond();
 
@@ -133,12 +159,18 @@ public class Oid4vpRedirectFlowService {
         claims.put("response_uri", responseUri);
         claims.put("nonce", nonce);
         claims.put("state", state);
+        return claims;
+    }
 
-        Object clientMeta = buildClientMetadata(responseEncryptionKey);
+    private void addClientMetadataClaim(LinkedHashMap<String, Object> claims, ECKey encryptionKey) {
+        if (encryptionKey == null) return;
+        Object clientMeta = buildClientMetadata(encryptionKey);
         if (clientMeta != null && !((Map<?, ?>) clientMeta).isEmpty()) {
             claims.put("client_metadata", clientMeta);
         }
+    }
 
+    private void addDcqlAndVerifierInfo(LinkedHashMap<String, Object> claims, String dcqlQuery, String verifierInfo) {
         if (StringUtil.isNotBlank(dcqlQuery)) {
             claims.put("dcql_query", parseJsonClaim(dcqlQuery));
         }
@@ -148,99 +180,41 @@ public class Oid4vpRedirectFlowService {
                 claims.put("verifier_info", parsed);
             }
         }
+    }
 
+    private String signClaims(
+            ResolvedSigningKey resolved,
+            String clientIdScheme,
+            String x509CertPem,
+            LinkedHashMap<String, Object> claims) {
         try {
-            String jwt;
-            if (useNimbusSigning && ecSigningKey != null) {
-                jwt = signWithNimbus(ecSigningKey, claims);
-            } else {
-                jwt = signWithKeycloak(signingKey, clientIdScheme, x509CertPem, claims);
+            if (resolved.useNimbus()) {
+                return signWithNimbus(resolved.ecKey(), claims);
             }
-            return new SignedRequestObject(jwt, responseEncryptionKey.toJSONString(), state, nonce);
+            return signWithKeycloak(resolved.keycloakKey(), clientIdScheme, x509CertPem, claims);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to sign request object", e);
         }
     }
 
-    public SignedRequestObject rebuildWithWalletNonce(
-            Oid4vpRequestObjectStore.RebuildParams rebuildParams,
-            String state,
-            String nonce,
-            String walletNonce,
-            int lifespanSeconds) {
-
-        String effectiveClientId = rebuildParams.effectiveClientId();
-        String clientIdScheme = rebuildParams.clientIdScheme();
-        String responseUri = rebuildParams.responseUri();
-
-        ECKey ecSigningKey = null;
-        KeyWrapper signingKey = null;
-        boolean useNimbusSigning = false;
-
-        if (StringUtil.isNotBlank(rebuildParams.x509SigningKeyJwk())) {
+    private ECKey parseOrCreateEncryptionKey(String existingEncryptionKeyJson) {
+        if (StringUtil.isNotBlank(existingEncryptionKeyJson)) {
             try {
-                ecSigningKey = ECKey.parse(rebuildParams.x509SigningKeyJwk());
-                useNimbusSigning = true;
+                return ECKey.parse(existingEncryptionKeyJson);
             } catch (Exception e) {
-                throw new IllegalStateException("Failed to parse x509 signing key JWK", e);
-            }
-        } else {
-            signingKey = resolveSigningKey(null);
-        }
-
-        ECKey encryptionKey = null;
-        if (rebuildParams.encryptionPublicKeyJson() != null) {
-            try {
-                encryptionKey = ECKey.parse(rebuildParams.encryptionPublicKeyJson());
-            } catch (Exception e) {
-                LOG.warnf("Failed to parse encryption key: %s", e.getMessage());
+                // Fall through to create new key
             }
         }
+        return createResponseEncryptionKey();
+    }
 
-        long issuedAt = Instant.now().getEpochSecond();
-        long expiresAt = Instant.now().plusSeconds(lifespanSeconds).getEpochSecond();
-
-        var claims = new LinkedHashMap<String, Object>();
-        claims.put("jti", UUID.randomUUID().toString());
-        claims.put("iat", issuedAt);
-        claims.put("exp", expiresAt);
-        claims.put("iss", effectiveClientId);
-        claims.put("aud", "https://self-issued.me/v2");
-        claims.put("client_id", effectiveClientId);
-        claims.put("response_type", "vp_token");
-        claims.put("response_mode", "direct_post.jwt");
-        claims.put("response_uri", responseUri);
-        claims.put("nonce", nonce);
-        claims.put("state", state);
-        claims.put("wallet_nonce", walletNonce);
-
-        if (encryptionKey != null) {
-            Object clientMeta = buildClientMetadata(encryptionKey);
-            if (clientMeta != null && !((Map<?, ?>) clientMeta).isEmpty()) {
-                claims.put("client_metadata", clientMeta);
-            }
-        }
-
-        if (StringUtil.isNotBlank(rebuildParams.dcqlQuery())) {
-            claims.put("dcql_query", parseJsonClaim(rebuildParams.dcqlQuery()));
-        }
-        if (StringUtil.isNotBlank(rebuildParams.verifierInfo())) {
-            Object parsed = parseJsonClaim(rebuildParams.verifierInfo());
-            if (parsed != null) {
-                claims.put("verifier_info", parsed);
-            }
-        }
-
+    private ECKey parseEncryptionKey(String encryptionPublicKeyJson) {
+        if (encryptionPublicKeyJson == null) return null;
         try {
-            String jwt;
-            if (useNimbusSigning && ecSigningKey != null) {
-                jwt = signWithNimbus(ecSigningKey, claims);
-            } else {
-                jwt = signWithKeycloak(signingKey, clientIdScheme, rebuildParams.x509CertPem(), claims);
-            }
-            return new SignedRequestObject(jwt, null, state, nonce);
+            return ECKey.parse(encryptionPublicKeyJson);
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to sign rebuilt request object", e);
+            LOG.warnf("Failed to parse encryption key: %s", e.getMessage());
+            return null;
         }
     }
 

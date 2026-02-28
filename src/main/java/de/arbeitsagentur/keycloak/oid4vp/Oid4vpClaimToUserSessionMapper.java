@@ -34,40 +34,18 @@ public class Oid4vpClaimToUserSessionMapper extends AbstractIdentityProviderMapp
 
     public static final String PROVIDER_ID = "oid4vp-user-session-mapper";
 
-    public static final String CREDENTIAL_FORMAT = "credential.format";
-    public static final String CREDENTIAL_TYPE = "credential.type";
-    public static final String CLAIM_PATH = "claim";
+    public static final String CREDENTIAL_FORMAT = Oid4vpMapperConfigProperties.CREDENTIAL_FORMAT;
+    public static final String CREDENTIAL_TYPE = Oid4vpMapperConfigProperties.CREDENTIAL_TYPE;
+    public static final String CLAIM_PATH = Oid4vpMapperConfigProperties.CLAIM_PATH;
     public static final String SESSION_NOTE = "session.note";
-    public static final String OPTIONAL = "optional";
+    public static final String OPTIONAL = Oid4vpMapperConfigProperties.OPTIONAL;
 
     private static final String[] COMPATIBLE_PROVIDERS = new String[] {Oid4vpIdentityProviderFactory.PROVIDER_ID};
 
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES = new ArrayList<>();
 
     static {
-        ProviderConfigProperty formatProperty = new ProviderConfigProperty();
-        formatProperty.setName(CREDENTIAL_FORMAT);
-        formatProperty.setLabel("Credential Format");
-        formatProperty.setHelpText("Format of the credential containing this claim.");
-        formatProperty.setType(ProviderConfigProperty.LIST_TYPE);
-        formatProperty.setDefaultValue(Oid4vpIdentityProviderConfig.FORMAT_SD_JWT_VC);
-        formatProperty.setOptions(
-                List.of(Oid4vpIdentityProviderConfig.FORMAT_SD_JWT_VC, Oid4vpIdentityProviderConfig.FORMAT_MSO_MDOC));
-        CONFIG_PROPERTIES.add(formatProperty);
-
-        ProviderConfigProperty typeProperty = new ProviderConfigProperty();
-        typeProperty.setName(CREDENTIAL_TYPE);
-        typeProperty.setLabel("Credential Type");
-        typeProperty.setHelpText("Credential type identifier. For SD-JWT: vct value. For mDoc: docType value.");
-        typeProperty.setType(ProviderConfigProperty.STRING_TYPE);
-        CONFIG_PROPERTIES.add(typeProperty);
-
-        ProviderConfigProperty claimProperty = new ProviderConfigProperty();
-        claimProperty.setName(CLAIM_PATH);
-        claimProperty.setLabel("Claim Path");
-        claimProperty.setHelpText("Path to the claim in the credential. Use '/' for nested paths.");
-        claimProperty.setType(ProviderConfigProperty.STRING_TYPE);
-        CONFIG_PROPERTIES.add(claimProperty);
+        Oid4vpMapperConfigProperties.addCommonProperties(CONFIG_PROPERTIES);
 
         ProviderConfigProperty sessionNoteProperty = new ProviderConfigProperty();
         sessionNoteProperty.setName(SESSION_NOTE);
@@ -75,15 +53,8 @@ public class Oid4vpClaimToUserSessionMapper extends AbstractIdentityProviderMapp
         sessionNoteProperty.setHelpText(
                 "Key name for storing the claim value in the user session. Use a 'User Session Note' protocol mapper to include in tokens.");
         sessionNoteProperty.setType(ProviderConfigProperty.STRING_TYPE);
-        CONFIG_PROPERTIES.add(sessionNoteProperty);
-
-        ProviderConfigProperty optionalProperty = new ProviderConfigProperty();
-        optionalProperty.setName(OPTIONAL);
-        optionalProperty.setLabel("Optional Claim");
-        optionalProperty.setHelpText("If enabled, this claim is optional and triggers claim_set generation in DCQL.");
-        optionalProperty.setType(ProviderConfigProperty.BOOLEAN_TYPE);
-        optionalProperty.setDefaultValue("false");
-        CONFIG_PROPERTIES.add(optionalProperty);
+        // Insert before the optional property (which was added by addCommonProperties)
+        CONFIG_PROPERTIES.add(CONFIG_PROPERTIES.size() - 1, sessionNoteProperty);
     }
 
     @Override

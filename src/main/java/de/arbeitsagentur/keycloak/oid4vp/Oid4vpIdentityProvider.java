@@ -16,21 +16,16 @@
 package de.arbeitsagentur.keycloak.oid4vp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.nimbusds.jose.jwk.JWK;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriBuilder;
 import java.net.URI;
 import java.security.SecureRandom;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Base64;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.broker.provider.AuthenticationRequest;
-import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.broker.provider.IdentityBrokerException;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.models.FederatedIdentityModel;
@@ -52,12 +47,14 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     static final String SESSION_CLIENT_ID = "oid4vp_client_id";
     static final String SESSION_EFFECTIVE_CLIENT_ID = "oid4vp_effective_client_id";
     static final String SESSION_MDOC_GENERATED_NONCE = "oid4vp_mdoc_generated_nonce";
+    static final String SESSION_TAB_ID = "oid4vp_tab_id";
+    static final String SESSION_CLIENT_DATA = "oid4vp_client_data";
+    static final String SESSION_CODE = "oid4vp_session_code";
 
     protected final ObjectMapper objectMapper;
     private final Oid4vpRedirectFlowService redirectFlowService;
     private final Oid4vpQrCodeService qrCodeService;
-    private final VpTokenProcessor vpTokenProcessor;
-    private final Oid4vpResponseDecryptor responseDecryptor;
+    private final Oid4vpCallbackProcessor callbackProcessor;
     private final Oid4vpRequestObjectStore requestObjectStore;
     private final int loginTimeoutSeconds;
 
@@ -66,8 +63,8 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         this.objectMapper = new ObjectMapper();
         this.redirectFlowService = new Oid4vpRedirectFlowService(session, objectMapper);
         this.qrCodeService = new Oid4vpQrCodeService();
-        this.vpTokenProcessor = new VpTokenProcessor(objectMapper);
-        this.responseDecryptor = new Oid4vpResponseDecryptor();
+        this.callbackProcessor = new Oid4vpCallbackProcessor(
+                config, this, new Oid4vpResponseDecryptor(), new VpTokenProcessor(objectMapper));
 
         RealmModel realm = session.getContext().getRealm();
         this.loginTimeoutSeconds = realm != null ? realm.getAccessCodeLifespanLogin() : 1800;
@@ -76,6 +73,10 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
     Oid4vpRedirectFlowService getRedirectFlowService() {
         return redirectFlowService;
+    }
+
+    Oid4vpCallbackProcessor getCallbackProcessor() {
+        return callbackProcessor;
     }
 
     Oid4vpRequestObjectStore getRequestObjectStore() {
@@ -118,109 +119,14 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         return new Oid4vpIdentityProviderEndpoint(session, realm, this, callback, event, requestObjectStore);
     }
 
-    public BrokeredIdentityContext processCallback(
-            AuthenticationSessionModel authSession,
-            String state,
-            String vpToken,
-            String encryptedResponse,
-            String error,
-            String errorDescription) {
-
-        String expectedState = authSession.getAuthNote(SESSION_STATE);
-        if (expectedState == null || !expectedState.equals(state)) {
-            throw new IdentityBrokerException("Invalid state parameter");
-        }
-
-        if (StringUtil.isNotBlank(error)) {
-            String message = StringUtil.isNotBlank(errorDescription) ? error + ": " + errorDescription : error;
-            throw new IdentityBrokerException("Wallet returned error: " + message);
-        }
-
-        String mdocGeneratedNonce = authSession.getAuthNote(SESSION_MDOC_GENERATED_NONCE);
-        if (mdocGeneratedNonce != null) {
-            authSession.removeAuthNote(SESSION_MDOC_GENERATED_NONCE);
-        }
-
-        if (StringUtil.isBlank(vpToken) && StringUtil.isNotBlank(encryptedResponse)) {
-            String encryptionKey = authSession.getAuthNote(SESSION_ENCRYPTION_KEY);
-            try {
-                vpToken = responseDecryptor.decryptVpToken(encryptedResponse, encryptionKey);
-            } catch (Exception e) {
-                throw new IdentityBrokerException("Failed to decrypt response: " + e.getMessage(), e);
-            }
-        }
-
-        if (StringUtil.isBlank(vpToken)) {
-            throw new IdentityBrokerException("Missing vp_token");
-        }
-
-        String expectedNonce = authSession.getAuthNote(SESSION_NONCE);
-        String responseUri = authSession.getAuthNote(SESSION_RESPONSE_URI);
-        String effectiveClientId = authSession.getAuthNote(SESSION_EFFECTIVE_CLIENT_ID);
-        String clientId = effectiveClientId != null ? effectiveClientId : authSession.getAuthNote(SESSION_CLIENT_ID);
-        String redirectFlowResponseUri = authSession.getAuthNote(SESSION_REDIRECT_FLOW_RESPONSE_URI);
-        boolean trustX5c = getConfig().getEffectiveTrustX5cFromCredential();
-        boolean skipSignatureVerification = getConfig().isSkipTrustListVerification();
-
-        VpTokenProcessor.Result vpResult = vpTokenProcessor.process(
-                vpToken,
-                clientId,
-                expectedNonce,
-                responseUri,
-                trustX5c,
-                skipSignatureVerification,
-                redirectFlowResponseUri,
-                mdocGeneratedNonce);
-
-        VpTokenProcessor.VerifiedCredential primary = vpResult.getPrimaryCredential();
-        if (primary == null) {
-            throw new IdentityBrokerException("No valid credential found in VP token");
-        }
-
-        String issuer = primary.issuer() != null ? primary.issuer() : "unknown";
-        String credentialType = primary.credentialType();
-
-        if (!getConfig().isIssuerAllowed(issuer)) {
-            throw new IdentityBrokerException("Issuer not allowed: " + issuer);
-        }
-        if (!getConfig().isCredentialTypeAllowed(credentialType)) {
-            throw new IdentityBrokerException("Credential type not allowed: " + credentialType);
-        }
-
-        Map<String, Object> claims = vpResult.isMultiCredential() ? vpResult.mergedClaims() : primary.claims();
-        String credentialFormat = primary.presentationType() == VpTokenProcessor.PresentationType.MDOC
-                ? Oid4vpIdentityProviderConfig.FORMAT_MSO_MDOC
-                : Oid4vpIdentityProviderConfig.FORMAT_SD_JWT_VC;
-        String userMappingClaimName = getConfig().getUserMappingClaimForFormat(credentialFormat);
-        String subject = extractNestedClaim(claims, userMappingClaimName);
-
-        if (StringUtil.isBlank(subject)) {
-            throw new IdentityBrokerException("Missing subject claim '" + userMappingClaimName + "' in credential");
-        }
-
-        String identityKey = FederatedIdentityKeyGenerator.generate(issuer, credentialType, subject);
-
-        BrokeredIdentityContext context = new BrokeredIdentityContext(identityKey, getConfig());
-        context.setIdp(this);
-        context.setUsername(subject);
-        context.getContextData().put("oid4vp_claims", claims);
-        context.getContextData().put("oid4vp_issuer", issuer);
-        context.getContextData().put("oid4vp_subject", subject);
-        context.getContextData().put("oid4vp_credential_type", credentialType);
-        context.getContextData()
-                .put("oid4vp_presentation_type", primary.presentationType().name());
-
-        clearSessionNotes(authSession);
-        return context;
-    }
-
     protected String buildDcqlQueryFromConfig() {
         String manual = getConfig().getDcqlQuery();
         if (StringUtil.isNotBlank(manual)) {
             return manual;
         }
 
-        Map<String, DcqlQueryBuilder.CredentialTypeSpec> credentialTypes = aggregateMappersByCredentialType();
+        Map<String, DcqlQueryBuilder.CredentialTypeSpec> credentialTypes =
+                DcqlQueryBuilder.aggregateFromMappers(session, getConfig());
 
         if (!credentialTypes.isEmpty()) {
             try {
@@ -258,9 +164,9 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         String sessionTabId = uriInfo.getQueryParameters().getFirst("tab_id");
         String clientData = uriInfo.getQueryParameters().getFirst("client_data");
         String sessionCode = uriInfo.getQueryParameters().getFirst("session_code");
-        authSession.setAuthNote("oid4vp_tab_id", sessionTabId != null ? sessionTabId : "");
-        authSession.setAuthNote("oid4vp_client_data", clientData != null ? clientData : "");
-        authSession.setAuthNote("oid4vp_session_code", sessionCode != null ? sessionCode : "");
+        authSession.setAuthNote(SESSION_TAB_ID, sessionTabId != null ? sessionTabId : "");
+        authSession.setAuthNote(SESSION_CLIENT_DATA, clientData != null ? clientData : "");
+        authSession.setAuthNote(SESSION_CODE, sessionCode != null ? sessionCode : "");
 
         String formActionUrl = buildFormActionUrl(redirectUri, state, sessionTabId, sessionCode, clientData);
 
@@ -495,130 +401,12 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         return value.endsWith("/") ? value : value + "/";
     }
 
-    byte[] computeJwkThumbprint(String jwkJson) {
-        if (StringUtil.isBlank(jwkJson)) {
-            return null;
-        }
-        try {
-            JWK jwk = JWK.parse(jwkJson);
-            return jwk.toPublicJWK().computeThumbprint().decode();
-        } catch (Exception e) {
-            LOG.warnf("Failed to compute JWK thumbprint: %s", e.getMessage());
-            return null;
-        }
-    }
-
-    private String extractNestedClaim(Map<String, Object> claims, String claimPath) {
-        if (claims == null || claimPath == null) return null;
-
-        // Try exact key match first (handles mDoc flat keys like "namespace/element")
-        Object direct = claims.get(claimPath);
-        if (direct != null) return direct.toString();
-
-        // Fall back to nested path navigation
-        String[] pathParts = claimPath.split("/");
-        Object current = claims;
-        for (String part : pathParts) {
-            if (current instanceof Map) {
-                current = ((Map<?, ?>) current).get(part);
-                if (current == null) return null;
-            } else {
-                return null;
-            }
-        }
-        return current != null ? current.toString() : null;
-    }
-
-    private Map<String, DcqlQueryBuilder.CredentialTypeSpec> aggregateMappersByCredentialType() {
-        Map<String, DcqlQueryBuilder.CredentialTypeSpec> result = new LinkedHashMap<>();
-
-        try {
-            RealmModel realm = session.getContext().getRealm();
-            if (realm == null) {
-                return result;
-            }
-
-            String idpAlias = getConfig().getAlias();
-            Map<String, List<DcqlQueryBuilder.ClaimSpec>> claimsByType = new LinkedHashMap<>();
-            Map<String, String> formatByType = new LinkedHashMap<>();
-
-            realm.getIdentityProviderMappersByAliasStream(idpAlias).forEach(mapper -> {
-                String format = mapper.getConfig().get("credential.format");
-                String type = mapper.getConfig().get("credential.type");
-                String claimPath = mapper.getConfig().get("claim");
-                boolean isOptional = "true".equalsIgnoreCase(mapper.getConfig().get("optional"));
-
-                if (StringUtil.isBlank(format)) {
-                    format = Oid4vpIdentityProviderConfig.FORMAT_SD_JWT_VC;
-                }
-                if (StringUtil.isBlank(type)) {
-                    return;
-                }
-
-                String typeKey = format + DcqlQueryBuilder.TYPE_KEY_DELIMITER + type;
-                formatByType.put(typeKey, format);
-
-                if (StringUtil.isNotBlank(claimPath)) {
-                    DcqlQueryBuilder.ClaimSpec claimSpec = new DcqlQueryBuilder.ClaimSpec(claimPath, isOptional);
-                    claimsByType
-                            .computeIfAbsent(typeKey, k -> new ArrayList<>())
-                            .add(claimSpec);
-                }
-            });
-
-            String sdJwtUserMappingClaim = getConfig().getUserMappingClaim();
-            String mdocUserMappingClaim = getConfig().getUserMappingClaimMdoc();
-
-            for (String typeKey : formatByType.keySet()) {
-                String format = formatByType.get(typeKey);
-                List<DcqlQueryBuilder.ClaimSpec> claims = claimsByType.computeIfAbsent(typeKey, k -> new ArrayList<>());
-
-                String userMappingClaim = Oid4vpIdentityProviderConfig.FORMAT_MSO_MDOC.equals(format)
-                        ? mdocUserMappingClaim
-                        : sdJwtUserMappingClaim;
-
-                if (StringUtil.isNotBlank(userMappingClaim)) {
-                    boolean alreadyPresent =
-                            claims.stream().anyMatch(spec -> spec.path().equals(userMappingClaim));
-                    if (!alreadyPresent) {
-                        claims.add(new DcqlQueryBuilder.ClaimSpec(userMappingClaim, false));
-                    }
-                }
-            }
-
-            for (Map.Entry<String, List<DcqlQueryBuilder.ClaimSpec>> entry : claimsByType.entrySet()) {
-                String typeKey = entry.getKey();
-                String[] keyParts = typeKey.split("\\" + DcqlQueryBuilder.TYPE_KEY_DELIMITER, 2);
-                String format = formatByType.get(typeKey);
-                String type = keyParts.length > 1 ? keyParts[1] : keyParts[0];
-                result.put(typeKey, new DcqlQueryBuilder.CredentialTypeSpec(format, type, entry.getValue()));
-            }
-        } catch (Exception e) {
-            LOG.warnf("Failed to aggregate mappers: %s", e.getMessage());
-        }
-
-        return result;
-    }
-
     private String stripQueryParams(String uri) {
         if (uri == null) {
             return null;
         }
         int queryIndex = uri.indexOf('?');
         return queryIndex >= 0 ? uri.substring(0, queryIndex) : uri;
-    }
-
-    private void clearSessionNotes(AuthenticationSessionModel authSession) {
-        authSession.removeAuthNote(SESSION_STATE);
-        authSession.removeAuthNote(SESSION_NONCE);
-        authSession.removeAuthNote(SESSION_RESPONSE_URI);
-        authSession.removeAuthNote(SESSION_REDIRECT_FLOW_RESPONSE_URI);
-        authSession.removeAuthNote(SESSION_ENCRYPTION_KEY);
-        authSession.removeAuthNote(SESSION_CLIENT_ID);
-        authSession.removeAuthNote(SESSION_EFFECTIVE_CLIENT_ID);
-        authSession.removeAuthNote("oid4vp_tab_id");
-        authSession.removeAuthNote("oid4vp_client_data");
-        authSession.removeAuthNote("oid4vp_session_code");
     }
 
     private static String randomState() {
