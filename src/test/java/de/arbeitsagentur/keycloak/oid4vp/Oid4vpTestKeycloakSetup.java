@@ -15,6 +15,7 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -80,11 +81,12 @@ final class Oid4vpTestKeycloakSetup {
         admin.putJson("/admin/realms/" + realm + "/clients/" + id, rep);
     }
 
-    static void configureOid4vpIdentityProvider(KeycloakAdminClient admin, String realm) throws Exception {
+    static void configureOid4vpIdentityProvider(KeycloakAdminClient admin, String realm, String trustListUrl)
+            throws Exception {
         Map<String, Object> idpConfig = new LinkedHashMap<>();
         idpConfig.put("alias", "oid4vp");
         idpConfig.put("displayName", "Sign in with Wallet");
-        idpConfig.put("providerId", Oid4vpIdentityProviderFactory.PROVIDER_ID);
+        idpConfig.put("providerId", Oid4vpConstants.PROVIDER_ID);
         idpConfig.put("enabled", true);
         idpConfig.put("trustEmail", false);
         idpConfig.put("storeToken", false);
@@ -99,8 +101,8 @@ final class Oid4vpTestKeycloakSetup {
         config.put(Oid4vpIdentityProviderConfig.DCQL_QUERY, DEFAULT_DCQL_QUERY);
         config.put(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM, "family_name");
         config.put(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM_MDOC, "eu.europa.ec.eudi.pid.1/family_name");
-        config.put(Oid4vpIdentityProviderConfig.SKIP_TRUST_LIST_VERIFICATION, "true");
-        config.put(Oid4vpIdentityProviderConfig.TRUST_X5C_FROM_CREDENTIAL, "true");
+        config.put(Oid4vpIdentityProviderConfig.TRUST_LIST_URL, trustListUrl);
+        config.put(Oid4vpIdentityProviderConfig.STATUS_LIST_MAX_CACHE_TTL_SECONDS, "0");
         idpConfig.put("config", config);
 
         admin.deleteIfExists("/admin/realms/" + realm + "/identity-provider/instances/oid4vp");

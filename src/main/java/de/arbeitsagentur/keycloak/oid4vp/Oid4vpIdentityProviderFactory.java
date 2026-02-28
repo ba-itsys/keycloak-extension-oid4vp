@@ -17,6 +17,8 @@ package de.arbeitsagentur.keycloak.oid4vp;
 
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
+import com.nimbusds.jose.util.Base64;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import java.io.ByteArrayInputStream;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
@@ -26,7 +28,6 @@ import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.AbstractIdentityProviderFactory;
@@ -40,8 +41,6 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
 
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProviderFactory.class);
 
-    public static final String PROVIDER_ID = "oid4vp";
-
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES;
 
     static {
@@ -53,13 +52,6 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                         + "When enabled: signed request objects (JAR), ES256 signing, encrypted responses required.")
                 .type(ProviderConfigProperty.BOOLEAN_TYPE)
                 .defaultValue("true")
-                .add()
-                .property()
-                .name(Oid4vpIdentityProviderConfig.SKIP_TRUST_LIST_VERIFICATION)
-                .label("Skip Trust List Verification")
-                .helpText("Skip trust list verification and accept all credential signatures. Use only for testing.")
-                .type(ProviderConfigProperty.BOOLEAN_TYPE)
-                .defaultValue("false")
                 .add()
                 .property()
                 .name(Oid4vpIdentityProviderConfig.CREDENTIAL_SET_MODE)
@@ -148,19 +140,12 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .helpText("PEM-encoded certificates to trust in addition to the trust list.")
                 .type(ProviderConfigProperty.TEXT_TYPE)
                 .add()
-                .property()
-                .name(Oid4vpIdentityProviderConfig.TRUST_X5C_FROM_CREDENTIAL)
-                .label("Trust x5c from Credential")
-                .helpText("Trust the x5c certificate chain embedded in the credential itself.")
-                .type(ProviderConfigProperty.BOOLEAN_TYPE)
-                .defaultValue("false")
-                .add()
                 .build();
     }
 
     @Override
     public String getId() {
-        return PROVIDER_ID;
+        return Oid4vpConstants.PROVIDER_ID;
     }
 
     @Override
@@ -214,7 +199,7 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 return;
             }
 
-            byte[] privBytes = Base64.getDecoder().decode(privBody);
+            byte[] privBytes = java.util.Base64.getDecoder().decode(privBody);
             PrivateKey privateKey = parsePrivateKey(privBytes);
 
             X509Certificate leafCert = certChain.get(0);
@@ -226,9 +211,9 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
             }
 
             Curve curve = Curve.forECParameterSpec(ecPub.getParams());
-            List<com.nimbusds.jose.util.Base64> x5c = new ArrayList<>();
+            List<Base64> x5c = new ArrayList<>();
             for (X509Certificate cert : certChain) {
-                x5c.add(com.nimbusds.jose.util.Base64.encode(cert.getEncoded()));
+                x5c.add(Base64.encode(cert.getEncoded()));
             }
 
             ECKey ecKey = new ECKey.Builder(curve, ecPub)
@@ -258,7 +243,7 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
             if (end < 0) break;
             String body = pem.substring(start + "-----BEGIN CERTIFICATE-----".length(), end)
                     .replaceAll("\\s+", "");
-            byte[] der = Base64.getDecoder().decode(body);
+            byte[] der = java.util.Base64.getDecoder().decode(body);
             chain.add((X509Certificate) cf.generateCertificate(new ByteArrayInputStream(der)));
             idx = end + "-----END CERTIFICATE-----".length();
         }

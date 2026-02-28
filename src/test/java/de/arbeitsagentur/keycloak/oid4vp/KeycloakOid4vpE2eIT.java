@@ -35,7 +35,10 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -122,7 +125,9 @@ class KeycloakOid4vpE2eIT {
 
         adminClient = KeycloakAdminClient.login(OBJECT_MAPPER, kcHostUrl, "admin", "admin");
 
-        Oid4vpTestKeycloakSetup.configureOid4vpIdentityProvider(adminClient, REALM);
+        // Trust list URL must be accessible from inside Docker network
+        String trustListUrl = "http://oid4vc-dev:8085/api/trustlist";
+        Oid4vpTestKeycloakSetup.configureOid4vpIdentityProvider(adminClient, REALM, trustListUrl);
         Oid4vpTestKeycloakSetup.configureSameDeviceFlow(adminClient, REALM, true);
         Oid4vpTestKeycloakSetup.addRedirectUriToClient(adminClient, REALM, "wallet-mock", callbackUrl);
 
@@ -638,13 +643,12 @@ class KeycloakOid4vpE2eIT {
     private URI buildAuthRequestUri() {
         String state = "s-" + System.nanoTime();
         byte[] bytes = new byte[32];
-        new java.security.SecureRandom().nextBytes(bytes);
-        String codeVerifier = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        new SecureRandom().nextBytes(bytes);
+        String codeVerifier = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
         String codeChallenge;
         try {
-            byte[] hash = java.security.MessageDigest.getInstance("SHA-256")
-                    .digest(codeVerifier.getBytes(StandardCharsets.US_ASCII));
-            codeChallenge = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(codeVerifier.getBytes(StandardCharsets.US_ASCII));
+            codeChallenge = Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
