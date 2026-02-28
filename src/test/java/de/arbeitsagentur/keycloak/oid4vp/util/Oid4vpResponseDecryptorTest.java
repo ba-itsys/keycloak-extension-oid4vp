@@ -32,7 +32,6 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.PreDecryptionResult;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.keycloak.broker.provider.IdentityBrokerException;
 import org.keycloak.util.JsonSerialization;
 
 class Oid4vpResponseDecryptorTest {
@@ -44,66 +43,6 @@ class Oid4vpResponseDecryptorTest {
     void setUp() throws Exception {
         decryptor = new Oid4vpResponseDecryptor();
         encryptionKey = new ECKeyGenerator(Curve.P_256).keyID("test-kid").generate();
-    }
-
-    @Test
-    void decryptVpToken_validJwe_returnsVpToken() throws Exception {
-        String vpToken = "eyJhbGciOiJFUzI1NiJ9.test.signature~";
-        String jwe = encryptPayload(Map.of("vp_token", vpToken), null);
-
-        String result = decryptor.decryptVpToken(jwe, encryptionKey.toJSONString());
-
-        assertThat(result).isEqualTo(vpToken);
-    }
-
-    @Test
-    void decryptVpToken_objectVpToken_serializesToJson() throws Exception {
-        Map<String, Object> vpTokenObj = Map.of("cred1", "jwt1", "cred2", "jwt2");
-        String jwe = encryptPayload(Map.of("vp_token", vpTokenObj), null);
-
-        String result = decryptor.decryptVpToken(jwe, encryptionKey.toJSONString());
-
-        assertThat(result).contains("cred1").contains("cred2");
-    }
-
-    @Test
-    void decryptVpToken_walletError_throwsWithMessage() throws Exception {
-        String jwe = encryptPayload(Map.of("error", "access_denied", "error_description", "User denied"), null);
-
-        assertThatThrownBy(() -> decryptor.decryptVpToken(jwe, encryptionKey.toJSONString()))
-                .isInstanceOf(IdentityBrokerException.class)
-                .hasMessageContaining("access_denied")
-                .hasMessageContaining("User denied");
-    }
-
-    @Test
-    void decryptVpToken_missingVpToken_throws() throws Exception {
-        String jwe = encryptPayload(Map.of("other_field", "value"), null);
-
-        assertThatThrownBy(() -> decryptor.decryptVpToken(jwe, encryptionKey.toJSONString()))
-                .isInstanceOf(IdentityBrokerException.class)
-                .hasMessageContaining("Missing vp_token");
-    }
-
-    @Test
-    void decryptVpToken_blankKey_throwsIllegalState() {
-        assertThatThrownBy(() -> decryptor.decryptVpToken("jwe-string", ""))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("No encryption key available");
-    }
-
-    @Test
-    void decryptVpToken_nullKey_throwsIllegalState() {
-        assertThatThrownBy(() -> decryptor.decryptVpToken("jwe-string", null))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("No encryption key available");
-    }
-
-    @Test
-    void decryptVpToken_invalidJwe_throwsIllegalState() {
-        assertThatThrownBy(() -> decryptor.decryptVpToken("not-a-jwe", encryptionKey.toJSONString()))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Failed to decrypt");
     }
 
     @Test

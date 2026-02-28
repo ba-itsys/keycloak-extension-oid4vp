@@ -92,29 +92,41 @@ public class Oid4vpRedirectFlowService {
             String x509CertPem,
             String x509SigningKeyJwk,
             String existingEncryptionKeyJson,
+            boolean enforceHaip,
             int lifespanSeconds) {
 
         ResolvedSigningKey resolved = resolveSigningMaterial(x509SigningKeyJwk);
 
-        ECKey responseEncryptionKey = parseOrCreateEncryptionKey(existingEncryptionKeyJson);
+        ECKey responseEncryptionKey = enforceHaip ? parseOrCreateEncryptionKey(existingEncryptionKeyJson) : null;
 
-        var claims = buildBaseClaims(clientId, responseUri, state, nonce, lifespanSeconds);
+        var claims = buildBaseClaims(clientId, responseUri, state, nonce, enforceHaip, lifespanSeconds);
         addClientMetadataClaim(claims, responseEncryptionKey);
         addDcqlAndVerifierInfo(claims, dcqlQuery, verifierInfo);
 
         String jwt = signClaims(resolved, clientIdScheme, x509CertPem, claims);
-        return new SignedRequestObject(jwt, responseEncryptionKey.toJSONString(), state, nonce);
+        String encryptionKeyJson = responseEncryptionKey != null ? responseEncryptionKey.toJSONString() : null;
+        return new SignedRequestObject(jwt, encryptionKeyJson, state, nonce);
     }
 
     public SignedRequestObject rebuildWithWalletNonce(
-            RebuildParams rebuildParams, String state, String nonce, String walletNonce, int lifespanSeconds) {
+            RebuildParams rebuildParams,
+            String state,
+            String nonce,
+            String walletNonce,
+            boolean enforceHaip,
+            int lifespanSeconds) {
 
         ResolvedSigningKey resolved = resolveSigningMaterial(rebuildParams.x509SigningKeyJwk());
 
-        ECKey encryptionKey = parseEncryptionKey(rebuildParams.encryptionPublicKeyJson());
+        ECKey encryptionKey = enforceHaip ? parseEncryptionKey(rebuildParams.encryptionPublicKeyJson()) : null;
 
         var claims = buildBaseClaims(
-                rebuildParams.effectiveClientId(), rebuildParams.responseUri(), state, nonce, lifespanSeconds);
+                rebuildParams.effectiveClientId(),
+                rebuildParams.responseUri(),
+                state,
+                nonce,
+                enforceHaip,
+                lifespanSeconds);
         claims.put("wallet_nonce", walletNonce);
         addClientMetadataClaim(claims, encryptionKey);
         addDcqlAndVerifierInfo(claims, rebuildParams.dcqlQuery(), rebuildParams.verifierInfo());
@@ -141,7 +153,7 @@ public class Oid4vpRedirectFlowService {
     }
 
     private LinkedHashMap<String, Object> buildBaseClaims(
-            String clientId, String responseUri, String state, String nonce, int lifespanSeconds) {
+            String clientId, String responseUri, String state, String nonce, boolean enforceHaip, int lifespanSeconds) {
         long issuedAt = Instant.now().getEpochSecond();
         long expiresAt = Instant.now().plusSeconds(lifespanSeconds).getEpochSecond();
 
@@ -153,7 +165,7 @@ public class Oid4vpRedirectFlowService {
         claims.put("aud", "https://self-issued.me/v2");
         claims.put("client_id", clientId);
         claims.put("response_type", "vp_token");
-        claims.put("response_mode", "direct_post.jwt");
+        claims.put("response_mode", enforceHaip ? "direct_post.jwt" : "direct_post");
         claims.put("response_uri", responseUri);
         claims.put("nonce", nonce);
         claims.put("state", state);
@@ -315,7 +327,8 @@ public class Oid4vpRedirectFlowService {
                     .keyID(UUID.randomUUID().toString())
                     .algorithm(JWEAlgorithm.ECDH_ES)
                     .generate();
-            LOG.tracef("Generated ephemeral encryption key: kid=%s, jwk=%s", key.getKeyID(), key.toJSONString());
+            LOG.tracef("Generated ephemeral encryption key: kid=%s, jwk=\n%s",
+                    key.getKeyID(), key.toJSONString());
             return key;
         } catch (Exception e) {
             throw new IllegalStateException("Failed to generate response encryption key", e);
@@ -330,6 +343,7 @@ public class Oid4vpRedirectFlowService {
             jwk.put("alg", JWEAlgorithm.ECDH_ES.getName());
             jwk.put("use", "enc");
             meta.put("jwks", Map.of("keys", List.of(jwk)));
+            meta.put("encrypted_response_alg_values_supported", List.of(JWEAlgorithm.ECDH_ES.getName()));
             meta.put(
                     "encrypted_response_enc_values_supported",
                     List.of(EncryptionMethod.A128GCM.getName(), EncryptionMethod.A256GCM.getName()));

@@ -24,7 +24,6 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.PreDecryptionResult;
 import de.arbeitsagentur.keycloak.oid4vp.domain.StoredRequestObject;
 import java.util.Map;
 import org.jboss.logging.Logger;
-import org.keycloak.broker.provider.IdentityBrokerException;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
@@ -83,42 +82,6 @@ public class Oid4vpResponseDecryptor {
         } catch (Exception e) {
             LOG.warnf("JWE kid lookup/decrypt failed: %s", e.getMessage());
             return PreDecryptionResult.EMPTY;
-        }
-    }
-
-    public String decryptVpToken(String encryptedResponse, String encryptionKeyJson) {
-        if (StringUtil.isBlank(encryptionKeyJson)) {
-            throw new IllegalStateException("No encryption key available for decryption");
-        }
-        try {
-            ECKey decryptionKey = ECKey.parse(encryptionKeyJson);
-            JWEObject jwe = JWEObject.parse(encryptedResponse);
-            jwe.decrypt(new ECDHDecrypter(decryptionKey));
-            String payload = jwe.getPayload().toString();
-
-            @SuppressWarnings("unchecked")
-            Map<String, Object> payloadMap = JsonSerialization.readValue(payload, Map.class);
-
-            if (payloadMap.containsKey("error")) {
-                String err = payloadMap.get("error").toString();
-                String desc = payloadMap.containsKey("error_description")
-                        ? payloadMap.get("error_description").toString()
-                        : "";
-                throw new IdentityBrokerException("Wallet error: " + err + (desc.isEmpty() ? "" : " - " + desc));
-            }
-
-            if (!payloadMap.containsKey("vp_token")) {
-                throw new IdentityBrokerException("Missing vp_token in encrypted response");
-            }
-
-            Object vpTokenObj = payloadMap.get("vp_token");
-            return vpTokenObj instanceof String
-                    ? (String) vpTokenObj
-                    : JsonSerialization.writeValueAsString(vpTokenObj);
-        } catch (IdentityBrokerException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to decrypt response: " + e.getMessage(), e);
         }
     }
 

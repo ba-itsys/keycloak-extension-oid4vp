@@ -31,7 +31,6 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
-import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpResponseDecryptor;
 import de.arbeitsagentur.keycloak.oid4vp.verification.StatusListVerifier;
 import de.arbeitsagentur.keycloak.oid4vp.verification.TrustListProvider;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor;
@@ -81,12 +80,11 @@ class Oid4vpCallbackProcessorTest {
         signingKey = new ECKeyGenerator(Curve.P_256).generate();
         signingCert = generateSelfSignedCert(signingKey);
 
-        Oid4vpResponseDecryptor responseDecryptor = new Oid4vpResponseDecryptor();
         TrustListProvider trustListProvider = new TrustListProvider(List.of(signingKey.toECPublicKey()));
         VpTokenProcessor vpTokenProcessor =
                 new VpTokenProcessor(new ObjectMapper(), new StatusListVerifier(), trustListProvider);
         UserAuthenticationIdentityProvider<?> provider = mock(UserAuthenticationIdentityProvider.class);
-        processor = new Oid4vpCallbackProcessor(config, config, provider, responseDecryptor, vpTokenProcessor);
+        processor = new Oid4vpCallbackProcessor(config, config, provider, vpTokenProcessor);
     }
 
     @Test
@@ -99,7 +97,7 @@ class Oid4vpCallbackProcessorTest {
         String vpToken =
                 buildSdJwt(Map.of("iss", "https://issuer.example", "vct", "IdentityCredential", "sub", "user1")) + "~";
 
-        BrokeredIdentityContext result = processor.process(authSession, state, vpToken, null, null, null);
+        BrokeredIdentityContext result = processor.process(authSession, state, vpToken, null, null);
 
         assertThat(result).isNotNull();
         assertThat(result.getUsername()).isEqualTo("user1");
@@ -114,7 +112,7 @@ class Oid4vpCallbackProcessorTest {
     void process_invalidState_throws() {
         when(authSession.getAuthNote(SESSION_STATE)).thenReturn("expected-state");
 
-        assertThatThrownBy(() -> processor.process(authSession, "wrong-state", "token", null, null, null))
+        assertThatThrownBy(() -> processor.process(authSession, "wrong-state", "token", null, null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("Invalid state");
     }
@@ -123,7 +121,7 @@ class Oid4vpCallbackProcessorTest {
     void process_nullExpectedState_throws() {
         when(authSession.getAuthNote(SESSION_STATE)).thenReturn(null);
 
-        assertThatThrownBy(() -> processor.process(authSession, "any-state", "token", null, null, null))
+        assertThatThrownBy(() -> processor.process(authSession, "any-state", "token", null, null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("Invalid state");
     }
@@ -132,7 +130,7 @@ class Oid4vpCallbackProcessorTest {
     void process_walletError_throws() {
         when(authSession.getAuthNote(SESSION_STATE)).thenReturn("state");
 
-        assertThatThrownBy(() -> processor.process(authSession, "state", null, null, "access_denied", "User denied"))
+        assertThatThrownBy(() -> processor.process(authSession, "state", null, "access_denied", "User denied"))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("access_denied")
                 .hasMessageContaining("User denied");
@@ -142,7 +140,7 @@ class Oid4vpCallbackProcessorTest {
     void process_walletErrorWithoutDescription_throws() {
         when(authSession.getAuthNote(SESSION_STATE)).thenReturn("state");
 
-        assertThatThrownBy(() -> processor.process(authSession, "state", null, null, "access_denied", null))
+        assertThatThrownBy(() -> processor.process(authSession, "state", null, "access_denied", null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("access_denied");
     }
@@ -151,7 +149,7 @@ class Oid4vpCallbackProcessorTest {
     void process_missingVpToken_throws() {
         when(authSession.getAuthNote(SESSION_STATE)).thenReturn("state");
 
-        assertThatThrownBy(() -> processor.process(authSession, "state", null, null, null, null))
+        assertThatThrownBy(() -> processor.process(authSession, "state", null, null, null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("Missing vp_token");
     }
@@ -167,7 +165,7 @@ class Oid4vpCallbackProcessorTest {
                 buildSdJwt(Map.of("iss", "https://bad-issuer.example", "vct", "IdentityCredential", "sub", "user1"))
                         + "~";
 
-        assertThatThrownBy(() -> processor.process(authSession, "state", vpToken, null, null, null))
+        assertThatThrownBy(() -> processor.process(authSession, "state", vpToken, null, null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("Issuer not allowed");
     }
@@ -181,7 +179,7 @@ class Oid4vpCallbackProcessorTest {
 
         String vpToken = buildSdJwt(Map.of("iss", "https://issuer.example", "vct", "BadType", "sub", "user1")) + "~";
 
-        assertThatThrownBy(() -> processor.process(authSession, "state", vpToken, null, null, null))
+        assertThatThrownBy(() -> processor.process(authSession, "state", vpToken, null, null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("Credential type not allowed");
     }
@@ -194,7 +192,7 @@ class Oid4vpCallbackProcessorTest {
 
         String vpToken = buildSdJwt(Map.of("iss", "https://issuer.example", "vct", "IdentityCredential")) + "~";
 
-        assertThatThrownBy(() -> processor.process(authSession, "state", vpToken, null, null, null))
+        assertThatThrownBy(() -> processor.process(authSession, "state", vpToken, null, null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("Missing subject claim");
     }
@@ -208,7 +206,7 @@ class Oid4vpCallbackProcessorTest {
         String vpToken =
                 buildSdJwt(Map.of("iss", "https://issuer.example", "vct", "IdentityCredential", "sub", "user1")) + "~";
 
-        processor.process(authSession, "state", vpToken, null, null, null);
+        processor.process(authSession, "state", vpToken, null, null);
 
         verify(authSession).removeAuthNote(SESSION_STATE);
         verify(authSession).removeAuthNote(SESSION_NONCE);

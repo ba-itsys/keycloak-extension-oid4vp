@@ -49,7 +49,10 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .name(Oid4vpIdentityProviderConfig.ENFORCE_HAIP)
                 .label("Enforce HAIP Compliance")
                 .helpText("Enable OpenID4VC High Assurance Interoperability Profile (HAIP) compliance. "
-                        + "When enabled: signed request objects (JAR), ES256 signing, encrypted responses required.")
+                        + "When enabled: client_id_scheme forced to x509_hash, response_mode set to direct_post.jwt "
+                        + "(encrypted responses), and x509 certificate must be configured. "
+                        + "Request objects are signed using the Keycloak realm signing key by default "
+                        + "(ensure an ES256 key is active), or the x509 signing key if provided in the PEM.")
                 .type(ProviderConfigProperty.BOOLEAN_TYPE)
                 .defaultValue("true")
                 .add()
@@ -125,7 +128,8 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .name(Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM)
                 .label("X.509 Certificate (PEM)")
                 .helpText("PEM-encoded X.509 certificate chain for x509 client ID schemes. "
-                        + "May include a PRIVATE KEY block for auto-generation of signing key JWK.")
+                        + "Required when HAIP is enabled (x509_hash). "
+                        + "May include a PRIVATE KEY block to override the realm signing key for request objects.")
                 .type(ProviderConfigProperty.TEXT_TYPE)
                 .add()
                 .property()
@@ -158,8 +162,18 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
         Oid4vpIdentityProviderConfig config = new Oid4vpIdentityProviderConfig(model);
 
         resolveX509SigningKey(config);
+        validateHaipConfig(config);
 
         return new Oid4vpIdentityProvider(session, config);
+    }
+
+    private static void validateHaipConfig(Oid4vpIdentityProviderConfig config) {
+        if (config.isEnforceHaip() && StringUtil.isBlank(config.getX509CertificatePem())) {
+            LOG.warnf(
+                    "OID4VP IdP '%s': HAIP is enabled but no X.509 certificate is configured. "
+                            + "The x509_hash client ID scheme requires a certificate.",
+                    config.getAlias());
+        }
     }
 
     @Override

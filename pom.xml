@@ -161,7 +161,7 @@
     <dependency>
       <groupId>io.github.dominikschlosser</groupId>
       <artifactId>testcontainers-oid4vc</artifactId>
-      <version>1.1.1</version>
+      <version>1.1.2</version>
       <scope>test</scope>
     </dependency>
 

@@ -23,7 +23,6 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
-import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpResponseDecryptor;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor;
 import java.util.Map;
 import org.jboss.logging.Logger;
@@ -41,19 +40,16 @@ public class Oid4vpCallbackProcessor {
     private final IdentityProviderModel idpModel;
     private final Oid4vpConfigProvider configProvider;
     private final UserAuthenticationIdentityProvider<?> provider;
-    private final Oid4vpResponseDecryptor responseDecryptor;
     private final VpTokenProcessor vpTokenProcessor;
 
     public Oid4vpCallbackProcessor(
             IdentityProviderModel idpModel,
             Oid4vpConfigProvider configProvider,
             UserAuthenticationIdentityProvider<?> provider,
-            Oid4vpResponseDecryptor responseDecryptor,
             VpTokenProcessor vpTokenProcessor) {
         this.idpModel = idpModel;
         this.configProvider = configProvider;
         this.provider = provider;
-        this.responseDecryptor = responseDecryptor;
         this.vpTokenProcessor = vpTokenProcessor;
     }
 
@@ -61,12 +57,11 @@ public class Oid4vpCallbackProcessor {
             AuthenticationSessionModel authSession,
             String state,
             String vpToken,
-            String encryptedResponse,
             String error,
             String errorDescription) {
 
         try {
-            return processInternal(authSession, state, vpToken, encryptedResponse, error, errorDescription);
+            return processInternal(authSession, state, vpToken, error, errorDescription);
         } catch (Exception e) {
             // Always clean up session notes to prevent stale state on retry
             clearSessionNotes(authSession);
@@ -78,7 +73,6 @@ public class Oid4vpCallbackProcessor {
             AuthenticationSessionModel authSession,
             String state,
             String vpToken,
-            String encryptedResponse,
             String error,
             String errorDescription) {
 
@@ -97,20 +91,11 @@ public class Oid4vpCallbackProcessor {
             authSession.removeAuthNote(SESSION_MDOC_GENERATED_NONCE);
         }
 
-        if (StringUtil.isBlank(vpToken) && StringUtil.isNotBlank(encryptedResponse)) {
-            String encryptionKey = authSession.getAuthNote(SESSION_ENCRYPTION_KEY);
-            try {
-                vpToken = responseDecryptor.decryptVpToken(encryptedResponse, encryptionKey);
-            } catch (Exception e) {
-                throw new IdentityBrokerException("Failed to decrypt response: " + e.getMessage(), e);
-            }
-        }
-
         if (StringUtil.isBlank(vpToken)) {
             throw new IdentityBrokerException("Missing vp_token");
         }
 
-        LOG.debugf("VP token received (encrypted=%b, length=%d)", encryptedResponse != null, vpToken.length());
+        LOG.debugf("VP token received (length=%d)", vpToken.length());
 
         String expectedNonce = authSession.getAuthNote(SESSION_NONCE);
         String responseUri = authSession.getAuthNote(SESSION_RESPONSE_URI);

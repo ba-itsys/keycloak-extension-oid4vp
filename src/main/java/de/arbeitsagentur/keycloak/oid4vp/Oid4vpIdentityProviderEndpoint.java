@@ -18,6 +18,7 @@ package de.arbeitsagentur.keycloak.oid4vp;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
 import static de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService.*;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.DecryptedResponse;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PreDecryptionResult;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SignedRequestObject;
 import de.arbeitsagentur.keycloak.oid4vp.domain.StoredRequestObject;
@@ -167,6 +168,7 @@ public class Oid4vpIdentityProviderEndpoint {
         boolean isCrossDeviceFlow = "cross_device".equals(flow);
         String state = StringUtil.isNotBlank(queryState) ? queryState : formState;
         boolean hasError = StringUtil.isNotBlank(error);
+        boolean wasEncrypted = false;
 
         String preDecryptedMdocGeneratedNonce = null;
         if (StringUtil.isBlank(state) && StringUtil.isNotBlank(encryptedResponse)) {
@@ -177,12 +179,13 @@ public class Oid4vpIdentityProviderEndpoint {
             }
             if (preDecrypt.vpToken() != null) {
                 vpToken = preDecrypt.vpToken();
-                encryptedResponse = null;
+                wasEncrypted = true;
             }
             if (preDecrypt.error() != null) {
                 error = preDecrypt.error();
                 errorDescription = preDecrypt.errorDescription();
                 hasError = true;
+                wasEncrypted = true;
             }
             preDecryptedMdocGeneratedNonce = preDecrypt.mdocGeneratedNonce();
         }
@@ -201,6 +204,24 @@ public class Oid4vpIdentityProviderEndpoint {
             return jsonErrorResponse(Response.Status.BAD_REQUEST, "session_expired", null);
         }
 
+        if (!wasEncrypted && StringUtil.isNotBlank(encryptedResponse)) {
+            String encryptionKey = authSession.getAuthNote(SESSION_ENCRYPTION_KEY);
+            DecryptedResponse decrypted = responseDecryptor.decryptFull(encryptedResponse, encryptionKey);
+            if (decrypted.vpToken() != null) {
+                vpToken = decrypted.vpToken();
+                wasEncrypted = true;
+            }
+            if (decrypted.error() != null) {
+                error = decrypted.error();
+                errorDescription = decrypted.errorDescription();
+                hasError = true;
+                wasEncrypted = true;
+            }
+            if (decrypted.mdocGeneratedNonce() != null) {
+                preDecryptedMdocGeneratedNonce = decrypted.mdocGeneratedNonce();
+            }
+        }
+
         if (preDecryptedMdocGeneratedNonce != null) {
             authSession.setAuthNote(SESSION_MDOC_GENERATED_NONCE, preDecryptedMdocGeneratedNonce);
         }
@@ -215,15 +236,18 @@ public class Oid4vpIdentityProviderEndpoint {
             return handleError(state, error, errorDescription, authSession, isDirectPostFlow, isCrossDeviceFlow);
         }
 
-        return processVpToken(
-                authSession,
-                state,
-                vpToken,
-                encryptedResponse,
-                error,
-                errorDescription,
-                isDirectPostFlow,
-                isCrossDeviceFlow);
+        boolean encryptionExpected = StringUtil.isNotBlank(authSession.getAuthNote(SESSION_ENCRYPTION_KEY));
+        if (encryptionExpected && !wasEncrypted) {
+            return handleError(
+                    state,
+                    "identity_provider_error",
+                    "Encrypted response expected (direct_post.jwt) but received unencrypted vp_token.",
+                    authSession,
+                    isDirectPostFlow,
+                    isCrossDeviceFlow);
+        }
+
+        return processVpToken(authSession, state, vpToken, isDirectPostFlow, isCrossDeviceFlow);
     }
 
     @GET
@@ -304,15 +328,12 @@ public class Oid4vpIdentityProviderEndpoint {
             AuthenticationSessionModel authSession,
             String state,
             String vpToken,
-            String encryptedResponse,
-            String error,
-            String errorDescription,
             boolean isDirectPostFlow,
             boolean isCrossDeviceFlow) {
 
         try {
-            BrokeredIdentityContext context = provider.getCallbackProcessor()
-                    .process(authSession, state, vpToken, encryptedResponse, error, errorDescription);
+            BrokeredIdentityContext context =
+                    provider.getCallbackProcessor().process(authSession, state, vpToken, null, null);
 
             if (isDirectPostFlow) {
                 return handleDirectPostAuthentication(authSession, state, context, isCrossDeviceFlow);
@@ -368,6 +389,7 @@ public class Oid4vpIdentityProviderEndpoint {
                             stored.state(),
                             stored.nonce(),
                             walletNonce,
+                            provider.getConfig().isEnforceHaip(),
                             provider.getLoginTimeoutSeconds());
             return Response.ok(rebuilt.jwt())
                     .type("application/oauth-authz-req+jwt")

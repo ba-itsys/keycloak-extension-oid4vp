@@ -62,9 +62,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final int DEFAULT_CROSS_DEVICE_COMPLETE_TTL_SECONDS = 300;
 
     public static final String ENFORCE_HAIP = "enforceHaip";
-    public static final String HAIP_SIGNING_ALGORITHM = "ES256";
-    public static final String HAIP_RESPONSE_MODE = "direct_post.jwt";
-    public static final String HAIP_REQUEST_MODE = "signed";
+    public static final String HAIP_CLIENT_ID_SCHEME = "x509_hash";
 
     public Oid4vpIdentityProviderConfig() {
         super();
@@ -135,6 +133,9 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     }
 
     public String getClientIdScheme() {
+        if (isEnforceHaip()) {
+            return HAIP_CLIENT_ID_SCHEME;
+        }
         String scheme = getConfig().get(CLIENT_ID_SCHEME);
         return StringUtil.isNotBlank(scheme) ? scheme : "x509_san_dns";
     }
@@ -211,10 +212,6 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public void setEnforceHaip(boolean enforce) {
         getConfig().put(ENFORCE_HAIP, String.valueOf(enforce));
-    }
-
-    public boolean isEncryptedResponseRequired() {
-        return isEnforceHaip();
     }
 
     public String getAllowedIssuers() {

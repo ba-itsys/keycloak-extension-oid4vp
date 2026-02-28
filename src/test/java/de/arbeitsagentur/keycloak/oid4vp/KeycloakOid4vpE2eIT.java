@@ -98,7 +98,7 @@ class KeycloakOid4vpE2eIT {
         int kcMappedPort = keycloak.getMappedPort(8080);
         kcHostUrl = "http://localhost:" + kcMappedPort;
 
-        wallet = new Oid4vcContainer("ghcr.io/dominikschlosser/oid4vc-dev:v0.13.3")
+        wallet = new Oid4vcContainer()
                 .withHostAccess()
                 .withNetwork(network)
                 .withNetworkAliases("oid4vc-dev")

@@ -151,4 +151,6 @@ echo ""
 echo "Starting Keycloak via docker compose..."
 
 cd "$ROOT_DIR"
-KC_HOSTNAME="$public_url" KC_PROXY_HEADERS=xforwarded docker compose up keycloak
+export KC_HOSTNAME="$public_url"
+export KC_PROXY_HEADERS=xforwarded
+${KC_WRAPPER:-} docker compose up keycloak

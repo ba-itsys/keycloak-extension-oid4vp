@@ -83,12 +83,39 @@ class Oid4vpIdentityProviderConfigTest {
     @Test
     void defaultValues() {
         assertThat(config.getUserMappingClaim()).isEqualTo("sub");
-        assertThat(config.getClientIdScheme()).isEqualTo("x509_san_dns");
+        assertThat(config.getClientIdScheme()).isEqualTo("x509_hash");
         assertThat(config.isSameDeviceEnabled()).isTrue();
         assertThat(config.isCrossDeviceEnabled()).isTrue();
         assertThat(config.isEnforceHaip()).isTrue();
         assertThat(config.getCredentialSetMode()).isEqualTo("optional");
         assertThat(config.isAllCredentialsRequired()).isFalse();
+    }
+
+    @Test
+    void haipEnabled_clientIdScheme_forcedToX509Hash() {
+        config.setEnforceHaip(true);
+        config.setClientIdScheme("x509_san_dns");
+        assertThat(config.getClientIdScheme()).isEqualTo("x509_hash");
+    }
+
+    @Test
+    void haipEnabled_clientIdScheme_ignorePlainSetting() {
+        config.setEnforceHaip(true);
+        config.setClientIdScheme("plain");
+        assertThat(config.getClientIdScheme()).isEqualTo("x509_hash");
+    }
+
+    @Test
+    void haipDisabled_clientIdScheme_respectsConfigured() {
+        config.setEnforceHaip(false);
+        config.setClientIdScheme("x509_san_dns");
+        assertThat(config.getClientIdScheme()).isEqualTo("x509_san_dns");
+    }
+
+    @Test
+    void haipDisabled_clientIdScheme_defaultsToX509SanDns() {
+        config.setEnforceHaip(false);
+        assertThat(config.getClientIdScheme()).isEqualTo("x509_san_dns");
     }
 
     @Test
