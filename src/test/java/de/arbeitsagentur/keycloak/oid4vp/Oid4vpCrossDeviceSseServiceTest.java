@@ -95,7 +95,7 @@ class Oid4vpCrossDeviceSseServiceTest {
     void buildSseResponse_sendsCompleteOnSignal() throws Exception {
         mockPollingSession();
         String completeUrl = "http://localhost:8080/complete-auth?state=abc";
-        when(singleUseObjects.get(CROSS_DEVICE_COMPLETE_PREFIX + "test-state"))
+        when(singleUseObjects.remove(CROSS_DEVICE_COMPLETE_PREFIX + "test-state"))
                 .thenReturn(Map.of("complete_auth_url", completeUrl));
 
         Oid4vpCrossDeviceSseService service = createService();
@@ -110,7 +110,7 @@ class Oid4vpCrossDeviceSseServiceTest {
     @Test
     void buildSseResponse_sendsTimeoutWhenNoSignal() throws Exception {
         mockPollingSession();
-        when(singleUseObjects.get(anyString())).thenReturn(null);
+        when(singleUseObjects.remove(anyString())).thenReturn(null);
 
         config.setSseTimeoutSeconds(1);
         config.setSsePollIntervalMs(50);
@@ -126,7 +126,7 @@ class Oid4vpCrossDeviceSseServiceTest {
     @Test
     void buildSseResponse_sendsPingEvents() throws Exception {
         mockPollingSession();
-        when(singleUseObjects.get(anyString())).thenReturn(null);
+        when(singleUseObjects.remove(anyString())).thenReturn(null);
 
         config.setSseTimeoutSeconds(1);
         config.setSsePollIntervalMs(50);
@@ -161,7 +161,7 @@ class Oid4vpCrossDeviceSseServiceTest {
     @Test
     void buildSseResponse_configAffectsIterationCount() throws Exception {
         mockPollingSession();
-        when(singleUseObjects.get(anyString())).thenReturn(null);
+        when(singleUseObjects.remove(anyString())).thenReturn(null);
 
         // 200ms timeout with 100ms interval = 2 iterations
         config.setSseTimeoutSeconds(1);

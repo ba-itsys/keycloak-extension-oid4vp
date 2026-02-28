@@ -29,11 +29,17 @@ public class VpTokenProcessor {
 
     private final SdJwtVerifier sdJwtVerifier;
     private final MdocVerifier mdocVerifier;
+    private final StatusListVerifier statusListVerifier;
     private final ObjectMapper objectMapper;
 
     public VpTokenProcessor(ObjectMapper objectMapper) {
+        this(objectMapper, new StatusListVerifier());
+    }
+
+    public VpTokenProcessor(ObjectMapper objectMapper, StatusListVerifier statusListVerifier) {
         this.sdJwtVerifier = new SdJwtVerifier(objectMapper);
         this.mdocVerifier = new MdocVerifier();
+        this.statusListVerifier = statusListVerifier;
         this.objectMapper = objectMapper;
     }
 
@@ -46,6 +52,8 @@ public class VpTokenProcessor {
             boolean skipSignatureVerification,
             String alternateResponseUri,
             String mdocGeneratedNonce) {
+
+        LOG.tracef("Processing VP token (length=%d): %s", vpToken.length(), vpToken);
 
         try {
             // Detect format: single credential or multi-credential JSON wrapper
@@ -92,6 +100,8 @@ public class VpTokenProcessor {
             SdJwtVerifier.VerificationResult result = verifySdJwtWithFallback(
                     vpToken, clientId, expectedNonce, trustX5c, skipSignatureVerification, alternateResponseUri);
 
+            statusListVerifier.checkRevocationStatus(result.claims());
+
             Map<String, VerifiedCredential> credentials = new LinkedHashMap<>();
             credentials.put(
                     "cred1",
@@ -114,6 +124,8 @@ public class VpTokenProcessor {
                     mdocGeneratedNonce,
                     trustX5c,
                     skipSignatureVerification);
+
+            statusListVerifier.checkRevocationStatus(result.claims());
 
             Map<String, VerifiedCredential> credentials = new LinkedHashMap<>();
             credentials.put(
@@ -165,6 +177,8 @@ public class VpTokenProcessor {
                             skipSignatureVerification,
                             alternateResponseUri);
 
+                    statusListVerifier.checkRevocationStatus(result.claims());
+
                     credentials.put(
                             credentialId,
                             new VerifiedCredential(
@@ -184,6 +198,8 @@ public class VpTokenProcessor {
                             mdocGeneratedNonce,
                             trustX5c,
                             skipSignatureVerification);
+
+                    statusListVerifier.checkRevocationStatus(result.claims());
 
                     credentials.put(
                             credentialId,
@@ -213,6 +229,7 @@ public class VpTokenProcessor {
             boolean trustX5c,
             boolean skipSignatureVerification,
             String alternateResponseUri) {
+        LOG.tracef("Received SD-JWT credential: %s", sdJwt);
         try {
             return sdJwtVerifier.verify(sdJwt, clientId, expectedNonce, trustX5c, skipSignatureVerification);
         } catch (Exception primaryError) {

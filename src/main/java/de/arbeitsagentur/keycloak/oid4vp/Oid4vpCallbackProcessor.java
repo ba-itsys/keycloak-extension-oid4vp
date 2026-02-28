@@ -52,6 +52,23 @@ class Oid4vpCallbackProcessor {
             String error,
             String errorDescription) {
 
+        try {
+            return processInternal(authSession, state, vpToken, encryptedResponse, error, errorDescription);
+        } catch (Exception e) {
+            // Always clean up session notes to prevent stale state on retry
+            clearSessionNotes(authSession);
+            throw e;
+        }
+    }
+
+    private BrokeredIdentityContext processInternal(
+            AuthenticationSessionModel authSession,
+            String state,
+            String vpToken,
+            String encryptedResponse,
+            String error,
+            String errorDescription) {
+
         String expectedState = authSession.getAuthNote(SESSION_STATE);
         if (expectedState == null || !expectedState.equals(state)) {
             throw new IdentityBrokerException("Invalid state parameter");
@@ -80,6 +97,8 @@ class Oid4vpCallbackProcessor {
             throw new IdentityBrokerException("Missing vp_token");
         }
 
+        LOG.debugf("VP token received (encrypted=%b, length=%d)", encryptedResponse != null, vpToken.length());
+
         String expectedNonce = authSession.getAuthNote(SESSION_NONCE);
         String responseUri = authSession.getAuthNote(SESSION_RESPONSE_URI);
         String effectiveClientId = authSession.getAuthNote(SESSION_EFFECTIVE_CLIENT_ID);
@@ -102,6 +121,12 @@ class Oid4vpCallbackProcessor {
         if (primary == null) {
             throw new IdentityBrokerException("No valid credential found in VP token");
         }
+
+        LOG.debugf(
+                "Verified credential: format=%s, type=%s, claims=%s",
+                primary.presentationType(),
+                primary.credentialType(),
+                primary.claims().keySet());
 
         String issuer = primary.issuer() != null ? primary.issuer() : "unknown";
         String credentialType = primary.credentialType();
@@ -130,12 +155,14 @@ class Oid4vpCallbackProcessor {
         BrokeredIdentityContext context = new BrokeredIdentityContext(identityKey, config);
         context.setIdp(provider);
         context.setUsername(subject);
-        context.getContextData().put("oid4vp_claims", claims);
+        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CLAIMS_KEY, claims);
         context.getContextData().put("oid4vp_issuer", issuer);
         context.getContextData().put("oid4vp_subject", subject);
-        context.getContextData().put("oid4vp_credential_type", credentialType);
+        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CREDENTIAL_TYPE_KEY, credentialType);
         context.getContextData()
-                .put("oid4vp_presentation_type", primary.presentationType().name());
+                .put(
+                        Oid4vpMapperUtils.CONTEXT_PRESENTATION_TYPE_KEY,
+                        primary.presentationType().name());
 
         clearSessionNotes(authSession);
         return context;

@@ -46,14 +46,6 @@ public class DcqlQueryBuilder {
     }
 
     public record CredentialTypeSpec(String format, String type, List<ClaimSpec> claimSpecs) {
-        public CredentialTypeSpec(String format, String type) {
-            this(format, type, List.of());
-        }
-
-        public static CredentialTypeSpec fromPaths(String format, String type, List<String> claimPaths) {
-            List<ClaimSpec> specs = claimPaths.stream().map(ClaimSpec::new).toList();
-            return new CredentialTypeSpec(format, type, specs);
-        }
     }
 
     public DcqlQueryBuilder(ObjectMapper objectMapper) {
@@ -63,10 +55,6 @@ public class DcqlQueryBuilder {
     public DcqlQueryBuilder addCredentialType(String format, String type, List<ClaimSpec> claimSpecs) {
         credentialTypes.add(new CredentialTypeSpec(format, type, claimSpecs != null ? claimSpecs : List.of()));
         return this;
-    }
-
-    public DcqlQueryBuilder addCredentialType(String format, String type) {
-        return addCredentialType(format, type, List.of());
     }
 
     public DcqlQueryBuilder setAllCredentialsRequired(boolean required) {
@@ -269,7 +257,7 @@ public class DcqlQueryBuilder {
         }
         if (path.contains(PATH_SEPARATOR)) {
             return Arrays.stream(path.split(PATH_SEPARATOR))
-                    .<Object>map(DcqlQueryBuilder::parsePathSegment)
+                    .map(DcqlQueryBuilder::parsePathSegment)
                     .collect(Collectors.toList());
         }
         if (Oid4vpIdentityProviderConfig.FORMAT_MSO_MDOC.equals(format) && type != null) {

@@ -65,7 +65,7 @@ class Oid4vpCrossDeviceSseService {
                                 return;
                             }
                             SingleUseObjectProvider store = pollingSession.singleUseObjects();
-                            Map<String, String> entry = store.get(CROSS_DEVICE_COMPLETE_PREFIX + state);
+                            Map<String, String> entry = store.remove(CROSS_DEVICE_COMPLETE_PREFIX + state);
                             if (entry != null) {
                                 String completeAuthUrl = entry.get("complete_auth_url");
                                 if (completeAuthUrl != null) {

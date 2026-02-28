@@ -328,7 +328,7 @@ public class Oid4vpIdentityProviderEndpoint {
             String state,
             BrokeredIdentityContext context,
             boolean isCrossDeviceFlow) {
-        return directPostService.storeAndSignal(authSession, state, context);
+        return directPostService.storeAndSignal(authSession, state, context, isCrossDeviceFlow);
     }
 
     private Response handleError(

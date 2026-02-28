@@ -145,6 +145,74 @@ class SdJwtVerifierTest {
                 .hasMessageContaining("Disclosure digest not found in _sd array");
     }
 
+    @SuppressWarnings("unchecked")
+    @Test
+    void verify_nestedDisclosures_resolvesAddressSubClaims() throws Exception {
+        // Build nested disclosures like the EUDI PID: address has its own _sd array
+        String localityDisclosure = "[\"salt1\",\"locality\",\"BERLIN\"]";
+        String localityB64 = Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(localityDisclosure.getBytes(StandardCharsets.UTF_8));
+        String localityDigest = computeDigest(localityB64);
+
+        String streetDisclosure = "[\"salt2\",\"street_address\",\"HAUPTSTR 1\"]";
+        String streetB64 = Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(streetDisclosure.getBytes(StandardCharsets.UTF_8));
+        String streetDigest = computeDigest(streetB64);
+
+        // address disclosure reveals an object with its own _sd array
+        String addressObj = objectMapper.writeValueAsString(Map.of("_sd", List.of(localityDigest, streetDigest)));
+        String addressDisclosure = "[\"salt3\",\"address\"," + addressObj + "]";
+        String addressB64 = Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(addressDisclosure.getBytes(StandardCharsets.UTF_8));
+        String addressDigest = computeDigest(addressB64);
+
+        String givenNameDisclosure = "[\"salt4\",\"given_name\",\"ERIKA\"]";
+        String givenNameB64 = Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(givenNameDisclosure.getBytes(StandardCharsets.UTF_8));
+        String givenNameDigest = computeDigest(givenNameB64);
+
+        String jwt = buildSignedJwt(Map.of(
+                "iss", "https://issuer.example",
+                "vct", "urn:eudi:pid:de:1",
+                "_sd", List.of(addressDigest, givenNameDigest),
+                "_sd_alg", "sha-256"));
+
+        String sdJwt = jwt + "~" + givenNameB64 + "~" + addressB64 + "~" + localityB64 + "~" + streetB64 + "~";
+
+        SdJwtVerifier.VerificationResult result = verifier.verify(sdJwt, null, null, false, true);
+
+        assertThat(result.claims()).containsEntry("given_name", "ERIKA");
+        assertThat(result.claims()).containsKey("address");
+        Map<String, Object> address = (Map<String, Object>) result.claims().get("address");
+        assertThat(address).containsEntry("locality", "BERLIN");
+        assertThat(address).containsEntry("street_address", "HAUPTSTR 1");
+        assertThat(address).doesNotContainKey("_sd");
+    }
+
+    @Test
+    void verify_nestedDisclosure_wrongParent_throws() throws Exception {
+        // A disclosure whose digest only exists in a nested _sd but the parent is not disclosed
+        String localityDisclosure = "[\"salt1\",\"locality\",\"BERLIN\"]";
+        String localityB64 = Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(localityDisclosure.getBytes(StandardCharsets.UTF_8));
+
+        // Top-level _sd does NOT contain locality's digest
+        String jwt = buildSignedJwt(Map.of(
+                "iss", "https://issuer.example",
+                "_sd", List.of("unrelated_digest"),
+                "_sd_alg", "sha-256"));
+        String sdJwt = jwt + "~" + localityB64 + "~";
+
+        assertThatThrownBy(() -> verifier.verify(sdJwt, null, null, false, true))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Disclosure digest not found in _sd array");
+    }
+
     @Test
     void verify_kbJwtMissingCnfJwk_throws() throws Exception {
         // Build credential JWT without cnf
@@ -231,6 +299,12 @@ class SdJwtVerifierTest {
         assertThat(parts.signedJwt()).isEqualTo("jwt");
         assertThat(parts.disclosures()).containsExactly("disc1");
         assertThat(parts.keyBindingJwt()).isEqualTo("kbjwt");
+    }
+
+    private String computeDigest(String disclosureB64) throws Exception {
+        MessageDigest md = MessageDigest.getInstance("SHA256");
+        byte[] hash = md.digest(disclosureB64.getBytes(StandardCharsets.US_ASCII));
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
     }
 
     private String buildSignedJwt(Map<String, Object> claimsMap) throws Exception {
