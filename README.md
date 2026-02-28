@@ -102,11 +102,19 @@ Alternatively, add it via realm import JSON:
 | Key | Description | Default |
 |-----|-------------|---------|
 | `enforceHaip` | Enforce HAIP compliance (ES256 signatures, encrypted responses via `direct_post.jwt`). | `true` |
-| `trustX5cFromCredential` | Trust the X.509 certificate chain embedded in the credential's `x5c` header. | `false` |
-| `additionalTrustedCertificates` | PEM-encoded certificates to trust in addition to the EUDI trust list. | *(none)* |
-| `skipTrustListVerification` | Skip EUDI trust list verification entirely (for development/testing). Implies `trustX5cFromCredential`. | `false` |
+| `additionalTrustedCertificates` | PEM-encoded certificates to trust in addition to the trust list. | *(none)* |
+| `trustListUrl` | URL of an ETSI TS 119 602 trust list JWT. Used to obtain trusted issuer certificates for SD-JWT and mDoc signature verification. | *(none)* |
 | `allowedIssuers` | Comma-separated list of allowed credential issuer identifiers, or `*` for any. | `*` |
 | `allowedCredentialTypes` | Comma-separated list of allowed credential types (VCT/doctype), or `*` for any. | `*` |
+
+#### Caching
+
+Both the trust list and the token status list are cached based on the JWT `exp` claim. If no `exp` is present, the response is not cached. You can optionally cap the maximum cache duration.
+
+| Key | Description | Default |
+|-----|-------------|---------|
+| `statusListMaxCacheTtlSeconds` | Maximum cache duration for token status lists (seconds). When set, the cache TTL is the minimum of this value and the JWT `exp`. | *(use JWT exp)* |
+| `trustListMaxCacheTtlSeconds` | Maximum cache duration for the trust list (seconds). When set, the cache TTL is the minimum of this value and the JWT `exp`. | *(use JWT exp)* |
 
 #### Cross-Device SSE (Server-Sent Events)
 

@@ -15,7 +15,20 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp;
 
+import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nimbusds.jose.jwk.ECKey;
+import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
+import de.arbeitsagentur.keycloak.oid4vp.domain.RebuildParams;
+import de.arbeitsagentur.keycloak.oid4vp.domain.SignedRequestObject;
+import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpCallbackProcessor;
+import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpRedirectFlowService;
+import de.arbeitsagentur.keycloak.oid4vp.util.DcqlQueryBuilder;
+import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpQrCodeService;
+import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
+import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpResponseDecryptor;
+import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriBuilder;
 import java.net.URI;
@@ -28,6 +41,7 @@ import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.broker.provider.AuthenticationRequest;
 import org.keycloak.broker.provider.IdentityBrokerException;
 import org.keycloak.events.EventBuilder;
+import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.FederatedIdentityModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -38,18 +52,6 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProvider.class);
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
-
-    static final String SESSION_STATE = "oid4vp_state";
-    static final String SESSION_NONCE = "oid4vp_nonce";
-    static final String SESSION_RESPONSE_URI = "oid4vp_response_uri";
-    static final String SESSION_REDIRECT_FLOW_RESPONSE_URI = "oid4vp_redirect_flow_response_uri";
-    static final String SESSION_ENCRYPTION_KEY = "oid4vp_encryption_key";
-    static final String SESSION_CLIENT_ID = "oid4vp_client_id";
-    static final String SESSION_EFFECTIVE_CLIENT_ID = "oid4vp_effective_client_id";
-    static final String SESSION_MDOC_GENERATED_NONCE = "oid4vp_mdoc_generated_nonce";
-    static final String SESSION_TAB_ID = "oid4vp_tab_id";
-    static final String SESSION_CLIENT_DATA = "oid4vp_client_data";
-    static final String SESSION_CODE = "oid4vp_session_code";
 
     protected final ObjectMapper objectMapper;
     private final Oid4vpRedirectFlowService redirectFlowService;
@@ -64,7 +66,16 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         this.redirectFlowService = new Oid4vpRedirectFlowService(session, objectMapper);
         this.qrCodeService = new Oid4vpQrCodeService();
         this.callbackProcessor = new Oid4vpCallbackProcessor(
-                config, this, new Oid4vpResponseDecryptor(), new VpTokenProcessor(objectMapper));
+                config,
+                config,
+                this,
+                new Oid4vpResponseDecryptor(),
+                new VpTokenProcessor(
+                        objectMapper,
+                        session,
+                        config.getTrustListUrl(),
+                        config.getStatusListMaxCacheTtl(),
+                        config.getTrustListMaxCacheTtl()));
 
         RealmModel realm = session.getContext().getRealm();
         this.loginTimeoutSeconds = realm != null ? realm.getAccessCodeLifespanLogin() : 1800;
@@ -125,8 +136,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
             return manual;
         }
 
-        Map<String, DcqlQueryBuilder.CredentialTypeSpec> credentialTypes =
-                DcqlQueryBuilder.aggregateFromMappers(session, getConfig());
+        Map<String, CredentialTypeSpec> credentialTypes = DcqlQueryBuilder.aggregateFromMappers(session, getConfig());
 
         if (!credentialTypes.isEmpty()) {
             try {
@@ -281,7 +291,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
             String clientIdForSession,
             boolean skipIndexes) {
 
-        Oid4vpRedirectFlowService.SignedRequestObject signedRequest = redirectFlowService.buildSignedRequestObject(
+        SignedRequestObject signedRequest = redirectFlowService.buildSignedRequestObject(
                 dcqlQuery,
                 verifierInfo,
                 effectiveClientId,
@@ -302,7 +312,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
         String encryptionPublicKeyJson = extractEncryptionPublicKey(signedRequest.encryptionKeyJson());
 
-        Oid4vpRequestObjectStore.RebuildParams rebuildParams = new Oid4vpRequestObjectStore.RebuildParams(
+        RebuildParams rebuildParams = new RebuildParams(
                 effectiveClientId,
                 getConfig().getClientIdScheme(),
                 responseUri,
@@ -351,7 +361,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
             return null;
         }
         try {
-            var encKey = com.nimbusds.jose.jwk.ECKey.parse(encryptionKeyJson);
+            var encKey = ECKey.parse(encryptionKeyJson);
             return encKey.toPublicJWK().toJSONString();
         } catch (Exception e) {
             LOG.warnf("Failed to extract public key: %s", e.getMessage());
@@ -375,7 +385,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
             boolean sameDeviceEnabled,
             boolean crossDeviceEnabled) {
 
-        return session.getProvider(org.keycloak.forms.login.LoginFormsProvider.class)
+        return session.getProvider(LoginFormsProvider.class)
                 .setAuthenticationSession(authSession)
                 .setAttribute("state", sessionState.state())
                 .setAttribute("nonce", sessionState.nonce())

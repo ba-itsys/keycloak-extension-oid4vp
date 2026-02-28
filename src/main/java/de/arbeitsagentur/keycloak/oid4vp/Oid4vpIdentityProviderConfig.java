@@ -15,13 +15,13 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
+import java.time.Duration;
 import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.utils.StringUtil;
 
-public class Oid4vpIdentityProviderConfig extends IdentityProviderModel {
-
-    public static final String FORMAT_SD_JWT_VC = "dc+sd-jwt";
-    public static final String FORMAT_MSO_MDOC = "mso_mdoc";
+public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implements Oid4vpConfigProvider {
 
     public static final String DCQL_QUERY = "dcqlQuery";
     public static final String USER_MAPPING_CLAIM = "userMappingClaim";
@@ -42,12 +42,14 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel {
     public static final String CREDENTIAL_SET_MODE_ALL = "all";
     public static final String CREDENTIAL_SET_PURPOSE = "credentialSetPurpose";
 
-    public static final String TRUST_X5C_FROM_CREDENTIAL = "trustX5cFromCredential";
+    public static final String TRUST_LIST_URL = "trustListUrl";
     public static final String ADDITIONAL_TRUSTED_CERTIFICATES = "additionalTrustedCertificates";
-    public static final String SKIP_TRUST_LIST_VERIFICATION = "skipTrustListVerification";
 
     public static final String ALLOWED_ISSUERS = "allowedIssuers";
     public static final String ALLOWED_CREDENTIAL_TYPES = "allowedCredentialTypes";
+
+    public static final String STATUS_LIST_MAX_CACHE_TTL_SECONDS = "statusListMaxCacheTtlSeconds";
+    public static final String TRUST_LIST_MAX_CACHE_TTL_SECONDS = "trustListMaxCacheTtlSeconds";
 
     public static final String SSE_POLL_INTERVAL_MS = "ssePollIntervalMs";
     public static final String SSE_TIMEOUT_SECONDS = "sseTimeoutSeconds";
@@ -99,7 +101,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel {
     }
 
     public String getUserMappingClaimForFormat(String format) {
-        if (FORMAT_MSO_MDOC.equalsIgnoreCase(format)) {
+        if (Oid4vpConstants.FORMAT_MSO_MDOC.equalsIgnoreCase(format)) {
             return getUserMappingClaimMdoc();
         }
         return getUserMappingClaim();
@@ -186,12 +188,12 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel {
         getConfig().put(CREDENTIAL_SET_PURPOSE, purpose);
     }
 
-    public boolean isTrustX5cFromCredential() {
-        return "true".equalsIgnoreCase(getConfig().get(TRUST_X5C_FROM_CREDENTIAL));
+    public String getTrustListUrl() {
+        return getConfig().get(TRUST_LIST_URL);
     }
 
-    public void setTrustX5cFromCredential(boolean trust) {
-        getConfig().put(TRUST_X5C_FROM_CREDENTIAL, String.valueOf(trust));
+    public void setTrustListUrl(String url) {
+        getConfig().put(TRUST_LIST_URL, url);
     }
 
     public String getAdditionalTrustedCertificates() {
@@ -200,14 +202,6 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel {
 
     public void setAdditionalTrustedCertificates(String certificates) {
         getConfig().put(ADDITIONAL_TRUSTED_CERTIFICATES, certificates);
-    }
-
-    public boolean isSkipTrustListVerification() {
-        return "true".equalsIgnoreCase(getConfig().get(SKIP_TRUST_LIST_VERIFICATION));
-    }
-
-    public void setSkipTrustListVerification(boolean skip) {
-        getConfig().put(SKIP_TRUST_LIST_VERIFICATION, String.valueOf(skip));
     }
 
     public boolean isEnforceHaip() {
@@ -221,16 +215,6 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel {
 
     public boolean isEncryptedResponseRequired() {
         return isEnforceHaip();
-    }
-
-    public boolean getEffectiveTrustX5cFromCredential() {
-        if (isSkipTrustListVerification()) {
-            return true;
-        }
-        if (isEnforceHaip()) {
-            return false;
-        }
-        return isTrustX5cFromCredential();
     }
 
     public String getAllowedIssuers() {
@@ -255,6 +239,34 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel {
 
     public boolean isCredentialTypeAllowed(String credentialType) {
         return isValueAllowed(credentialType, getAllowedCredentialTypes());
+    }
+
+    public Duration getStatusListMaxCacheTtl() {
+        return parseDurationSeconds(STATUS_LIST_MAX_CACHE_TTL_SECONDS);
+    }
+
+    public void setStatusListMaxCacheTtlSeconds(int seconds) {
+        getConfig().put(STATUS_LIST_MAX_CACHE_TTL_SECONDS, String.valueOf(seconds));
+    }
+
+    public Duration getTrustListMaxCacheTtl() {
+        return parseDurationSeconds(TRUST_LIST_MAX_CACHE_TTL_SECONDS);
+    }
+
+    public void setTrustListMaxCacheTtlSeconds(int seconds) {
+        getConfig().put(TRUST_LIST_MAX_CACHE_TTL_SECONDS, String.valueOf(seconds));
+    }
+
+    private Duration parseDurationSeconds(String configKey) {
+        String value = getConfig().get(configKey);
+        if (StringUtil.isBlank(value)) {
+            return null;
+        }
+        try {
+            return Duration.ofSeconds(Long.parseLong(value));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     public int getSsePollIntervalMs() {

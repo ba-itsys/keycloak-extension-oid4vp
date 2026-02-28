@@ -22,6 +22,6 @@
     <logger name="org.jboss.resteasy" level="WARN"/>
     <logger name="org.keycloak" level="WARN"/>
 
-    <!-- Project classes at INFO -->
-    <logger name="de.arbeitsagentur.keycloak.oid4vp" level="INFO"/>
+    <!-- Project classes at TRACE for debugging -->
+    <logger name="de.arbeitsagentur.keycloak.oid4vp" level="TRACE"/>
 </configuration>

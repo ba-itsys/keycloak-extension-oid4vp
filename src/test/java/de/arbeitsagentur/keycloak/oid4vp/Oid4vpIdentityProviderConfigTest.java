@@ -17,6 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp;
 
 import static org.assertj.core.api.Assertions.*;
 
+import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -117,28 +118,6 @@ class Oid4vpIdentityProviderConfigTest {
     }
 
     @Test
-    void getEffectiveTrustX5cFromCredential_skipOverride() {
-        config.setSkipTrustListVerification(true);
-        assertThat(config.getEffectiveTrustX5cFromCredential()).isTrue();
-    }
-
-    @Test
-    void getEffectiveTrustX5cFromCredential_haipOverride() {
-        config.setEnforceHaip(true);
-        config.setSkipTrustListVerification(false);
-        config.setTrustX5cFromCredential(true);
-        assertThat(config.getEffectiveTrustX5cFromCredential()).isFalse();
-    }
-
-    @Test
-    void getEffectiveTrustX5cFromCredential_normalMode() {
-        config.setEnforceHaip(false);
-        config.setSkipTrustListVerification(false);
-        config.setTrustX5cFromCredential(true);
-        assertThat(config.getEffectiveTrustX5cFromCredential()).isTrue();
-    }
-
-    @Test
     void sseDefaults() {
         assertThat(config.getSsePollIntervalMs()).isEqualTo(2000);
         assertThat(config.getSseTimeoutSeconds()).isEqualTo(120);
@@ -157,6 +136,40 @@ class Oid4vpIdentityProviderConfigTest {
         assertThat(config.getSseTimeoutSeconds()).isEqualTo(60);
         assertThat(config.getSsePingIntervalSeconds()).isEqualTo(5);
         assertThat(config.getCrossDeviceCompleteTtlSeconds()).isEqualTo(600);
+    }
+
+    @Test
+    void statusListMaxCacheTtl_defaultIsNull() {
+        assertThat(config.getStatusListMaxCacheTtl()).isNull();
+    }
+
+    @Test
+    void statusListMaxCacheTtl_parsesSeconds() {
+        config.setStatusListMaxCacheTtlSeconds(30);
+        assertThat(config.getStatusListMaxCacheTtl()).isEqualTo(Duration.ofSeconds(30));
+    }
+
+    @Test
+    void statusListMaxCacheTtl_zeroDisablesCaching() {
+        config.setStatusListMaxCacheTtlSeconds(0);
+        assertThat(config.getStatusListMaxCacheTtl()).isEqualTo(Duration.ZERO);
+    }
+
+    @Test
+    void statusListMaxCacheTtl_invalidFallsBackToNull() {
+        config.getConfig().put(Oid4vpIdentityProviderConfig.STATUS_LIST_MAX_CACHE_TTL_SECONDS, "not-a-number");
+        assertThat(config.getStatusListMaxCacheTtl()).isNull();
+    }
+
+    @Test
+    void trustListMaxCacheTtl_defaultIsNull() {
+        assertThat(config.getTrustListMaxCacheTtl()).isNull();
+    }
+
+    @Test
+    void trustListMaxCacheTtl_parsesSeconds() {
+        config.setTrustListMaxCacheTtlSeconds(120);
+        assertThat(config.getTrustListMaxCacheTtl()).isEqualTo(Duration.ofSeconds(120));
     }
 
     @Test

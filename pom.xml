@@ -105,11 +105,11 @@
       <version>1.1.0</version>
     </dependency>
 
-    <!-- QR code generation for cross-device flow -->
+    <!-- QR code generation for cross-device flow (provided by Keycloak via keycloak-services) -->
     <dependency>
       <groupId>com.google.zxing</groupId>
-      <artifactId>core</artifactId>
-      <version>3.5.4</version>
+      <artifactId>javase</artifactId>
+      <scope>provided</scope>
     </dependency>
 
     <!-- Test dependencies -->
@@ -181,10 +181,24 @@
       <scope>test</scope>
     </dependency>
 
+    <!-- Keycloak crypto provider for unit tests (JwkParsingUtils needs CryptoIntegration) -->
+    <dependency>
+      <groupId>org.keycloak</groupId>
+      <artifactId>keycloak-crypto-default</artifactId>
+      <version>${keycloak.version}</version>
+      <scope>test</scope>
+    </dependency>
+
     <!-- Certificate generation in tests -->
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcpkix-jdk18on</artifactId>
+      <version>1.83</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcutil-jdk18on</artifactId>
       <version>1.83</version>
       <scope>test</scope>
     </dependency>

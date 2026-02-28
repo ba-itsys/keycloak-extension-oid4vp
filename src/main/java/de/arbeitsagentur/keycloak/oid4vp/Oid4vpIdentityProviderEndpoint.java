@@ -15,9 +15,17 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp;
 
-import static de.arbeitsagentur.keycloak.oid4vp.Oid4vpDirectPostService.*;
-import static de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProvider.*;
+import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
+import static de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService.*;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.PreDecryptionResult;
+import de.arbeitsagentur.keycloak.oid4vp.domain.SignedRequestObject;
+import de.arbeitsagentur.keycloak.oid4vp.domain.StoredRequestObject;
+import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpCrossDeviceSseService;
+import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService;
+import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
+import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
+import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpResponseDecryptor;
 import jakarta.enterprise.inject.Vetoed;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.FormParam;
@@ -162,7 +170,7 @@ public class Oid4vpIdentityProviderEndpoint {
 
         String preDecryptedMdocGeneratedNonce = null;
         if (StringUtil.isBlank(state) && StringUtil.isNotBlank(encryptedResponse)) {
-            Oid4vpResponseDecryptor.PreDecryptionResult preDecrypt =
+            PreDecryptionResult preDecrypt =
                     responseDecryptor.tryPreDecrypt(encryptedResponse, requestObjectStore, session);
             if (preDecrypt.state() != null) {
                 state = preDecrypt.state();
@@ -226,7 +234,7 @@ public class Oid4vpIdentityProviderEndpoint {
             return jsonErrorResponse(Response.Status.BAD_REQUEST, "invalid_request", "Missing request object id");
         }
 
-        Oid4vpRequestObjectStore.StoredRequestObject stored = requestObjectStore.resolve(session, id);
+        StoredRequestObject stored = requestObjectStore.resolve(session, id);
         if (stored == null) {
             return jsonErrorResponse(Response.Status.NOT_FOUND, "not_found", "Request object not found or expired");
         }
@@ -249,7 +257,7 @@ public class Oid4vpIdentityProviderEndpoint {
             return jsonErrorResponse(Response.Status.BAD_REQUEST, "invalid_request", "Missing request object id");
         }
 
-        Oid4vpRequestObjectStore.StoredRequestObject stored = requestObjectStore.resolve(session, id);
+        StoredRequestObject stored = requestObjectStore.resolve(session, id);
         if (stored == null) {
             return jsonErrorResponse(Response.Status.NOT_FOUND, "not_found", "Request object not found or expired");
         }
@@ -352,10 +360,9 @@ public class Oid4vpIdentityProviderEndpoint {
         return callback.error(getIdpModel(), message);
     }
 
-    private Response rebuildRequestObjectWithWalletNonce(
-            Oid4vpRequestObjectStore.StoredRequestObject stored, String walletNonce) {
+    private Response rebuildRequestObjectWithWalletNonce(StoredRequestObject stored, String walletNonce) {
         try {
-            Oid4vpRedirectFlowService.SignedRequestObject rebuilt = provider.getRedirectFlowService()
+            SignedRequestObject rebuilt = provider.getRedirectFlowService()
                     .rebuildWithWalletNonce(
                             stored.rebuildParams(),
                             stored.state(),
