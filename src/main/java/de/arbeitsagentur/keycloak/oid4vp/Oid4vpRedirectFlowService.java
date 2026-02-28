@@ -313,10 +313,12 @@ public class Oid4vpRedirectFlowService {
 
     private ECKey createResponseEncryptionKey() {
         try {
-            return new ECKeyGenerator(Curve.P_256)
+            ECKey key = new ECKeyGenerator(Curve.P_256)
                     .keyID(UUID.randomUUID().toString())
                     .algorithm(JWEAlgorithm.ECDH_ES)
                     .generate();
+            LOG.tracef("Generated ephemeral encryption key: kid=%s, jwk=%s", key.getKeyID(), key.toJSONString());
+            return key;
         } catch (Exception e) {
             throw new IllegalStateException("Failed to generate response encryption key", e);
         }

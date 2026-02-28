@@ -91,6 +91,27 @@ class Oid4vpMapperUtilsTest {
     }
 
     @Test
+    void getNestedValue_suffixMatch_findsMdocNamespacedClaim() {
+        // When claim path is just "family_name", it should match "eu.europa.ec.eudi.pid.1/family_name"
+        Map<String, Object> claims = Map.of(
+                "eu.europa.ec.eudi.pid.1/family_name", "Smith",
+                "eu.europa.ec.eudi.pid.1/given_name", "Alice");
+
+        assertThat(Oid4vpMapperUtils.getNestedValue(claims, "family_name")).isEqualTo("Smith");
+        assertThat(Oid4vpMapperUtils.getNestedValue(claims, "given_name")).isEqualTo("Alice");
+    }
+
+    @Test
+    void getNestedValue_exactMatchTakesPriorityOverSuffixMatch() {
+        // If there's both an exact match and a suffix match, exact wins
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("family_name", "Direct");
+        claims.put("eu.europa.ec.eudi.pid.1/family_name", "Namespaced");
+
+        assertThat(Oid4vpMapperUtils.getNestedValue(claims, "family_name")).isEqualTo("Direct");
+    }
+
+    @Test
     void getClaimValue_extractsFromContext() {
         IdentityProviderModel idpModel = new IdentityProviderModel();
         idpModel.setAlias("test-idp");

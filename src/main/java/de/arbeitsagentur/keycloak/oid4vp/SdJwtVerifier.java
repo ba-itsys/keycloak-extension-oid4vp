@@ -36,9 +36,11 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.jboss.logging.Logger;
 import org.keycloak.utils.StringUtil;
 
@@ -143,55 +145,92 @@ public class SdJwtVerifier {
 
         Map<String, Object> claims = new LinkedHashMap<>(payload);
 
-        // Collect _sd digests for verification
-        List<String> sdDigests = new ArrayList<>();
-        if (payload.containsKey("_sd") && payload.get("_sd") instanceof List<?> sdArray) {
-            for (Object digest : sdArray) {
-                if (digest instanceof String s) {
-                    sdDigests.add(s);
-                }
-            }
-        }
-
-        // Process disclosures
         String hashAlg = payload.containsKey("_sd_alg") ? payload.get("_sd_alg").toString() : "sha-256";
         String javaHashAlg = hashAlg.replace("-", "");
 
+        // Decode all disclosures upfront and compute their digests
+        List<DecodedDisclosure> decoded = new ArrayList<>();
         for (String disclosure : parts.disclosures()) {
             if (StringUtil.isBlank(disclosure)) continue;
-
-            // Verify disclosure digest is in _sd array
-            if (!sdDigests.isEmpty()) {
-                MessageDigest md = MessageDigest.getInstance(javaHashAlg);
-                byte[] disclosureHash = md.digest(disclosure.getBytes(StandardCharsets.US_ASCII));
-                String computedDigest = Base64.getUrlEncoder().withoutPadding().encodeToString(disclosureHash);
-                if (!sdDigests.contains(computedDigest)) {
-                    throw new IllegalStateException("Disclosure digest not found in _sd array");
-                }
-            }
-
             try {
-                byte[] decoded = Base64.getUrlDecoder().decode(disclosure);
-                List<Object> disclosureArray = objectMapper.readValue(decoded, List.class);
-                if (disclosureArray.size() >= 3) {
-                    String claimName = disclosureArray.get(1).toString();
-                    Object claimValue = disclosureArray.get(2);
-                    claims.put(claimName, claimValue);
+                byte[] bytes = Base64.getUrlDecoder().decode(disclosure);
+                List<Object> arr = objectMapper.readValue(bytes, List.class);
+                if (arr.size() >= 3) {
+                    MessageDigest md = MessageDigest.getInstance(javaHashAlg);
+                    byte[] hash = md.digest(disclosure.getBytes(StandardCharsets.US_ASCII));
+                    String digest = Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+                    decoded.add(new DecodedDisclosure(arr.get(1).toString(), arr.get(2), digest, disclosure));
                 }
-            } catch (IllegalStateException e) {
-                throw e;
             } catch (Exception e) {
                 LOG.debugf("Failed to decode disclosure: %s", e.getMessage());
             }
         }
 
+        // Recursively resolve disclosures against the claims tree
+        Set<String> matched = new HashSet<>();
+        resolveDisclosures(claims, decoded, matched);
+
+        // Verify all disclosures were matched to an _sd array
+        if (matched.size() != decoded.size()) {
+            throw new IllegalStateException("Disclosure digest not found in _sd array");
+        }
+
         // Remove SD-JWT internal claims
-        claims.remove("_sd");
-        claims.remove("_sd_alg");
-        claims.remove("..."); // decoy digests
+        cleanupSdClaims(claims);
 
         return claims;
     }
+
+    @SuppressWarnings("unchecked")
+    private void resolveDisclosures(
+            Map<String, Object> target, List<DecodedDisclosure> disclosures, Set<String> matched) {
+        List<String> sdDigests = extractSdDigests(target);
+
+        // Match disclosures against this level's _sd array
+        for (DecodedDisclosure d : disclosures) {
+            if (sdDigests.contains(d.digest())) {
+                target.put(d.claimName(), d.claimValue());
+                matched.add(d.digest());
+            }
+        }
+
+        // Recurse into any sub-objects that have their own _sd arrays
+        for (Object value : target.values()) {
+            if (value instanceof Map<?, ?> subMap) {
+                Map<String, Object> subObject = (Map<String, Object>) subMap;
+                if (subObject.containsKey("_sd")) {
+                    resolveDisclosures(subObject, disclosures, matched);
+                }
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> extractSdDigests(Map<String, Object> obj) {
+        List<String> digests = new ArrayList<>();
+        if (obj.get("_sd") instanceof List<?> sdArray) {
+            for (Object digest : sdArray) {
+                if (digest instanceof String s) {
+                    digests.add(s);
+                }
+            }
+        }
+        return digests;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void cleanupSdClaims(Map<String, Object> claims) {
+        claims.remove("_sd");
+        claims.remove("_sd_alg");
+        claims.remove("...");
+        for (Object value : claims.values()) {
+            if (value instanceof Map<?, ?> subMap) {
+                cleanupSdClaims((Map<String, Object>) subMap);
+            }
+        }
+    }
+
+    private record DecodedDisclosure(String claimName, Object claimValue, String digest, String raw) {}
 
     private void verifyKeyBinding(
             SdJwtParts parts, SignedJWT credentialJwt, String expectedAudience, String expectedNonce) throws Exception {

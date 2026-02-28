@@ -63,7 +63,7 @@ class Oid4vpDirectPostServiceTest {
 
     @Test
     void handleCompletion_noEntry_returnsBadRequest() {
-        when(singleUseObjects.get(CROSS_DEVICE_COMPLETE_PREFIX + "token123")).thenReturn(null);
+        when(singleUseObjects.remove(CROSS_DEVICE_COMPLETE_PREFIX + "token123")).thenReturn(null);
 
         Response response = service.handleCompletion("token123", null);
 
@@ -73,7 +73,7 @@ class Oid4vpDirectPostServiceTest {
 
     @Test
     void handleCompletion_missingRedirectUri_returnsServerError() {
-        when(singleUseObjects.get(CROSS_DEVICE_COMPLETE_PREFIX + "token123"))
+        when(singleUseObjects.remove(CROSS_DEVICE_COMPLETE_PREFIX + "token123"))
                 .thenReturn(Map.of("root_session_id", "root-1"));
 
         Response response = service.handleCompletion("token123", null);
@@ -84,8 +84,8 @@ class Oid4vpDirectPostServiceTest {
     @Test
     void handleCompletion_validEntry_redirects() {
         String redirectUri = "http://localhost:8080/realms/test/broker/oid4vp/endpoint/complete-auth?state=abc";
-        when(singleUseObjects.get(CROSS_DEVICE_COMPLETE_PREFIX + "token123"))
-                .thenReturn(Map.of("redirect_uri", redirectUri));
+        when(singleUseObjects.remove(CROSS_DEVICE_COMPLETE_PREFIX + "token123"))
+                .thenReturn(Map.of("complete_auth_url", redirectUri));
 
         Response response = service.handleCompletion("token123", null);
 
@@ -96,8 +96,8 @@ class Oid4vpDirectPostServiceTest {
     @Test
     void handleCompletion_walletSource_returnsHtml() {
         String redirectUri = "http://localhost:8080/realms/test/broker/oid4vp/endpoint/complete-auth?state=abc";
-        when(singleUseObjects.get(CROSS_DEVICE_COMPLETE_PREFIX + "token123"))
-                .thenReturn(Map.of("redirect_uri", redirectUri));
+        when(singleUseObjects.remove(CROSS_DEVICE_COMPLETE_PREFIX + "token123"))
+                .thenReturn(Map.of("complete_auth_url", redirectUri));
 
         Response response = service.handleCompletion("token123", "wallet");
 
@@ -107,8 +107,8 @@ class Oid4vpDirectPostServiceTest {
 
     @Test
     void handleCompletion_openRedirectAttempt_returnsBadRequest() {
-        when(singleUseObjects.get(CROSS_DEVICE_COMPLETE_PREFIX + "token123"))
-                .thenReturn(Map.of("redirect_uri", "https://evil.example.com/steal"));
+        when(singleUseObjects.remove(CROSS_DEVICE_COMPLETE_PREFIX + "token123"))
+                .thenReturn(Map.of("complete_auth_url", "https://evil.example.com/steal"));
 
         Response response = service.handleCompletion("token123", null);
 
@@ -135,7 +135,7 @@ class Oid4vpDirectPostServiceTest {
 
     @Test
     void completeAuth_noSignal_returnsBadRequest() {
-        when(singleUseObjects.get(DEFERRED_AUTH_PREFIX + "missing-state")).thenReturn(null);
+        when(singleUseObjects.remove(DEFERRED_AUTH_PREFIX + "missing-state")).thenReturn(null);
 
         Response response = service.completeAuth("missing-state", null, null);
 

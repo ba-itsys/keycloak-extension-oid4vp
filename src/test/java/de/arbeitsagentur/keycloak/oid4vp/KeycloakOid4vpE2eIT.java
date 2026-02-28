@@ -97,6 +97,10 @@ class KeycloakOid4vpE2eIT {
 
         wallet = new Oid4vcContainer("ghcr.io/dominikschlosser/oid4vc-dev:v0.13.3")
                 .withHostAccess()
+                .withNetwork(network)
+                .withNetworkAliases("oid4vc-dev")
+                .withStatusList()
+                .withStatusListBaseUrl("http://oid4vc-dev:8085")
                 .withLogConsumer(
                         frame -> LOG.info("[OID4VC] {}", frame.getUtf8String().stripTrailing()));
         wallet.start();
@@ -259,6 +263,10 @@ class KeycloakOid4vpE2eIT {
 
             LOG.info("[Test] Cross-device wallet response: {}", walletResponse.rawBody());
 
+            assertThat(walletResponse.redirectUri())
+                    .as("Cross-device direct_post response must not contain redirect_uri")
+                    .isNull();
+
             try {
                 page.waitForURL(
                         url -> url.contains("/complete-auth")
@@ -309,7 +317,11 @@ class KeycloakOid4vpE2eIT {
             waitForSseConnection();
 
             String presentationUri = crossDeviceWalletUrl.replaceFirst("^https?://[^?]*", "openid4vp://authorize");
-            wallet.acceptPresentationRequest(presentationUri);
+            PresentationResponse walletResponse = wallet.acceptPresentationRequest(presentationUri);
+
+            assertThat(walletResponse.redirectUri())
+                    .as("Cross-device direct_post response must not contain redirect_uri")
+                    .isNull();
 
             try {
                 page.waitForURL(
@@ -386,6 +398,56 @@ class KeycloakOid4vpE2eIT {
 
     @Test
     @Order(8)
+    void revokedCredentialIsRejected() throws Exception {
+        callback.reset();
+        clearBrowserSession();
+
+        Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient, REALM);
+
+        // Get credential ID and revoke it
+        var credentials = wallet.client().getCredentials();
+        assertThat(credentials).as("Wallet should have at least one credential").isNotEmpty();
+        String credentialId = credentials.get(0).id();
+        wallet.client().revokeCredential(credentialId);
+
+        try {
+            page.navigate(buildAuthRequestUri().toString());
+            page.waitForLoadState(LoadState.NETWORKIDLE);
+
+            page.locator("a#social-oid4vp").click();
+            waitForOpenWalletLink();
+
+            String walletUrl = page.locator("a:has-text('Open Wallet App')").getAttribute("href");
+            String presentationUri = convertToOpenid4vpUri(walletUrl);
+            PresentationResponse walletResponse = wallet.acceptPresentationRequest(presentationUri);
+
+            LOG.info("[Test] Revoked credential wallet response: {}", walletResponse.rawBody());
+
+            String redirectUri = walletResponse.redirectUri();
+            if (redirectUri != null) {
+                page.navigate(redirectUri);
+                page.waitForLoadState(LoadState.NETWORKIDLE);
+            }
+
+            Thread.sleep(2000);
+            String bodyText = page.locator("body").textContent().toLowerCase();
+            boolean hasError = bodyText.contains("error")
+                    || bodyText.contains("revoked")
+                    || bodyText.contains("failed")
+                    || bodyText.contains("denied");
+
+            assertThat(hasError)
+                    .as(
+                            "Revoked credential should be rejected. URL: %s, Body: %s",
+                            page.url(), bodyText.substring(0, Math.min(500, bodyText.length())))
+                    .isTrue();
+        } finally {
+            wallet.client().unrevokeCredential(credentialId);
+        }
+    }
+
+    @Test
+    @Order(9)
     void walletErrorShowsErrorAndAllowsRetry() throws Exception {
         callback.reset();
         clearBrowserSession();

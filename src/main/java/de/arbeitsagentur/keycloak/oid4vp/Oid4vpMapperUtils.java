@@ -24,6 +24,8 @@ public final class Oid4vpMapperUtils {
     private static final Logger LOG = Logger.getLogger(Oid4vpMapperUtils.class);
 
     static final String CONTEXT_CLAIMS_KEY = "oid4vp_claims";
+    static final String CONTEXT_PRESENTATION_TYPE_KEY = "oid4vp_presentation_type";
+    static final String CONTEXT_CREDENTIAL_TYPE_KEY = "oid4vp_credential_type";
 
     private Oid4vpMapperUtils() {}
 
@@ -52,11 +54,23 @@ public final class Oid4vpMapperUtils {
         for (String part : pathParts) {
             if (current instanceof Map) {
                 current = ((Map<?, ?>) current).get(part);
-                if (current == null) return null;
+                if (current == null) break;
             } else {
-                return null;
+                current = null;
+                break;
             }
         }
-        return current;
+        if (current != null) return current;
+
+        // Fall back to suffix match for mDoc namespaced keys (e.g. "family_name" matches
+        // "eu.europa.ec.eudi.pid.1/family_name")
+        String suffix = "/" + claimPath;
+        for (Map.Entry<String, Object> entry : claims.entrySet()) {
+            if (entry.getKey().endsWith(suffix)) {
+                return entry.getValue();
+            }
+        }
+
+        return null;
     }
 }

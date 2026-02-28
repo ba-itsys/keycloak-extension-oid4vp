@@ -65,7 +65,11 @@ class Oid4vpDirectPostService {
         this.crossDeviceCompleteTtlSeconds = config.getCrossDeviceCompleteTtlSeconds();
     }
 
-    Response storeAndSignal(AuthenticationSessionModel authSession, String state, BrokeredIdentityContext context) {
+    Response storeAndSignal(
+            AuthenticationSessionModel authSession,
+            String state,
+            BrokeredIdentityContext context,
+            boolean isCrossDevice) {
 
         String rootSessionId = authSession.getParentSession() != null
                 ? authSession.getParentSession().getId()
@@ -99,12 +103,15 @@ class Oid4vpDirectPostService {
         session.singleUseObjects()
                 .put(CROSS_DEVICE_COMPLETE_PREFIX + state, crossDeviceCompleteTtlSeconds, completeEntry);
 
+        if (isCrossDevice) {
+            return Response.ok("{}").type(MediaType.APPLICATION_JSON).build();
+        }
         return jsonRedirectResponse(completeAuthUrl);
     }
 
     Response completeAuth(String state, AbstractIdentityProvider.AuthenticationCallback callback, EventBuilder event) {
 
-        Map<String, String> signal = session.singleUseObjects().get(DEFERRED_AUTH_PREFIX + state);
+        Map<String, String> signal = session.singleUseObjects().remove(DEFERRED_AUTH_PREFIX + state);
         if (signal == null) {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity("Authentication data not found. Please try again.")
@@ -181,7 +188,7 @@ class Oid4vpDirectPostService {
     }
 
     Response handleCompletion(String token, String source) {
-        Map<String, String> entry = session.singleUseObjects().get(CROSS_DEVICE_COMPLETE_PREFIX + token);
+        Map<String, String> entry = session.singleUseObjects().remove(CROSS_DEVICE_COMPLETE_PREFIX + token);
         if (entry == null) {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity("Session expired. Please try again.")
@@ -189,7 +196,7 @@ class Oid4vpDirectPostService {
                     .build();
         }
 
-        String redirectUri = entry.get("redirect_uri");
+        String redirectUri = entry.get("complete_auth_url");
         String rootSessionId = entry.get("root_session_id");
 
         if (StringUtil.isBlank(redirectUri)) {

@@ -9,11 +9,11 @@ services:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
       KC_HEALTH_ENABLED: "true"
-      KC_LOG_LEVEL: info,de.arbeitsagentur:debug
+      KC_LOG_LEVEL: info,de.arbeitsagentur:trace
       KC_HOSTNAME: ${KC_HOSTNAME:-}
       KC_PROXY_HEADERS: ${KC_PROXY_HEADERS:-}
     ports:
       - "8080:8080"
     volumes:
       - ./target/providers:/opt/keycloak/providers:ro
-      - ./src/test/resources:/opt/keycloak/data/import:ro
+      - ./src/test/resources/realm-wallet-demo-local.json:/opt/keycloak/data/import/realm-wallet-demo-local.json:ro
