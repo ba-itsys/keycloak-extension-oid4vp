@@ -3,15 +3,14 @@ set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 
-REALM_OUT="${ROOT_DIR}/realm-wallet-demo-local.json"
-COMPOSE_OUT="${ROOT_DIR}/docker-compose.local.yml"
+REALM_OUT="${ROOT_DIR}/src/test/resources/realm-wallet-demo-local.json"
 
 usage() {
   cat <<'EOF'
 Usage: scripts/setup-local-realm.sh <pem-file> <verifier-info-file>
 
-Generates realm-wallet-demo-local.json and docker-compose.local.yml for
-local testing with the provided X.509 credentials and verifier info.
+Generates src/test/resources/realm-wallet-demo-local.json for local testing
+with the provided X.509 credentials and verifier info.
 
 Arguments:
   <pem-file>             Path to combined PEM file (cert chain + private key)
@@ -119,16 +118,8 @@ cat > "$REALM_OUT" <<REALMEOF
 }
 REALMEOF
 
-cat > "$COMPOSE_OUT" <<'COMPOSEEOF'
-services:
-  keycloak:
-    volumes:
-      - ./realm-wallet-demo-local.json:/opt/keycloak/data/import/realm-wallet-demo-local.json:ro
-COMPOSEEOF
-
 echo "Generated:"
 echo "  $REALM_OUT"
-echo "  $COMPOSE_OUT"
 echo ""
 echo "Usage:"
 echo "  mvn package -DskipTests"
