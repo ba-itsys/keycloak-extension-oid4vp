@@ -23,6 +23,7 @@ import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jose.util.Base64;
 import com.nimbusds.jwt.SignedJWT;
+import de.arbeitsagentur.keycloak.oid4vp.domain.RequestObjectParams;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SignedRequestObject;
 import java.math.BigInteger;
 import java.security.cert.X509Certificate;
@@ -194,7 +195,7 @@ class Oid4vpRedirectFlowServiceHaipTest {
     }
 
     private SignedRequestObject buildRequestObject(boolean enforceHaip) {
-        return service.buildSignedRequestObject(
+        return service.buildSignedRequestObject(new RequestObjectParams(
                 "{\"credentials\":[{\"id\":\"test\",\"format\":\"dc+sd-jwt\",\"meta\":{\"vct_values\":[\"IdentityCredential\"]},\"claims\":[{\"path\":[\"sub\"]}]}]}",
                 null,
                 "test-client-id",
@@ -206,7 +207,7 @@ class Oid4vpRedirectFlowServiceHaipTest {
                 signingKeyJwk,
                 null,
                 enforceHaip,
-                300);
+                300));
     }
 
     @SuppressWarnings("unchecked")

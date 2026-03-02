@@ -53,15 +53,10 @@ public class Oid4vpCallbackProcessor {
         this.vpTokenProcessor = vpTokenProcessor;
     }
 
-    public BrokeredIdentityContext process(
-            AuthenticationSessionModel authSession,
-            String state,
-            String vpToken,
-            String error,
-            String errorDescription) {
+    public BrokeredIdentityContext process(AuthenticationSessionModel authSession, String state, String vpToken) {
 
         try {
-            return processInternal(authSession, state, vpToken, error, errorDescription);
+            return processInternal(authSession, state, vpToken);
         } catch (Exception e) {
             // Always clean up session notes to prevent stale state on retry
             clearSessionNotes(authSession);
@@ -70,26 +65,14 @@ public class Oid4vpCallbackProcessor {
     }
 
     private BrokeredIdentityContext processInternal(
-            AuthenticationSessionModel authSession,
-            String state,
-            String vpToken,
-            String error,
-            String errorDescription) {
+            AuthenticationSessionModel authSession, String state, String vpToken) {
 
         String expectedState = authSession.getAuthNote(SESSION_STATE);
         if (expectedState == null || !expectedState.equals(state)) {
             throw new IdentityBrokerException("Invalid state parameter");
         }
 
-        if (StringUtil.isNotBlank(error)) {
-            String message = StringUtil.isNotBlank(errorDescription) ? error + ": " + errorDescription : error;
-            throw new IdentityBrokerException("Wallet returned error: " + message);
-        }
-
-        String mdocGeneratedNonce = authSession.getAuthNote(SESSION_MDOC_GENERATED_NONCE);
-        if (mdocGeneratedNonce != null) {
-            authSession.removeAuthNote(SESSION_MDOC_GENERATED_NONCE);
-        }
+        authSession.removeAuthNote(SESSION_MDOC_GENERATED_NONCE);
 
         if (StringUtil.isBlank(vpToken)) {
             throw new IdentityBrokerException("Missing vp_token");
@@ -98,13 +81,11 @@ public class Oid4vpCallbackProcessor {
         LOG.debugf("VP token received (length=%d)", vpToken.length());
 
         String expectedNonce = authSession.getAuthNote(SESSION_NONCE);
-        String responseUri = authSession.getAuthNote(SESSION_RESPONSE_URI);
         String effectiveClientId = authSession.getAuthNote(SESSION_EFFECTIVE_CLIENT_ID);
         String clientId = effectiveClientId != null ? effectiveClientId : authSession.getAuthNote(SESSION_CLIENT_ID);
         String redirectFlowResponseUri = authSession.getAuthNote(SESSION_REDIRECT_FLOW_RESPONSE_URI);
 
-        VpTokenResult vpResult = vpTokenProcessor.process(
-                vpToken, clientId, expectedNonce, responseUri, redirectFlowResponseUri, mdocGeneratedNonce);
+        VpTokenResult vpResult = vpTokenProcessor.process(vpToken, clientId, expectedNonce, redirectFlowResponseUri);
 
         VerifiedCredential primary = vpResult.getPrimaryCredential();
         if (primary == null) {
@@ -165,8 +146,5 @@ public class Oid4vpCallbackProcessor {
         authSession.removeAuthNote(SESSION_ENCRYPTION_KEY);
         authSession.removeAuthNote(SESSION_CLIENT_ID);
         authSession.removeAuthNote(SESSION_EFFECTIVE_CLIENT_ID);
-        authSession.removeAuthNote(SESSION_TAB_ID);
-        authSession.removeAuthNote(SESSION_CLIENT_DATA);
-        authSession.removeAuthNote(SESSION_CODE);
     }
 }

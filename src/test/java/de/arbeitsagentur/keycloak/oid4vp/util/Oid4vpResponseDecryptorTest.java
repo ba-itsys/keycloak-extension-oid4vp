@@ -28,7 +28,6 @@ import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jose.util.Base64URL;
 import de.arbeitsagentur.keycloak.oid4vp.domain.DecryptedResponse;
-import de.arbeitsagentur.keycloak.oid4vp.domain.PreDecryptionResult;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,25 +45,24 @@ class Oid4vpResponseDecryptorTest {
     }
 
     @Test
-    void decryptFull_validJwe_returnsVpTokenAndNonce() throws Exception {
+    void decrypt_validJwe_returnsVpTokenAndNonce() throws Exception {
         String vpToken = "eyJhbGciOiJFUzI1NiJ9.test.sig~";
         String mdocNonce = "wallet-generated-nonce";
         String jwe = encryptPayload(Map.of("vp_token", vpToken), mdocNonce);
 
-        DecryptedResponse result = decryptor.decryptFull(jwe, encryptionKey.toJSONString());
+        DecryptedResponse result = decryptor.decrypt(jwe, encryptionKey);
 
         assertThat(result.vpToken()).isEqualTo(vpToken);
-        // apu is Base64URL-encoded in the JWE header; the decryptor returns the raw Base64URL string
         assertThat(result.mdocGeneratedNonce())
                 .isEqualTo(Base64URL.encode(mdocNonce).toString());
         assertThat(result.error()).isNull();
     }
 
     @Test
-    void decryptFull_walletError_returnsErrorFields() throws Exception {
+    void decrypt_walletError_returnsErrorFields() throws Exception {
         String jwe = encryptPayload(Map.of("error", "invalid_scope", "error_description", "Bad scope"), null);
 
-        DecryptedResponse result = decryptor.decryptFull(jwe, encryptionKey.toJSONString());
+        DecryptedResponse result = decryptor.decrypt(jwe, encryptionKey);
 
         assertThat(result.error()).isEqualTo("invalid_scope");
         assertThat(result.errorDescription()).isEqualTo("Bad scope");
@@ -72,28 +70,37 @@ class Oid4vpResponseDecryptorTest {
     }
 
     @Test
-    void decryptFull_blankKey_throwsIllegalState() {
-        assertThatThrownBy(() -> decryptor.decryptFull("jwe", "")).isInstanceOf(IllegalStateException.class);
+    void decrypt_invalidJwe_throwsIllegalState() {
+        assertThatThrownBy(() -> decryptor.decrypt("not-a-jwe", encryptionKey))
+                .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    void tryPreDecrypt_noKid_returnsEmpty() throws Exception {
-        // JWE without kid in header
+    void extractKid_validJwe_returnsKid() throws Exception {
+        String jwe = encryptPayload(Map.of("vp_token", "test"), null);
+
+        String kid = decryptor.extractKid(jwe);
+
+        assertThat(kid).isEqualTo("test-kid");
+    }
+
+    @Test
+    void extractKid_noKid_returnsNull() throws Exception {
         ECKey noKidKey = new ECKeyGenerator(Curve.P_256).generate();
         JWEHeader header = new JWEHeader.Builder(JWEAlgorithm.ECDH_ES, EncryptionMethod.A256GCM).build();
         JWEObject jwe = new JWEObject(header, new Payload("{\"vp_token\":\"test\"}"));
         jwe.encrypt(new ECDHEncrypter(noKidKey));
 
-        PreDecryptionResult result = decryptor.tryPreDecrypt(jwe.serialize(), null, null);
+        String kid = decryptor.extractKid(jwe.serialize());
 
-        assertThat(result).isEqualTo(PreDecryptionResult.EMPTY);
+        assertThat(kid).isNull();
     }
 
     @Test
-    void tryPreDecrypt_invalidJwe_returnsEmpty() {
-        PreDecryptionResult result = decryptor.tryPreDecrypt("not-a-jwe", null, null);
+    void extractKid_invalidJwe_returnsNull() {
+        String kid = decryptor.extractKid("not-a-jwe");
 
-        assertThat(result).isEqualTo(PreDecryptionResult.EMPTY);
+        assertThat(kid).isNull();
     }
 
     private String encryptPayload(Map<String, Object> payload, String apuNonce) throws Exception {

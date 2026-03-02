@@ -15,8 +15,6 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
-import de.arbeitsagentur.keycloak.oid4vp.domain.StoredRequestObject;
-import java.util.Map;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.models.KeycloakSession;
@@ -59,32 +57,35 @@ public class Oid4vpAuthSessionResolver {
     public AuthenticationSessionModel resolveFromStore(String state, String tabIdHint) {
         if (state == null) return null;
 
-        StoredRequestObject stored = requestObjectStore.resolveByState(session, state);
-        if (stored == null || stored.rootSessionId() == null) {
-            return null;
-        }
-
-        RootAuthenticationSessionModel rootSession =
-                session.authenticationSessions().getRootAuthenticationSession(realm, stored.rootSessionId());
-        if (rootSession == null) {
+        Oid4vpRequestObjectStore.StateEntry stateEntry = requestObjectStore.resolveByState(session, state);
+        if (stateEntry == null || stateEntry.rootSessionId() == null) {
             return null;
         }
 
         String tabId = tabIdHint;
+        if (tabId == null) {
+            tabId = stateEntry.tabId();
+        }
         if (tabId == null && state.contains(".")) {
             tabId = state.substring(0, state.indexOf('.'));
+        }
+
+        return resolveFromTokenEntry(stateEntry.rootSessionId(), tabId);
+    }
+
+    public AuthenticationSessionModel resolveFromTokenEntry(String rootSessionId, String tabId) {
+        if (rootSessionId == null) return null;
+
+        RootAuthenticationSessionModel rootSession =
+                session.authenticationSessions().getRootAuthenticationSession(realm, rootSessionId);
+        if (rootSession == null) {
+            return null;
         }
 
         return tabId != null ? findAuthSessionInRoot(rootSession, tabId) : null;
     }
 
     public AuthenticationSessionModel findAuthSessionInRoot(RootAuthenticationSessionModel rootSession, String tabId) {
-        for (Map.Entry<String, AuthenticationSessionModel> entry :
-                rootSession.getAuthenticationSessions().entrySet()) {
-            if (entry.getKey().equals(tabId)) {
-                return entry.getValue();
-            }
-        }
-        return null;
+        return rootSession.getAuthenticationSessions().get(tabId);
     }
 }

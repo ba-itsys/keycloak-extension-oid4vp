@@ -41,8 +41,14 @@ import org.keycloak.util.KeyWrapperUtil;
 public class SdJwtVerifier {
 
     private static final Logger LOG = Logger.getLogger(SdJwtVerifier.class);
-    private static final int CLOCK_SKEW_SECONDS = 60;
-    private static final int KB_JWT_MAX_AGE_SECONDS = 300;
+
+    private final int clockSkewSeconds;
+    private final int kbJwtMaxAgeSeconds;
+
+    public SdJwtVerifier(int clockSkewSeconds, int kbJwtMaxAgeSeconds) {
+        this.clockSkewSeconds = clockSkewSeconds;
+        this.kbJwtMaxAgeSeconds = kbJwtMaxAgeSeconds;
+    }
 
     public boolean isSdJwt(String token) {
         return token != null && token.contains("~");
@@ -57,25 +63,28 @@ public class SdJwtVerifier {
 
             List<SignatureVerifierContext> verifiers = resolveIssuerVerifiers(trustedKeys);
 
+            // The ClaimVerifier.Builder constructor adds an IatLifetimeCheck with the KB-JWT default
+            // maxAge (300s) to ALL builders, including issuer opts. We must remove it for issuer JWTs
+            // since credentials can be arbitrarily old — expiration is handled by the exp claim.
             IssuerSignedJwtVerificationOpts issuerOpts = IssuerSignedJwtVerificationOpts.builder()
-                    .withClockSkew(CLOCK_SKEW_SECONDS)
+                    .withClockSkew(clockSkewSeconds)
+                    .withIatCheck(null)
                     .withExpCheck(true)
                     .withNbfCheck(true)
                     .build();
 
-            boolean hasKbJwt = sdJwtVP.getKeyBindingJWT().isPresent();
-            KeyBindingJwtVerificationOpts.Builder kbBuilder = KeyBindingJwtVerificationOpts.builder()
-                    .withKeyBindingRequired(hasKbJwt)
-                    .withIatCheck(KB_JWT_MAX_AGE_SECONDS)
+            boolean hasKbParams = expectedAudience != null && expectedNonce != null;
+            KeyBindingJwtVerificationOpts.Builder kbOptsBuilder = KeyBindingJwtVerificationOpts.builder()
+                    .withKeyBindingRequired(hasKbParams)
+                    .withClockSkew(clockSkewSeconds)
+                    .withIatCheck(kbJwtMaxAgeSeconds)
                     .withExpCheck(true)
-                    .withNbfCheck(true)
-                    .withClockSkew(CLOCK_SKEW_SECONDS);
-            if (hasKbJwt) {
-                kbBuilder.withAudCheck(expectedAudience);
-                kbBuilder.withNonceCheck(expectedNonce);
+                    .withNbfCheck(true);
+            if (hasKbParams) {
+                kbOptsBuilder.withAudCheck(expectedAudience).withNonceCheck(expectedNonce);
             }
 
-            sdJwtVP.verify(verifiers, issuerOpts, kbBuilder.build());
+            sdJwtVP.verify(verifiers, issuerOpts, kbOptsBuilder.build());
 
             Map<String, Object> claims = extractDisclosedClaims(sdJwtVP);
 

@@ -16,6 +16,7 @@
 package de.arbeitsagentur.keycloak.oid4vp.service;
 
 import static de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService.CROSS_DEVICE_COMPLETE_PREFIX;
+import static de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService.KEY_COMPLETE_AUTH_URL;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import jakarta.ws.rs.core.Response;
@@ -24,7 +25,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
-import org.jboss.logging.Logger;
+import org.keycloak.OAuth2Constants;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
@@ -32,8 +33,6 @@ import org.keycloak.models.SingleUseObjectProvider;
 import org.keycloak.util.JsonSerialization;
 
 public class Oid4vpCrossDeviceSseService {
-
-    private static final Logger LOG = Logger.getLogger(Oid4vpCrossDeviceSseService.class);
 
     private final KeycloakSessionFactory sessionFactory;
     private final String realmName;
@@ -68,13 +67,13 @@ public class Oid4vpCrossDeviceSseService {
                             SingleUseObjectProvider store = pollingSession.singleUseObjects();
                             Map<String, String> entry = store.remove(CROSS_DEVICE_COMPLETE_PREFIX + state);
                             if (entry != null) {
-                                String completeAuthUrl = entry.get("complete_auth_url");
+                                String completeAuthUrl = entry.get(KEY_COMPLETE_AUTH_URL);
                                 if (completeAuthUrl != null) {
                                     writeSseEvent(
                                             output,
                                             "complete",
                                             JsonSerialization.writeValueAsString(
-                                                    Map.of("redirect_uri", completeAuthUrl)));
+                                                    Map.of(OAuth2Constants.REDIRECT_URI, completeAuthUrl)));
                                     pollingSession.getTransactionManager().commit();
                                     return;
                                 }

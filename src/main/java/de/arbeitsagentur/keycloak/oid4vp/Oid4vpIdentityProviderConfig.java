@@ -43,7 +43,6 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final String CREDENTIAL_SET_PURPOSE = "credentialSetPurpose";
 
     public static final String TRUST_LIST_URL = "trustListUrl";
-    public static final String ADDITIONAL_TRUSTED_CERTIFICATES = "additionalTrustedCertificates";
 
     public static final String ALLOWED_ISSUERS = "allowedIssuers";
     public static final String ALLOWED_CREDENTIAL_TYPES = "allowedCredentialTypes";
@@ -56,13 +55,18 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final String SSE_PING_INTERVAL_SECONDS = "ssePingIntervalSeconds";
     public static final String CROSS_DEVICE_COMPLETE_TTL_SECONDS = "crossDeviceCompleteTtlSeconds";
 
+    public static final String CLOCK_SKEW_SECONDS = "clockSkewSeconds";
+    public static final String KB_JWT_MAX_AGE_SECONDS = "kbJwtMaxAgeSeconds";
+
     public static final int DEFAULT_SSE_POLL_INTERVAL_MS = 2000;
     public static final int DEFAULT_SSE_TIMEOUT_SECONDS = 120;
     public static final int DEFAULT_SSE_PING_INTERVAL_SECONDS = 10;
     public static final int DEFAULT_CROSS_DEVICE_COMPLETE_TTL_SECONDS = 300;
+    public static final int DEFAULT_CLOCK_SKEW_SECONDS = 60;
+    public static final int DEFAULT_KB_JWT_MAX_AGE_SECONDS = 300;
 
     public static final String ENFORCE_HAIP = "enforceHaip";
-    public static final String HAIP_CLIENT_ID_SCHEME = "x509_hash";
+    public static final String HAIP_CLIENT_ID_SCHEME = Oid4vpConstants.CLIENT_ID_SCHEME_X509_HASH;
 
     public Oid4vpIdentityProviderConfig() {
         super();
@@ -125,7 +129,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public String getWalletScheme() {
         String scheme = getConfig().get(WALLET_SCHEME);
-        return StringUtil.isNotBlank(scheme) ? scheme : "openid4vp://";
+        return StringUtil.isNotBlank(scheme) ? scheme : Oid4vpConstants.DEFAULT_WALLET_SCHEME;
     }
 
     public void setWalletScheme(String scheme) {
@@ -137,7 +141,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
             return HAIP_CLIENT_ID_SCHEME;
         }
         String scheme = getConfig().get(CLIENT_ID_SCHEME);
-        return StringUtil.isNotBlank(scheme) ? scheme : "x509_san_dns";
+        return StringUtil.isNotBlank(scheme) ? scheme : Oid4vpConstants.CLIENT_ID_SCHEME_X509_SAN_DNS;
     }
 
     public void setClientIdScheme(String scheme) {
@@ -145,7 +149,11 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     }
 
     public String getX509CertificatePem() {
-        return getConfig().get(X509_CERTIFICATE_PEM);
+        String pem = getConfig().get(X509_CERTIFICATE_PEM);
+        if (pem != null && pem.contains("\\n")) {
+            pem = pem.replace("\\n", "\n");
+        }
+        return pem;
     }
 
     public void setX509CertificatePem(String pem) {
@@ -195,14 +203,6 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public void setTrustListUrl(String url) {
         getConfig().put(TRUST_LIST_URL, url);
-    }
-
-    public String getAdditionalTrustedCertificates() {
-        return getConfig().get(ADDITIONAL_TRUSTED_CERTIFICATES);
-    }
-
-    public void setAdditionalTrustedCertificates(String certificates) {
-        getConfig().put(ADDITIONAL_TRUSTED_CERTIFICATES, certificates);
     }
 
     public boolean isEnforceHaip() {
@@ -296,6 +296,22 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public void setCrossDeviceCompleteTtlSeconds(int seconds) {
         getConfig().put(CROSS_DEVICE_COMPLETE_TTL_SECONDS, String.valueOf(seconds));
+    }
+
+    public int getClockSkewSeconds() {
+        return getIntConfig(CLOCK_SKEW_SECONDS, DEFAULT_CLOCK_SKEW_SECONDS);
+    }
+
+    public void setClockSkewSeconds(int seconds) {
+        getConfig().put(CLOCK_SKEW_SECONDS, String.valueOf(seconds));
+    }
+
+    public int getKbJwtMaxAgeSeconds() {
+        return getIntConfig(KB_JWT_MAX_AGE_SECONDS, DEFAULT_KB_JWT_MAX_AGE_SECONDS);
+    }
+
+    public void setKbJwtMaxAgeSeconds(int seconds) {
+        getConfig().put(KB_JWT_MAX_AGE_SECONDS, String.valueOf(seconds));
     }
 
     private int getIntConfig(String key, int defaultValue) {

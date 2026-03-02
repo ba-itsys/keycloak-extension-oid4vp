@@ -15,6 +15,10 @@ Usage: scripts/dev.sh [options]
 One-command local development: builds the extension, generates realm config
 from sandbox certificates, and starts Keycloak (optionally behind an ngrok tunnel).
 
+Modes:
+  (default)                Sandbox mode – uses X.509 sandbox certificates
+  --local-wallet           Use local oid4vc-dev wallet (trust list from wallet, no ngrok)
+
 Options:
   --pem <file>             Combined PEM file (cert chain + private key)
                            Default: sandbox/sandbox-ngrok-combined.pem
@@ -27,6 +31,7 @@ Options:
   --no-proxy               Disable oid4vc-dev proxy even if available
   --no-ngrok               Run Keycloak without ngrok (localhost only)
   --ngrok-only             Start only ngrok tunnel, no Keycloak
+  --wallet-port <port>     oid4vc-dev wallet port (default: 8085, only with --local-wallet)
   -h, --help               Show this help
 
 Environment variables (override defaults):
@@ -35,6 +40,8 @@ Environment variables (override defaults):
 
 Examples:
   scripts/dev.sh                                       # Everything with defaults
+  scripts/dev.sh --local-wallet                        # Use oid4vc-dev wallet
+  scripts/dev.sh --local-wallet --no-build             # Wallet mode, skip rebuild
   scripts/dev.sh --no-ngrok                            # Local only, no tunnel
   scripts/dev.sh --no-build                            # Skip rebuild
   scripts/dev.sh --pem /tmp/my.pem --domain foo.ngrok-free.app
@@ -51,10 +58,14 @@ DO_REALM=true
 DO_PROXY=true
 DO_NGROK=true
 NGROK_ONLY=false
+LOCAL_WALLET=false
+WALLET_PORT=8086
 
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help)     usage; exit 0 ;;
+    --local-wallet) LOCAL_WALLET=true; shift ;;
+    --wallet-port) WALLET_PORT="$2"; shift 2 ;;
     --pem)         PEM_FILE="$2"; shift 2 ;;
     --verifier-info) VERIFIER_INFO="$2"; shift 2 ;;
     --domain)      NGROK_DOMAIN="$2"; DOMAIN_EXPLICIT=true; shift 2 ;;
@@ -66,6 +77,16 @@ while [ $# -gt 0 ]; do
     *)             echo "Unexpected argument: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+# Local wallet mode implies no-ngrok (localhost only)
+if [ "$LOCAL_WALLET" = "true" ]; then
+  DO_NGROK=false
+  if ! command -v oid4vc-dev >/dev/null 2>&1; then
+    echo "Error: --local-wallet requires oid4vc-dev on PATH" >&2
+    echo "Install from: https://github.com/dominikschlosser/oid4vc-dev" >&2
+    exit 1
+  fi
+fi
 
 # Step 1: Build
 if [ "$DO_BUILD" = "true" ]; then
@@ -93,7 +114,11 @@ if [ "$DO_REALM" = "true" ]; then
     echo "Set --verifier-info or SANDBOX_DIR to point to your sandbox certificates." >&2
     exit 1
   fi
-  "$ROOT_DIR/scripts/setup-local-realm.sh" "$PEM_FILE" "$VERIFIER_INFO"
+  TRUST_LIST_ARGS=""
+  if [ "$LOCAL_WALLET" = "true" ]; then
+    TRUST_LIST_ARGS="http://host.docker.internal:$WALLET_PORT/api/trustlist"
+  fi
+  "$ROOT_DIR/scripts/setup-local-realm.sh" "$PEM_FILE" "$VERIFIER_INFO" $TRUST_LIST_ARGS
 else
   echo "==> Skipping realm generation (--skip-realm)"
 fi
@@ -123,13 +148,51 @@ elif [ "$DO_PROXY" = "true" ]; then
   echo "==> oid4vc-dev not found, skipping proxy"
 fi
 
-# Step 4: Start Keycloak (with or without ngrok)
+# Step 4: Start oid4vc-dev wallet (if --local-wallet)
+WALLET_PID=""
+if [ "$LOCAL_WALLET" = "true" ]; then
+  echo "==> Starting oid4vc-dev wallet on port $WALLET_PORT..."
+  oid4vc-dev wallet serve --pid --port "$WALLET_PORT" --register &
+  WALLET_PID=$!
+  # Give the wallet a moment to start
+  sleep 1
+  echo "    Wallet UI: http://localhost:$WALLET_PORT"
+  echo "    Trust list: http://localhost:$WALLET_PORT/api/trustlist"
+fi
+
+PROXY_OVERRIDE=""
+cleanup() {
+  if [ -n "$WALLET_PID" ] && kill -0 "$WALLET_PID" 2>/dev/null; then
+    echo "==> Stopping oid4vc-dev wallet..."
+    kill "$WALLET_PID" 2>/dev/null || true
+  fi
+  if [ -n "$PROXY_OVERRIDE" ]; then
+    rm -f "$PROXY_OVERRIDE" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT INT TERM
+
+# Step 5: Start Keycloak (with or without ngrok)
 if [ "$DO_NGROK" = "false" ]; then
   echo "==> Starting Keycloak (localhost only)..."
   cd "$ROOT_DIR"
-  echo "    Keycloak: http://localhost:$KC_PORT"
-  echo "    Admin console: http://localhost:$KC_PORT/admin"
-  ${KC_WRAPPER:-} docker compose up keycloak
+  EXTERNAL_PORT="${NGROK_TARGET_PORT:-$KC_PORT}"
+  COMPOSE_FILES="-f docker-compose.yml"
+  # When proxy is active, tell Keycloak its external hostname (same as ngrok path does)
+  if [ -n "${KC_WRAPPER:-}" ]; then
+    PROXY_OVERRIDE="$ROOT_DIR/docker-compose.proxy.yml"
+    cat > "$PROXY_OVERRIDE" <<YAML
+services:
+  keycloak:
+    environment:
+      KC_HOSTNAME: "http://localhost:$EXTERNAL_PORT"
+      KC_PROXY_HEADERS: xforwarded
+YAML
+    COMPOSE_FILES="$COMPOSE_FILES -f $PROXY_OVERRIDE"
+  fi
+  echo "    Keycloak: http://localhost:$EXTERNAL_PORT"
+  echo "    Admin console: http://localhost:$EXTERNAL_PORT/admin"
+  ${KC_WRAPPER:-} docker compose $COMPOSE_FILES up keycloak
 else
   echo "==> Starting ngrok + Keycloak..."
   NGROK_ARGS=""

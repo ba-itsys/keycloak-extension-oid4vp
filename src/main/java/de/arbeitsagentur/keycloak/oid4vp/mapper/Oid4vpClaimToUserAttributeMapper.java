@@ -99,7 +99,7 @@ public class Oid4vpClaimToUserAttributeMapper extends AbstractIdentityProviderMa
             RealmModel realm,
             IdentityProviderMapperModel mapperModel,
             BrokeredIdentityContext context) {
-        if (!matchesCredential(mapperModel, context)) {
+        if (!Oid4vpMapperUtils.matchesCredential(mapperModel, context)) {
             return;
         }
 
@@ -130,7 +130,7 @@ public class Oid4vpClaimToUserAttributeMapper extends AbstractIdentityProviderMa
             UserModel user,
             IdentityProviderMapperModel mapperModel,
             BrokeredIdentityContext context) {
-        if (!matchesCredential(mapperModel, context)) {
+        if (!Oid4vpMapperUtils.matchesCredential(mapperModel, context)) {
             return;
         }
 
@@ -152,38 +152,6 @@ public class Oid4vpClaimToUserAttributeMapper extends AbstractIdentityProviderMa
 
         String stringValue = claimValue.toString();
         applyToUser(user, userAttribute, stringValue);
-    }
-
-    private boolean matchesCredential(IdentityProviderMapperModel mapperModel, BrokeredIdentityContext context) {
-        String mapperFormat = mapperModel.getConfig().get(CREDENTIAL_FORMAT);
-        String mapperType = mapperModel.getConfig().get(CREDENTIAL_TYPE);
-
-        if (StringUtil.isNotBlank(mapperFormat)) {
-            String presentationType =
-                    (String) context.getContextData().get(Oid4vpMapperUtils.CONTEXT_PRESENTATION_TYPE_KEY);
-            String contextFormat = formatFromPresentationType(presentationType);
-            if (!mapperFormat.equals(contextFormat)) {
-                return false;
-            }
-        }
-
-        if (StringUtil.isNotBlank(mapperType)) {
-            String contextType = (String) context.getContextData().get(Oid4vpMapperUtils.CONTEXT_CREDENTIAL_TYPE_KEY);
-            if (!mapperType.equals(contextType)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private String formatFromPresentationType(String presentationType) {
-        if ("MDOC".equals(presentationType)) {
-            return Oid4vpConstants.FORMAT_MSO_MDOC;
-        } else if ("SD_JWT".equals(presentationType)) {
-            return Oid4vpConstants.FORMAT_SD_JWT_VC;
-        }
-        return presentationType;
     }
 
     private void applyToContext(BrokeredIdentityContext context, String attribute, String value) {

@@ -10,8 +10,6 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: admin
       KC_HEALTH_ENABLED: "true"
       KC_LOG_LEVEL: info,de.arbeitsagentur:trace
-      KC_HOSTNAME: ${KC_HOSTNAME:-}
-      KC_PROXY_HEADERS: ${KC_PROXY_HEADERS:-}
     ports:
       - "8080:8080"
     volumes:

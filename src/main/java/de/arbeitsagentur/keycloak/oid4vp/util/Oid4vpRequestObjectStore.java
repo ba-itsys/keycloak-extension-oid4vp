@@ -16,38 +16,35 @@
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
 import com.nimbusds.jose.jwk.ECKey;
-import de.arbeitsagentur.keycloak.oid4vp.domain.RebuildParams;
-import de.arbeitsagentur.keycloak.oid4vp.domain.StoredRequestObject;
 import java.time.Duration;
-import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.SingleUseObjectProvider;
 import org.keycloak.utils.StringUtil;
 
+/**
+ * Stores three types of session lookup indexes in Keycloak's {@link SingleUseObjectProvider}:
+ *
+ * <ul>
+ *   <li><b>Request handle → session</b>: Maps a random UUID (used in the request_uri path) to the
+ *       authentication session. Validated when the wallet fetches the request object on demand.
+ *   <li><b>State → session</b>: Maps the OAuth state parameter to the authentication session.
+ *       Used to recover the session in cross-device and direct_post flows where no session cookie
+ *       is available.
+ *   <li><b>KID → encryption key</b>: Maps the JWE key ID to the ephemeral encryption key and
+ *       associated state. Used to decrypt wallet responses in direct_post.jwt flows when the state
+ *       parameter is absent from the response.
+ * </ul>
+ *
+ * <p>All entries expire after the configured TTL (typically the Keycloak login timeout).
+ */
 public class Oid4vpRequestObjectStore {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpRequestObjectStore.class);
-    private static final String KEY_PREFIX = "oid4vp_request:";
+    private static final String REQUEST_HANDLE_PREFIX = "oid4vp_request_handle:";
     private static final String STATE_INDEX_PREFIX = "oid4vp_state:";
     private static final String KID_INDEX_PREFIX = "oid4vp_kid:";
-
-    private static final String KEY_REQUEST_OBJECT_JWT = "requestObjectJwt";
-    private static final String KEY_ENCRYPTION_KEY_JSON = "encryptionKeyJson";
-    private static final String KEY_STATE = "state";
-    private static final String KEY_NONCE = "nonce";
-    private static final String KEY_ROOT_SESSION_ID = "rootSessionId";
-    private static final String KEY_CLIENT_ID = "clientId";
-    private static final String KEY_REBUILD_EFFECTIVE_CLIENT_ID = "rebuild.effectiveClientId";
-    private static final String KEY_REBUILD_CLIENT_ID_SCHEME = "rebuild.clientIdScheme";
-    private static final String KEY_REBUILD_RESPONSE_URI = "rebuild.responseUri";
-    private static final String KEY_REBUILD_DCQL_QUERY = "rebuild.dcqlQuery";
-    private static final String KEY_REBUILD_X509_CERT_PEM = "rebuild.x509CertPem";
-    private static final String KEY_REBUILD_X509_SIGNING_KEY_JWK = "rebuild.x509SigningKeyJwk";
-    private static final String KEY_REBUILD_ENCRYPTION_PUBLIC_KEY_JSON = "rebuild.encryptionPublicKeyJson";
-    private static final String KEY_REBUILD_VERIFIER_INFO = "rebuild.verifierInfo";
 
     private final Duration ttl;
 
@@ -55,172 +52,72 @@ public class Oid4vpRequestObjectStore {
         this.ttl = ttl;
     }
 
-    public String store(
-            KeycloakSession session,
-            String requestObjectJwt,
-            String encryptionKeyJson,
-            String state,
-            String nonce,
-            String rootSessionId,
-            String clientId,
-            RebuildParams rebuildParams,
-            boolean skipIndexes) {
-        SingleUseObjectProvider store = session.singleUseObjects();
-        String id = UUID.randomUUID().toString();
+    public record RequestHandleEntry(String rootSessionId, String tabId) {}
+
+    public record StateEntry(String rootSessionId, String tabId) {}
+
+    public record KidEntry(String encryptionKeyJson, String state) {}
+
+    public void storeRequestHandle(KeycloakSession session, String requestHandle, String rootSessionId, String tabId) {
         long lifespanSeconds = ttl.toSeconds();
-
-        Map<String, String> notes = new HashMap<>();
-        putIfNotNull(notes, KEY_REQUEST_OBJECT_JWT, requestObjectJwt);
-        putIfNotNull(notes, KEY_ENCRYPTION_KEY_JSON, encryptionKeyJson);
-        putIfNotNull(notes, KEY_STATE, state);
-        putIfNotNull(notes, KEY_NONCE, nonce);
-        putIfNotNull(notes, KEY_ROOT_SESSION_ID, rootSessionId);
-        putIfNotNull(notes, KEY_CLIENT_ID, clientId);
-
-        if (rebuildParams != null) {
-            putIfNotNull(notes, KEY_REBUILD_EFFECTIVE_CLIENT_ID, rebuildParams.effectiveClientId());
-            putIfNotNull(notes, KEY_REBUILD_CLIENT_ID_SCHEME, rebuildParams.clientIdScheme());
-            putIfNotNull(notes, KEY_REBUILD_RESPONSE_URI, rebuildParams.responseUri());
-            putIfNotNull(notes, KEY_REBUILD_DCQL_QUERY, rebuildParams.dcqlQuery());
-            putIfNotNull(notes, KEY_REBUILD_X509_CERT_PEM, rebuildParams.x509CertPem());
-            putIfNotNull(notes, KEY_REBUILD_X509_SIGNING_KEY_JWK, rebuildParams.x509SigningKeyJwk());
-            putIfNotNull(notes, KEY_REBUILD_ENCRYPTION_PUBLIC_KEY_JSON, rebuildParams.encryptionPublicKeyJson());
-            putIfNotNull(notes, KEY_REBUILD_VERIFIER_INFO, rebuildParams.verifierInfo());
-        }
-
-        store.put(KEY_PREFIX + id, lifespanSeconds, notes);
-
-        if (!skipIndexes && StringUtil.isNotBlank(state)) {
-            store.put(STATE_INDEX_PREFIX + state, lifespanSeconds, Map.of("id", id));
-        }
-        // Always store kid index: each request object has a unique encryption key,
-        // so the kid index must exist for encrypted wallet responses (e.g. mDoc JWE)
-        if (encryptionKeyJson != null) {
-            String kid = extractKidFromJwk(encryptionKeyJson);
-            if (kid != null) {
-                store.put(KID_INDEX_PREFIX + kid, lifespanSeconds, Map.of("id", id));
-            }
-        }
-
-        LOG.debugf("Stored request object: id=%s, state=%s", id, state);
-        return id;
+        session.singleUseObjects()
+                .put(
+                        REQUEST_HANDLE_PREFIX + requestHandle,
+                        lifespanSeconds,
+                        Map.of("rootSessionId", rootSessionId, "tabId", tabId));
+        LOG.debugf("Stored request handle: handle=%s, rootSessionId=%s", requestHandle, rootSessionId);
     }
 
-    public StoredRequestObject resolveByState(KeycloakSession session, String state) {
-        if (StringUtil.isBlank(state)) {
-            return null;
-        }
-        Map<String, String> indexEntry = session.singleUseObjects().get(STATE_INDEX_PREFIX + state);
-        if (indexEntry == null) {
-            return null;
-        }
-        String id = indexEntry.get("id");
-        return id != null ? resolve(session, id) : null;
+    public void storeStateIndex(KeycloakSession session, String state, String rootSessionId, String tabId) {
+        if (StringUtil.isBlank(state)) return;
+        session.singleUseObjects()
+                .put(
+                        STATE_INDEX_PREFIX + state,
+                        ttl.toSeconds(),
+                        Map.of("rootSessionId", rootSessionId, "tabId", tabId));
     }
 
-    public StoredRequestObject resolveByKid(KeycloakSession session, String kid) {
-        if (StringUtil.isBlank(kid)) {
-            return null;
-        }
-        Map<String, String> indexEntry = session.singleUseObjects().get(KID_INDEX_PREFIX + kid);
-        if (indexEntry == null) {
-            return null;
-        }
-        String id = indexEntry.get("id");
-        return id != null ? resolve(session, id) : null;
+    public void storeKidIndex(KeycloakSession session, String kid, String encryptionKeyJson, String state) {
+        if (StringUtil.isBlank(kid) || encryptionKeyJson == null) return;
+        session.singleUseObjects()
+                .put(
+                        KID_INDEX_PREFIX + kid,
+                        ttl.toSeconds(),
+                        Map.of("encryptionKeyJson", encryptionKeyJson, "state", state));
     }
 
-    public StoredRequestObject resolve(KeycloakSession session, String id) {
-        if (StringUtil.isBlank(id)) {
-            return null;
-        }
-        Map<String, String> notes = session.singleUseObjects().get(KEY_PREFIX + id);
-        return notes != null ? deserialize(notes) : null;
+    public RequestHandleEntry resolveRequestHandle(KeycloakSession session, String requestHandle) {
+        if (StringUtil.isBlank(requestHandle)) return null;
+        Map<String, String> entry = session.singleUseObjects().get(REQUEST_HANDLE_PREFIX + requestHandle);
+        if (entry == null) return null;
+        return new RequestHandleEntry(entry.get("rootSessionId"), entry.get("tabId"));
     }
 
-    public void remove(KeycloakSession session, String id) {
-        if (StringUtil.isBlank(id)) {
-            return;
-        }
-        SingleUseObjectProvider store = session.singleUseObjects();
-        Map<String, String> notes = store.get(KEY_PREFIX + id);
-        if (notes != null) {
-            String state = notes.get(KEY_STATE);
-            if (StringUtil.isNotBlank(state)) {
-                store.remove(STATE_INDEX_PREFIX + state);
-            }
-            String encKeyJson = notes.get(KEY_ENCRYPTION_KEY_JSON);
-            if (encKeyJson != null) {
-                String kid = extractKidFromJwk(encKeyJson);
-                if (kid != null) {
-                    store.remove(KID_INDEX_PREFIX + kid);
-                }
-            }
-        }
-        store.remove(KEY_PREFIX + id);
+    public StateEntry resolveByState(KeycloakSession session, String state) {
+        if (StringUtil.isBlank(state)) return null;
+        Map<String, String> entry = session.singleUseObjects().get(STATE_INDEX_PREFIX + state);
+        if (entry == null) return null;
+        return new StateEntry(entry.get("rootSessionId"), entry.get("tabId"));
+    }
+
+    public KidEntry resolveByKid(KeycloakSession session, String kid) {
+        if (StringUtil.isBlank(kid)) return null;
+        Map<String, String> entry = session.singleUseObjects().get(KID_INDEX_PREFIX + kid);
+        if (entry == null) return null;
+        return new KidEntry(entry.get("encryptionKeyJson"), entry.get("state"));
     }
 
     public void removeByState(KeycloakSession session, String state) {
-        if (StringUtil.isBlank(state)) {
-            return;
-        }
+        if (StringUtil.isBlank(state)) return;
         SingleUseObjectProvider store = session.singleUseObjects();
-        Map<String, String> indexEntry = store.get(STATE_INDEX_PREFIX + state);
-        if (indexEntry != null) {
-            String id = indexEntry.get("id");
-            if (StringUtil.isNotBlank(id)) {
-                Map<String, String> notes = store.get(KEY_PREFIX + id);
-                if (notes != null) {
-                    String encKeyJson = notes.get(KEY_ENCRYPTION_KEY_JSON);
-                    if (encKeyJson != null) {
-                        String kid = extractKidFromJwk(encKeyJson);
-                        if (kid != null) {
-                            store.remove(KID_INDEX_PREFIX + kid);
-                        }
-                    }
-                }
-                store.remove(KEY_PREFIX + id);
-            }
-        }
         store.remove(STATE_INDEX_PREFIX + state);
     }
 
-    private static String extractKidFromJwk(String jwkJson) {
+    public static String extractKidFromJwk(String jwkJson) {
         try {
             return ECKey.parse(jwkJson).getKeyID();
         } catch (Exception e) {
             return null;
         }
-    }
-
-    private void putIfNotNull(Map<String, String> map, String key, String value) {
-        if (value != null) {
-            map.put(key, value);
-        }
-    }
-
-    private StoredRequestObject deserialize(Map<String, String> notes) {
-        RebuildParams rebuildParams = null;
-        String effectiveClientId = notes.get(KEY_REBUILD_EFFECTIVE_CLIENT_ID);
-        if (effectiveClientId != null) {
-            rebuildParams = new RebuildParams(
-                    effectiveClientId,
-                    notes.get(KEY_REBUILD_CLIENT_ID_SCHEME),
-                    notes.get(KEY_REBUILD_RESPONSE_URI),
-                    notes.get(KEY_REBUILD_DCQL_QUERY),
-                    notes.get(KEY_REBUILD_X509_CERT_PEM),
-                    notes.get(KEY_REBUILD_X509_SIGNING_KEY_JWK),
-                    notes.get(KEY_REBUILD_ENCRYPTION_PUBLIC_KEY_JSON),
-                    notes.get(KEY_REBUILD_VERIFIER_INFO));
-        }
-
-        return new StoredRequestObject(
-                notes.get(KEY_REQUEST_OBJECT_JWT),
-                notes.get(KEY_ENCRYPTION_KEY_JSON),
-                notes.get(KEY_STATE),
-                notes.get(KEY_NONCE),
-                notes.get(KEY_ROOT_SESSION_ID),
-                notes.get(KEY_CLIENT_ID),
-                rebuildParams);
     }
 }

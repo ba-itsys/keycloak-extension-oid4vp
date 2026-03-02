@@ -99,6 +99,10 @@ public class Oid4vpClaimToUserSessionMapper extends AbstractIdentityProviderMapp
             RealmModel realm,
             IdentityProviderMapperModel mapperModel,
             BrokeredIdentityContext context) {
+        if (!Oid4vpMapperUtils.matchesCredential(mapperModel, context)) {
+            return;
+        }
+
         String claimPath = mapperModel.getConfig().get(CLAIM_PATH);
         String sessionNote = mapperModel.getConfig().get(SESSION_NOTE);
         boolean isOptional = Boolean.parseBoolean(mapperModel.getConfig().getOrDefault(OPTIONAL, "false"));

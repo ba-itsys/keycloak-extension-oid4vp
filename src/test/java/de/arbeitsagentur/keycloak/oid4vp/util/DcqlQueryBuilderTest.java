@@ -37,12 +37,10 @@ class DcqlQueryBuilderTest {
     }
 
     @Test
-    void build_empty_returnsDefaultQuery() throws Exception {
-        String json = builder.build();
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> result = objectMapper.readValue(json, Map.class);
-        assertThat(result).containsKey("credentials");
+    void build_empty_throws() {
+        assertThatThrownBy(() -> builder.build())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("No credential types configured");
     }
 
     @Test

@@ -16,6 +16,7 @@
 package de.arbeitsagentur.keycloak.oid4vp.service;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
@@ -27,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import org.jboss.logging.Logger;
+import org.keycloak.OAuth2Constants;
 import org.keycloak.authentication.authenticators.broker.util.SerializedBrokeredIdentityContext;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
@@ -34,6 +36,7 @@ import org.keycloak.events.EventBuilder;
 import org.keycloak.events.EventType;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.services.ErrorPage;
 import org.keycloak.services.managers.AuthenticationSessionManager;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.sessions.RootAuthenticationSessionModel;
@@ -48,6 +51,11 @@ public class Oid4vpDirectPostService {
     public static final String DEFERRED_AUTH_PREFIX = "oid4vp_deferred:";
     public static final String DEFERRED_IDENTITY_NOTE = "OID4VP_DEFERRED_IDENTITY";
     public static final String DEFERRED_CLAIMS_NOTE = "OID4VP_DEFERRED_CLAIMS";
+
+    static final String KEY_ROOT_SESSION_ID = "root_session_id";
+    static final String KEY_TAB_ID = "tab_id";
+    static final String KEY_COMPLETE_AUTH_URL = "complete_auth_url";
+
     private final long crossDeviceCompleteTtlSeconds;
 
     private final KeycloakSession session;
@@ -99,12 +107,12 @@ public class Oid4vpDirectPostService {
 
         String completeAuthUrl = buildCompleteAuthUrl(state);
         Map<String, String> deferredSignal = new HashMap<>();
-        deferredSignal.put("root_session_id", rootSessionId != null ? rootSessionId : "");
-        deferredSignal.put("tab_id", tabId != null ? tabId : "");
+        deferredSignal.put(KEY_ROOT_SESSION_ID, rootSessionId != null ? rootSessionId : "");
+        deferredSignal.put(KEY_TAB_ID, tabId != null ? tabId : "");
         session.singleUseObjects().put(DEFERRED_AUTH_PREFIX + state, crossDeviceCompleteTtlSeconds, deferredSignal);
 
         Map<String, String> completeEntry = new HashMap<>();
-        completeEntry.put("complete_auth_url", completeAuthUrl);
+        completeEntry.put(KEY_COMPLETE_AUTH_URL, completeAuthUrl);
         session.singleUseObjects()
                 .put(CROSS_DEVICE_COMPLETE_PREFIX + state, crossDeviceCompleteTtlSeconds, completeEntry);
 
@@ -119,14 +127,15 @@ public class Oid4vpDirectPostService {
 
         Map<String, String> signal = session.singleUseObjects().remove(DEFERRED_AUTH_PREFIX + state);
         if (signal == null) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Authentication data not found. Please try again.")
-                    .type(MediaType.TEXT_PLAIN)
-                    .build();
+            return ErrorPage.error(
+                    session,
+                    null,
+                    Response.Status.BAD_REQUEST,
+                    "Authentication session expired. Please try logging in again.");
         }
 
-        String rootSessionId = signal.get("root_session_id");
-        String tabId = signal.get("tab_id");
+        String rootSessionId = signal.get(KEY_ROOT_SESSION_ID);
+        String tabId = signal.get(KEY_TAB_ID);
 
         if (rootSessionId != null) {
             try {
@@ -145,19 +154,21 @@ public class Oid4vpDirectPostService {
             }
         }
         if (authSession == null) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Authentication session not found. Please try again.")
-                    .type(MediaType.TEXT_PLAIN)
-                    .build();
+            return ErrorPage.error(
+                    session,
+                    null,
+                    Response.Status.BAD_REQUEST,
+                    "Authentication session expired. Please try logging in again.");
         }
 
         SerializedBrokeredIdentityContext serializedCtx =
                 SerializedBrokeredIdentityContext.readFromAuthenticationSession(authSession, DEFERRED_IDENTITY_NOTE);
         if (serializedCtx == null) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Authentication data not found. Please try again.")
-                    .type(MediaType.TEXT_PLAIN)
-                    .build();
+            return ErrorPage.error(
+                    session,
+                    authSession,
+                    Response.Status.BAD_REQUEST,
+                    "Authentication data not found. Please try logging in again.");
         }
 
         session.getContext().setAuthenticationSession(authSession);
@@ -193,53 +204,24 @@ public class Oid4vpDirectPostService {
         return response;
     }
 
-    public Response handleCompletion(String token, String source) {
+    public Response handleCompletion(String token) {
         Map<String, String> entry = session.singleUseObjects().remove(CROSS_DEVICE_COMPLETE_PREFIX + token);
         if (entry == null) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Session expired. Please try again.")
-                    .type(MediaType.TEXT_PLAIN)
-                    .build();
+            return ErrorPage.error(
+                    session, null, Response.Status.BAD_REQUEST, "Session expired. Please try logging in again.");
         }
 
-        String redirectUri = entry.get("complete_auth_url");
-        String rootSessionId = entry.get("root_session_id");
+        String redirectUri = entry.get(KEY_COMPLETE_AUTH_URL);
 
         if (StringUtil.isBlank(redirectUri)) {
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity("Authentication failed. Please try again.")
-                    .type(MediaType.TEXT_PLAIN)
-                    .build();
+            return ErrorPage.error(
+                    session, null, Response.Status.INTERNAL_SERVER_ERROR, "Authentication failed. Please try again.");
         }
 
         String baseUri = session.getContext().getUri().getBaseUri().toString();
         if (!redirectUri.startsWith(baseUri)) {
             LOG.warnf("Redirect URI does not start with base URI: %s", redirectUri);
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Invalid redirect URI.")
-                    .type(MediaType.TEXT_PLAIN)
-                    .build();
-        }
-
-        if (StringUtil.isNotBlank(rootSessionId)) {
-            try {
-                new AuthenticationSessionManager(session).setAuthSessionCookie(rootSessionId);
-            } catch (Exception e) {
-                LOG.warnf("Failed to set AUTH_SESSION_ID cookie: %s", e.getMessage());
-            }
-        }
-
-        if ("wallet".equals(source)) {
-            String html = "<!DOCTYPE html><html><head><title>Login Complete</title>"
-                    + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-                    + "<style>body{font-family:sans-serif;display:flex;justify-content:center;"
-                    + "align-items:center;min-height:100vh;margin:0;background:#f5f5f5;}"
-                    + ".card{text-align:center;padding:40px;background:white;border-radius:8px;"
-                    + "box-shadow:0 2px 8px rgba(0,0,0,0.1);}"
-                    + "h1{color:#333;margin-bottom:10px;}p{color:#666;}</style></head>"
-                    + "<body><div class=\"card\"><h1>Login Complete</h1>"
-                    + "<p>Authentication successful. You can close this tab.</p></div></body></html>";
-            return Response.ok(html).type(MediaType.TEXT_HTML).build();
+            return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, "Invalid redirect.");
         }
 
         return Response.status(Response.Status.FOUND)
@@ -248,17 +230,15 @@ public class Oid4vpDirectPostService {
     }
 
     public String buildCompleteAuthUrl(String state) {
-        String baseUri = session.getContext().getUri().getBaseUri().toString();
-        if (!baseUri.endsWith("/")) {
-            baseUri += "/";
-        }
-        return baseUri + "realms/" + realm.getName() + "/broker/" + config.getAlias() + "/endpoint/complete-auth?state="
-                + URLEncoder.encode(state, StandardCharsets.UTF_8);
+        return Oid4vpConstants.buildEndpointBaseUrl(
+                        session.getContext().getUri().getBaseUri(), realm.getName(), config.getAlias())
+                + "/complete-auth?"
+                + OAuth2Constants.STATE + "=" + URLEncoder.encode(state, StandardCharsets.UTF_8);
     }
 
     private Response jsonRedirectResponse(String redirectUri) {
         try {
-            String json = JsonSerialization.writeValueAsString(Map.of("redirect_uri", redirectUri));
+            String json = JsonSerialization.writeValueAsString(Map.of(OAuth2Constants.REDIRECT_URI, redirectUri));
             return Response.ok(json).type(MediaType.APPLICATION_JSON).build();
         } catch (Exception e) {
             return Response.ok("{\"redirect_uri\":\"\"}")

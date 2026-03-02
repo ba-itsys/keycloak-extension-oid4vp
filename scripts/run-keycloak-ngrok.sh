@@ -151,6 +151,19 @@ echo ""
 echo "Starting Keycloak via docker compose..."
 
 cd "$ROOT_DIR"
-export KC_HOSTNAME="$public_url"
-export KC_PROXY_HEADERS=xforwarded
-${KC_WRAPPER:-} docker compose up keycloak
+NGROK_OVERRIDE="$ROOT_DIR/docker-compose.ngrok.yml"
+cat > "$NGROK_OVERRIDE" <<YAML
+services:
+  keycloak:
+    environment:
+      KC_HOSTNAME: "$public_url"
+      KC_PROXY_HEADERS: xforwarded
+YAML
+
+cleanup_override() {
+  rm -f "$NGROK_OVERRIDE" >/dev/null 2>&1 || true
+}
+# Add to existing trap
+trap 'cleanup; cleanup_override' INT TERM EXIT
+
+${KC_WRAPPER:-} docker compose -f docker-compose.yml -f "$NGROK_OVERRIDE" up keycloak

@@ -15,9 +15,12 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import java.util.Map;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
+import org.keycloak.models.IdentityProviderMapperModel;
+import org.keycloak.utils.StringUtil;
 
 public final class Oid4vpMapperUtils {
 
@@ -41,6 +44,37 @@ public final class Oid4vpMapperUtils {
         }
 
         return getNestedValue(claims, claimPath);
+    }
+
+    public static boolean matchesCredential(IdentityProviderMapperModel mapperModel, BrokeredIdentityContext context) {
+        String mapperFormat = mapperModel.getConfig().get(Oid4vpMapperConfigProperties.CREDENTIAL_FORMAT);
+        String mapperType = mapperModel.getConfig().get(Oid4vpMapperConfigProperties.CREDENTIAL_TYPE);
+
+        if (StringUtil.isNotBlank(mapperFormat)) {
+            String presentationType = (String) context.getContextData().get(CONTEXT_PRESENTATION_TYPE_KEY);
+            String contextFormat = formatFromPresentationType(presentationType);
+            if (!mapperFormat.equals(contextFormat)) {
+                return false;
+            }
+        }
+
+        if (StringUtil.isNotBlank(mapperType)) {
+            String contextType = (String) context.getContextData().get(CONTEXT_CREDENTIAL_TYPE_KEY);
+            if (!mapperType.equals(contextType)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static String formatFromPresentationType(String presentationType) {
+        if ("MDOC".equals(presentationType)) {
+            return Oid4vpConstants.FORMAT_MSO_MDOC;
+        } else if ("SD_JWT".equals(presentationType)) {
+            return Oid4vpConstants.FORMAT_SD_JWT_VC;
+        }
+        return presentationType;
     }
 
     public static Object getNestedValue(Map<String, Object> claims, String claimPath) {
