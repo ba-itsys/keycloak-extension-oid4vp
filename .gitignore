@@ -7,3 +7,5 @@ pom.xml.versionsBackup
 
 src/test/resources/realm-wallet-demo-local.json
 sandbox/
+docker-compose.ngrok.yml
+docker-compose.proxy.yml

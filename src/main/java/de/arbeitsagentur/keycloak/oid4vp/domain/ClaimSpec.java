@@ -23,7 +23,6 @@ import org.keycloak.utils.StringUtil;
 public record ClaimSpec(String path, boolean optional) {
 
     private static final String PATH_SEPARATOR = "/";
-    private static final String FORMAT_MSO_MDOC = "mso_mdoc";
 
     public ClaimSpec(String path) {
         this(path, false);
@@ -38,7 +37,7 @@ public record ClaimSpec(String path, boolean optional) {
                     .map(ClaimSpec::parsePathSegment)
                     .collect(Collectors.toList());
         }
-        if (FORMAT_MSO_MDOC.equals(format) && type != null) {
+        if (Oid4vpConstants.FORMAT_MSO_MDOC.equals(format) && type != null) {
             return List.of(type, path);
         }
         return List.of(path);

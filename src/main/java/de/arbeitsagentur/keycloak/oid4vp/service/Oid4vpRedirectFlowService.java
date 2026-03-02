@@ -15,6 +15,8 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.service;
 
+import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.EncryptionMethod;
 import com.nimbusds.jose.JOSEObjectType;
@@ -27,14 +29,12 @@ import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
-import de.arbeitsagentur.keycloak.oid4vp.domain.RebuildParams;
+import de.arbeitsagentur.keycloak.oid4vp.domain.RequestObjectParams;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SignedRequestObject;
-import java.io.ByteArrayInputStream;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.util.Base64;
@@ -45,6 +45,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import org.jboss.logging.Logger;
+import org.keycloak.OAuth2Constants;
+import org.keycloak.common.util.PemUtils;
 import org.keycloak.crypto.AsymmetricSignatureSignerContext;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
@@ -53,12 +55,12 @@ import org.keycloak.jose.jwk.JWKBuilder;
 import org.keycloak.jose.jws.JWSBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.protocol.oidc.OIDCLoginProtocol;
 import org.keycloak.utils.StringUtil;
 
 public class Oid4vpRedirectFlowService {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpRedirectFlowService.class);
-    private static final String REQUEST_OBJECT_TYP = "oauth-authz-req+jwt";
 
     private final KeycloakSession session;
     private final ObjectMapper objectMapper;
@@ -69,70 +71,40 @@ public class Oid4vpRedirectFlowService {
     }
 
     public URI buildWalletAuthorizationUrl(String walletScheme, String clientId, URI requestUri) {
-        String scheme = StringUtil.isNotBlank(walletScheme) ? walletScheme : "openid4vp://";
+        String scheme = StringUtil.isNotBlank(walletScheme) ? walletScheme : DEFAULT_WALLET_SCHEME;
         if (!scheme.endsWith("://")) {
             scheme = scheme + "://";
         }
 
         StringBuilder url = new StringBuilder();
         url.append(scheme).append("?");
-        url.append("client_id=").append(urlEncode(clientId));
-        url.append("&request_uri=").append(urlEncode(requestUri.toString()));
+        url.append(OAuth2Constants.CLIENT_ID).append("=").append(urlEncode(clientId));
+        url.append("&").append(REQUEST_URI).append("=").append(urlEncode(requestUri.toString()));
         return URI.create(url.toString());
     }
 
-    public SignedRequestObject buildSignedRequestObject(
-            String dcqlQuery,
-            String verifierInfo,
-            String clientId,
-            String clientIdScheme,
-            String responseUri,
-            String state,
-            String nonce,
-            String x509CertPem,
-            String x509SigningKeyJwk,
-            String existingEncryptionKeyJson,
-            boolean enforceHaip,
-            int lifespanSeconds) {
+    public SignedRequestObject buildSignedRequestObject(RequestObjectParams params) {
 
-        ResolvedSigningKey resolved = resolveSigningMaterial(x509SigningKeyJwk);
+        ResolvedSigningKey resolved = resolveSigningMaterial(params.x509SigningKeyJwk());
 
-        ECKey responseEncryptionKey = enforceHaip ? parseOrCreateEncryptionKey(existingEncryptionKeyJson) : null;
-
-        var claims = buildBaseClaims(clientId, responseUri, state, nonce, enforceHaip, lifespanSeconds);
-        addClientMetadataClaim(claims, responseEncryptionKey);
-        addDcqlAndVerifierInfo(claims, dcqlQuery, verifierInfo);
-
-        String jwt = signClaims(resolved, clientIdScheme, x509CertPem, claims);
-        String encryptionKeyJson = responseEncryptionKey != null ? responseEncryptionKey.toJSONString() : null;
-        return new SignedRequestObject(jwt, encryptionKeyJson, state, nonce);
-    }
-
-    public SignedRequestObject rebuildWithWalletNonce(
-            RebuildParams rebuildParams,
-            String state,
-            String nonce,
-            String walletNonce,
-            boolean enforceHaip,
-            int lifespanSeconds) {
-
-        ResolvedSigningKey resolved = resolveSigningMaterial(rebuildParams.x509SigningKeyJwk());
-
-        ECKey encryptionKey = enforceHaip ? parseEncryptionKey(rebuildParams.encryptionPublicKeyJson()) : null;
+        ECKey responseEncryptionKey = params.enforceHaip() ? createResponseEncryptionKey() : null;
 
         var claims = buildBaseClaims(
-                rebuildParams.effectiveClientId(),
-                rebuildParams.responseUri(),
-                state,
-                nonce,
-                enforceHaip,
-                lifespanSeconds);
-        claims.put("wallet_nonce", walletNonce);
-        addClientMetadataClaim(claims, encryptionKey);
-        addDcqlAndVerifierInfo(claims, rebuildParams.dcqlQuery(), rebuildParams.verifierInfo());
+                params.clientId(),
+                params.responseUri(),
+                params.state(),
+                params.nonce(),
+                params.enforceHaip(),
+                params.lifespanSeconds());
+        if (StringUtil.isNotBlank(params.walletNonce())) {
+            claims.put(WALLET_NONCE, params.walletNonce());
+        }
+        addClientMetadataClaim(claims, responseEncryptionKey);
+        addDcqlAndVerifierInfo(claims, params.dcqlQuery(), params.verifierInfo());
 
-        String jwt = signClaims(resolved, rebuildParams.clientIdScheme(), rebuildParams.x509CertPem(), claims);
-        return new SignedRequestObject(jwt, null, state, nonce);
+        String jwt = signClaims(resolved, params.clientIdScheme(), params.x509CertPem(), claims);
+        String encryptionKeyJson = responseEncryptionKey != null ? responseEncryptionKey.toJSONString() : null;
+        return new SignedRequestObject(jwt, encryptionKeyJson);
     }
 
     private record ResolvedSigningKey(ECKey ecKey, KeyWrapper keycloakKey) {
@@ -162,13 +134,15 @@ public class Oid4vpRedirectFlowService {
         claims.put("iat", issuedAt);
         claims.put("exp", expiresAt);
         claims.put("iss", clientId);
-        claims.put("aud", "https://self-issued.me/v2");
-        claims.put("client_id", clientId);
-        claims.put("response_type", "vp_token");
-        claims.put("response_mode", enforceHaip ? "direct_post.jwt" : "direct_post");
-        claims.put("response_uri", responseUri);
-        claims.put("nonce", nonce);
-        claims.put("state", state);
+        claims.put("aud", SELF_ISSUED_V2);
+        claims.put(OAuth2Constants.CLIENT_ID, clientId);
+        claims.put(OAuth2Constants.RESPONSE_TYPE, RESPONSE_TYPE_VP_TOKEN);
+        claims.put(
+                OIDCLoginProtocol.RESPONSE_MODE_PARAM,
+                enforceHaip ? RESPONSE_MODE_DIRECT_POST_JWT : RESPONSE_MODE_DIRECT_POST);
+        claims.put(RESPONSE_URI, responseUri);
+        claims.put(OIDCLoginProtocol.NONCE_PARAM, nonce);
+        claims.put(OAuth2Constants.STATE, state);
         return claims;
     }
 
@@ -176,18 +150,18 @@ public class Oid4vpRedirectFlowService {
         if (encryptionKey == null) return;
         Map<String, Object> clientMeta = buildClientMetadata(encryptionKey);
         if (!clientMeta.isEmpty()) {
-            claims.put("client_metadata", clientMeta);
+            claims.put(CLIENT_METADATA, clientMeta);
         }
     }
 
     private void addDcqlAndVerifierInfo(LinkedHashMap<String, Object> claims, String dcqlQuery, String verifierInfo) {
         if (StringUtil.isNotBlank(dcqlQuery)) {
-            claims.put("dcql_query", parseJsonClaim(dcqlQuery));
+            claims.put(DCQL_QUERY, parseJsonClaim(dcqlQuery));
         }
         if (StringUtil.isNotBlank(verifierInfo)) {
             Object parsed = parseJsonClaim(verifierInfo);
             if (parsed != null) {
-                claims.put("verifier_info", parsed);
+                claims.put(VERIFIER_INFO, parsed);
             }
         }
     }
@@ -207,35 +181,14 @@ public class Oid4vpRedirectFlowService {
         }
     }
 
-    private ECKey parseOrCreateEncryptionKey(String existingEncryptionKeyJson) {
-        if (StringUtil.isNotBlank(existingEncryptionKeyJson)) {
-            try {
-                return ECKey.parse(existingEncryptionKeyJson);
-            } catch (Exception e) {
-                // Fall through to create new key
-            }
-        }
-        return createResponseEncryptionKey();
-    }
-
-    private ECKey parseEncryptionKey(String encryptionPublicKeyJson) {
-        if (encryptionPublicKeyJson == null) return null;
-        try {
-            return ECKey.parse(encryptionPublicKeyJson);
-        } catch (Exception e) {
-            LOG.warnf("Failed to parse encryption key: %s", e.getMessage());
-            return null;
-        }
-    }
-
     public String computeX509SanDnsClientId(String pemCertificate) {
         try {
-            X509Certificate cert = parsePemCertificate(pemCertificate);
+            X509Certificate cert = decodeFirstCertificate(pemCertificate);
             Collection<List<?>> sans = cert.getSubjectAlternativeNames();
             if (sans != null) {
                 for (List<?> san : sans) {
                     if (san.size() >= 2 && Integer.valueOf(2).equals(san.get(0))) {
-                        return "x509_san_dns:" + san.get(1);
+                        return CLIENT_ID_SCHEME_X509_SAN_DNS + ":" + san.get(1);
                     }
                 }
             }
@@ -249,15 +202,23 @@ public class Oid4vpRedirectFlowService {
 
     public String computeX509HashClientId(String pemCertificate) {
         try {
-            X509Certificate cert = parsePemCertificate(pemCertificate);
+            X509Certificate cert = decodeFirstCertificate(pemCertificate);
             byte[] encoded = cert.getEncoded();
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(encoded);
             String hashBase64 = Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
-            return "x509_hash:" + hashBase64;
+            return CLIENT_ID_SCHEME_X509_HASH + ":" + hashBase64;
         } catch (Exception e) {
             throw new IllegalStateException("Failed to compute certificate hash", e);
         }
+    }
+
+    private X509Certificate decodeFirstCertificate(String pem) {
+        X509Certificate[] certs = PemUtils.decodeCertificates(pem);
+        if (certs == null || certs.length == 0) {
+            throw new IllegalStateException("No certificates found in PEM");
+        }
+        return certs[0];
     }
 
     private String signWithNimbus(ECKey ecSigningKey, LinkedHashMap<String, Object> claims) throws Exception {
@@ -288,10 +249,11 @@ public class Oid4vpRedirectFlowService {
         if (signingKey.getCertificateChain() != null
                 && !signingKey.getCertificateChain().isEmpty()) {
             builder = builder.x5c(signingKey.getCertificateChain());
-        } else if (("x509_san_dns".equals(clientIdScheme) || "x509_hash".equals(clientIdScheme))
+        } else if ((CLIENT_ID_SCHEME_X509_SAN_DNS.equals(clientIdScheme)
+                        || CLIENT_ID_SCHEME_X509_HASH.equals(clientIdScheme))
                 && x509CertPem != null
                 && !x509CertPem.isBlank()) {
-            X509Certificate cert = parsePemCertificate(x509CertPem);
+            X509Certificate cert = decodeFirstCertificate(x509CertPem);
             builder = builder.x5c(List.of(cert));
         } else if (signingKey.getPublicKey() != null) {
             builder = builder.jwk(toPublicJwk(signingKey));
@@ -327,8 +289,7 @@ public class Oid4vpRedirectFlowService {
                     .keyID(UUID.randomUUID().toString())
                     .algorithm(JWEAlgorithm.ECDH_ES)
                     .generate();
-            LOG.tracef("Generated ephemeral encryption key: kid=%s, jwk=\n%s",
-                    key.getKeyID(), key.toJSONString());
+            LOG.tracef("Generated ephemeral encryption key: kid=%s, jwk=\n%s", key.getKeyID(), key.toJSONString());
             return key;
         } catch (Exception e) {
             throw new IllegalStateException("Failed to generate response encryption key", e);
@@ -349,8 +310,9 @@ public class Oid4vpRedirectFlowService {
                     List.of(EncryptionMethod.A128GCM.getName(), EncryptionMethod.A256GCM.getName()));
             var vpFormats = new LinkedHashMap<String, Object>();
             vpFormats.put(
-                    "dc+sd-jwt", Map.of("sd-jwt_alg_values", List.of("ES256"), "kb-jwt_alg_values", List.of("ES256")));
-            vpFormats.put("mso_mdoc", Map.of("alg", List.of("ES256")));
+                    FORMAT_SD_JWT_VC,
+                    Map.of("sd-jwt_alg_values", List.of("ES256"), "kb-jwt_alg_values", List.of("ES256")));
+            vpFormats.put(FORMAT_MSO_MDOC, Map.of("alg", List.of("ES256")));
             meta.put("vp_formats_supported", vpFormats);
         }
         return meta;
@@ -367,15 +329,6 @@ public class Oid4vpRedirectFlowService {
             return builder.ec(key.getPublicKey(), KeyUse.SIG);
         }
         throw new IllegalStateException("Unsupported signing key algorithm: " + pubAlg);
-    }
-
-    private X509Certificate parsePemCertificate(String pem) throws Exception {
-        String base64 = pem.replace("-----BEGIN CERTIFICATE-----", "")
-                .replace("-----END CERTIFICATE-----", "")
-                .replaceAll("\\s+", "");
-        byte[] decoded = Base64.getDecoder().decode(base64);
-        CertificateFactory factory = CertificateFactory.getInstance("X.509");
-        return (X509Certificate) factory.generateCertificate(new ByteArrayInputStream(decoded));
     }
 
     private Object parseJsonClaim(String json) {

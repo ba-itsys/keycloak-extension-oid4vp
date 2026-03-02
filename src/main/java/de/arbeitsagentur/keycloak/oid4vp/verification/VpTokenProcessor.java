@@ -16,6 +16,7 @@
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.domain.MdocVerificationResult;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SdJwtVerificationResult;
@@ -46,8 +47,10 @@ public class VpTokenProcessor {
             KeycloakSession session,
             String trustListUrl,
             Duration statusListMaxCacheTtl,
-            Duration trustListMaxCacheTtl) {
-        this.sdJwtVerifier = new SdJwtVerifier();
+            Duration trustListMaxCacheTtl,
+            int clockSkewSeconds,
+            int kbJwtMaxAgeSeconds) {
+        this.sdJwtVerifier = new SdJwtVerifier(clockSkewSeconds, kbJwtMaxAgeSeconds);
         this.mdocVerifier = new MdocVerifier();
         this.trustListProvider = new TrustListProvider(session, trustListUrl, trustListMaxCacheTtl);
         this.statusListVerifier = new StatusListVerifier(session, this.trustListProvider, statusListMaxCacheTtl);
@@ -60,20 +63,16 @@ public class VpTokenProcessor {
 
     public VpTokenProcessor(
             ObjectMapper objectMapper, StatusListVerifier statusListVerifier, TrustListProvider trustListProvider) {
-        this.sdJwtVerifier = new SdJwtVerifier();
+        this.sdJwtVerifier = new SdJwtVerifier(
+                Oid4vpIdentityProviderConfig.DEFAULT_CLOCK_SKEW_SECONDS,
+                Oid4vpIdentityProviderConfig.DEFAULT_KB_JWT_MAX_AGE_SECONDS);
         this.mdocVerifier = new MdocVerifier();
         this.statusListVerifier = statusListVerifier;
         this.trustListProvider = trustListProvider;
         this.objectMapper = objectMapper;
     }
 
-    public VpTokenResult process(
-            String vpToken,
-            String clientId,
-            String expectedNonce,
-            String responseUri,
-            String alternateResponseUri,
-            String mdocGeneratedNonce) {
+    public VpTokenResult process(String vpToken, String clientId, String expectedNonce, String alternateResponseUri) {
 
         LOG.tracef("Processing VP token (length=%d): %s", vpToken.length(), vpToken);
 
@@ -83,12 +82,10 @@ public class VpTokenProcessor {
         try {
             // Detect format: single credential or multi-credential JSON wrapper
             if (vpToken.trim().startsWith("{")) {
-                return processMultiCredential(
-                        vpToken, clientId, expectedNonce, responseUri, trustedKeys, alternateResponseUri);
+                return processMultiCredential(vpToken, clientId, expectedNonce, trustedKeys, alternateResponseUri);
             }
 
-            return processSingleCredential(
-                    vpToken, clientId, expectedNonce, responseUri, trustedKeys, alternateResponseUri);
+            return processSingleCredential(vpToken, clientId, expectedNonce, trustedKeys, alternateResponseUri);
 
         } catch (IdentityBrokerException e) {
             throw e;
@@ -101,43 +98,16 @@ public class VpTokenProcessor {
             String vpToken,
             String clientId,
             String expectedNonce,
-            String responseUri,
             List<PublicKey> trustedKeys,
             String alternateResponseUri) {
 
-        if (sdJwtVerifier.isSdJwt(vpToken)) {
-            SdJwtVerificationResult result =
-                    verifySdJwtWithFallback(vpToken, clientId, expectedNonce, trustedKeys, alternateResponseUri);
-
-            statusListVerifier.checkRevocationStatus(result.claims());
-
-            Map<String, VerifiedCredential> credentials = new LinkedHashMap<>();
-            credentials.put(
-                    "cred1",
-                    new VerifiedCredential(
-                            "cred1",
-                            result.issuer(),
-                            result.credentialType(),
-                            result.claims(),
-                            PresentationType.SD_JWT));
-
-            return new VpTokenResult(credentials, result.claims());
+        VerifiedCredential cred =
+                verifyCredential("cred1", vpToken, clientId, expectedNonce, trustedKeys, alternateResponseUri);
+        if (cred == null) {
+            throw new IdentityBrokerException("Unsupported VP token format");
         }
 
-        if (mdocVerifier.isMdoc(vpToken)) {
-            MdocVerificationResult result = mdocVerifier.verify(vpToken, trustedKeys);
-
-            statusListVerifier.checkRevocationStatus(result.claims());
-
-            Map<String, VerifiedCredential> credentials = new LinkedHashMap<>();
-            credentials.put(
-                    "cred1",
-                    new VerifiedCredential("cred1", null, result.docType(), result.claims(), PresentationType.MDOC));
-
-            return new VpTokenResult(credentials, result.claims());
-        }
-
-        throw new IdentityBrokerException("Unsupported VP token format");
+        return new VpTokenResult(Map.of("cred1", cred), cred.claims());
     }
 
     @SuppressWarnings("unchecked")
@@ -145,7 +115,6 @@ public class VpTokenProcessor {
             String vpToken,
             String clientId,
             String expectedNonce,
-            String responseUri,
             List<PublicKey> trustedKeys,
             String alternateResponseUri) {
 
@@ -167,33 +136,11 @@ public class VpTokenProcessor {
                     continue;
                 }
 
-                if (sdJwtVerifier.isSdJwt(credential)) {
-                    SdJwtVerificationResult result = verifySdJwtWithFallback(
-                            credential, clientId, expectedNonce, trustedKeys, alternateResponseUri);
-
-                    statusListVerifier.checkRevocationStatus(result.claims());
-
-                    credentials.put(
-                            credentialId,
-                            new VerifiedCredential(
-                                    credentialId,
-                                    result.issuer(),
-                                    result.credentialType(),
-                                    result.claims(),
-                                    PresentationType.SD_JWT));
-
-                    mergedClaims.putAll(result.claims());
-                } else if (mdocVerifier.isMdoc(credential)) {
-                    MdocVerificationResult result = mdocVerifier.verify(credential, trustedKeys);
-
-                    statusListVerifier.checkRevocationStatus(result.claims());
-
-                    credentials.put(
-                            credentialId,
-                            new VerifiedCredential(
-                                    credentialId, null, result.docType(), result.claims(), PresentationType.MDOC));
-
-                    mergedClaims.putAll(result.claims());
+                VerifiedCredential cred = verifyCredential(
+                        credentialId, credential, clientId, expectedNonce, trustedKeys, alternateResponseUri);
+                if (cred != null) {
+                    credentials.put(credentialId, cred);
+                    mergedClaims.putAll(cred.claims());
                 }
             }
 
@@ -209,6 +156,33 @@ public class VpTokenProcessor {
         }
     }
 
+    private VerifiedCredential verifyCredential(
+            String credentialId,
+            String credential,
+            String clientId,
+            String expectedNonce,
+            List<PublicKey> trustedKeys,
+            String alternateResponseUri) {
+
+        if (sdJwtVerifier.isSdJwt(credential)) {
+            SdJwtVerificationResult result =
+                    verifySdJwtWithFallback(credential, clientId, expectedNonce, trustedKeys, alternateResponseUri);
+            statusListVerifier.checkRevocationStatus(result.claims());
+            return new VerifiedCredential(
+                    credentialId, result.issuer(), result.credentialType(), result.claims(), PresentationType.SD_JWT);
+        }
+
+        if (mdocVerifier.isMdoc(credential)) {
+            MdocVerificationResult result = mdocVerifier.verify(credential, trustedKeys);
+            statusListVerifier.checkRevocationStatus(result.claims());
+            return new VerifiedCredential(credentialId, null, result.docType(), result.claims(), PresentationType.MDOC);
+        }
+
+        return null;
+    }
+
+    // Wallets may set the KB-JWT "aud" claim to either client_id or response_uri depending on the flow.
+    // Try client_id first, then fall back to alternateResponseUri (the redirect flow's response_uri).
     private SdJwtVerificationResult verifySdJwtWithFallback(
             String sdJwt,
             String clientId,

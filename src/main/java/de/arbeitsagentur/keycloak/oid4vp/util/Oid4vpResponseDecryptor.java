@@ -15,82 +15,34 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
+import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.VP_TOKEN;
+
 import com.nimbusds.jose.JWEObject;
 import com.nimbusds.jose.crypto.ECDHDecrypter;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.util.Base64URL;
 import de.arbeitsagentur.keycloak.oid4vp.domain.DecryptedResponse;
-import de.arbeitsagentur.keycloak.oid4vp.domain.PreDecryptionResult;
-import de.arbeitsagentur.keycloak.oid4vp.domain.StoredRequestObject;
 import java.util.Map;
 import org.jboss.logging.Logger;
-import org.keycloak.models.KeycloakSession;
+import org.keycloak.OAuth2Constants;
 import org.keycloak.util.JsonSerialization;
-import org.keycloak.utils.StringUtil;
 
 public class Oid4vpResponseDecryptor {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpResponseDecryptor.class);
 
-    public PreDecryptionResult tryPreDecrypt(
-            String encryptedResponse, Oid4vpRequestObjectStore requestObjectStore, KeycloakSession session) {
+    public String extractKid(String encryptedResponse) {
         try {
             JWEObject jwe = JWEObject.parse(encryptedResponse);
-            String kid = jwe.getHeader().getKeyID();
-            if (kid == null) {
-                return PreDecryptionResult.EMPTY;
-            }
-
-            StoredRequestObject stored = requestObjectStore.resolveByKid(session, kid);
-            if (stored == null || stored.encryptionKeyJson() == null) {
-                return PreDecryptionResult.EMPTY;
-            }
-
-            ECKey decryptionKey = ECKey.parse(stored.encryptionKeyJson());
-            jwe.decrypt(new ECDHDecrypter(decryptionKey));
-            String payload = jwe.getPayload().toString();
-
-            @SuppressWarnings("unchecked")
-            Map<String, Object> payloadMap = JsonSerialization.readValue(payload, Map.class);
-
-            String mdocGeneratedNonce = null;
-            Base64URL apu = jwe.getHeader().getAgreementPartyUInfo();
-            if (apu != null) {
-                mdocGeneratedNonce = apu.toString();
-            }
-
-            if (payloadMap.containsKey("error")) {
-                return new PreDecryptionResult(
-                        stored.state(),
-                        null,
-                        payloadMap.get("error").toString(),
-                        payloadMap.containsKey("error_description")
-                                ? payloadMap.get("error_description").toString()
-                                : null,
-                        mdocGeneratedNonce);
-            }
-
-            String vpToken = null;
-            if (payloadMap.containsKey("vp_token")) {
-                Object vpTokenObj = payloadMap.get("vp_token");
-                vpToken = vpTokenObj instanceof String
-                        ? (String) vpTokenObj
-                        : JsonSerialization.writeValueAsString(vpTokenObj);
-            }
-
-            return new PreDecryptionResult(stored.state(), vpToken, null, null, mdocGeneratedNonce);
+            return jwe.getHeader().getKeyID();
         } catch (Exception e) {
-            LOG.warnf("JWE kid lookup/decrypt failed: %s", e.getMessage());
-            return PreDecryptionResult.EMPTY;
+            LOG.warnf("Failed to extract KID from JWE: %s", e.getMessage());
+            return null;
         }
     }
 
-    public DecryptedResponse decryptFull(String encryptedResponse, String encryptionKeyJson) {
-        if (StringUtil.isBlank(encryptionKeyJson)) {
-            throw new IllegalStateException("No encryption key available for decryption");
-        }
+    public DecryptedResponse decrypt(String encryptedResponse, ECKey decryptionKey) {
         try {
-            ECKey decryptionKey = ECKey.parse(encryptionKeyJson);
             JWEObject jwe = JWEObject.parse(encryptedResponse);
             jwe.decrypt(new ECDHDecrypter(decryptionKey));
             String payload = jwe.getPayload().toString();
@@ -104,19 +56,21 @@ public class Oid4vpResponseDecryptor {
                 mdocGeneratedNonce = apu.toString();
             }
 
-            if (payloadMap.containsKey("error")) {
+            if (payloadMap.containsKey(OAuth2Constants.ERROR)) {
                 return new DecryptedResponse(
                         null,
                         mdocGeneratedNonce,
-                        payloadMap.get("error").toString(),
-                        payloadMap.containsKey("error_description")
-                                ? payloadMap.get("error_description").toString()
+                        payloadMap.get(OAuth2Constants.ERROR).toString(),
+                        payloadMap.containsKey(OAuth2Constants.ERROR_DESCRIPTION)
+                                ? payloadMap
+                                        .get(OAuth2Constants.ERROR_DESCRIPTION)
+                                        .toString()
                                 : null);
             }
 
             String vpToken = null;
-            if (payloadMap.containsKey("vp_token")) {
-                Object vpTokenObj = payloadMap.get("vp_token");
+            if (payloadMap.containsKey(VP_TOKEN)) {
+                Object vpTokenObj = payloadMap.get(VP_TOKEN);
                 vpToken = vpTokenObj instanceof String
                         ? (String) vpTokenObj
                         : JsonSerialization.writeValueAsString(vpTokenObj);

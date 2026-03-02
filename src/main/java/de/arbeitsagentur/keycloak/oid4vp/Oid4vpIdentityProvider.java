@@ -18,10 +18,8 @@ package de.arbeitsagentur.keycloak.oid4vp;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.nimbusds.jose.jwk.ECKey;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
-import de.arbeitsagentur.keycloak.oid4vp.domain.RebuildParams;
-import de.arbeitsagentur.keycloak.oid4vp.domain.SignedRequestObject;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpCallbackProcessor;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpRedirectFlowService;
 import de.arbeitsagentur.keycloak.oid4vp.util.DcqlQueryBuilder;
@@ -35,7 +33,9 @@ import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Map;
+import java.util.UUID;
 import org.jboss.logging.Logger;
+import org.keycloak.OAuth2Constants;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.broker.provider.AuthenticationRequest;
 import org.keycloak.broker.provider.IdentityBrokerException;
@@ -73,7 +73,9 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                         session,
                         config.getTrustListUrl(),
                         config.getStatusListMaxCacheTtl(),
-                        config.getTrustListMaxCacheTtl()));
+                        config.getTrustListMaxCacheTtl(),
+                        config.getClockSkewSeconds(),
+                        config.getKbJwtMaxAgeSeconds()));
 
         RealmModel realm = session.getContext().getRealm();
         this.loginTimeoutSeconds = realm != null ? realm.getAccessCodeLifespanLogin() : 1800;
@@ -86,10 +88,6 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
     Oid4vpCallbackProcessor getCallbackProcessor() {
         return callbackProcessor;
-    }
-
-    Oid4vpRequestObjectStore getRequestObjectStore() {
-        return requestObjectStore;
     }
 
     int getLoginTimeoutSeconds() {
@@ -128,7 +126,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         return new Oid4vpIdentityProviderEndpoint(session, realm, this, callback, event, requestObjectStore);
     }
 
-    protected String buildDcqlQueryFromConfig() {
+    String buildDcqlQueryFromConfig() {
         String manual = getConfig().getDcqlQuery();
         if (StringUtil.isNotBlank(manual)) {
             return manual;
@@ -137,19 +135,16 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         Map<String, CredentialTypeSpec> credentialTypes = DcqlQueryBuilder.aggregateFromMappers(session, getConfig());
 
         if (!credentialTypes.isEmpty()) {
-            try {
-                return DcqlQueryBuilder.fromMapperSpecs(
-                                objectMapper,
-                                credentialTypes,
-                                getConfig().isAllCredentialsRequired(),
-                                getConfig().getCredentialSetPurpose())
-                        .build();
-            } catch (Exception e) {
-                LOG.warnf("Failed to build DCQL from mappers: %s", e.getMessage());
-            }
+            return DcqlQueryBuilder.fromMapperSpecs(
+                            objectMapper,
+                            credentialTypes,
+                            getConfig().isAllCredentialsRequired(),
+                            getConfig().getCredentialSetPurpose())
+                    .build();
         }
 
-        return new DcqlQueryBuilder(objectMapper).build();
+        throw new IdentityBrokerException(
+                "No DCQL query configured. Set dcqlQuery or add credential mappers to the OID4VP identity provider.");
     }
 
     private SessionState initializeSessionState(AuthenticationRequest request, AuthenticationSessionModel authSession) {
@@ -162,6 +157,9 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         authSession.setAuthNote(SESSION_NONCE, nonce);
         authSession.setAuthNote(SESSION_CLIENT_ID, clientId);
 
+        String effectiveClientId = computeEffectiveClientId(clientId);
+        authSession.setAuthNote(SESSION_EFFECTIVE_CLIENT_ID, effectiveClientId);
+
         String redirectUri = request.getRedirectUri();
         String responseUri = redirectUri.contains("state=")
                 ? redirectUri
@@ -169,30 +167,27 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         authSession.setAuthNote(SESSION_RESPONSE_URI, responseUri);
 
         var uriInfo = request.getUriInfo();
-        String sessionTabId = uriInfo.getQueryParameters().getFirst("tab_id");
-        String clientData = uriInfo.getQueryParameters().getFirst("client_data");
-        String sessionCode = uriInfo.getQueryParameters().getFirst("session_code");
-        authSession.setAuthNote(SESSION_TAB_ID, sessionTabId != null ? sessionTabId : "");
-        authSession.setAuthNote(SESSION_CLIENT_DATA, clientData != null ? clientData : "");
-        authSession.setAuthNote(SESSION_CODE, sessionCode != null ? sessionCode : "");
+        String sessionTabId = uriInfo.getQueryParameters().getFirst(Oid4vpConstants.PARAM_TAB_ID);
+        String clientData = uriInfo.getQueryParameters().getFirst(Oid4vpConstants.PARAM_CLIENT_DATA);
+        String sessionCode = uriInfo.getQueryParameters().getFirst(Oid4vpConstants.PARAM_SESSION_CODE);
 
         String formActionUrl = buildFormActionUrl(redirectUri, state, sessionTabId, sessionCode, clientData);
 
-        return new SessionState(state, nonce, clientId, formActionUrl, redirectUri);
+        return new SessionState(state, nonce, effectiveClientId, formActionUrl);
     }
 
     private String buildFormActionUrl(
             String redirectUri, String state, String tabId, String sessionCode, String clientData) {
         UriBuilder builder = UriBuilder.fromUri(stripQueryParams(redirectUri));
-        builder.queryParam("state", state);
+        builder.queryParam(OAuth2Constants.STATE, state);
         if (StringUtil.isNotBlank(tabId)) {
-            builder.queryParam("tab_id", tabId);
+            builder.queryParam(Oid4vpConstants.PARAM_TAB_ID, tabId);
         }
         if (StringUtil.isNotBlank(sessionCode)) {
-            builder.queryParam("session_code", sessionCode);
+            builder.queryParam(Oid4vpConstants.PARAM_SESSION_CODE, sessionCode);
         }
         if (StringUtil.isNotBlank(clientData)) {
-            builder.queryParam("client_data", clientData);
+            builder.queryParam(Oid4vpConstants.PARAM_CLIENT_DATA, clientData);
         }
         return builder.build().toString();
     }
@@ -208,131 +203,15 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
             return RedirectFlowData.EMPTY;
         }
 
-        String effectiveClientId = computeEffectiveClientId(sessionState.clientId());
-        authSession.setAuthNote(SESSION_EFFECTIVE_CLIENT_ID, effectiveClientId);
-
         String rootSessionId = authSession.getParentSession() != null
                 ? authSession.getParentSession().getId()
                 : null;
-        String clientIdForSession =
-                authSession.getClient() != null ? authSession.getClient().getClientId() : null;
 
-        String sameDeviceWalletUrl = null;
-        String crossDeviceWalletUrl = null;
-        String qrCodeBase64 = null;
-        boolean indexesStored = false;
+        String requestHandle = UUID.randomUUID().toString();
+        requestObjectStore.storeRequestHandle(session, requestHandle, rootSessionId, authSession.getTabId());
+        requestObjectStore.storeStateIndex(session, sessionState.state(), rootSessionId, authSession.getTabId());
 
-        String dcqlQuery = buildDcqlQueryFromConfig();
-        String verifierInfo = getConfig().getVerifierInfo();
-
-        if (sameDeviceEnabled) {
-            try {
-                String sameDeviceResponseUri = stripQueryParams(sessionState.redirectUri());
-                URI sameDeviceRequestUri = buildSignStoreRequestObject(
-                        request,
-                        authSession,
-                        dcqlQuery,
-                        verifierInfo,
-                        sessionState,
-                        effectiveClientId,
-                        sameDeviceResponseUri,
-                        rootSessionId,
-                        clientIdForSession,
-                        indexesStored);
-                indexesStored = true;
-
-                sameDeviceWalletUrl = redirectFlowService
-                        .buildWalletAuthorizationUrl(
-                                getConfig().getWalletScheme(), effectiveClientId, sameDeviceRequestUri)
-                        .toString();
-            } catch (Exception e) {
-                LOG.errorf(e, "Failed to build same-device request object: %s", e.getMessage());
-            }
-        }
-
-        if (crossDeviceEnabled) {
-            try {
-                String crossDeviceResponseUri = stripQueryParams(sessionState.redirectUri()) + "?flow=cross_device";
-                URI crossDeviceRequestUri = buildSignStoreRequestObject(
-                        request,
-                        authSession,
-                        dcqlQuery,
-                        verifierInfo,
-                        sessionState,
-                        effectiveClientId,
-                        crossDeviceResponseUri,
-                        rootSessionId,
-                        clientIdForSession,
-                        indexesStored);
-
-                crossDeviceWalletUrl = redirectFlowService
-                        .buildWalletAuthorizationUrl("openid4vp://", effectiveClientId, crossDeviceRequestUri)
-                        .toString();
-                qrCodeBase64 = qrCodeService.generateQrCode(crossDeviceWalletUrl, 250, 250);
-            } catch (Exception e) {
-                LOG.errorf(e, "Failed to build cross-device request object: %s", e.getMessage());
-            }
-        }
-
-        return new RedirectFlowData(sameDeviceWalletUrl, crossDeviceWalletUrl, qrCodeBase64);
-    }
-
-    private URI buildSignStoreRequestObject(
-            AuthenticationRequest request,
-            AuthenticationSessionModel authSession,
-            String dcqlQuery,
-            String verifierInfo,
-            SessionState sessionState,
-            String effectiveClientId,
-            String responseUri,
-            String rootSessionId,
-            String clientIdForSession,
-            boolean skipIndexes) {
-
-        SignedRequestObject signedRequest = redirectFlowService.buildSignedRequestObject(
-                dcqlQuery,
-                verifierInfo,
-                effectiveClientId,
-                getConfig().getClientIdScheme(),
-                responseUri,
-                sessionState.state(),
-                sessionState.nonce(),
-                getConfig().getX509CertificatePem(),
-                getConfig().getX509SigningKeyJwk(),
-                null,
-                getConfig().isEnforceHaip(),
-                loginTimeoutSeconds);
-
-        authSession.setAuthNote(SESSION_REDIRECT_FLOW_RESPONSE_URI, responseUri);
-        authSession.setAuthNote(SESSION_RESPONSE_URI, responseUri);
-        if (signedRequest.encryptionKeyJson() != null) {
-            authSession.setAuthNote(SESSION_ENCRYPTION_KEY, signedRequest.encryptionKeyJson());
-        }
-
-        String encryptionPublicKeyJson = extractEncryptionPublicKey(signedRequest.encryptionKeyJson());
-
-        RebuildParams rebuildParams = new RebuildParams(
-                effectiveClientId,
-                getConfig().getClientIdScheme(),
-                responseUri,
-                dcqlQuery,
-                getConfig().getX509CertificatePem(),
-                getConfig().getX509SigningKeyJwk(),
-                encryptionPublicKeyJson,
-                verifierInfo);
-
-        String requestObjectId = requestObjectStore.store(
-                session,
-                signedRequest.jwt(),
-                signedRequest.encryptionKeyJson(),
-                sessionState.state(),
-                sessionState.nonce(),
-                rootSessionId,
-                clientIdForSession,
-                rebuildParams,
-                skipIndexes);
-
-        return request.getUriInfo()
+        URI requestObjectBaseUri = request.getUriInfo()
                 .getBaseUriBuilder()
                 .path("realms")
                 .path(request.getRealm().getName())
@@ -340,41 +219,66 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 .path(getConfig().getAlias())
                 .path("endpoint")
                 .path("request-object")
-                .path(requestObjectId)
+                .path(requestHandle)
                 .build();
+
+        String sameDeviceWalletUrl = null;
+        String crossDeviceWalletUrl = null;
+        String qrCodeBase64 = null;
+
+        if (sameDeviceEnabled) {
+            try {
+                URI sameDeviceRequestUri = UriBuilder.fromUri(requestObjectBaseUri)
+                        .queryParam(Oid4vpConstants.FLOW_PARAM, Oid4vpConstants.FLOW_SAME_DEVICE)
+                        .build();
+                sameDeviceWalletUrl = redirectFlowService
+                        .buildWalletAuthorizationUrl(
+                                getConfig().getWalletScheme(), sessionState.effectiveClientId(), sameDeviceRequestUri)
+                        .toString();
+            } catch (Exception e) {
+                LOG.errorf(e, "Failed to build same-device wallet URL: %s", e.getMessage());
+            }
+        }
+
+        if (crossDeviceEnabled) {
+            try {
+                URI crossDeviceRequestUri = UriBuilder.fromUri(requestObjectBaseUri)
+                        .queryParam(Oid4vpConstants.FLOW_PARAM, Oid4vpConstants.FLOW_CROSS_DEVICE)
+                        .build();
+                crossDeviceWalletUrl = redirectFlowService
+                        .buildWalletAuthorizationUrl(
+                                Oid4vpConstants.DEFAULT_WALLET_SCHEME,
+                                sessionState.effectiveClientId(),
+                                crossDeviceRequestUri)
+                        .toString();
+                qrCodeBase64 = qrCodeService.generateQrCode(crossDeviceWalletUrl, 250, 250);
+            } catch (Exception e) {
+                LOG.errorf(e, "Failed to build cross-device wallet URL: %s", e.getMessage());
+            }
+        }
+
+        return new RedirectFlowData(sameDeviceWalletUrl, crossDeviceWalletUrl, qrCodeBase64);
     }
 
     private String computeEffectiveClientId(String clientId) {
         String clientIdScheme = getConfig().getClientIdScheme();
         String x509Pem = getConfig().getX509CertificatePem();
-        if ("x509_san_dns".equalsIgnoreCase(clientIdScheme) && StringUtil.isNotBlank(x509Pem)) {
+        if (Oid4vpConstants.CLIENT_ID_SCHEME_X509_SAN_DNS.equalsIgnoreCase(clientIdScheme)
+                && StringUtil.isNotBlank(x509Pem)) {
             return redirectFlowService.computeX509SanDnsClientId(x509Pem);
-        } else if ("x509_hash".equalsIgnoreCase(clientIdScheme) && StringUtil.isNotBlank(x509Pem)) {
+        } else if (Oid4vpConstants.CLIENT_ID_SCHEME_X509_HASH.equalsIgnoreCase(clientIdScheme)
+                && StringUtil.isNotBlank(x509Pem)) {
             return redirectFlowService.computeX509HashClientId(x509Pem);
         }
         return clientId;
     }
 
-    private String extractEncryptionPublicKey(String encryptionKeyJson) {
-        if (encryptionKeyJson == null) {
-            return null;
-        }
-        try {
-            var encKey = ECKey.parse(encryptionKeyJson);
-            return encKey.toPublicJWK().toJSONString();
-        } catch (Exception e) {
-            LOG.warnf("Failed to extract public key: %s", e.getMessage());
-            return null;
-        }
-    }
-
     private String buildCrossDeviceStatusUrl() {
-        String baseUri = session.getContext().getUri().getBaseUri().toString();
-        if (!baseUri.endsWith("/")) {
-            baseUri += "/";
-        }
-        return baseUri + "realms/" + session.getContext().getRealm().getName() + "/broker/"
-                + getConfig().getAlias() + "/endpoint/cross-device/status";
+        return Oid4vpConstants.buildEndpointBaseUrl(
+                        session.getContext().getUri().getBaseUri(),
+                        session.getContext().getRealm().getName(),
+                        getConfig().getAlias())
+                + "/cross-device/status";
     }
 
     private Response buildLoginFormResponse(
@@ -424,7 +328,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
-    record SessionState(String state, String nonce, String clientId, String formActionUrl, String redirectUri) {}
+    record SessionState(String state, String nonce, String effectiveClientId, String formActionUrl) {}
 
     record RedirectFlowData(String sameDeviceWalletUrl, String crossDeviceWalletUrl, String qrCodeBase64) {
         static final RedirectFlowData EMPTY = new RedirectFlowData(null, null, null);

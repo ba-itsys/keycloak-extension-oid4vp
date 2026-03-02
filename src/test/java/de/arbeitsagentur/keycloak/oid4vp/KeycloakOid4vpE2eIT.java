@@ -21,31 +21,43 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.BrowserType;
-import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
-import com.microsoft.playwright.options.LoadState;
-import com.microsoft.playwright.options.WaitForSelectorState;
 import io.github.dominikschlosser.oid4vc.CredentialFormat;
 import io.github.dominikschlosser.oid4vc.Oid4vcContainer;
 import io.github.dominikschlosser.oid4vc.PresentationResponse;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.net.URI;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.SecureRandom;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.cert.X509Certificate;
+import java.security.spec.ECGenParameterSpec;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Base64;
+import java.util.Date;
 import java.util.stream.Stream;
+import javax.security.auth.x500.X500Principal;
+import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.GeneralName;
+import org.bouncycastle.asn1.x509.GeneralNames;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
+import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.GenericContainer;
@@ -71,13 +83,15 @@ class KeycloakOid4vpE2eIT {
     private static BrowserContext context;
     private static Page page;
 
-    private static String kcHostUrl;
-    private static String callbackUrl;
+    private static Oid4vpLoginFlowHelper flow;
+
+    @RegisterExtension
+    IdpConfigScope idpConfig = new IdpConfigScope(() -> adminClient, REALM);
 
     @BeforeAll
     static void setUp() throws Exception {
         callback = new Oid4vpTestCallbackServer();
-        callbackUrl = callback.localCallbackUrl();
+        String callbackUrl = callback.localCallbackUrl();
 
         network = Network.newNetwork();
 
@@ -95,8 +109,7 @@ class KeycloakOid4vpE2eIT {
         copyProviderJars();
         keycloak.start();
 
-        int kcMappedPort = keycloak.getMappedPort(8080);
-        kcHostUrl = "http://localhost:" + kcMappedPort;
+        String kcHostUrl = "http://localhost:" + keycloak.getMappedPort(8080);
 
         wallet = new Oid4vcContainer()
                 .withHostAccess()
@@ -123,9 +136,10 @@ class KeycloakOid4vpE2eIT {
                 """);
         page = context.newPage();
 
+        flow = new Oid4vpLoginFlowHelper(page, context, wallet, kcHostUrl, callbackUrl, REALM);
+
         adminClient = KeycloakAdminClient.login(OBJECT_MAPPER, kcHostUrl, "admin", "admin");
 
-        // Trust list URL must be accessible from inside Docker network
         String trustListUrl = "http://oid4vc-dev:8085/api/trustlist";
         Oid4vpTestKeycloakSetup.configureOid4vpIdentityProvider(adminClient, REALM, trustListUrl);
         Oid4vpTestKeycloakSetup.configureSameDeviceFlow(adminClient, REALM, true);
@@ -151,10 +165,9 @@ class KeycloakOid4vpE2eIT {
     @Test
     @Order(1)
     void loginPageShowsWalletIdpButton() {
-        clearBrowserSession();
+        flow.clearBrowserSession();
 
-        page.navigate(buildAuthRequestUri().toString());
-        page.waitForLoadState(LoadState.NETWORKIDLE);
+        flow.navigateToLoginPage();
         page.waitForSelector("#username, a#social-oid4vp", new Page.WaitForSelectorOptions().setTimeout(30000));
 
         assertThat(page.locator("a#social-oid4vp").count())
@@ -166,37 +179,34 @@ class KeycloakOid4vpE2eIT {
     @Order(2)
     void firstWalletLoginCreatesNewUser() throws Exception {
         callback.reset();
-        clearBrowserSession();
-
+        flow.clearBrowserSession();
         Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient, REALM);
 
-        performSameDeviceWalletLogin();
+        performSameDeviceLogin("wallet-user");
 
-        if (page.locator("input[name='username']").count() > 0) {
-            completeFirstBrokerLoginForm("wallet-user-" + System.currentTimeMillis());
-        }
-
-        assertThat(page.url()).contains("code=");
+        flow.assertLoginSucceeded();
     }
 
     @Test
     @Order(3)
     void subsequentWalletLoginResolvesExistingUser() throws Exception {
         callback.reset();
-        clearBrowserSession();
+        flow.clearBrowserSession();
 
-        performSameDeviceWalletLogin();
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        String walletUrl = flow.getSameDeviceWalletUrl();
+        PresentationResponse response = flow.submitToWallet(walletUrl);
+        flow.waitForLoginCompletion(response);
 
-        page.waitForURL(url -> url.startsWith(callbackUrl), new Page.WaitForURLOptions().setTimeout(30000));
-        assertThat(page.url()).contains("code=");
+        flow.assertLoginSucceeded();
     }
 
     @Test
     @Order(4)
     void mdocPresentationFlow() throws Exception {
         callback.reset();
-        clearBrowserSession();
-
+        flow.clearBrowserSession();
         Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient, REALM);
 
         String mdocDcqlQuery = """
@@ -218,13 +228,8 @@ class KeycloakOid4vpE2eIT {
         Oid4vpTestKeycloakSetup.configureDcqlQuery(adminClient, REALM, mdocDcqlQuery);
 
         try {
-            performSameDeviceWalletLogin();
-
-            if (page.locator("input[name='username']").count() > 0) {
-                completeFirstBrokerLoginForm("mdoc-wallet-user-" + System.currentTimeMillis());
-            }
-
-            assertThat(page.url()).contains("code=");
+            performSameDeviceLogin("mdoc-wallet-user");
+            flow.assertLoginSucceeded();
         } finally {
             Oid4vpTestKeycloakSetup.configureDcqlQuery(adminClient, REALM, buildDefaultDcqlQuery());
         }
@@ -234,63 +239,29 @@ class KeycloakOid4vpE2eIT {
     @Order(5)
     void crossDeviceFirstLogin() throws Exception {
         callback.reset();
-        clearBrowserSession();
-
+        flow.clearBrowserSession();
         Oid4vpTestKeycloakSetup.configureCrossDeviceFlow(adminClient, REALM, true);
 
         try {
             Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient, REALM);
 
-            page.navigate(buildAuthRequestUri().toString());
-            page.waitForLoadState(LoadState.NETWORKIDLE);
+            flow.navigateToLoginPage();
+            flow.clickOid4vpIdpButton();
+            String walletUrl = flow.getCrossDeviceWalletUrl();
+            LOG.info("[Test] Cross-device wallet URL: {}", walletUrl);
 
-            page.locator("a#social-oid4vp").click();
+            flow.waitForSseConnection();
 
-            page.waitForSelector(
-                    "img[alt='QR Code for wallet login']",
-                    new Page.WaitForSelectorOptions()
-                            .setState(WaitForSelectorState.VISIBLE)
-                            .setTimeout(30000));
-
-            String crossDeviceWalletUrl = (String)
-                    page.evaluate(
-                            "() => document.querySelector('img[alt=\"QR Code for wallet login\"]').getAttribute('data-wallet-url')");
-            assertThat(crossDeviceWalletUrl)
-                    .as("Cross-device wallet URL should be present")
-                    .isNotEmpty();
-
-            LOG.info("[Test] Cross-device wallet URL: {}", crossDeviceWalletUrl);
-
-            waitForSseConnection();
-
-            String presentationUri = crossDeviceWalletUrl.replaceFirst("^https?://[^?]*", "openid4vp://authorize");
-            PresentationResponse walletResponse = wallet.acceptPresentationRequest(presentationUri);
-
+            PresentationResponse walletResponse = flow.submitToWallet(walletUrl);
             LOG.info("[Test] Cross-device wallet response: {}", walletResponse.rawBody());
 
             assertThat(walletResponse.redirectUri())
                     .as("Cross-device direct_post response must not contain redirect_uri")
                     .isNull();
 
-            try {
-                page.waitForURL(
-                        url -> url.contains("/complete-auth")
-                                || url.contains("/first-broker-login")
-                                || url.contains("/login-actions/")
-                                || page.locator("input[name='username']").count() > 0
-                                || url.startsWith(callbackUrl),
-                        new Page.WaitForURLOptions().setTimeout(30000));
-            } catch (Exception e) {
-                throw new AssertionError("Cross-device: SSE did not navigate browser. URL: " + page.url(), e);
-            }
-
-            page.waitForLoadState(LoadState.NETWORKIDLE);
-
-            if (page.locator("input[name='username']").count() > 0) {
-                completeFirstBrokerLoginForm("cross-device-user-" + System.currentTimeMillis());
-            }
-
-            assertThat(page.url()).contains("code=");
+            waitForCrossDeviceNavigation();
+            flow.completeFirstBrokerLoginIfNeeded("cross-device-user");
+            flow.assertLoginSucceeded();
         } finally {
             Oid4vpTestKeycloakSetup.configureCrossDeviceFlow(adminClient, REALM, false);
         }
@@ -300,29 +271,17 @@ class KeycloakOid4vpE2eIT {
     @Order(6)
     void crossDeviceSecondLogin() throws Exception {
         callback.reset();
-        clearBrowserSession();
-
+        flow.clearBrowserSession();
         Oid4vpTestKeycloakSetup.configureCrossDeviceFlow(adminClient, REALM, true);
 
         try {
-            page.navigate(buildAuthRequestUri().toString());
-            page.waitForLoadState(LoadState.NETWORKIDLE);
+            flow.navigateToLoginPage();
+            flow.clickOid4vpIdpButton();
+            String walletUrl = flow.getCrossDeviceWalletUrl();
 
-            page.locator("a#social-oid4vp").click();
-            page.waitForSelector(
-                    "img[alt='QR Code for wallet login']",
-                    new Page.WaitForSelectorOptions()
-                            .setState(WaitForSelectorState.VISIBLE)
-                            .setTimeout(30000));
+            flow.waitForSseConnection();
 
-            String crossDeviceWalletUrl = (String)
-                    page.evaluate(
-                            "() => document.querySelector('img[alt=\"QR Code for wallet login\"]').getAttribute('data-wallet-url')");
-
-            waitForSseConnection();
-
-            String presentationUri = crossDeviceWalletUrl.replaceFirst("^https?://[^?]*", "openid4vp://authorize");
-            PresentationResponse walletResponse = wallet.acceptPresentationRequest(presentationUri);
+            PresentationResponse walletResponse = flow.submitToWallet(walletUrl);
 
             assertThat(walletResponse.redirectUri())
                     .as("Cross-device direct_post response must not contain redirect_uri")
@@ -330,17 +289,14 @@ class KeycloakOid4vpE2eIT {
 
             try {
                 page.waitForURL(
-                        url -> url.startsWith(callbackUrl) || url.contains("code="),
+                        url -> url.contains("code=") || flow.isCallbackUrl(url),
                         new Page.WaitForURLOptions().setTimeout(30000));
             } catch (Exception e) {
                 throw new AssertionError(
                         "Cross-device second login: SSE did not navigate to callback. URL: " + page.url(), e);
             }
 
-            assertThat(page.url())
-                    .as("Second cross-device login should reach callback with auth code")
-                    .satisfiesAnyOf(url -> assertThat(url).contains("code="), url -> assertThat(url)
-                            .startsWith(callbackUrl));
+            flow.assertLoginSucceeded();
         } finally {
             Oid4vpTestKeycloakSetup.configureCrossDeviceFlow(adminClient, REALM, false);
         }
@@ -350,7 +306,7 @@ class KeycloakOid4vpE2eIT {
     @Order(7)
     void credentialSetsWithSdJwtAndMdoc() throws Exception {
         callback.reset();
-        clearBrowserSession();
+        flow.clearBrowserSession();
 
         String credentialSetsDcqlQuery = """
                 {
@@ -387,14 +343,8 @@ class KeycloakOid4vpE2eIT {
 
         try {
             Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient, REALM);
-
-            performSameDeviceWalletLogin();
-
-            if (page.locator("input[name='username']").count() > 0) {
-                completeFirstBrokerLoginForm("credset-mdoc-user-" + System.currentTimeMillis());
-            }
-
-            assertThat(page.url()).contains("code=");
+            performSameDeviceLogin("credset-mdoc-user");
+            flow.assertLoginSucceeded();
         } finally {
             wallet.client().clearPreferredFormat();
             Oid4vpTestKeycloakSetup.configureDcqlQuery(adminClient, REALM, buildDefaultDcqlQuery());
@@ -405,33 +355,24 @@ class KeycloakOid4vpE2eIT {
     @Order(8)
     void revokedCredentialIsRejected() throws Exception {
         callback.reset();
-        clearBrowserSession();
-
+        flow.clearBrowserSession();
         Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient, REALM);
 
-        // Get credential ID and revoke it
         var credentials = wallet.client().getCredentials();
         assertThat(credentials).as("Wallet should have at least one credential").isNotEmpty();
         String credentialId = credentials.get(0).id();
         wallet.client().revokeCredential(credentialId);
 
         try {
-            page.navigate(buildAuthRequestUri().toString());
-            page.waitForLoadState(LoadState.NETWORKIDLE);
-
-            page.locator("a#social-oid4vp").click();
-            waitForOpenWalletLink();
-
-            String walletUrl = page.locator("a:has-text('Open Wallet App')").getAttribute("href");
-            String presentationUri = convertToOpenid4vpUri(walletUrl);
-            PresentationResponse walletResponse = wallet.acceptPresentationRequest(presentationUri);
-
-            LOG.info("[Test] Revoked credential wallet response: {}", walletResponse.rawBody());
+            flow.navigateToLoginPage();
+            flow.clickOid4vpIdpButton();
+            String walletUrl = flow.getSameDeviceWalletUrl();
+            PresentationResponse walletResponse = flow.submitToWallet(walletUrl);
 
             String redirectUri = walletResponse.redirectUri();
             if (redirectUri != null) {
                 page.navigate(redirectUri);
-                page.waitForLoadState(LoadState.NETWORKIDLE);
+                page.waitForLoadState();
             }
 
             Thread.sleep(2000);
@@ -455,27 +396,19 @@ class KeycloakOid4vpE2eIT {
     @Order(9)
     void walletErrorShowsErrorAndAllowsRetry() throws Exception {
         callback.reset();
-        clearBrowserSession();
-
+        flow.clearBrowserSession();
         wallet.client().setNextError("access_denied", "User denied consent");
 
         try {
-            page.navigate(buildAuthRequestUri().toString());
-            page.waitForLoadState(LoadState.NETWORKIDLE);
-
-            page.locator("a#social-oid4vp").click();
-            waitForOpenWalletLink();
-
-            String walletUrl = page.locator("a:has-text('Open Wallet App')").getAttribute("href");
-            String presentationUri = convertToOpenid4vpUri(walletUrl);
-            PresentationResponse walletResponse = wallet.acceptPresentationRequest(presentationUri);
-
-            LOG.info("[Test] Wallet error response: {}", walletResponse.rawBody());
+            flow.navigateToLoginPage();
+            flow.clickOid4vpIdpButton();
+            String walletUrl = flow.getSameDeviceWalletUrl();
+            PresentationResponse walletResponse = flow.submitToWallet(walletUrl);
 
             String redirectUri = walletResponse.redirectUri();
             if (redirectUri != null) {
                 page.navigate(redirectUri);
-                page.waitForLoadState(LoadState.NETWORKIDLE);
+                page.waitForLoadState();
             }
 
             Thread.sleep(2000);
@@ -495,173 +428,229 @@ class KeycloakOid4vpE2eIT {
         }
     }
 
-    // ===== Same-Device Flow Helper =====
+    @Test
+    @Order(10)
+    void requestObjectCanBeFetchedMultipleTimes() throws Exception {
+        callback.reset();
+        flow.clearBrowserSession();
 
-    private void performSameDeviceWalletLogin() throws Exception {
-        page.navigate(buildAuthRequestUri().toString());
-        page.waitForLoadState(LoadState.NETWORKIDLE);
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        String walletUrl = flow.getSameDeviceWalletUrl();
+        String requestUri = Oid4vpLoginFlowHelper.extractRequestUri(walletUrl);
 
-        page.locator("a#social-oid4vp").click();
-        waitForOpenWalletLink();
+        HttpClient httpClient = HttpClient.newHttpClient();
 
-        String walletUrl = page.locator("a:has-text('Open Wallet App')").getAttribute("href");
-        assertThat(walletUrl).as("Wallet URL should be present").isNotEmpty();
+        HttpResponse<String> response1 = httpClient.send(
+                HttpRequest.newBuilder().uri(URI.create(requestUri)).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response2 = httpClient.send(
+                HttpRequest.newBuilder().uri(URI.create(requestUri)).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response3 = httpClient.send(
+                HttpRequest.newBuilder().uri(URI.create(requestUri)).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
 
-        String presentationUri = convertToOpenid4vpUri(walletUrl);
-        PresentationResponse walletResponse = wallet.acceptPresentationRequest(presentationUri);
+        assertThat(response1.statusCode()).as("First fetch should succeed").isEqualTo(200);
+        assertThat(response2.statusCode()).as("Second fetch should succeed").isEqualTo(200);
+        assertThat(response3.statusCode()).as("Third fetch should succeed").isEqualTo(200);
 
-        LOG.info("[Test] Wallet response: {}", walletResponse.rawBody());
+        String kid1 = Oid4vpLoginFlowHelper.extractEncryptionKid(response1.body());
+        String kid2 = Oid4vpLoginFlowHelper.extractEncryptionKid(response2.body());
+        String kid3 = Oid4vpLoginFlowHelper.extractEncryptionKid(response3.body());
 
-        String redirectUri = walletResponse.redirectUri();
+        LOG.info("[Test] Enc key kids: {}, {}, {}", kid1, kid2, kid3);
 
-        // The wallet POSTs directly (not through the browser), so the server stores a
-        // completion signal. The SSE listener in the page may navigate the browser
-        // automatically. Wait briefly for SSE-driven navigation before falling back to
-        // manual redirect_uri navigation.
-        boolean sseNavigated = false;
+        assertThat(kid1)
+                .as("First request object should contain an encryption key")
+                .isNotNull();
+        assertThat(kid2)
+                .as("Second request object should contain an encryption key")
+                .isNotNull();
+        assertThat(kid3)
+                .as("Third request object should contain an encryption key")
+                .isNotNull();
+        assertThat(kid1)
+                .as("Each fetch should generate a different encryption key")
+                .isNotEqualTo(kid2);
+        assertThat(kid2)
+                .as("Each fetch should generate a different encryption key")
+                .isNotEqualTo(kid3);
+        assertThat(kid1)
+                .as("Each fetch should generate a different encryption key")
+                .isNotEqualTo(kid3);
+    }
+
+    @Test
+    @Order(11)
+    void loginSucceedsAfterMultipleRequestObjectFetches() throws Exception {
+        callback.reset();
+        flow.clearBrowserSession();
+        Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient, REALM);
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        String walletUrl = flow.getSameDeviceWalletUrl();
+        String requestUri = Oid4vpLoginFlowHelper.extractRequestUri(walletUrl);
+
+        // Pre-fetch the request object twice, creating encryption keys
+        // that the wallet will NOT use (the wallet will fetch again and get its own key)
+        HttpClient httpClient = HttpClient.newHttpClient();
+        HttpResponse<String> prefetch1 = httpClient.send(
+                HttpRequest.newBuilder().uri(URI.create(requestUri)).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> prefetch2 = httpClient.send(
+                HttpRequest.newBuilder().uri(URI.create(requestUri)).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertThat(prefetch1.statusCode()).isEqualTo(200);
+        assertThat(prefetch2.statusCode()).isEqualTo(200);
+        LOG.info("[Test] Pre-fetched request object twice, now letting wallet fetch and respond");
+
+        PresentationResponse response = flow.submitToWallet(walletUrl);
+        flow.waitForLoginCompletion(response);
+        flow.completeFirstBrokerLoginIfNeeded("multi-fetch-user");
+        flow.assertLoginSucceeded();
+    }
+
+    @Test
+    @Order(12)
+    void walletCanRespondUsingEarlierRequestObject() throws Exception {
+        callback.reset();
+        flow.clearBrowserSession();
+        Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient, REALM);
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        String walletUrl = flow.getSameDeviceWalletUrl();
+
+        // Wallet fetches request object and submits VP response (encrypted with key K1)
+        PresentationResponse response = flow.submitToWallet(walletUrl);
+        flow.waitForLoginCompletion(response);
+        flow.completeFirstBrokerLoginIfNeeded("earlier-ro-user");
+        flow.assertLoginSucceeded();
+
+        // Fetch the request_uri again to prove the token is not consumed on first use
+        String requestUri = Oid4vpLoginFlowHelper.extractRequestUri(walletUrl);
+        HttpClient httpClient = HttpClient.newHttpClient();
+        HttpResponse<String> postLoginFetch = httpClient.send(
+                HttpRequest.newBuilder().uri(URI.create(requestUri)).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        LOG.info("[Test] Post-login request object fetch status: {}", postLoginFetch.statusCode());
+    }
+
+    @Test
+    @Order(13)
+    void loginWithX509CertChainPem() throws Exception {
+        // Mimics dev.sh: combined PEM (cert chain + private key) stored in x509CertificatePem.
+        // Before the fix, PemUtils.decodeCertificate failed with Base64 error when
+        // multiple certificates were concatenated.
+        callback.reset();
+        flow.clearBrowserSession();
+
+        KeyPair caKeyPair = generateEcKeyPair();
+        KeyPair leafKeyPair = generateEcKeyPair();
+
+        X509Certificate caCert = generateCaCert(caKeyPair);
+        X509Certificate leafCert = generateLeafCertWithSan(leafKeyPair, caKeyPair, "test.example.com");
+
+        String combinedPem = toPem("CERTIFICATE", leafCert.getEncoded())
+                + "\n"
+                + toPem("CERTIFICATE", caCert.getEncoded())
+                + "\n"
+                + toPem("PRIVATE KEY", leafKeyPair.getPrivate().getEncoded());
+
+        idpConfig
+                .set(Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM, combinedPem)
+                .set(Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME, "x509_san_dns")
+                .set(Oid4vpIdentityProviderConfig.ENFORCE_HAIP, "false")
+                .set(Oid4vpIdentityProviderConfig.X509_SIGNING_KEY_JWK, "")
+                .apply();
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+
+        String walletUrl = flow.getSameDeviceWalletUrl();
+        assertThat(walletUrl)
+                .as("Login should succeed with multi-cert PEM chain")
+                .contains("request_uri=");
+
+        // Verify the request object is signed with ES256 using the x509 key,
+        // not falling back to the realm key (which would be RS256).
+        String requestUri = Oid4vpLoginFlowHelper.extractRequestUri(walletUrl);
+        HttpClient httpClient = HttpClient.newHttpClient();
+        HttpResponse<String> response = httpClient.send(
+                HttpRequest.newBuilder().uri(URI.create(requestUri)).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(200);
+
+        com.nimbusds.jwt.SignedJWT requestJwt = com.nimbusds.jwt.SignedJWT.parse(response.body());
+        assertThat(requestJwt.getHeader().getAlgorithm().getName())
+                .as("Request object must be signed with ES256 from the x509 key, not the realm key")
+                .isEqualTo("ES256");
+        assertThat(requestJwt.getHeader().getX509CertChain())
+                .as("Request object must include x5c certificate chain")
+                .hasSize(2);
+    }
+
+    @Test
+    @Order(14)
+    void loginWithCertOnlyPemAndRealmKey() throws Exception {
+        // Cert-only mode: x509CertificatePem contains only the certificate (no private key).
+        // Request objects are signed with the Keycloak realm key; the cert is used for
+        // client_id derivation and included in the x5c JWS header.
+        callback.reset();
+        flow.clearBrowserSession();
+
+        KeyPair leafKeyPair = generateEcKeyPair();
+        X509Certificate leafCert = generateLeafCertWithSan(leafKeyPair, leafKeyPair, "test.example.com");
+
+        String certOnlyPem = toPem("CERTIFICATE", leafCert.getEncoded());
+
+        idpConfig
+                .set(Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM, certOnlyPem)
+                .set(Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME, "x509_san_dns")
+                .set(Oid4vpIdentityProviderConfig.ENFORCE_HAIP, "false")
+                .set(Oid4vpIdentityProviderConfig.X509_SIGNING_KEY_JWK, "")
+                .apply();
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+
+        String walletUrl = flow.getSameDeviceWalletUrl();
+        assertThat(walletUrl)
+                .as("Login should succeed with cert-only PEM (realm key signing)")
+                .contains("request_uri=");
+    }
+
+    // ===== Composite Helpers =====
+
+    private void performSameDeviceLogin(String usernamePrefix) throws Exception {
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        String walletUrl = flow.getSameDeviceWalletUrl();
+        PresentationResponse response = flow.submitToWallet(walletUrl);
+        flow.waitForLoginCompletion(response);
+        flow.completeFirstBrokerLoginIfNeeded(usernamePrefix);
+    }
+
+    private void waitForCrossDeviceNavigation() {
         try {
             page.waitForURL(
-                    url -> url.startsWith(callbackUrl)
+                    url -> url.contains("/complete-auth")
                             || url.contains("/first-broker-login")
                             || url.contains("/login-actions/")
-                            || url.contains("/complete-auth")
-                            || page.locator("input[name='username']").count() > 0,
-                    new Page.WaitForURLOptions().setTimeout(10000));
-            sseNavigated = true;
-            LOG.info("[Test] SSE navigated browser to: {}", page.url());
-        } catch (Exception ignored) {
-            LOG.info("[Test] SSE did not navigate within timeout, falling back to manual redirect");
-        }
-
-        if (!sseNavigated && redirectUri != null) {
-            LOG.info("[Test] Navigating to redirect_uri: {}", redirectUri);
-            page.navigate(redirectUri);
-            page.waitForLoadState(LoadState.NETWORKIDLE);
-        }
-
-        try {
-            page.waitForURL(
-                    url -> url.startsWith(callbackUrl)
-                            || url.contains("/first-broker-login")
-                            || url.contains("/login-actions/")
-                            || page.locator("input[name='username']").count() > 0,
+                            || page.locator("input[name='username']").count() > 0
+                            || flow.isCallbackUrl(url),
                     new Page.WaitForURLOptions().setTimeout(30000));
         } catch (Exception e) {
-            String bodyText = "";
-            try {
-                bodyText = page.locator("body").textContent();
-            } catch (Exception ignored) {
-            }
-            throw new AssertionError(
-                    "Unexpected state after wallet login. URL: " + page.url() + "\nWallet response: "
-                            + walletResponse.rawBody() + "\nRedirect URI: " + redirectUri + "\nPage content: "
-                            + bodyText.substring(0, Math.min(1000, bodyText.length())),
-                    e);
+            throw new AssertionError("Cross-device: SSE did not navigate browser. URL: " + page.url(), e);
         }
+        page.waitForLoadState();
     }
 
-    private String convertToOpenid4vpUri(String walletUrl) {
-        if (walletUrl.startsWith("openid4vp://")) {
-            return walletUrl;
-        }
-        return walletUrl.replace(wallet.getAuthorizeUrl() + "?", "openid4vp://authorize?");
-    }
-
-    // ===== Test Helper Methods =====
-
-    private static void waitForSseConnection() {
-        page.waitForCondition(
-                () -> {
-                    Object ready = page.evaluate("() => window.__oid4vpSseReady === true");
-                    return Boolean.TRUE.equals(ready);
-                },
-                new Page.WaitForConditionOptions().setTimeout(10000));
-        LOG.info("[Test] SSE connection established (first ping received)");
-    }
-
-    private static void waitForOpenWalletLink() {
-        page.waitForSelector(
-                "a:has-text('Open Wallet App')",
-                new Page.WaitForSelectorOptions()
-                        .setState(WaitForSelectorState.VISIBLE)
-                        .setTimeout(30000));
-    }
-
-    private void completeFirstBrokerLoginForm(String uniqueUsername) {
-        page.waitForLoadState(LoadState.NETWORKIDLE);
-        Locator usernameFields = page.locator("input[name='username']");
-        if (usernameFields.count() > 0 && usernameFields.first().inputValue().isEmpty()) {
-            usernameFields.first().fill(uniqueUsername);
-        }
-        Locator emailFields = page.locator("input[name='email']");
-        if (emailFields.count() > 0 && emailFields.first().inputValue().isEmpty()) {
-            emailFields.first().fill(uniqueUsername + "@example.com");
-        }
-        Locator firstNameFields = page.locator("input[name='firstName']");
-        if (firstNameFields.count() > 0 && firstNameFields.first().inputValue().isEmpty()) {
-            firstNameFields.first().fill("Test");
-        }
-        Locator lastNameFields = page.locator("input[name='lastName']");
-        if (lastNameFields.count() > 0 && lastNameFields.first().inputValue().isEmpty()) {
-            lastNameFields.first().fill("User");
-        }
-
-        page.locator("input[type='submit'], button[type='submit']").first().click();
-        try {
-            page.waitForURL(url -> url.startsWith(callbackUrl), new Page.WaitForURLOptions().setTimeout(30000));
-        } catch (Exception e) {
-            String bodyText = "";
-            try {
-                bodyText = page.locator("body").textContent();
-            } catch (Exception ignored) {
-            }
-            throw new AssertionError(
-                    "First broker login form did not redirect to callback. URL: " + page.url() + "\nPage content: "
-                            + bodyText.substring(0, Math.min(2000, bodyText.length())),
-                    e);
-        }
-    }
-
-    private void clearBrowserSession() {
-        context.clearCookies();
-        try {
-            page.navigate(kcHostUrl + "/realms/" + REALM + "/", new Page.NavigateOptions().setTimeout(10000));
-        } catch (Exception e) {
-            LOG.warn("Initial navigation failed: {}", e.getMessage());
-            try {
-                page.navigate("about:blank");
-            } catch (Exception ignored) {
-            }
-        }
-        try {
-            page.evaluate("() => { window.localStorage.clear(); window.sessionStorage.clear(); }");
-        } catch (Exception ignored) {
-        }
-        context.clearCookies();
-    }
-
-    private URI buildAuthRequestUri() {
-        String state = "s-" + System.nanoTime();
-        byte[] bytes = new byte[32];
-        new SecureRandom().nextBytes(bytes);
-        String codeVerifier = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-        String codeChallenge;
-        try {
-            byte[] hash = MessageDigest.getInstance("SHA-256").digest(codeVerifier.getBytes(StandardCharsets.US_ASCII));
-            codeChallenge = Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-
-        String uri = kcHostUrl + "/realms/" + REALM + "/protocol/openid-connect/auth" + "?client_id=wallet-mock"
-                + "&redirect_uri=" + urlEncode(callbackUrl)
-                + "&response_type=code"
-                + "&scope=openid"
-                + "&state=" + urlEncode(state)
-                + "&code_challenge=" + urlEncode(codeChallenge)
-                + "&code_challenge_method=S256";
-        return URI.create(uri);
-    }
+    // ===== Static Helpers =====
 
     private static String buildDefaultDcqlQuery() {
         return """
@@ -679,10 +668,6 @@ class KeycloakOid4vpE2eIT {
                   ]
                 }
                 """;
-    }
-
-    private static String urlEncode(String value) {
-        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
     private static void copyRealmImport() {
@@ -707,6 +692,53 @@ class KeycloakOid4vpE2eIT {
                         MountableFile.forHostPath(jar), "/opt/keycloak/providers/" + jar.getFileName());
             }
         }
+    }
+
+    private static KeyPair generateEcKeyPair() throws Exception {
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC");
+        kpg.initialize(new ECGenParameterSpec("secp256r1"));
+        return kpg.generateKeyPair();
+    }
+
+    private static X509Certificate generateCaCert(KeyPair caKeyPair) throws Exception {
+        X500Principal subject = new X500Principal("CN=Test CA");
+        Instant now = Instant.now();
+        JcaX509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(
+                subject,
+                BigInteger.valueOf(1),
+                Date.from(now.minus(1, ChronoUnit.HOURS)),
+                Date.from(now.plus(365, ChronoUnit.DAYS)),
+                subject,
+                caKeyPair.getPublic());
+        return new JcaX509CertificateConverter()
+                .getCertificate(
+                        builder.build(new JcaContentSignerBuilder("SHA256withECDSA").build(caKeyPair.getPrivate())));
+    }
+
+    private static X509Certificate generateLeafCertWithSan(KeyPair leafKeyPair, KeyPair caKeyPair, String dnsName)
+            throws Exception {
+        X500Principal issuer = new X500Principal("CN=Test CA");
+        X500Principal subject = new X500Principal("CN=" + dnsName);
+        Instant now = Instant.now();
+        JcaX509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(
+                issuer,
+                BigInteger.valueOf(2),
+                Date.from(now.minus(1, ChronoUnit.HOURS)),
+                Date.from(now.plus(365, ChronoUnit.DAYS)),
+                subject,
+                leafKeyPair.getPublic());
+        builder.addExtension(
+                Extension.subjectAlternativeName,
+                false,
+                new GeneralNames(new GeneralName(GeneralName.dNSName, dnsName)));
+        return new JcaX509CertificateConverter()
+                .getCertificate(
+                        builder.build(new JcaContentSignerBuilder("SHA256withECDSA").build(caKeyPair.getPrivate())));
+    }
+
+    private static String toPem(String type, byte[] der) {
+        String base64 = Base64.getMimeEncoder(64, "\n".getBytes()).encodeToString(der);
+        return "-----BEGIN " + type + "-----\n" + base64 + "\n-----END " + type + "-----";
     }
 
     private static Path findProviderJar() throws IOException {

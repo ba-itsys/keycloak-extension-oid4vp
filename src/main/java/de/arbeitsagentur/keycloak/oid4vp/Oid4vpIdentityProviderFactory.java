@@ -19,18 +19,18 @@ import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.util.Base64;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
-import java.io.ByteArrayInputStream;
-import java.security.KeyFactory;
 import java.security.PrivateKey;
-import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
-import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.AbstractIdentityProviderFactory;
+import org.keycloak.common.util.PemUtils;
 import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.provider.ProviderConfigProperty;
@@ -40,6 +40,8 @@ import org.keycloak.utils.StringUtil;
 public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFactory<Oid4vpIdentityProvider> {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProviderFactory.class);
+
+    private static final Map<String, String> RESOLVED_KEY_CACHE = new ConcurrentHashMap<>();
 
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES;
 
@@ -114,15 +116,18 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .label("Wallet URL Scheme")
                 .helpText("Custom URL scheme for wallet apps (e.g., openid4vp://, haip://).")
                 .type(ProviderConfigProperty.STRING_TYPE)
-                .defaultValue("openid4vp://")
+                .defaultValue(Oid4vpConstants.DEFAULT_WALLET_SCHEME)
                 .add()
                 .property()
                 .name(Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME)
                 .label("Client ID Scheme")
                 .helpText("Scheme for client_id in redirect flows: x509_san_dns, x509_hash, or plain.")
                 .type(ProviderConfigProperty.LIST_TYPE)
-                .defaultValue("x509_san_dns")
-                .options(List.of("x509_san_dns", "x509_hash", "plain"))
+                .defaultValue(Oid4vpConstants.CLIENT_ID_SCHEME_X509_SAN_DNS)
+                .options(List.of(
+                        Oid4vpConstants.CLIENT_ID_SCHEME_X509_SAN_DNS,
+                        Oid4vpConstants.CLIENT_ID_SCHEME_X509_HASH,
+                        Oid4vpConstants.CLIENT_ID_SCHEME_PLAIN))
                 .add()
                 .property()
                 .name(Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM)
@@ -136,12 +141,6 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .name(Oid4vpIdentityProviderConfig.VERIFIER_INFO)
                 .label("Verifier Info (JSON)")
                 .helpText("JSON array of verifier attestations for EUDI Wallet registration certificates.")
-                .type(ProviderConfigProperty.TEXT_TYPE)
-                .add()
-                .property()
-                .name(Oid4vpIdentityProviderConfig.ADDITIONAL_TRUSTED_CERTIFICATES)
-                .label("Additional Trusted Certificates")
-                .helpText("PEM-encoded certificates to trust in addition to the trust list.")
                 .type(ProviderConfigProperty.TEXT_TYPE)
                 .add()
                 .build();
@@ -197,24 +196,32 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
             return;
         }
 
+        // Strip non-certificate blocks (e.g. PRIVATE KEY) before parsing,
+        // because PemUtils.decodeCertificates fails on mixed PEM content.
+        List<String> certPemBlocks = extractPemBlocks(pem, "CERTIFICATE");
+        String certOnlyPem = String.join("\n", certPemBlocks);
+        config.setX509CertificatePem(certOnlyPem);
+
+        String cached = RESOLVED_KEY_CACHE.get(pem);
+        if (cached != null) {
+            config.setX509SigningKeyJwk(cached);
+            return;
+        }
+
         try {
-            List<X509Certificate> certChain = parseCertificateChain(pem);
+            X509Certificate[] certs = PemUtils.decodeCertificates(certOnlyPem);
+            List<X509Certificate> certChain = Arrays.asList(certs);
             if (certChain.isEmpty()) {
                 LOG.warn("No certificates found in x509CertificatePem");
                 return;
             }
 
-            List<String> certPemBlocks = extractPemBlocks(pem, "CERTIFICATE");
-            config.setX509CertificatePem(String.join("\n", certPemBlocks));
-
-            String privBody = extractPemBlockBody(pem, "PRIVATE KEY");
-            if (privBody == null) {
-                LOG.info("No private key in x509CertificatePem (cert-only mode)");
+            List<String> keyBlocks = extractPemBlocks(pem, "PRIVATE KEY");
+            if (keyBlocks.isEmpty()) {
+                LOG.warn("No PRIVATE KEY block found in x509CertificatePem");
                 return;
             }
-
-            byte[] privBytes = java.util.Base64.getDecoder().decode(privBody);
-            PrivateKey privateKey = parsePrivateKey(privBytes);
+            PrivateKey privateKey = PemUtils.decodePrivateKey(keyBlocks.get(0));
 
             X509Certificate leafCert = certChain.get(0);
             if (!(leafCert.getPublicKey() instanceof ECPublicKey ecPub)) {
@@ -236,32 +243,19 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                     .keyIDFromThumbprint()
                     .build();
 
-            config.setX509SigningKeyJwk(ecKey.toJSONString());
-            LOG.infof(
+            String jwkJson = ecKey.toJSONString();
+            config.setX509SigningKeyJwk(jwkJson);
+            RESOLVED_KEY_CACHE.put(pem, jwkJson);
+            LOG.debugf(
                     "Resolved x509 signing key from inline PEM (chain size=%d, kid=%s)",
                     certChain.size(), ecKey.getKeyID());
 
         } catch (Exception e) {
-            LOG.errorf(e, "Failed to resolve x509 signing key from inline PEM");
+            throw new IllegalStateException(
+                    "x509CertificatePem contains a PRIVATE KEY block but the signing key could not be resolved. "
+                            + "Fix or remove the private key from the PEM configuration.",
+                    e);
         }
-    }
-
-    private static List<X509Certificate> parseCertificateChain(String pem) throws Exception {
-        List<X509Certificate> chain = new ArrayList<>();
-        CertificateFactory cf = CertificateFactory.getInstance("X.509");
-        int idx = 0;
-        while (true) {
-            int start = pem.indexOf("-----BEGIN CERTIFICATE-----", idx);
-            if (start < 0) break;
-            int end = pem.indexOf("-----END CERTIFICATE-----", start);
-            if (end < 0) break;
-            String body = pem.substring(start + "-----BEGIN CERTIFICATE-----".length(), end)
-                    .replaceAll("\\s+", "");
-            byte[] der = java.util.Base64.getDecoder().decode(body);
-            chain.add((X509Certificate) cf.generateCertificate(new ByteArrayInputStream(der)));
-            idx = end + "-----END CERTIFICATE-----".length();
-        }
-        return chain;
     }
 
     private static List<String> extractPemBlocks(String pem, String type) {
@@ -278,25 +272,5 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
             idx = stop + end.length();
         }
         return blocks;
-    }
-
-    private static String extractPemBlockBody(String pem, String type) {
-        String begin = "-----BEGIN " + type + "-----";
-        String end = "-----END " + type + "-----";
-        int start = pem.indexOf(begin);
-        int stop = pem.indexOf(end);
-        if (start < 0 || stop < 0) return null;
-        return pem.substring(start + begin.length(), stop).replaceAll("\\s+", "");
-    }
-
-    private static PrivateKey parsePrivateKey(byte[] pkcs8Bytes) throws Exception {
-        PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(pkcs8Bytes);
-        for (String alg : List.of("EC", "RSA")) {
-            try {
-                return KeyFactory.getInstance(alg).generatePrivate(spec);
-            } catch (Exception ignored) {
-            }
-        }
-        throw new IllegalStateException("Unsupported private key algorithm (tried EC, RSA)");
     }
 }

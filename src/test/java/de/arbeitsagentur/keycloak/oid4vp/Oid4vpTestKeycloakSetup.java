@@ -156,10 +156,14 @@ final class Oid4vpTestKeycloakSetup {
     }
 
     static void setIdpConfig(KeycloakAdminClient admin, String realm, String key, String value) throws Exception {
+        setIdpConfigs(admin, realm, Map.of(key, value));
+    }
+
+    static void setIdpConfigs(KeycloakAdminClient admin, String realm, Map<String, String> entries) throws Exception {
         Map<String, Object> idp = admin.getJson("/admin/realms/" + realm + "/identity-provider/instances/oid4vp");
         @SuppressWarnings("unchecked")
         Map<String, String> config = (Map<String, String>) idp.get("config");
-        config.put(key, value);
+        config.putAll(entries);
         admin.putJson("/admin/realms/" + realm + "/identity-provider/instances/oid4vp", idp);
     }
 

@@ -27,6 +27,7 @@ import java.net.URI;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakUriInfo;
@@ -58,6 +59,13 @@ class Oid4vpDirectPostServiceTest {
         when(context.getUri()).thenReturn(uriInfo);
         when(uriInfo.getBaseUri()).thenReturn(URI.create("http://localhost:8080/"));
 
+        LoginFormsProvider loginFormsProvider = mock(LoginFormsProvider.class, RETURNS_SELF);
+        when(session.getProvider(LoginFormsProvider.class)).thenReturn(loginFormsProvider);
+        when(loginFormsProvider.createErrorPage(any(Response.Status.class))).thenAnswer(invocation -> {
+            Response.Status status = invocation.getArgument(0);
+            return Response.status(status).entity("error-page").build();
+        });
+
         Oid4vpAuthSessionResolver resolver = mock(Oid4vpAuthSessionResolver.class);
         Oid4vpRequestObjectStore store = mock(Oid4vpRequestObjectStore.class);
 
@@ -68,18 +76,17 @@ class Oid4vpDirectPostServiceTest {
     void handleCompletion_noEntry_returnsBadRequest() {
         when(singleUseObjects.remove(CROSS_DEVICE_COMPLETE_PREFIX + "token123")).thenReturn(null);
 
-        Response response = service.handleCompletion("token123", null);
+        Response response = service.handleCompletion("token123");
 
         assertThat(response.getStatus()).isEqualTo(400);
-        assertThat(response.getEntity().toString()).contains("Session expired");
     }
 
     @Test
     void handleCompletion_missingRedirectUri_returnsServerError() {
         when(singleUseObjects.remove(CROSS_DEVICE_COMPLETE_PREFIX + "token123"))
-                .thenReturn(Map.of("root_session_id", "root-1"));
+                .thenReturn(Map.of(KEY_ROOT_SESSION_ID, "root-1"));
 
-        Response response = service.handleCompletion("token123", null);
+        Response response = service.handleCompletion("token123");
 
         assertThat(response.getStatus()).isEqualTo(500);
     }
@@ -88,35 +95,34 @@ class Oid4vpDirectPostServiceTest {
     void handleCompletion_validEntry_redirects() {
         String redirectUri = "http://localhost:8080/realms/test/broker/oid4vp/endpoint/complete-auth?state=abc";
         when(singleUseObjects.remove(CROSS_DEVICE_COMPLETE_PREFIX + "token123"))
-                .thenReturn(Map.of("complete_auth_url", redirectUri));
+                .thenReturn(Map.of(KEY_COMPLETE_AUTH_URL, redirectUri));
 
-        Response response = service.handleCompletion("token123", null);
+        Response response = service.handleCompletion("token123");
 
         assertThat(response.getStatus()).isEqualTo(302);
         assertThat(response.getLocation().toString()).isEqualTo(redirectUri);
     }
 
     @Test
-    void handleCompletion_walletSource_returnsHtml() {
+    void handleCompletion_walletSource_redirectsSameAsBrowser() {
         String redirectUri = "http://localhost:8080/realms/test/broker/oid4vp/endpoint/complete-auth?state=abc";
         when(singleUseObjects.remove(CROSS_DEVICE_COMPLETE_PREFIX + "token123"))
-                .thenReturn(Map.of("complete_auth_url", redirectUri));
+                .thenReturn(Map.of(KEY_COMPLETE_AUTH_URL, redirectUri));
 
-        Response response = service.handleCompletion("token123", "wallet");
+        Response response = service.handleCompletion("token123");
 
-        assertThat(response.getStatus()).isEqualTo(200);
-        assertThat(response.getEntity().toString()).contains("Login Complete");
+        assertThat(response.getStatus()).isEqualTo(302);
+        assertThat(response.getLocation().toString()).isEqualTo(redirectUri);
     }
 
     @Test
     void handleCompletion_openRedirectAttempt_returnsBadRequest() {
         when(singleUseObjects.remove(CROSS_DEVICE_COMPLETE_PREFIX + "token123"))
-                .thenReturn(Map.of("complete_auth_url", "https://evil.example.com/steal"));
+                .thenReturn(Map.of(KEY_COMPLETE_AUTH_URL, "https://evil.example.com/steal"));
 
-        Response response = service.handleCompletion("token123", null);
+        Response response = service.handleCompletion("token123");
 
         assertThat(response.getStatus()).isEqualTo(400);
-        assertThat(response.getEntity().toString()).contains("Invalid redirect URI");
     }
 
     @Test
@@ -143,6 +149,5 @@ class Oid4vpDirectPostServiceTest {
         Response response = service.completeAuth("missing-state", null, null);
 
         assertThat(response.getStatus()).isEqualTo(400);
-        assertThat(response.getEntity().toString()).contains("Authentication data not found");
     }
 }

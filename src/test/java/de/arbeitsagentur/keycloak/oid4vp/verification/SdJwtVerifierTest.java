@@ -62,7 +62,7 @@ class SdJwtVerifierTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        verifier = new SdJwtVerifier();
+        verifier = new SdJwtVerifier(60, 300);
         signingKey = new ECKeyGenerator(Curve.P_256).generate();
         signingCert = generateSelfSignedCert(signingKey);
     }
@@ -213,25 +213,75 @@ class SdJwtVerifierTest {
     }
 
     @Test
+    void verify_oldCredentialWithFreshKbJwt_succeeds() throws Exception {
+        ECKey holderKey = new ECKeyGenerator(Curve.P_256).generate();
+
+        // Credential issued 2 hours ago — well beyond the 300s KB-JWT max age
+        Instant issuedAt = Instant.now().minusSeconds(7200);
+        String credJwt = buildSignedJwtAt(
+                Map.of(
+                        "iss", "https://issuer.example",
+                        "vct", "IdentityCredential",
+                        "sub", "user123",
+                        "cnf", Map.of("jwk", holderKey.toPublicJWK().toJSONObject())),
+                issuedAt);
+
+        String sdJwt =
+                buildSdJwtVpWithKbJwt(credJwt, holderKey, "https://verifier.example", "test-nonce", Instant.now());
+
+        SdJwtVerificationResult result =
+                verifier.verify(sdJwt, "https://verifier.example", "test-nonce", List.of(signingKey.toECPublicKey()));
+
+        assertThat(result.issuer()).isEqualTo("https://issuer.example");
+        assertThat(result.claims()).containsEntry("sub", "user123");
+    }
+
+    @Test
+    void verify_validKbJwt_succeeds() throws Exception {
+        ECKey holderKey = new ECKeyGenerator(Curve.P_256).generate();
+
+        String credJwt = buildSignedJwt(Map.of(
+                "iss", "https://issuer.example",
+                "vct", "IdentityCredential",
+                "cnf", Map.of("jwk", holderKey.toPublicJWK().toJSONObject())));
+
+        String sdJwt =
+                buildSdJwtVpWithKbJwt(credJwt, holderKey, "https://verifier.example", "test-nonce", Instant.now());
+
+        SdJwtVerificationResult result =
+                verifier.verify(sdJwt, "https://verifier.example", "test-nonce", List.of(signingKey.toECPublicKey()));
+
+        assertThat(result.issuer()).isEqualTo("https://issuer.example");
+    }
+
+    @Test
+    void verify_staleKbJwt_throws() throws Exception {
+        ECKey holderKey = new ECKeyGenerator(Curve.P_256).generate();
+
+        String credJwt = buildSignedJwt(Map.of(
+                "iss",
+                "https://issuer.example",
+                "cnf",
+                Map.of("jwk", holderKey.toPublicJWK().toJSONObject())));
+
+        // KB-JWT issued 10 minutes ago — beyond the 300s + 60s skew max age
+        Instant staleIat = Instant.now().minusSeconds(600);
+        String sdJwt = buildSdJwtVpWithKbJwt(credJwt, holderKey, "https://verifier.example", "test-nonce", staleIat);
+
+        assertThatThrownBy(() -> verifier.verify(
+                        sdJwt, "https://verifier.example", "test-nonce", List.of(signingKey.toECPublicKey())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("expired by iat");
+    }
+
+    @Test
     void verify_kbJwtMissingCnfJwk_throws() throws Exception {
         // Build credential JWT without cnf
         String credJwt = buildSignedJwt(Map.of("iss", "https://issuer.example"));
 
-        // Build a KB-JWT
-        ECKey kbKey = new ECKeyGenerator(Curve.P_256).generate();
-        JWTClaimsSet kbClaims = new JWTClaimsSet.Builder()
-                .audience("https://verifier.example")
-                .claim("nonce", "test-nonce")
-                .issueTime(new Date())
-                .build();
-        SignedJWT kbJwt = new SignedJWT(
-                new JWSHeader.Builder(JWSAlgorithm.ES256)
-                        .type(new JOSEObjectType("kb+jwt"))
-                        .build(),
-                kbClaims);
-        kbJwt.sign(new ECDSASigner(kbKey));
-
-        String sdJwt = credJwt + "~" + kbJwt.serialize();
+        ECKey holderKey = new ECKeyGenerator(Curve.P_256).generate();
+        String sdJwt =
+                buildSdJwtVpWithKbJwt(credJwt, holderKey, "https://verifier.example", "test-nonce", Instant.now());
 
         assertThatThrownBy(() -> verifier.verify(
                         sdJwt, "https://verifier.example", "test-nonce", List.of(signingKey.toECPublicKey())))
@@ -248,19 +298,8 @@ class SdJwtVerifierTest {
                 "cnf",
                 Map.of("jwk", holderKey.toPublicJWK().toJSONObject())));
 
-        JWTClaimsSet kbClaims = new JWTClaimsSet.Builder()
-                .audience("https://wrong-audience.example")
-                .claim("nonce", "test-nonce")
-                .issueTime(new Date())
-                .build();
-        SignedJWT kbJwt = new SignedJWT(
-                new JWSHeader.Builder(JWSAlgorithm.ES256)
-                        .type(new JOSEObjectType("kb+jwt"))
-                        .build(),
-                kbClaims);
-        kbJwt.sign(new ECDSASigner(holderKey));
-
-        String sdJwt = credJwt + "~" + kbJwt.serialize();
+        String sdJwt = buildSdJwtVpWithKbJwt(
+                credJwt, holderKey, "https://wrong-audience.example", "test-nonce", Instant.now());
 
         assertThatThrownBy(() -> verifier.verify(
                         sdJwt, "https://verifier.example", "test-nonce", List.of(signingKey.toECPublicKey())))
@@ -277,22 +316,11 @@ class SdJwtVerifierTest {
                 "cnf",
                 Map.of("jwk", holderKey.toPublicJWK().toJSONObject())));
 
-        JWTClaimsSet kbClaims = new JWTClaimsSet.Builder()
-                .audience("https://verifier.example")
-                .claim("nonce", "wrong-nonce")
-                .issueTime(new Date())
-                .build();
-        SignedJWT kbJwt = new SignedJWT(
-                new JWSHeader.Builder(JWSAlgorithm.ES256)
-                        .type(new JOSEObjectType("kb+jwt"))
-                        .build(),
-                kbClaims);
-        kbJwt.sign(new ECDSASigner(holderKey));
-
-        String sdJwt = credJwt + "~" + kbJwt.serialize();
+        String sdJwt =
+                buildSdJwtVpWithKbJwt(credJwt, holderKey, "https://verifier.example", "wrong-nonce", Instant.now());
 
         assertThatThrownBy(() -> verifier.verify(
-                        sdJwt, "https://verifier.example", "wrong-nonce-expected", List.of(signingKey.toECPublicKey())))
+                        sdJwt, "https://verifier.example", "test-nonce", List.of(signingKey.toECPublicKey())))
                 .isInstanceOf(IllegalStateException.class);
     }
 
@@ -311,18 +339,47 @@ class SdJwtVerifierTest {
     }
 
     private String buildSignedJwt(Map<String, Object> claimsMap) throws Exception {
+        return buildSignedJwtAt(claimsMap, Instant.now());
+    }
+
+    private String buildSignedJwtAt(Map<String, Object> claimsMap, Instant issuedAt) throws Exception {
         JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder();
         for (var entry : claimsMap.entrySet()) {
             builder.claim(entry.getKey(), entry.getValue());
         }
-        Instant now = Instant.now();
-        builder.issueTime(Date.from(now));
-        builder.notBeforeTime(Date.from(now));
-        builder.expirationTime(Date.from(now.plusSeconds(3600)));
+        builder.issueTime(Date.from(issuedAt));
+        builder.notBeforeTime(Date.from(issuedAt));
+        builder.expirationTime(Date.from(issuedAt.plusSeconds(86400)));
 
         SignedJWT signedJWT = new SignedJWT(buildHeaderWithX5c(), builder.build());
         signedJWT.sign(new ECDSASigner(signingKey));
         return signedJWT.serialize();
+    }
+
+    private String buildSdJwtVpWithKbJwt(String credJwt, ECKey holderKey, String audience, String nonce, Instant kbIat)
+            throws Exception {
+        // The unbound presentation is: issuerJwt~
+        String unboundPresentation = credJwt + "~";
+
+        // sd_hash = base64url(SHA-256(unbound_presentation))
+        MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
+        byte[] hash = sha256.digest(unboundPresentation.getBytes(StandardCharsets.US_ASCII));
+        String sdHash = Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+
+        JWTClaimsSet kbClaims = new JWTClaimsSet.Builder()
+                .audience(audience)
+                .claim("nonce", nonce)
+                .claim("sd_hash", sdHash)
+                .issueTime(Date.from(kbIat))
+                .build();
+        SignedJWT kbJwt = new SignedJWT(
+                new JWSHeader.Builder(JWSAlgorithm.ES256)
+                        .type(new JOSEObjectType("kb+jwt"))
+                        .build(),
+                kbClaims);
+        kbJwt.sign(new ECDSASigner(holderKey));
+
+        return unboundPresentation + kbJwt.serialize();
     }
 
     private static X509Certificate generateSelfSignedCert(ECKey ecKey) throws Exception {

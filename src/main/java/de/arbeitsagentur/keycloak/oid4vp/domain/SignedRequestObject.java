@@ -15,4 +15,4 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
-public record SignedRequestObject(String jwt, String encryptionKeyJson, String state, String nonce) {}
+public record SignedRequestObject(String jwt, String encryptionKeyJson) {}

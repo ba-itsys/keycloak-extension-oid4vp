@@ -61,7 +61,8 @@ public class DcqlQueryBuilder {
 
     public String build() {
         if (credentialTypes.isEmpty()) {
-            return buildDefaultDcql();
+            throw new IllegalStateException(
+                    "No credential types configured. Add at least one credential type to the DCQL query.");
         }
 
         try {
@@ -236,9 +237,5 @@ public class DcqlQueryBuilder {
             credentialSet.put("options", options);
         }
         return credentialSet;
-    }
-
-    private String buildDefaultDcql() {
-        return "{\"credentials\":[{\"id\":\"cred1\",\"claims\":[{\"path\":[\"given_name\"]},{\"path\":[\"family_name\"]}]}]}";
     }
 }

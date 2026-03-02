@@ -7,7 +7,7 @@ REALM_OUT="${ROOT_DIR}/src/test/resources/realm-wallet-demo-local.json"
 
 usage() {
   cat <<'EOF'
-Usage: scripts/setup-local-realm.sh <pem-file> <verifier-info-file>
+Usage: scripts/setup-local-realm.sh <pem-file> <verifier-info-file> [trust-list-url]
 
 Generates src/test/resources/realm-wallet-demo-local.json for local testing
 with the provided X.509 credentials and verifier info.
@@ -15,11 +15,13 @@ with the provided X.509 credentials and verifier info.
 Arguments:
   <pem-file>             Path to combined PEM file (cert chain + private key)
   <verifier-info-file>   Path to JSON file containing verifier attestations
+  [trust-list-url]       Optional trust list URL override (default: BMI test trust list)
 
 The generated files are gitignored and specific to your local environment.
 
 Example:
   scripts/setup-local-realm.sh /path/to/combined.pem /path/to/verifier-info.json
+  scripts/setup-local-realm.sh /path/to/combined.pem /path/to/verifier-info.json http://host.docker.internal:8085/api/trustlist
 EOF
 }
 
@@ -37,6 +39,7 @@ fi
 
 PEM_FILE="$1"
 VERIFIER_INFO_FILE="$2"
+TRUST_LIST_URL="${3:-https://bmi.usercontent.opencode.de/eudi-wallet/test-trust-lists/pid-provider.jwt}"
 
 if [ ! -f "$PEM_FILE" ]; then
   echo "PEM file not found: $PEM_FILE" >&2
@@ -58,6 +61,66 @@ cat > "$REALM_OUT" <<REALMEOF
   "enabled": true,
   "loginTheme": "oid4vp",
   "registrationAllowed": false,
+  "roles": {
+    "realm": [
+      {
+        "name": "default-roles-wallet-demo",
+        "description": "\${role_default-roles}",
+        "composite": true,
+        "composites": {
+          "client": {
+            "account": [
+              "manage-account",
+              "manage-account-links",
+              "view-profile"
+            ]
+          }
+        },
+        "clientRole": false
+      }
+    ],
+    "client": {
+      "account": [
+        {
+          "name": "manage-account",
+          "description": "\${role_manage-account}",
+          "composite": true,
+          "composites": {
+            "client": {
+              "account": ["manage-account-links"]
+            }
+          },
+          "clientRole": true
+        },
+        {
+          "name": "manage-account-links",
+          "description": "\${role_manage-account-links}",
+          "composite": false,
+          "clientRole": true
+        },
+        {
+          "name": "view-profile",
+          "description": "\${role_view-profile}",
+          "composite": false,
+          "clientRole": true
+        }
+      ]
+    }
+  },
+  "defaultRole": {
+    "name": "default-roles-wallet-demo",
+    "description": "\${role_default-roles}",
+    "composite": true,
+    "clientRole": false
+  },
+  "clientScopeMappings": {
+    "account": [
+      {
+        "client": "account-console",
+        "roles": ["manage-account", "view-groups"]
+      }
+    ]
+  },
   "clients": [
     {
       "clientId": "wallet-mock",
@@ -71,6 +134,54 @@ cat > "$REALM_OUT" <<REALMEOF
       "attributes": {
         "pkce.code.challenge.method": "S256"
       }
+    },
+    {
+      "clientId": "account",
+      "name": "\${client_account}",
+      "rootUrl": "\${authBaseUrl}",
+      "baseUrl": "/realms/wallet-demo/account/",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect",
+      "redirectUris": ["/realms/wallet-demo/account/*"],
+      "webOrigins": ["*"],
+      "fullScopeAllowed": false,
+      "attributes": {
+        "post.logout.redirect.uris": "+"
+      },
+      "defaultClientScopes": ["web-origins", "acr", "profile", "roles", "basic", "email"],
+      "optionalClientScopes": ["address", "phone", "organization", "offline_access", "microprofile-jwt"]
+    },
+    {
+      "clientId": "account-console",
+      "name": "\${client_account-console}",
+      "rootUrl": "\${authBaseUrl}",
+      "baseUrl": "/realms/wallet-demo/account/",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect",
+      "redirectUris": ["/realms/wallet-demo/account/*"],
+      "webOrigins": ["*"],
+      "fullScopeAllowed": false,
+      "attributes": {
+        "post.logout.redirect.uris": "+",
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience resolve",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-resolve-mapper",
+          "consentRequired": false,
+          "config": {}
+        }
+      ],
+      "defaultClientScopes": ["web-origins", "acr", "profile", "roles", "basic", "email"],
+      "optionalClientScopes": ["address", "phone", "organization", "offline_access", "microprofile-jwt"]
     }
   ],
   "users": [
@@ -103,7 +214,7 @@ cat > "$REALM_OUT" <<REALMEOF
         "clientId": "not-used",
         "clientSecret": "not-used",
         "enforceHaip": "true",
-        "trustListUrl": "https://bmi.usercontent.opencode.de/eudi-wallet/test-trust-lists/pid-provider.jwt",
+        "trustListUrl": "${TRUST_LIST_URL}",
         "clientIdScheme": "x509_san_dns",
         "walletScheme": "openid4vp://",
         "userMappingClaim": "family_name",

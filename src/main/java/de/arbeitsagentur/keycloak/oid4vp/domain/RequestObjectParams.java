@@ -15,12 +15,16 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
-public record RebuildParams(
-        String effectiveClientId,
+public record RequestObjectParams(
+        String dcqlQuery,
+        String verifierInfo,
+        String clientId,
         String clientIdScheme,
         String responseUri,
-        String dcqlQuery,
+        String state,
+        String nonce,
         String x509CertPem,
         String x509SigningKeyJwk,
-        String encryptionPublicKeyJson,
-        String verifierInfo) {}
+        String walletNonce,
+        boolean enforceHaip,
+        int lifespanSeconds) {}
