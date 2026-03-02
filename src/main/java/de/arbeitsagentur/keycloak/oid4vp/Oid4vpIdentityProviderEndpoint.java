@@ -184,9 +184,8 @@ public class Oid4vpIdentityProviderEndpoint {
         // Decrypt if encrypted
         boolean wasEncrypted = false;
         if (StringUtil.isNotBlank(encryptedResponse)) {
-            ECKey decryptionKey = kidBasedKey != null ? kidBasedKey : resolveKeyFromSession(authSession);
-            if (decryptionKey != null) {
-                DecryptedResponse decrypted = responseDecryptor.decrypt(encryptedResponse, decryptionKey);
+            if (kidBasedKey != null) {
+                DecryptedResponse decrypted = responseDecryptor.decrypt(encryptedResponse, kidBasedKey);
                 wasEncrypted = true;
                 vpToken = decrypted.vpToken() != null ? decrypted.vpToken() : vpToken;
                 error = decrypted.error() != null ? decrypted.error() : error;
@@ -210,7 +209,7 @@ public class Oid4vpIdentityProviderEndpoint {
             return handleError(error, errorDescription, isDirectPostFlow);
         }
 
-        boolean encryptionExpected = StringUtil.isNotBlank(authSession.getAuthNote(SESSION_ENCRYPTION_KEY));
+        boolean encryptionExpected = provider.getConfig().isEnforceHaip();
         if (encryptionExpected && !wasEncrypted) {
             return handleError(
                     "identity_provider_error",
@@ -232,17 +231,6 @@ public class Oid4vpIdentityProviderEndpoint {
             return new ResolvedKid(ECKey.parse(kidEntry.encryptionKeyJson()), kidEntry.state());
         } catch (Exception e) {
             LOG.warnf("Failed to parse encryption key from KID entry: %s", e.getMessage());
-            return null;
-        }
-    }
-
-    private ECKey resolveKeyFromSession(AuthenticationSessionModel authSession) {
-        String encryptionKeyJson = authSession.getAuthNote(SESSION_ENCRYPTION_KEY);
-        if (StringUtil.isBlank(encryptionKeyJson)) return null;
-        try {
-            return ECKey.parse(encryptionKeyJson);
-        } catch (Exception e) {
-            LOG.warnf("Failed to parse encryption key from session: %s", e.getMessage());
             return null;
         }
     }
@@ -314,7 +302,6 @@ public class Oid4vpIdentityProviderEndpoint {
                             provider.getLoginTimeoutSeconds()));
 
             if (signedRequest.encryptionKeyJson() != null) {
-                authSession.setAuthNote(SESSION_ENCRYPTION_KEY, signedRequest.encryptionKeyJson());
                 String kid = Oid4vpRequestObjectStore.extractKidFromJwk(signedRequest.encryptionKeyJson());
                 if (kid != null) {
                     requestObjectStore.storeKidIndex(session, kid, signedRequest.encryptionKeyJson(), state);

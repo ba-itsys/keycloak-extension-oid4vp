@@ -73,34 +73,33 @@
                     if (!state) return;
 
                     var statusUrl = '${crossDeviceStatusUrl!''}' + '?state=' + encodeURIComponent(state);
-                    var es = new EventSource(statusUrl);
 
-                    es.addEventListener('complete', function(e) {
-                        es.close();
-                        try {
-                            var data = JSON.parse(e.data);
-                            if (data.redirect_uri) {
-                                window.location.href = data.redirect_uri;
+                    function connect() {
+                        var es = new EventSource(statusUrl);
+
+                        es.addEventListener('complete', function(e) {
+                            es.close();
+                            try {
+                                var data = JSON.parse(e.data);
+                                if (data.redirect_uri) {
+                                    window.location.href = data.redirect_uri;
+                                }
+                            } catch (err) {
+                                console.error('OID4VP: Failed to parse completion event', err);
                             }
-                        } catch (err) {
-                            console.error('OID4VP: Failed to parse completion event', err);
-                        }
-                    });
+                        });
 
-                    es.addEventListener('timeout', function() {
-                        es.close();
-                        var qrSection = document.querySelector('img[alt="QR Code for wallet login"]');
-                        if (qrSection && qrSection.parentNode) {
-                            var msg = document.createElement('p');
-                            msg.style.cssText = 'color: #c00; font-weight: bold; margin-top: 10px;';
-                            msg.textContent = 'Session expired. Please reload the page to try again.';
-                            qrSection.parentNode.appendChild(msg);
-                        }
-                    });
+                        es.addEventListener('timeout', function() {
+                            es.close();
+                            connect();
+                        });
 
-                    es.onerror = function() {
-                        console.log('OID4VP: SSE connection error, reconnecting...');
-                    };
+                        es.onerror = function() {
+                            console.log('OID4VP: SSE connection error, reconnecting...');
+                        };
+                    }
+
+                    connect();
                 })();
             </script>
         </#if>
