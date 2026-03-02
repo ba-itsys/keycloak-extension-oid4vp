@@ -59,7 +59,6 @@ cat > "$REALM_OUT" <<REALMEOF
 {
   "realm": "wallet-demo",
   "enabled": true,
-  "loginTheme": "oid4vp",
   "registrationAllowed": false,
   "roles": {
     "realm": [

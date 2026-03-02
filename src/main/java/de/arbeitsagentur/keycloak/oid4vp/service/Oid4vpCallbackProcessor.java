@@ -143,7 +143,6 @@ public class Oid4vpCallbackProcessor {
         authSession.removeAuthNote(SESSION_NONCE);
         authSession.removeAuthNote(SESSION_RESPONSE_URI);
         authSession.removeAuthNote(SESSION_REDIRECT_FLOW_RESPONSE_URI);
-        authSession.removeAuthNote(SESSION_ENCRYPTION_KEY);
         authSession.removeAuthNote(SESSION_CLIENT_ID);
         authSession.removeAuthNote(SESSION_EFFECTIVE_CLIENT_ID);
     }

@@ -192,7 +192,7 @@ class Oid4vpCallbackProcessorTest {
         verify(authSession).removeAuthNote(SESSION_STATE);
         verify(authSession).removeAuthNote(SESSION_NONCE);
         verify(authSession).removeAuthNote(SESSION_RESPONSE_URI);
-        verify(authSession).removeAuthNote(SESSION_ENCRYPTION_KEY);
+        verify(authSession).removeAuthNote(SESSION_CLIENT_ID);
     }
 
     // ===== Helper Methods =====

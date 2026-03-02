@@ -107,10 +107,6 @@ final class Oid4vpTestKeycloakSetup {
 
         admin.deleteIfExists("/admin/realms/" + realm + "/identity-provider/instances/oid4vp");
         admin.postJson("/admin/realms/" + realm + "/identity-provider/instances", idpConfig);
-
-        Map<String, Object> realmRep = admin.getJson("/admin/realms/" + realm);
-        realmRep.put("loginTheme", "oid4vp");
-        admin.putJson("/admin/realms/" + realm, realmRep);
     }
 
     static void configureDcqlQuery(KeycloakAdminClient admin, String realm, String dcqlQuery) throws Exception {

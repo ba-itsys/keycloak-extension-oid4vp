@@ -84,7 +84,6 @@ public final class Oid4vpConstants {
     public static final String SESSION_NONCE = "oid4vp_nonce";
     public static final String SESSION_RESPONSE_URI = "oid4vp_response_uri";
     public static final String SESSION_REDIRECT_FLOW_RESPONSE_URI = "oid4vp_redirect_flow_response_uri";
-    public static final String SESSION_ENCRYPTION_KEY = "oid4vp_encryption_key";
     public static final String SESSION_CLIENT_ID = "oid4vp_client_id";
     public static final String SESSION_EFFECTIVE_CLIENT_ID = "oid4vp_effective_client_id";
     public static final String SESSION_MDOC_GENERATED_NONCE = "oid4vp_mdoc_generated_nonce";
