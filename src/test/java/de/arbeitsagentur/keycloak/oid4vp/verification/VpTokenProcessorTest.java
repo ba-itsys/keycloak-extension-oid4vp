@@ -70,7 +70,7 @@ class VpTokenProcessorTest {
         signingKey = new ECKeyGenerator(Curve.P_256).generate();
         holderKey = new ECKeyGenerator(Curve.P_256).generate();
         signingCert = generateSelfSignedCert(signingKey);
-        TrustListProvider trustListProvider = new TrustListProvider(List.of(signingKey.toECPublicKey()));
+        TrustListProvider trustListProvider = new TrustListProvider(List.of(signingCert));
         processor = new VpTokenProcessor(objectMapper, new StatusListVerifier(), trustListProvider);
     }
 

@@ -88,7 +88,7 @@ class SdJwtVerifierTest {
                 buildSignedJwt(Map.of("iss", "https://issuer.example", "vct", "IdentityCredential", "sub", "user123"));
         String sdJwt = jwt + "~";
 
-        SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, List.of(signingKey.toECPublicKey()));
+        SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, List.of(signingCert));
 
         assertThat(result.issuer()).isEqualTo("https://issuer.example");
         assertThat(result.credentialType()).isEqualTo("IdentityCredential");
@@ -107,7 +107,7 @@ class SdJwtVerifierTest {
         signedJWT.sign(new ECDSASigner(signingKey));
         String sdJwt = signedJWT.serialize() + "~";
 
-        assertThatThrownBy(() -> verifier.verify(sdJwt, null, null, List.of(signingKey.toECPublicKey())))
+        assertThatThrownBy(() -> verifier.verify(sdJwt, null, null, List.of(signingCert)))
                 .isInstanceOf(IllegalStateException.class);
     }
 
@@ -138,7 +138,7 @@ class SdJwtVerifierTest {
                 "_sd_alg", "sha-256"));
         String sdJwt = jwt + "~" + disclosureB64 + "~";
 
-        SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, List.of(signingKey.toECPublicKey()));
+        SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, List.of(signingCert));
 
         assertThat(result.claims()).containsEntry("given_name", "John");
         assertThat(result.claims()).doesNotContainKey("_sd");
@@ -158,7 +158,7 @@ class SdJwtVerifierTest {
                 "_sd_alg", "sha-256"));
         String sdJwt = jwt + "~" + disclosureB64 + "~";
 
-        assertThatThrownBy(() -> verifier.verify(sdJwt, null, null, List.of(signingKey.toECPublicKey())))
+        assertThatThrownBy(() -> verifier.verify(sdJwt, null, null, List.of(signingCert)))
                 .isInstanceOf(IllegalStateException.class);
     }
 
@@ -202,7 +202,7 @@ class SdJwtVerifierTest {
 
         String sdJwt = jwt + "~" + givenNameB64 + "~" + addressB64 + "~" + localityB64 + "~" + streetB64 + "~";
 
-        SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, List.of(signingKey.toECPublicKey()));
+        SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, List.of(signingCert));
 
         assertThat(result.claims()).containsEntry("given_name", "ERIKA");
         assertThat(result.claims()).containsKey("address");
@@ -230,7 +230,7 @@ class SdJwtVerifierTest {
                 buildSdJwtVpWithKbJwt(credJwt, holderKey, "https://verifier.example", "test-nonce", Instant.now());
 
         SdJwtVerificationResult result =
-                verifier.verify(sdJwt, "https://verifier.example", "test-nonce", List.of(signingKey.toECPublicKey()));
+                verifier.verify(sdJwt, "https://verifier.example", "test-nonce", List.of(signingCert));
 
         assertThat(result.issuer()).isEqualTo("https://issuer.example");
         assertThat(result.claims()).containsEntry("sub", "user123");
@@ -249,7 +249,7 @@ class SdJwtVerifierTest {
                 buildSdJwtVpWithKbJwt(credJwt, holderKey, "https://verifier.example", "test-nonce", Instant.now());
 
         SdJwtVerificationResult result =
-                verifier.verify(sdJwt, "https://verifier.example", "test-nonce", List.of(signingKey.toECPublicKey()));
+                verifier.verify(sdJwt, "https://verifier.example", "test-nonce", List.of(signingCert));
 
         assertThat(result.issuer()).isEqualTo("https://issuer.example");
     }
@@ -268,8 +268,7 @@ class SdJwtVerifierTest {
         Instant staleIat = Instant.now().minusSeconds(600);
         String sdJwt = buildSdJwtVpWithKbJwt(credJwt, holderKey, "https://verifier.example", "test-nonce", staleIat);
 
-        assertThatThrownBy(() -> verifier.verify(
-                        sdJwt, "https://verifier.example", "test-nonce", List.of(signingKey.toECPublicKey())))
+        assertThatThrownBy(() -> verifier.verify(sdJwt, "https://verifier.example", "test-nonce", List.of(signingCert)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("expired by iat");
     }
@@ -283,8 +282,7 @@ class SdJwtVerifierTest {
         String sdJwt =
                 buildSdJwtVpWithKbJwt(credJwt, holderKey, "https://verifier.example", "test-nonce", Instant.now());
 
-        assertThatThrownBy(() -> verifier.verify(
-                        sdJwt, "https://verifier.example", "test-nonce", List.of(signingKey.toECPublicKey())))
+        assertThatThrownBy(() -> verifier.verify(sdJwt, "https://verifier.example", "test-nonce", List.of(signingCert)))
                 .isInstanceOf(IllegalStateException.class);
     }
 
@@ -301,8 +299,7 @@ class SdJwtVerifierTest {
         String sdJwt = buildSdJwtVpWithKbJwt(
                 credJwt, holderKey, "https://wrong-audience.example", "test-nonce", Instant.now());
 
-        assertThatThrownBy(() -> verifier.verify(
-                        sdJwt, "https://verifier.example", "test-nonce", List.of(signingKey.toECPublicKey())))
+        assertThatThrownBy(() -> verifier.verify(sdJwt, "https://verifier.example", "test-nonce", List.of(signingCert)))
                 .isInstanceOf(IllegalStateException.class);
     }
 
@@ -319,9 +316,75 @@ class SdJwtVerifierTest {
         String sdJwt =
                 buildSdJwtVpWithKbJwt(credJwt, holderKey, "https://verifier.example", "wrong-nonce", Instant.now());
 
-        assertThatThrownBy(() -> verifier.verify(
-                        sdJwt, "https://verifier.example", "test-nonce", List.of(signingKey.toECPublicKey())))
+        assertThatThrownBy(() -> verifier.verify(sdJwt, "https://verifier.example", "test-nonce", List.of(signingCert)))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void verify_x5cChainWithCaTrust_succeeds() throws Exception {
+        // CA key + cert
+        ECKey caKey = new ECKeyGenerator(Curve.P_256).generate();
+        X509Certificate caCert = generateSelfSignedCert(caKey, "CN=Test CA");
+
+        // End-entity key + cert signed by CA
+        ECKey entityKey = new ECKeyGenerator(Curve.P_256).generate();
+        X509Certificate entityCert = generateCaSignedCert(entityKey, caKey, caCert, "CN=Test Issuer");
+
+        // Sign SD-JWT with entity key, x5c = [entityCert]
+        String jwt = buildSignedJwtWithKey(
+                Map.of("iss", "https://issuer.example", "vct", "PID"), entityKey, List.of(entityCert));
+        String sdJwt = jwt + "~";
+
+        // Trust list only has the CA cert
+        SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, List.of(caCert));
+
+        assertThat(result.issuer()).isEqualTo("https://issuer.example");
+        assertThat(result.credentialType()).isEqualTo("PID");
+    }
+
+    @Test
+    void verify_x5cChainWithFullChain_succeeds() throws Exception {
+        // CA key + cert
+        ECKey caKey = new ECKeyGenerator(Curve.P_256).generate();
+        X509Certificate caCert = generateSelfSignedCert(caKey, "CN=Test CA");
+
+        // End-entity key + cert signed by CA
+        ECKey entityKey = new ECKeyGenerator(Curve.P_256).generate();
+        X509Certificate entityCert = generateCaSignedCert(entityKey, caKey, caCert, "CN=Test Issuer");
+
+        // Sign SD-JWT with entity key, x5c = [entityCert, caCert]
+        String jwt = buildSignedJwtWithKey(
+                Map.of("iss", "https://issuer.example", "vct", "PID"), entityKey, List.of(entityCert, caCert));
+        String sdJwt = jwt + "~";
+
+        // Trust list only has the CA cert
+        SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, List.of(caCert));
+
+        assertThat(result.issuer()).isEqualTo("https://issuer.example");
+    }
+
+    @Test
+    void verify_x5cChainUntrustedCa_throws() throws Exception {
+        // CA key + cert (not in trust list)
+        ECKey caKey = new ECKeyGenerator(Curve.P_256).generate();
+        X509Certificate caCert = generateSelfSignedCert(caKey, "CN=Untrusted CA");
+
+        // End-entity key + cert signed by untrusted CA
+        ECKey entityKey = new ECKeyGenerator(Curve.P_256).generate();
+        X509Certificate entityCert = generateCaSignedCert(entityKey, caKey, caCert, "CN=Test Issuer");
+
+        // Different CA in trust list
+        ECKey trustedCaKey = new ECKeyGenerator(Curve.P_256).generate();
+        X509Certificate trustedCaCert = generateSelfSignedCert(trustedCaKey, "CN=Trusted CA");
+
+        String jwt = buildSignedJwtWithKey(
+                Map.of("iss", "https://issuer.example", "vct", "PID"), entityKey, List.of(entityCert));
+        String sdJwt = jwt + "~";
+
+        // Neither the x5c chain nor direct key matching should work
+        assertThatThrownBy(() -> verifier.verify(sdJwt, null, null, List.of(trustedCaCert)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Signature could not be verified");
     }
 
     // ===== Helper Methods =====
@@ -382,9 +445,41 @@ class SdJwtVerifierTest {
         return unboundPresentation + kbJwt.serialize();
     }
 
+    private String buildSignedJwtWithKey(Map<String, Object> claimsMap, ECKey key, List<X509Certificate> x5cCerts)
+            throws Exception {
+        JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder();
+        for (var entry : claimsMap.entrySet()) {
+            builder.claim(entry.getKey(), entry.getValue());
+        }
+        Instant now = Instant.now();
+        builder.issueTime(Date.from(now));
+        builder.notBeforeTime(Date.from(now));
+        builder.expirationTime(Date.from(now.plusSeconds(86400)));
+
+        List<com.nimbusds.jose.util.Base64> x5cB64 = x5cCerts.stream()
+                .map(c -> {
+                    try {
+                        return com.nimbusds.jose.util.Base64.encode(c.getEncoded());
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                })
+                .toList();
+
+        JWSHeader header =
+                new JWSHeader.Builder(JWSAlgorithm.ES256).x509CertChain(x5cB64).build();
+        SignedJWT signedJWT = new SignedJWT(header, builder.build());
+        signedJWT.sign(new ECDSASigner(key));
+        return signedJWT.serialize();
+    }
+
     private static X509Certificate generateSelfSignedCert(ECKey ecKey) throws Exception {
+        return generateSelfSignedCert(ecKey, "CN=Test SD-JWT Issuer");
+    }
+
+    private static X509Certificate generateSelfSignedCert(ECKey ecKey, String dn) throws Exception {
         ECPublicKey publicKey = ecKey.toECPublicKey();
-        X500Principal subject = new X500Principal("CN=Test SD-JWT Issuer");
+        X500Principal subject = new X500Principal(dn);
         Instant now = Instant.now();
         JcaX509v3CertificateBuilder certBuilder = new JcaX509v3CertificateBuilder(
                 subject,
@@ -395,6 +490,22 @@ class SdJwtVerifierTest {
                 publicKey);
 
         ContentSigner signer = new JcaContentSignerBuilder("SHA256withECDSA").build(ecKey.toECPrivateKey());
+
+        return new JcaX509CertificateConverter().getCertificate(certBuilder.build(signer));
+    }
+
+    private static X509Certificate generateCaSignedCert(
+            ECKey subjectKey, ECKey caKey, X509Certificate caCert, String dn) throws Exception {
+        Instant now = Instant.now();
+        JcaX509v3CertificateBuilder certBuilder = new JcaX509v3CertificateBuilder(
+                caCert.getSubjectX500Principal(),
+                BigInteger.valueOf(System.currentTimeMillis() + 1),
+                Date.from(now.minus(1, ChronoUnit.HOURS)),
+                Date.from(now.plus(365, ChronoUnit.DAYS)),
+                new X500Principal(dn),
+                subjectKey.toECPublicKey());
+
+        ContentSigner signer = new JcaContentSignerBuilder("SHA256withECDSA").build(caKey.toECPrivateKey());
 
         return new JcaX509CertificateConverter().getCertificate(certBuilder.build(signer));
     }

@@ -20,9 +20,13 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.nimbusds.jose.jwk.Curve;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SdJwtVerificationResult;
+import java.io.ByteArrayInputStream;
 import java.security.PublicKey;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.security.interfaces.ECPublicKey;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +36,7 @@ import org.keycloak.crypto.KeyType;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.crypto.SignatureVerifierContext;
+import org.keycloak.jose.jws.JWSHeader;
 import org.keycloak.sdjwt.IssuerSignedJwtVerificationOpts;
 import org.keycloak.sdjwt.vp.KeyBindingJwtVerificationOpts;
 import org.keycloak.sdjwt.vp.SdJwtVP;
@@ -56,12 +61,12 @@ public class SdJwtVerifier {
 
     @SuppressWarnings("unchecked")
     public SdJwtVerificationResult verify(
-            String sdJwt, String expectedAudience, String expectedNonce, List<PublicKey> trustedKeys) {
+            String sdJwt, String expectedAudience, String expectedNonce, List<X509Certificate> trustedCertificates) {
 
         try {
             SdJwtVP sdJwtVP = SdJwtVP.of(sdJwt);
 
-            List<SignatureVerifierContext> verifiers = resolveIssuerVerifiers(trustedKeys);
+            List<SignatureVerifierContext> verifiers = resolveIssuerVerifiers(sdJwtVP, trustedCertificates);
 
             // The ClaimVerifier.Builder constructor adds an IatLifetimeCheck with the KB-JWT default
             // maxAge (300s) to ALL builders, including issuer opts. We must remove it for issuer JWTs
@@ -101,16 +106,79 @@ public class SdJwtVerifier {
         }
     }
 
-    private List<SignatureVerifierContext> resolveIssuerVerifiers(List<PublicKey> trustedKeys) {
-        if (trustedKeys == null || trustedKeys.isEmpty()) {
+    private List<SignatureVerifierContext> resolveIssuerVerifiers(
+            SdJwtVP sdJwtVP, List<X509Certificate> trustedCertificates) {
+        if (trustedCertificates == null || trustedCertificates.isEmpty()) {
             throw new IllegalStateException("No trusted keys available for SD-JWT signature verification");
         }
 
+        // Try x5c chain validation: extract the leaf cert from the SD-JWT header,
+        // verify the chain against trusted CA certificates, then use the leaf key.
+        JWSHeader header = sdJwtVP.getIssuerSignedJWT().getJwsHeader();
+        List<String> x5c = header != null ? header.getX5c() : null;
+        if (x5c != null && !x5c.isEmpty()) {
+            try {
+                PublicKey leafKey = validateX5cChain(x5c, trustedCertificates);
+                LOG.debug("SD-JWT x5c chain validated against trust list, using leaf certificate key");
+                return List.of(toVerifierContext(leafKey));
+            } catch (Exception e) {
+                LOG.debugf("x5c chain validation failed: %s", e.getMessage());
+            }
+        }
+
+        // Fallback: try all trusted certificate keys directly (for self-signed or direct trust)
+        LOG.debug("Using trusted certificate keys directly for signature verification");
         List<SignatureVerifierContext> verifiers = new ArrayList<>();
-        for (PublicKey key : trustedKeys) {
-            verifiers.add(toVerifierContext(key));
+        for (X509Certificate cert : trustedCertificates) {
+            verifiers.add(toVerifierContext(cert.getPublicKey()));
         }
         return verifiers;
+    }
+
+    /**
+     * Validates an x5c certificate chain against trusted CA certificates.
+     * Returns the leaf certificate's public key if the chain is trusted.
+     */
+    private PublicKey validateX5cChain(List<String> x5c, List<X509Certificate> trustedCertificates) throws Exception {
+        CertificateFactory cf = CertificateFactory.getInstance("X.509");
+
+        // Parse x5c chain: first element is the leaf certificate
+        List<X509Certificate> chain = new ArrayList<>();
+        for (String certB64 : x5c) {
+            byte[] certDer = Base64.getDecoder().decode(certB64);
+            chain.add((X509Certificate) cf.generateCertificate(new ByteArrayInputStream(certDer)));
+        }
+
+        if (chain.isEmpty()) {
+            throw new IllegalStateException("Empty x5c chain");
+        }
+
+        X509Certificate leaf = chain.get(0);
+        LOG.debugf(
+                "SD-JWT x5c leaf certificate: %s",
+                leaf.getSubjectX500Principal().getName());
+
+        // Walk up the chain: each cert should be signed by the next one
+        for (int i = 0; i < chain.size() - 1; i++) {
+            chain.get(i).verify(chain.get(i + 1).getPublicKey());
+        }
+
+        // The last cert in the chain (or the leaf if chain has only 1 cert) must be
+        // signed by one of the trusted certificates
+        X509Certificate topOfChain = chain.get(chain.size() - 1);
+        for (X509Certificate trusted : trustedCertificates) {
+            try {
+                topOfChain.verify(trusted.getPublicKey());
+                LOG.debugf(
+                        "x5c chain anchored by trusted certificate: %s",
+                        trusted.getSubjectX500Principal().getName());
+                return leaf.getPublicKey();
+            } catch (Exception ignored) {
+                // Try next trusted certificate
+            }
+        }
+
+        throw new IllegalStateException("x5c chain not anchored by any trusted certificate");
     }
 
     private SignatureVerifierContext toVerifierContext(PublicKey publicKey) {

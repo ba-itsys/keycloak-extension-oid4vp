@@ -21,8 +21,11 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import java.io.ByteArrayInputStream;
 import java.security.PublicKey;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
@@ -175,18 +178,43 @@ public class StatusListVerifier {
     }
 
     private void verifyStatusListJwtSignature(SignedJWT signedJWT) throws Exception {
-        List<PublicKey> keys = trustListProvider != null ? trustListProvider.getTrustedKeys() : List.of();
-        if (keys.isEmpty()) {
+        List<X509Certificate> trustedCerts =
+                trustListProvider != null ? trustListProvider.getTrustedCertificates() : List.of();
+        if (trustedCerts.isEmpty()) {
             LOG.debugf(
                     "Status list JWT signature not verified: no trusted keys configured (issuer=%s)",
                     signedJWT.getJWTClaimsSet().getIssuer());
             return;
         }
 
-        DefaultJWSVerifierFactory factory = new DefaultJWSVerifierFactory();
-        for (PublicKey key : keys) {
+        // Try x5c chain validation first (status list JWT may be signed by a leaf cert
+        // chaining up to a trusted CA, same as SD-JWT credentials)
+        List<String> x5c = signedJWT.getHeader().getX509CertChain() != null
+                ? signedJWT.getHeader().getX509CertChain().stream()
+                        .map(c -> c.toString())
+                        .toList()
+                : null;
+        if (x5c != null && !x5c.isEmpty()) {
             try {
-                JWSVerifier verifier = factory.createJWSVerifier(signedJWT.getHeader(), key);
+                PublicKey leafKey = validateX5cChain(x5c, trustedCerts);
+                DefaultJWSVerifierFactory factory = new DefaultJWSVerifierFactory();
+                JWSVerifier verifier = factory.createJWSVerifier(signedJWT.getHeader(), leafKey);
+                if (signedJWT.verify(verifier)) {
+                    LOG.debugf(
+                            "Status list JWT signature verified via x5c chain (issuer: %s)",
+                            signedJWT.getJWTClaimsSet().getIssuer());
+                    return;
+                }
+            } catch (Exception e) {
+                LOG.debugf("Status list JWT x5c chain validation failed: %s", e.getMessage());
+            }
+        }
+
+        // Fallback: try all trusted certificate keys directly
+        DefaultJWSVerifierFactory factory = new DefaultJWSVerifierFactory();
+        for (X509Certificate cert : trustedCerts) {
+            try {
+                JWSVerifier verifier = factory.createJWSVerifier(signedJWT.getHeader(), cert.getPublicKey());
                 if (signedJWT.verify(verifier)) {
                     LOG.debugf(
                             "Status list JWT signature verified (issuer: %s)",
@@ -199,6 +227,44 @@ public class StatusListVerifier {
         }
 
         throw new IllegalStateException("Status list JWT signature verification failed: no trusted key matched");
+    }
+
+    private PublicKey validateX5cChain(List<String> x5c, List<X509Certificate> trustedCertificates) throws Exception {
+        CertificateFactory cf = CertificateFactory.getInstance("X.509");
+
+        List<X509Certificate> chain = new ArrayList<>();
+        for (String certB64 : x5c) {
+            byte[] certDer = Base64.getDecoder().decode(certB64);
+            chain.add((X509Certificate) cf.generateCertificate(new ByteArrayInputStream(certDer)));
+        }
+
+        if (chain.isEmpty()) {
+            throw new IllegalStateException("Empty x5c chain");
+        }
+
+        X509Certificate leaf = chain.get(0);
+        LOG.debugf(
+                "Status list JWT x5c leaf certificate: %s",
+                leaf.getSubjectX500Principal().getName());
+
+        for (int i = 0; i < chain.size() - 1; i++) {
+            chain.get(i).verify(chain.get(i + 1).getPublicKey());
+        }
+
+        X509Certificate topOfChain = chain.get(chain.size() - 1);
+        for (X509Certificate trusted : trustedCertificates) {
+            try {
+                topOfChain.verify(trusted.getPublicKey());
+                LOG.debugf(
+                        "Status list JWT x5c chain anchored by trusted certificate: %s",
+                        trusted.getSubjectX500Principal().getName());
+                return leaf.getPublicKey();
+            } catch (Exception ignored) {
+                // Try next trusted certificate
+            }
+        }
+
+        throw new IllegalStateException("Status list JWT x5c chain not anchored by any trusted certificate");
     }
 
     private Instant resolveExpiry(JWTClaimsSet claimsSet) {
