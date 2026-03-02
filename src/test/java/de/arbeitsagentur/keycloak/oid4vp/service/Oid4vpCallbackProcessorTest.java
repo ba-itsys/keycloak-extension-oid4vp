@@ -80,7 +80,7 @@ class Oid4vpCallbackProcessorTest {
         signingKey = new ECKeyGenerator(Curve.P_256).generate();
         signingCert = generateSelfSignedCert(signingKey);
 
-        TrustListProvider trustListProvider = new TrustListProvider(List.of(signingKey.toECPublicKey()));
+        TrustListProvider trustListProvider = new TrustListProvider(List.of(signingCert));
         VpTokenProcessor vpTokenProcessor =
                 new VpTokenProcessor(new ObjectMapper(), new StatusListVerifier(), trustListProvider);
         UserAuthenticationIdentityProvider<?> provider = mock(UserAuthenticationIdentityProvider.class);

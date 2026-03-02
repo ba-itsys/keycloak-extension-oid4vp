@@ -44,7 +44,7 @@ public class TrustListProvider {
 
     private final KeycloakSession session;
     private final String trustListUrl;
-    private final List<PublicKey> staticKeys;
+    private final List<X509Certificate> staticCertificates;
     private final Duration maxCacheTtl;
 
     public TrustListProvider(KeycloakSession session, String trustListUrl) {
@@ -54,15 +54,15 @@ public class TrustListProvider {
     public TrustListProvider(KeycloakSession session, String trustListUrl, Duration maxCacheTtl) {
         this.session = session;
         this.trustListUrl = trustListUrl;
-        this.staticKeys = null;
+        this.staticCertificates = null;
         this.maxCacheTtl = maxCacheTtl;
     }
 
-    /** Creates a provider with static trusted keys. Useful for testing. */
-    public TrustListProvider(List<PublicKey> staticKeys) {
+    /** Creates a provider with static trusted certificates. Useful for testing. */
+    public TrustListProvider(List<X509Certificate> staticCertificates) {
         this.session = null;
         this.trustListUrl = null;
-        this.staticKeys = staticKeys;
+        this.staticCertificates = staticCertificates;
         this.maxCacheTtl = null;
     }
 
@@ -71,8 +71,18 @@ public class TrustListProvider {
      * Results are cached based on the JWT exp claim.
      */
     public List<PublicKey> getTrustedKeys() {
-        if (staticKeys != null) {
-            return staticKeys;
+        return getTrustedCertificates().stream()
+                .map(X509Certificate::getPublicKey)
+                .toList();
+    }
+
+    /**
+     * Returns trusted X.509 certificates from the configured trust list.
+     * Results are cached based on the JWT exp claim.
+     */
+    public List<X509Certificate> getTrustedCertificates() {
+        if (staticCertificates != null) {
+            return staticCertificates;
         }
 
         if (trustListUrl == null || trustListUrl.isBlank()) {
@@ -82,7 +92,7 @@ public class TrustListProvider {
         CachedTrustList cached = CACHE.get(trustListUrl);
         if (cached != null && cached.isValid()) {
             LOG.debugf("Using cached trust list for %s (expires %s)", trustListUrl, cached.expiresAt);
-            return cached.keys;
+            return cached.certificates;
         }
 
         try {
@@ -90,12 +100,12 @@ public class TrustListProvider {
             TrustListParseResult result = parseTrustListJwt(jwt);
 
             Instant effectiveExpiry = capExpiry(result.expiresAt);
-            CACHE.put(trustListUrl, new CachedTrustList(result.keys, effectiveExpiry));
+            CACHE.put(trustListUrl, new CachedTrustList(result.certificates, effectiveExpiry));
 
             LOG.infof(
                     "Trust list loaded from %s: %d keys (expires %s)",
-                    trustListUrl, result.keys.size(), result.expiresAt);
-            return result.keys;
+                    trustListUrl, result.certificates.size(), result.expiresAt);
+            return result.certificates;
         } catch (Exception e) {
             LOG.warnf("Failed to fetch trust list from %s: %s", trustListUrl, e.getMessage());
             return List.of();
@@ -127,7 +137,7 @@ public class TrustListProvider {
         Date exp = claimsSet.getExpirationTime();
         Instant expiresAt = exp != null ? exp.toInstant() : Instant.now();
 
-        List<PublicKey> keys = new ArrayList<>();
+        List<X509Certificate> certificates = new ArrayList<>();
 
         List<Map<String, Object>> entitiesList = (List<Map<String, Object>>) claimsSet.getClaim("TrustedEntitiesList");
         if (entitiesList != null) {
@@ -156,7 +166,7 @@ public class TrustListProvider {
                             CertificateFactory cf = CertificateFactory.getInstance("X.509");
                             X509Certificate cert =
                                     (X509Certificate) cf.generateCertificate(new ByteArrayInputStream(certDer));
-                            keys.add(cert.getPublicKey());
+                            certificates.add(cert);
                             LOG.debugf(
                                     "Loaded trusted certificate: %s",
                                     cert.getSubjectX500Principal().getName());
@@ -168,7 +178,7 @@ public class TrustListProvider {
             }
         }
 
-        return new TrustListParseResult(keys, expiresAt);
+        return new TrustListParseResult(certificates, expiresAt);
     }
 
     /** Clears the static cache. Intended for testing only. */
@@ -176,9 +186,14 @@ public class TrustListProvider {
         CACHE.clear();
     }
 
-    record TrustListParseResult(List<PublicKey> keys, Instant expiresAt) {}
+    record TrustListParseResult(List<X509Certificate> certificates, Instant expiresAt) {
+        /** Convenience accessor for public keys. */
+        List<PublicKey> keys() {
+            return certificates.stream().map(X509Certificate::getPublicKey).toList();
+        }
+    }
 
-    private record CachedTrustList(List<PublicKey> keys, Instant expiresAt) {
+    private record CachedTrustList(List<X509Certificate> certificates, Instant expiresAt) {
         boolean isValid() {
             return Instant.now().isBefore(expiresAt);
         }

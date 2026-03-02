@@ -20,7 +20,10 @@ import COSE.Sign1Message;
 import com.upokecenter.cbor.CBORObject;
 import com.upokecenter.cbor.CBORType;
 import de.arbeitsagentur.keycloak.oid4vp.domain.MdocVerificationResult;
+import java.io.ByteArrayInputStream;
 import java.security.PublicKey;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -45,6 +48,19 @@ public class MdocVerifier {
     }
 
     public MdocVerificationResult verify(String deviceResponseToken, List<PublicKey> trustedKeys) {
+        // Legacy method for backward compatibility
+        return verifyWithCertificates(deviceResponseToken, trustedKeys, List.of());
+    }
+
+    public MdocVerificationResult verifyWithTrustedCerts(
+            String deviceResponseToken, List<X509Certificate> trustedCertificates) {
+        List<PublicKey> trustedKeys =
+                trustedCertificates.stream().map(X509Certificate::getPublicKey).toList();
+        return verifyWithCertificates(deviceResponseToken, trustedKeys, trustedCertificates);
+    }
+
+    private MdocVerificationResult verifyWithCertificates(
+            String deviceResponseToken, List<PublicKey> trustedKeys, List<X509Certificate> trustedCertificates) {
 
         try {
             byte[] bytes = decodeBase64(deviceResponseToken);
@@ -66,7 +82,7 @@ public class MdocVerifier {
             String docType = extractDocType(document);
             Map<String, Object> claims = extractClaims(document);
 
-            verifyIssuerSignature(document, trustedKeys);
+            verifyIssuerSignature(document, trustedKeys, trustedCertificates);
 
             return new MdocVerificationResult(claims, docType);
         } catch (Exception e) {
@@ -156,8 +172,10 @@ public class MdocVerifier {
         return claims;
     }
 
-    private void verifyIssuerSignature(CBORObject document, List<PublicKey> trustedKeys) {
-        if (trustedKeys == null || trustedKeys.isEmpty()) {
+    private void verifyIssuerSignature(
+            CBORObject document, List<PublicKey> trustedKeys, List<X509Certificate> trustedCertificates) {
+        if ((trustedKeys == null || trustedKeys.isEmpty())
+                && (trustedCertificates == null || trustedCertificates.isEmpty())) {
             throw new IllegalStateException("No trusted keys available for mDoc signature verification");
         }
 
@@ -184,7 +202,18 @@ public class MdocVerifier {
 
             Sign1Message sign1Msg = (Sign1Message) Sign1Message.DecodeFromBytes(sign1Bytes);
 
-            // Try each trusted key until one succeeds
+            // Try x5c chain validation first (if trusted certificates are available)
+            if (trustedCertificates != null && !trustedCertificates.isEmpty()) {
+                PublicKey x5cKey = extractAndValidateX5cFromCose(sign1Msg, trustedCertificates);
+                if (x5cKey != null) {
+                    OneKey coseKey = new OneKey(x5cKey, null);
+                    sign1Msg.validate(coseKey);
+                    LOG.debugf("mDoc issuer signature verified via x5c chain");
+                    return;
+                }
+            }
+
+            // Fallback: try each trusted key directly
             Exception lastError = null;
             for (PublicKey key : trustedKeys) {
                 try {
@@ -203,6 +232,68 @@ public class MdocVerifier {
             throw e;
         } catch (Exception e) {
             throw new IllegalStateException("mDoc COSE_Sign1 signature verification failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Extracts the x5chain (label 33) from the COSE_Sign1 unprotected header,
+     * validates it against trusted CA certificates, and returns the leaf certificate's public key.
+     */
+    private PublicKey extractAndValidateX5cFromCose(Sign1Message sign1Msg, List<X509Certificate> trustedCertificates) {
+        try {
+            // x5chain is COSE header label 33
+            CBORObject x5chainObj = sign1Msg.findAttribute(CBORObject.FromObject(33));
+            if (x5chainObj == null) {
+                return null;
+            }
+
+            CertificateFactory cf = CertificateFactory.getInstance("X.509");
+            List<X509Certificate> chain = new ArrayList<>();
+
+            if (x5chainObj.getType() == CBORType.ByteString) {
+                // Single certificate
+                chain.add(
+                        (X509Certificate) cf.generateCertificate(new ByteArrayInputStream(x5chainObj.GetByteString())));
+            } else if (x5chainObj.getType() == CBORType.Array) {
+                for (int i = 0; i < x5chainObj.size(); i++) {
+                    chain.add((X509Certificate) cf.generateCertificate(
+                            new ByteArrayInputStream(x5chainObj.get(i).GetByteString())));
+                }
+            }
+
+            if (chain.isEmpty()) {
+                return null;
+            }
+
+            X509Certificate leaf = chain.get(0);
+            LOG.debugf(
+                    "mDoc x5chain leaf certificate: %s",
+                    leaf.getSubjectX500Principal().getName());
+
+            // Walk up the chain
+            for (int i = 0; i < chain.size() - 1; i++) {
+                chain.get(i).verify(chain.get(i + 1).getPublicKey());
+            }
+
+            // Verify top of chain is signed by a trusted certificate
+            X509Certificate topOfChain = chain.get(chain.size() - 1);
+            for (X509Certificate trusted : trustedCertificates) {
+                try {
+                    topOfChain.verify(trusted.getPublicKey());
+                    LOG.debugf(
+                            "mDoc x5chain anchored by trusted certificate: %s",
+                            trusted.getSubjectX500Principal().getName());
+                    return leaf.getPublicKey();
+                } catch (Exception ignored) {
+                    // Try next
+                }
+            }
+
+            LOG.debug("mDoc x5chain not anchored by any trusted certificate");
+            return null;
+        } catch (Exception e) {
+            LOG.debugf("Failed to extract/validate mDoc x5chain: %s", e.getMessage());
+            return null;
         }
     }
 

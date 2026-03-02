@@ -78,7 +78,7 @@ class TrustListProviderTest {
 
         TrustListProvider.TrustListParseResult result = TrustListProvider.parseTrustListJwt(jwt);
 
-        assertThat(result.keys()).isEmpty();
+        assertThat(result.certificates()).isEmpty();
     }
 
     @Test

@@ -22,7 +22,7 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SdJwtVerificationResult;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
-import java.security.PublicKey;
+import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -76,16 +76,17 @@ public class VpTokenProcessor {
 
         LOG.tracef("Processing VP token (length=%d): %s", vpToken.length(), vpToken);
 
-        List<PublicKey> trustedKeys = trustListProvider != null ? trustListProvider.getTrustedKeys() : List.of();
-        LOG.debugf("Trust list provides %d trusted keys", trustedKeys.size());
+        List<X509Certificate> trustedCerts =
+                trustListProvider != null ? trustListProvider.getTrustedCertificates() : List.of();
+        LOG.debugf("Trust list provides %d trusted keys", trustedCerts.size());
 
         try {
             // Detect format: single credential or multi-credential JSON wrapper
             if (vpToken.trim().startsWith("{")) {
-                return processMultiCredential(vpToken, clientId, expectedNonce, trustedKeys, alternateResponseUri);
+                return processMultiCredential(vpToken, clientId, expectedNonce, trustedCerts, alternateResponseUri);
             }
 
-            return processSingleCredential(vpToken, clientId, expectedNonce, trustedKeys, alternateResponseUri);
+            return processSingleCredential(vpToken, clientId, expectedNonce, trustedCerts, alternateResponseUri);
 
         } catch (IdentityBrokerException e) {
             throw e;
@@ -98,11 +99,11 @@ public class VpTokenProcessor {
             String vpToken,
             String clientId,
             String expectedNonce,
-            List<PublicKey> trustedKeys,
+            List<X509Certificate> trustedCerts,
             String alternateResponseUri) {
 
         VerifiedCredential cred =
-                verifyCredential("cred1", vpToken, clientId, expectedNonce, trustedKeys, alternateResponseUri);
+                verifyCredential("cred1", vpToken, clientId, expectedNonce, trustedCerts, alternateResponseUri);
         if (cred == null) {
             throw new IdentityBrokerException("Unsupported VP token format");
         }
@@ -115,7 +116,7 @@ public class VpTokenProcessor {
             String vpToken,
             String clientId,
             String expectedNonce,
-            List<PublicKey> trustedKeys,
+            List<X509Certificate> trustedCerts,
             String alternateResponseUri) {
 
         try {
@@ -137,7 +138,7 @@ public class VpTokenProcessor {
                 }
 
                 VerifiedCredential cred = verifyCredential(
-                        credentialId, credential, clientId, expectedNonce, trustedKeys, alternateResponseUri);
+                        credentialId, credential, clientId, expectedNonce, trustedCerts, alternateResponseUri);
                 if (cred != null) {
                     credentials.put(credentialId, cred);
                     mergedClaims.putAll(cred.claims());
@@ -161,19 +162,19 @@ public class VpTokenProcessor {
             String credential,
             String clientId,
             String expectedNonce,
-            List<PublicKey> trustedKeys,
+            List<X509Certificate> trustedCerts,
             String alternateResponseUri) {
 
         if (sdJwtVerifier.isSdJwt(credential)) {
             SdJwtVerificationResult result =
-                    verifySdJwtWithFallback(credential, clientId, expectedNonce, trustedKeys, alternateResponseUri);
+                    verifySdJwtWithFallback(credential, clientId, expectedNonce, trustedCerts, alternateResponseUri);
             statusListVerifier.checkRevocationStatus(result.claims());
             return new VerifiedCredential(
                     credentialId, result.issuer(), result.credentialType(), result.claims(), PresentationType.SD_JWT);
         }
 
         if (mdocVerifier.isMdoc(credential)) {
-            MdocVerificationResult result = mdocVerifier.verify(credential, trustedKeys);
+            MdocVerificationResult result = mdocVerifier.verifyWithTrustedCerts(credential, trustedCerts);
             statusListVerifier.checkRevocationStatus(result.claims());
             return new VerifiedCredential(credentialId, null, result.docType(), result.claims(), PresentationType.MDOC);
         }
@@ -187,17 +188,16 @@ public class VpTokenProcessor {
             String sdJwt,
             String clientId,
             String expectedNonce,
-            List<PublicKey> trustedKeys,
+            List<X509Certificate> trustedCerts,
             String alternateResponseUri) {
-        LOG.tracef("Received SD-JWT credential: %s", sdJwt);
         try {
-            return sdJwtVerifier.verify(sdJwt, clientId, expectedNonce, trustedKeys);
+            return sdJwtVerifier.verify(sdJwt, clientId, expectedNonce, trustedCerts);
         } catch (Exception primaryError) {
             if (StringUtil.isNotBlank(alternateResponseUri)) {
                 try {
                     LOG.debugf(
                             "Primary verification failed, retrying with alternate audience: %s", alternateResponseUri);
-                    return sdJwtVerifier.verify(sdJwt, alternateResponseUri, expectedNonce, trustedKeys);
+                    return sdJwtVerifier.verify(sdJwt, alternateResponseUri, expectedNonce, trustedCerts);
                 } catch (Exception fallbackError) {
                     LOG.warnf("Fallback verification also failed: %s", fallbackError.getMessage());
                 }

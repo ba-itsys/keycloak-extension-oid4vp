@@ -1,9 +1,3 @@
 {
-  "themes": [],
-  "themeResources": [
-    {
-      "themeType": "login",
-      "resources": ["templates/login-oid4vp-idp.ftl"]
-    }
-  ]
+  "themes": []
 }
