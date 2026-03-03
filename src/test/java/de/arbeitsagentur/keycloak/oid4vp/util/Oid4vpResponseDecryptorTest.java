@@ -53,8 +53,7 @@ class Oid4vpResponseDecryptorTest {
         DecryptedResponse result = decryptor.decrypt(jwe, encryptionKey);
 
         assertThat(result.vpToken()).isEqualTo(vpToken);
-        assertThat(result.mdocGeneratedNonce())
-                .isEqualTo(Base64URL.encode(mdocNonce).toString());
+        assertThat(result.mdocGeneratedNonce()).isEqualTo(mdocNonce);
         assertThat(result.error()).isNull();
     }
 

@@ -95,8 +95,11 @@ public class Oid4vpCallbackProcessor {
         String effectiveClientId = authSession.getAuthNote(SESSION_EFFECTIVE_CLIENT_ID);
         String clientId = effectiveClientId != null ? effectiveClientId : authSession.getAuthNote(SESSION_CLIENT_ID);
         String redirectFlowResponseUri = authSession.getAuthNote(SESSION_REDIRECT_FLOW_RESPONSE_URI);
+        String mdocGeneratedNonce = authSession.getAuthNote(SESSION_MDOC_GENERATED_NONCE);
+        String encryptionJwkThumbprint = authSession.getAuthNote(SESSION_ENCRYPTION_JWK_THUMBPRINT);
 
-        VpTokenResult vpResult = vpTokenProcessor.process(vpToken, clientId, expectedNonce, redirectFlowResponseUri);
+        VpTokenResult vpResult = vpTokenProcessor.process(
+                vpToken, clientId, expectedNonce, redirectFlowResponseUri, mdocGeneratedNonce, encryptionJwkThumbprint);
 
         VerifiedCredential primary = vpResult.getPrimaryCredential();
         if (primary == null) {
@@ -159,5 +162,6 @@ public class Oid4vpCallbackProcessor {
         authSession.removeAuthNote(SESSION_CLIENT_ID);
         authSession.removeAuthNote(SESSION_EFFECTIVE_CLIENT_ID);
         authSession.removeAuthNote(SESSION_MDOC_GENERATED_NONCE);
+        authSession.removeAuthNote(SESSION_ENCRYPTION_JWK_THUMBPRINT);
     }
 }

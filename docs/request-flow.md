@@ -2,6 +2,22 @@
 
 This document traces the OID4VP authorization request through the code for both same-device and cross-device flows.
 
+## Key Concepts
+
+### The `state` Parameter
+
+The `state` parameter is a unique, unguessable token generated per login attempt. It serves three purposes:
+
+1. **CSRF protection** — the verifier checks that the `state` returned by the wallet matches the one stored in the auth session, preventing cross-site request forgery.
+2. **Session binding** — maps the wallet's direct_post response back to the correct Keycloak auth session, especially important for cross-device flows where the wallet POST arrives without a session cookie.
+3. **Single-use object key** — used as a suffix for transient storage keys (`oid4vp_state:{state}`, `oid4vp_deferred:{state}`, `oid4vp_complete:{state}`) that coordinate the deferred authentication flow.
+
+**Format:** `{tabId}.{random}` where `tabId` is Keycloak's auth session tab identifier and `random` is 32 cryptographically random bytes encoded as base64url (no padding). Generated in `Oid4vpIdentityProvider.initializeSessionState()`.
+
+**Lifecycle:** Generated at login page render → included in the signed request object JWT → returned by the wallet in the direct_post `state` form parameter → validated by `Oid4vpCallbackProcessor` against the auth session note → used as key for deferred auth storage → consumed by `/complete-auth` to finalize login.
+
+**Security note:** The `state` value itself is not a secret — it is transmitted in URLs and form parameters. The flow's security does not rely on `state` being confidential. Instead, integrity is ensured by other layers: the request object is **signed** (preventing tampering with `state`, `nonce`, `response_uri`, and other claims), and when HAIP is enabled the wallet response is **encrypted** (protecting `vp_token` and `state` in transit). The `nonce` in the request object provides replay protection, and the KB-JWT (SD-JWT) / device authentication (mDoc) binds the presentation to the specific transaction.
+
 ## Entry Point: Login Page
 
 When a user clicks "Login with Wallet", Keycloak calls:
@@ -57,7 +73,7 @@ This method:
 4. **Resolves signing key** (`resolveSigningMaterial`) — uses x509 key from PEM config if available, otherwise the realm's default signing key
 5. **Signs the JWT** — includes `x5c` certificate chain in the JWS header if configured
 
-Returns `SignedRequestObject(jwt, encryptionKeyJson)`. Back in the endpoint, if encryption was used, the KID is stored for later lookup.
+Returns `SignedRequestObject(jwt, encryptionKeyJson)`. Back in the endpoint, if encryption was used, the KID is stored for later lookup, and the JWK thumbprint (RFC 7638, SHA-256) of the encryption key's public part is stored in the auth session as `SESSION_ENCRYPTION_JWK_THUMBPRINT`. This thumbprint is later included in the OID4VP 1.0 SessionTranscript hash for mDoc device authentication verification.
 
 7. **Encrypts if wallet_metadata present** (POST only) — if the wallet included a `wallet_metadata` form parameter with encryption keys (`jwks`), the signed JWT is wrapped in a JWE using ECDH-ES with the wallet's public key (`Oid4vpRequestObjectEncryptor.encrypt`). The `cty` header is set to `oauth-authz-req+jwt` to indicate a nested JWT. The HTTP content type remains `application/oauth-authz-req+jwt`.
 
@@ -93,9 +109,18 @@ Oid4vpCallbackProcessor.process(authSession, state, vpToken)
 
 This:
 - Validates state matches auth note
-- Calls `VpTokenProcessor.verify(vpToken, clientId, nonce, trustedCerts)`:
-  - SD-JWT: `SdJwtVerifier.verify()` — validates issuer signature (x5c chain or direct trust), KB-JWT (audience, nonce, timestamps), extracts disclosed claims
-  - mDoc: `MdocVerifier.verifyWithTrustedCerts()` — validates MSO COSE_Sign1 signature (x5c chain or direct trust), extracts namespace-prefixed claims
+- Reads `mdocGeneratedNonce` and `encryptionJwkThumbprint` from auth session (stored during JWE decryption / request object generation in Phase 1–2)
+- Calls `VpTokenProcessor.process(vpToken, clientId, nonce, responseUri, mdocGeneratedNonce, encryptionJwkThumbprint)`:
+  - SD-JWT: `SdJwtVerifier.verify()` — delegates to Keycloak's `SdJwtVP.verify()` which performs:
+    1. **Issuer signature verification** — validates the SD-JWT's JWS signature using the issuer's public key, resolved via x5c certificate chain validation (`X5cChainValidator`) or direct trust list lookup
+    2. **Issuer JWT time checks** — `exp` (must not be expired), `nbf` (must be valid now), both with configurable clock skew (default 60s). No `iat` freshness check on the issuer JWT (old credentials are valid as long as `exp` holds)
+    3. **Selective disclosure digest verification** — SHA-256 hashes of disclosed claims match the `_sd` digests in the issuer JWT
+    4. **KB-JWT signature verification** — verifies the Key Binding JWT signature against the holder's public key from the credential's `cnf.jwk` claim
+    5. **KB-JWT claim validation** — `aud` must match `clientId` (falls back to `response_uri` if primary check fails), `nonce` must match the expected nonce from the request object, `iat` must be fresh (default max age 300s + 60s clock skew), `exp`/`nbf` if present
+    6. **KB-JWT `sd_hash` validation** — must equal SHA-256 of the unbound SD-JWT presentation (issuer JWT + disclosures, without the KB-JWT itself)
+  - mDoc: `MdocVerifier.verifyWithTrustedCerts()` — validates MSO COSE_Sign1 issuer signature, MSO validity period (`validFrom`/`validUntil`), value digest integrity (SHA-256 of IssuerSignedItems vs MSO digests), device authentication signature via SessionTranscript binding, and extracts namespace-prefixed claims. The device authentication supports two SessionTranscript formats:
+    - **OID4VP 1.0** (Appendix B.3.2.2): `[null, null, ["OpenID4VPHandover", SHA-256(CBOR([client_id, nonce, jwk_thumbprint, response_uri]))]]` — the `jwk_thumbprint` is the RFC 7638 SHA-256 thumbprint of the HAIP encryption key from `client_metadata.jwks` (stored as `SESSION_ENCRYPTION_JWK_THUMBPRINT` during request object generation)
+    - **ISO 18013-7** (Annex B.4.4): `[null, null, [SHA-256(CBOR([client_id, mdoc_generated_nonce])), SHA-256(CBOR([response_uri, mdoc_generated_nonce])), nonce]]` — used when `mdocGeneratedNonce` is present (extracted from JWE `apu` header). Tried first with OID4VP 1.0 as fallback.
   - Checks revocation via `StatusListVerifier`
 - Validates issuer is allowed, credential type is allowed
 - Maps claims to `BrokeredIdentityContext`
@@ -169,7 +194,8 @@ Errors can occur at multiple points:
 | `Oid4vpCallbackProcessor` | VP token verification orchestration, claim mapping to BrokeredIdentityContext |
 | `VpTokenProcessor` | Credential format detection, SD-JWT/mDoc verification, revocation checks |
 | `SdJwtVerifier` | SD-JWT signature + KB-JWT verification, disclosure resolution |
-| `MdocVerifier` | mDoc COSE_Sign1 verification, namespace claim extraction |
+| `MdocVerifier` | mDoc issuer/device auth verification, digest/validity checks, claim extraction |
+| `MdocSessionTranscriptBuilder` | Builds OID4VP 1.0 and ISO 18013-7 SessionTranscript structures |
 | `StatusListVerifier` | Token Status List fetching, caching, revocation bit checking |
 | `TrustListProvider` | ETSI trust list fetching, certificate extraction, caching |
 | `X5cChainValidator` | x5c certificate chain validation (shared by SD-JWT, mDoc, status list) |
