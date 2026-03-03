@@ -99,6 +99,7 @@ class KeycloakOid4vpE2eIT {
                 .withNetwork(network)
                 .withEnv("KEYCLOAK_ADMIN", "admin")
                 .withEnv("KEYCLOAK_ADMIN_PASSWORD", "admin")
+                .withEnv("KC_PROXY_HEADERS", "xforwarded")
                 .withExposedPorts(8080)
                 .withCommand("start-dev", "--import-realm")
                 .withLogConsumer(
@@ -624,12 +625,18 @@ class KeycloakOid4vpE2eIT {
         Oid4vcContainer encWallet = new Oid4vcContainer()
                 .withHostAccess()
                 .withNetwork(network)
+                .withNetworkAliases("oid4vc-enc")
                 .withRequireEncryptedRequest()
                 .withStatusList()
-                .withStatusListBaseUrl("http://oid4vc-dev:8085")
+                .withStatusListBaseUrl("http://oid4vc-enc:8085")
                 .withLogConsumer(frame ->
                         LOG.info("[OID4VC-ENC] {}", frame.getUtf8String().stripTrailing()));
         encWallet.start();
+
+        // Point trust list to the encrypted wallet's issuer certificate
+        String encTrustListUrl = "http://oid4vc-enc:8085/api/trustlist";
+        Oid4vpTestKeycloakSetup.setIdpConfig(
+                adminClient, REALM, Oid4vpIdentityProviderConfig.TRUST_LIST_URL, encTrustListUrl);
 
         try {
             String kcUrl = "http://localhost:" + keycloak.getMappedPort(8080);
@@ -644,7 +651,129 @@ class KeycloakOid4vpE2eIT {
             encFlow.completeFirstBrokerLoginIfNeeded("enc-request-user");
             encFlow.assertLoginSucceeded();
         } finally {
+            // Restore original trust list URL
+            Oid4vpTestKeycloakSetup.setIdpConfig(
+                    adminClient,
+                    REALM,
+                    Oid4vpIdentityProviderConfig.TRUST_LIST_URL,
+                    "http://oid4vc-dev:8085/api/trustlist");
             encWallet.stop();
+        }
+    }
+
+    @Test
+    @Order(17)
+    void mdocWithIsoSessionTranscript() throws Exception {
+        // Tests ISO 18013-7 Annex B.4.4 session transcript format.
+        // The wallet includes an mdocGeneratedNonce in the JWE apu header;
+        // the verifier must try ISO 18013-7 first, then fall back to OID4VP 1.0.
+        callback.reset();
+        flow.clearBrowserSession();
+        Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient, REALM);
+
+        Oid4vcContainer isoWallet = new Oid4vcContainer()
+                .withHostAccess()
+                .withNetwork(network)
+                .withNetworkAliases("oid4vc-iso")
+                .withSessionTranscript("iso")
+                .withStatusList()
+                .withStatusListBaseUrl("http://oid4vc-iso:8085")
+                .withLogConsumer(frame ->
+                        LOG.info("[OID4VC-ISO] {}", frame.getUtf8String().stripTrailing()));
+        isoWallet.start();
+
+        String isoTrustListUrl = "http://oid4vc-iso:8085/api/trustlist";
+        Oid4vpTestKeycloakSetup.setIdpConfig(
+                adminClient, REALM, Oid4vpIdentityProviderConfig.TRUST_LIST_URL, isoTrustListUrl);
+
+        String mdocDcqlQuery = """
+                {
+                  "credentials": [
+                    {
+                      "id": "pid",
+                      "format": "mso_mdoc",
+                      "meta": { "doctype_value": "eu.europa.ec.eudi.pid.1" },
+                      "claims": [
+                        { "path": ["eu.europa.ec.eudi.pid.1", "family_name"] },
+                        { "path": ["eu.europa.ec.eudi.pid.1", "given_name"] }
+                      ]
+                    }
+                  ]
+                }
+                """;
+        Oid4vpTestKeycloakSetup.configureDcqlQuery(adminClient, REALM, mdocDcqlQuery);
+
+        try {
+            String kcUrl = "http://localhost:" + keycloak.getMappedPort(8080);
+            Oid4vpLoginFlowHelper isoFlow =
+                    new Oid4vpLoginFlowHelper(page, context, isoWallet, kcUrl, callback.localCallbackUrl(), REALM);
+
+            isoFlow.navigateToLoginPage();
+            isoFlow.clickOid4vpIdpButton();
+            String walletUrl = isoFlow.getSameDeviceWalletUrl();
+            PresentationResponse response = isoFlow.submitToWallet(walletUrl);
+            isoFlow.waitForLoginCompletion(response);
+            isoFlow.completeFirstBrokerLoginIfNeeded("iso-transcript-user");
+            isoFlow.assertLoginSucceeded();
+        } finally {
+            Oid4vpTestKeycloakSetup.setIdpConfig(
+                    adminClient,
+                    REALM,
+                    Oid4vpIdentityProviderConfig.TRUST_LIST_URL,
+                    "http://oid4vc-dev:8085/api/trustlist");
+            Oid4vpTestKeycloakSetup.configureDcqlQuery(adminClient, REALM, buildDefaultDcqlQuery());
+            isoWallet.stop();
+        }
+    }
+
+    @Test
+    @Order(18)
+    void crossDeviceMdocPresentationFlow() throws Exception {
+        // Tests that the ?flow=cross_device query param in response_uri is correctly
+        // included in the mDoc session transcript hash during cross-device flows.
+        callback.reset();
+        flow.clearBrowserSession();
+        Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient, REALM);
+        Oid4vpTestKeycloakSetup.configureCrossDeviceFlow(adminClient, REALM, true);
+
+        String mdocDcqlQuery = """
+                {
+                  "credentials": [
+                    {
+                      "id": "pid",
+                      "format": "mso_mdoc",
+                      "meta": { "doctype_value": "eu.europa.ec.eudi.pid.1" },
+                      "claims": [
+                        { "path": ["eu.europa.ec.eudi.pid.1", "family_name"] },
+                        { "path": ["eu.europa.ec.eudi.pid.1", "given_name"] }
+                      ]
+                    }
+                  ]
+                }
+                """;
+        Oid4vpTestKeycloakSetup.configureDcqlQuery(adminClient, REALM, mdocDcqlQuery);
+
+        try {
+            flow.navigateToLoginPage();
+            flow.clickOid4vpIdpButton();
+            String walletUrl = flow.getCrossDeviceWalletUrl();
+            LOG.info("[Test] Cross-device mDoc wallet URL: {}", walletUrl);
+
+            flow.waitForSseConnection();
+
+            PresentationResponse walletResponse = flow.submitToWallet(walletUrl);
+            LOG.info("[Test] Cross-device mDoc wallet response: {}", walletResponse.rawBody());
+
+            assertThat(walletResponse.redirectUri())
+                    .as("Cross-device direct_post response must not contain redirect_uri")
+                    .isNull();
+
+            waitForCrossDeviceNavigation();
+            flow.completeFirstBrokerLoginIfNeeded("cross-device-mdoc-user");
+            flow.assertLoginSucceeded();
+        } finally {
+            Oid4vpTestKeycloakSetup.configureCrossDeviceFlow(adminClient, REALM, false);
+            Oid4vpTestKeycloakSetup.configureDcqlQuery(adminClient, REALM, buildDefaultDcqlQuery());
         }
     }
 
@@ -759,7 +888,7 @@ class KeycloakOid4vpE2eIT {
         keycloak.withCopyFileToContainer(
                 MountableFile.forHostPath(providerJar), "/opt/keycloak/providers/" + providerJar.getFileName());
 
-        Path deps = Path.of("target/dependency").toAbsolutePath();
+        Path deps = Path.of("target/providers").toAbsolutePath();
         if (!Files.isDirectory(deps)) {
             return;
         }

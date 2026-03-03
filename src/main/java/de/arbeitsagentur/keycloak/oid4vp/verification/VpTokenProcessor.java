@@ -24,6 +24,7 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -81,6 +82,21 @@ public class VpTokenProcessor {
         this.objectMapper = objectMapper;
     }
 
+    /** @see #process(String, String, String, String, String, String) */
+    public VpTokenResult process(String vpToken, String clientId, String expectedNonce, String alternateResponseUri) {
+        return process(vpToken, clientId, expectedNonce, alternateResponseUri, null, null);
+    }
+
+    /** @see #process(String, String, String, String, String, String) */
+    public VpTokenResult process(
+            String vpToken,
+            String clientId,
+            String expectedNonce,
+            String alternateResponseUri,
+            String mdocGeneratedNonce) {
+        return process(vpToken, clientId, expectedNonce, alternateResponseUri, mdocGeneratedNonce, null);
+    }
+
     /**
      * Processes a VP token: detects format, verifies credentials, checks revocation status.
      *
@@ -88,8 +104,16 @@ public class VpTokenProcessor {
      * @param clientId the expected audience for key binding JWT verification
      * @param expectedNonce the nonce from the request object for replay protection
      * @param alternateResponseUri fallback audience (response_uri) for wallets that use it instead of client_id
+     * @param mdocGeneratedNonce nonce from JWE apu header for ISO 18013-7 session transcript (may be null)
+     * @param encryptionJwkThumbprint Base64url-encoded JWK thumbprint of the HAIP encryption key (may be null)
      */
-    public VpTokenResult process(String vpToken, String clientId, String expectedNonce, String alternateResponseUri) {
+    public VpTokenResult process(
+            String vpToken,
+            String clientId,
+            String expectedNonce,
+            String alternateResponseUri,
+            String mdocGeneratedNonce,
+            String encryptionJwkThumbprint) {
         List<X509Certificate> trustedCerts =
                 trustListProvider != null ? trustListProvider.getTrustedCertificates() : List.of();
         LOG.debugf("Trust list provides %d trusted keys", trustedCerts.size());
@@ -97,10 +121,24 @@ public class VpTokenProcessor {
         try {
             // Detect format: single credential or multi-credential JSON wrapper
             if (vpToken.trim().startsWith("{")) {
-                return processMultiCredential(vpToken, clientId, expectedNonce, trustedCerts, alternateResponseUri);
+                return processMultiCredential(
+                        vpToken,
+                        clientId,
+                        expectedNonce,
+                        trustedCerts,
+                        alternateResponseUri,
+                        mdocGeneratedNonce,
+                        encryptionJwkThumbprint);
             }
 
-            return processSingleCredential(vpToken, clientId, expectedNonce, trustedCerts, alternateResponseUri);
+            return processSingleCredential(
+                    vpToken,
+                    clientId,
+                    expectedNonce,
+                    trustedCerts,
+                    alternateResponseUri,
+                    mdocGeneratedNonce,
+                    encryptionJwkThumbprint);
 
         } catch (IdentityBrokerException e) {
             throw e;
@@ -114,10 +152,19 @@ public class VpTokenProcessor {
             String clientId,
             String expectedNonce,
             List<X509Certificate> trustedCerts,
-            String alternateResponseUri) {
+            String alternateResponseUri,
+            String mdocGeneratedNonce,
+            String encryptionJwkThumbprint) {
 
-        VerifiedCredential cred =
-                verifyCredential("cred1", vpToken, clientId, expectedNonce, trustedCerts, alternateResponseUri);
+        VerifiedCredential cred = verifyCredential(
+                "cred1",
+                vpToken,
+                clientId,
+                expectedNonce,
+                trustedCerts,
+                alternateResponseUri,
+                mdocGeneratedNonce,
+                encryptionJwkThumbprint);
         if (cred == null) {
             throw new IdentityBrokerException("Unsupported VP token format");
         }
@@ -131,7 +178,9 @@ public class VpTokenProcessor {
             String clientId,
             String expectedNonce,
             List<X509Certificate> trustedCerts,
-            String alternateResponseUri) {
+            String alternateResponseUri,
+            String mdocGeneratedNonce,
+            String encryptionJwkThumbprint) {
 
         try {
             Map<String, Object> wrapper = objectMapper.readValue(vpToken, Map.class);
@@ -152,7 +201,14 @@ public class VpTokenProcessor {
                 }
 
                 VerifiedCredential cred = verifyCredential(
-                        credentialId, credential, clientId, expectedNonce, trustedCerts, alternateResponseUri);
+                        credentialId,
+                        credential,
+                        clientId,
+                        expectedNonce,
+                        trustedCerts,
+                        alternateResponseUri,
+                        mdocGeneratedNonce,
+                        encryptionJwkThumbprint);
                 if (cred != null) {
                     credentials.put(credentialId, cred);
                     mergedClaims.putAll(cred.claims());
@@ -177,7 +233,9 @@ public class VpTokenProcessor {
             String clientId,
             String expectedNonce,
             List<X509Certificate> trustedCerts,
-            String alternateResponseUri) {
+            String alternateResponseUri,
+            String mdocGeneratedNonce,
+            String encryptionJwkThumbprint) {
 
         if (sdJwtVerifier.isSdJwt(credential)) {
             SdJwtVerificationResult result =
@@ -188,12 +246,32 @@ public class VpTokenProcessor {
         }
 
         if (mdocVerifier.isMdoc(credential)) {
-            MdocVerificationResult result = mdocVerifier.verifyWithTrustedCerts(credential, trustedCerts);
+            // Use alternateResponseUri as the response_uri for session transcript
+            String responseUri = alternateResponseUri;
+            byte[] jwkThumbprintBytes = decodeJwkThumbprint(encryptionJwkThumbprint);
+            MdocVerificationResult result = mdocVerifier.verifyWithTrustedCerts(
+                    credential,
+                    trustedCerts,
+                    clientId,
+                    expectedNonce,
+                    responseUri,
+                    mdocGeneratedNonce,
+                    jwkThumbprintBytes);
             statusListVerifier.checkRevocationStatus(result.claims());
             return new VerifiedCredential(credentialId, null, result.docType(), result.claims(), PresentationType.MDOC);
         }
 
         return null;
+    }
+
+    private byte[] decodeJwkThumbprint(String encoded) {
+        if (StringUtil.isBlank(encoded)) return null;
+        try {
+            return Base64.getUrlDecoder().decode(encoded);
+        } catch (Exception e) {
+            LOG.warnf("Failed to decode JWK thumbprint: %s", e.getMessage());
+            return null;
+        }
     }
 
     // Wallets may set the KB-JWT "aud" claim to either client_id or response_uri depending on the flow.

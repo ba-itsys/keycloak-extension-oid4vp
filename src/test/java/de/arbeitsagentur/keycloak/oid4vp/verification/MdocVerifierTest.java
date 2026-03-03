@@ -40,6 +40,7 @@ import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 class MdocVerifierTest {
@@ -302,5 +303,138 @@ class MdocVerifierTest {
         ContentSigner signer = new JcaContentSignerBuilder("SHA256withECDSA").build(keyPair.getPrivate());
 
         return new JcaX509CertificateConverter().getCertificate(certBuilder.build(signer));
+    }
+
+    // ===== Device Authentication, Digest, and Validity Tests =====
+
+    private static final String CLIENT_ID = "https://verifier.example.com";
+    private static final String NONCE = "test-nonce-12345";
+    private static final String RESPONSE_URI = "https://verifier.example.com/response";
+    private static final String MDOC_GENERATED_NONCE = "mdoc-nonce-67890";
+
+    @Nested
+    class DeviceAuthVerification {
+
+        @Test
+        void verifyWithSessionTranscript_oid4vpFormat_passes() throws Exception {
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
+            CBORObject transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            String token = helper.build(transcript);
+
+            MdocVerificationResult result = verifier.verifyWithTrustedCerts(
+                    token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null);
+
+            assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
+            assertThat(result.claims()).containsEntry("org.iso.18013.5.1/given_name", "John");
+        }
+
+        @Test
+        void verifyWithSessionTranscript_iso18013_7Format_passes() throws Exception {
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
+            CBORObject transcript =
+                    MdocSessionTranscriptBuilder.buildIso18013_7(CLIENT_ID, NONCE, RESPONSE_URI, MDOC_GENERATED_NONCE);
+            String token = helper.build(transcript);
+
+            MdocVerificationResult result = verifier.verifyWithTrustedCerts(
+                    token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, MDOC_GENERATED_NONCE);
+
+            assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
+            assertThat(result.claims()).containsEntry("org.iso.18013.5.1/given_name", "John");
+        }
+
+        @Test
+        void verifyWithSessionTranscript_wrongNonce_fails() throws Exception {
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
+            CBORObject transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            String token = helper.build(transcript);
+
+            assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(
+                            token, List.of(helper.issuerCert), CLIENT_ID, "wrong-nonce", RESPONSE_URI, null))
+                    .isInstanceOf(IllegalStateException.class);
+        }
+
+        @Test
+        void verifyWithSessionTranscript_isoFallbackWhenMdocNoncePresent() throws Exception {
+            // Build with ISO format, verify should succeed when mdocGeneratedNonce is present
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
+            CBORObject transcript =
+                    MdocSessionTranscriptBuilder.buildIso18013_7(CLIENT_ID, NONCE, RESPONSE_URI, MDOC_GENERATED_NONCE);
+            String token = helper.build(transcript);
+
+            // Verify passes — implementation should try ISO first when mdocGeneratedNonce is present
+            MdocVerificationResult result = verifier.verifyWithTrustedCerts(
+                    token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, MDOC_GENERATED_NONCE);
+
+            assertThat(result).isNotNull();
+        }
+    }
+
+    @Nested
+    class DigestVerification {
+
+        @Test
+        void verifyWithDigests_validDigests_passes() throws Exception {
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
+            CBORObject transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            String token = helper.build(transcript);
+
+            // Should pass — digests computed correctly by helper
+            MdocVerificationResult result = verifier.verifyWithTrustedCerts(
+                    token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null);
+
+            assertThat(result.claims()).isNotEmpty();
+        }
+    }
+
+    @Nested
+    class ValidityVerification {
+
+        @Test
+        void verify_expiredMso_fails() throws Exception {
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper()
+                    .validFrom(Instant.now().minus(2, ChronoUnit.DAYS))
+                    .validUntil(Instant.now().minus(1, ChronoUnit.DAYS));
+
+            CBORObject transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            String token = helper.build(transcript);
+
+            assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(
+                            token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("expired");
+        }
+
+        @Test
+        void verify_notYetValidMso_fails() throws Exception {
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper()
+                    .validFrom(Instant.now().plus(1, ChronoUnit.DAYS))
+                    .validUntil(Instant.now().plus(2, ChronoUnit.DAYS));
+
+            CBORObject transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            String token = helper.build(transcript);
+
+            assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(
+                            token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("not yet valid");
+        }
+    }
+
+    @Nested
+    class BackwardCompatibility {
+
+        @Test
+        void verify_twoParamOverload_stillWorks() throws Exception {
+            // The 2-param overload should still work (skips device auth, digests, validity)
+            String token = buildSignedMdoc(
+                    "org.iso.18013.5.1.mDL", "org.iso.18013.5.1", new String[] {"given_name", "Test"}, new String[] {
+                        "family_name", "User"
+                    });
+
+            MdocVerificationResult result = verifier.verifyWithTrustedCerts(token, List.of(signingCert));
+
+            assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
+            assertThat(result.claims()).containsEntry("org.iso.18013.5.1/given_name", "Test");
+        }
     }
 }

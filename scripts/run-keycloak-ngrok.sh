@@ -69,10 +69,11 @@ require_cmd curl
 require_cmd jq
 require_cmd docker
 
-# Check that providers have been built
+# Build providers if not already present
 if [ ! -d "$ROOT_DIR/target/providers" ]; then
-  echo "target/providers/ not found. Run 'mvn package -DskipTests' first." >&2
-  exit 1
+  echo "==> Building extension (target/providers/ not found)..."
+  (cd "$ROOT_DIR" && mvn package -DskipTests -q)
+  echo "    Build complete."
 fi
 
 tmp_log="$(mktemp -t keycloak-ngrok.XXXXXX.log)"

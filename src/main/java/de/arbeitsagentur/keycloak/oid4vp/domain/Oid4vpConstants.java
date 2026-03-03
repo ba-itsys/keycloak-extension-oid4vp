@@ -96,4 +96,5 @@ public final class Oid4vpConstants {
     public static final String SESSION_CLIENT_ID = "oid4vp_client_id";
     public static final String SESSION_EFFECTIVE_CLIENT_ID = "oid4vp_effective_client_id";
     public static final String SESSION_MDOC_GENERATED_NONCE = "oid4vp_mdoc_generated_nonce";
+    public static final String SESSION_ENCRYPTION_JWK_THUMBPRINT = "oid4vp_encryption_jwk_thumbprint";
 }

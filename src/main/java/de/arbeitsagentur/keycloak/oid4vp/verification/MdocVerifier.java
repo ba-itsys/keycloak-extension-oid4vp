@@ -17,14 +17,20 @@ package de.arbeitsagentur.keycloak.oid4vp.verification;
 
 import COSE.OneKey;
 import COSE.Sign1Message;
+import com.nimbusds.jose.jwk.Curve;
+import com.nimbusds.jose.util.Base64URL;
 import com.upokecenter.cbor.CBORObject;
 import com.upokecenter.cbor.CBORType;
 import de.arbeitsagentur.keycloak.oid4vp.domain.MdocVerificationResult;
 import java.io.ByteArrayInputStream;
+import java.security.MessageDigest;
 import java.security.PublicKey;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.security.interfaces.ECPublicKey;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -58,19 +64,80 @@ public class MdocVerifier {
 
     /**
      * Verifies an mDoc DeviceResponse against trusted certificates and extracts claims.
+     * Performs issuer signature verification only (no device auth, digest, or validity checks).
      *
      * @param deviceResponseToken Base64-encoded CBOR DeviceResponse
      * @param trustedCertificates trusted CA certificates for COSE_Sign1 signature verification
      */
     public MdocVerificationResult verifyWithTrustedCerts(
             String deviceResponseToken, List<X509Certificate> trustedCertificates) {
-        List<PublicKey> trustedKeys =
-                trustedCertificates.stream().map(X509Certificate::getPublicKey).toList();
-        return verifyWithCertificates(deviceResponseToken, trustedKeys, trustedCertificates);
+        return verifyWithTrustedCerts(deviceResponseToken, trustedCertificates, null, null, null, null);
     }
 
-    private MdocVerificationResult verifyWithCertificates(
-            String deviceResponseToken, List<PublicKey> trustedKeys, List<X509Certificate> trustedCertificates) {
+    /**
+     * Verifies an mDoc DeviceResponse with full verification: issuer signature, device authentication
+     * (session transcript binding), value digest integrity, and MSO validity period.
+     *
+     * @see #verifyWithTrustedCerts(String, List, String, String, String, String, byte[])
+     */
+    public MdocVerificationResult verifyWithTrustedCerts(
+            String deviceResponseToken,
+            List<X509Certificate> trustedCertificates,
+            String clientId,
+            String nonce,
+            String responseUri,
+            String mdocGeneratedNonce) {
+        return verifyWithTrustedCerts(
+                deviceResponseToken, trustedCertificates, clientId, nonce, responseUri, mdocGeneratedNonce, null);
+    }
+
+    /**
+     * Verifies an mDoc DeviceResponse with full verification: issuer signature, device authentication
+     * (session transcript binding), value digest integrity, and MSO validity period.
+     *
+     * <p>When session transcript parameters ({@code clientId}, {@code nonce}, {@code responseUri})
+     * are provided, device authentication is verified using the appropriate transcript format.
+     * If {@code mdocGeneratedNonce} is present, ISO 18013-7 format is tried first with OID4VP 1.0
+     * as fallback; otherwise only OID4VP 1.0 is used.
+     *
+     * @param deviceResponseToken Base64-encoded CBOR DeviceResponse
+     * @param trustedCertificates trusted CA certificates for issuer signature verification
+     * @param clientId the verifier's client_id (null to skip device auth)
+     * @param nonce the authorization request nonce (null to skip device auth)
+     * @param responseUri the response_uri from the request (null to skip device auth)
+     * @param mdocGeneratedNonce nonce from JWE apu header signaling ISO 18013-7 format (may be null)
+     * @param jwkThumbprint JWK thumbprint of HAIP encryption key for OID4VP 1.0 transcript (may be null)
+     */
+    public MdocVerificationResult verifyWithTrustedCerts(
+            String deviceResponseToken,
+            List<X509Certificate> trustedCertificates,
+            String clientId,
+            String nonce,
+            String responseUri,
+            String mdocGeneratedNonce,
+            byte[] jwkThumbprint) {
+        List<PublicKey> trustedKeys =
+                trustedCertificates.stream().map(X509Certificate::getPublicKey).toList();
+        return verifyInternal(
+                deviceResponseToken,
+                trustedKeys,
+                trustedCertificates,
+                clientId,
+                nonce,
+                responseUri,
+                mdocGeneratedNonce,
+                jwkThumbprint);
+    }
+
+    private MdocVerificationResult verifyInternal(
+            String deviceResponseToken,
+            List<PublicKey> trustedKeys,
+            List<X509Certificate> trustedCertificates,
+            String clientId,
+            String nonce,
+            String responseUri,
+            String mdocGeneratedNonce,
+            byte[] jwkThumbprint) {
 
         try {
             byte[] bytes = decodeBase64(deviceResponseToken);
@@ -94,7 +161,22 @@ public class MdocVerifier {
 
             verifyIssuerSignature(document, trustedKeys, trustedCertificates);
 
+            // Additional verifications when session transcript parameters are provided
+            CBORObject mso = parseMso(document);
+            if (mso != null) {
+                validateValidity(mso);
+                verifyDigests(mso, document);
+
+                boolean hasSessionTranscriptParams = clientId != null && nonce != null && responseUri != null;
+                if (hasSessionTranscriptParams && document.ContainsKey("deviceSigned")) {
+                    verifyDeviceAuth(
+                            document, mso, docType, clientId, nonce, responseUri, mdocGeneratedNonce, jwkThumbprint);
+                }
+            }
+
             return new MdocVerificationResult(claims, docType);
+        } catch (IllegalStateException e) {
+            throw new IllegalStateException("mDoc verification failed: " + e.getMessage(), e);
         } catch (Exception e) {
             throw new IllegalStateException("mDoc verification failed: " + e.getMessage(), e);
         }
@@ -311,6 +393,301 @@ public class MdocVerifier {
             return X5cChainValidator.validateCertChain(chain, trustedCertificates);
         } catch (Exception e) {
             LOG.debugf("Failed to extract/validate mDoc x5chain: %s", e.getMessage());
+            return null;
+        }
+    }
+
+    // ===== Device Authentication Verification =====
+
+    /**
+     * Verifies the device authentication signature using dual-format SessionTranscript support.
+     * When {@code mdocGeneratedNonce} is present, tries ISO 18013-7 first, then falls back to OID4VP 1.0.
+     */
+    private void verifyDeviceAuth(
+            CBORObject document,
+            CBORObject mso,
+            String docType,
+            String clientId,
+            String nonce,
+            String responseUri,
+            String mdocGeneratedNonce,
+            byte[] jwkThumbprint) {
+
+        CBORObject deviceSigned = document.get("deviceSigned");
+        if (deviceSigned == null || deviceSigned.getType() != CBORType.Map) {
+            throw new IllegalStateException("Missing deviceSigned in DeviceResponse");
+        }
+
+        CBORObject deviceAuth = deviceSigned.get("deviceAuth");
+        if (deviceAuth == null) {
+            throw new IllegalStateException("Missing deviceAuth in DeviceResponse");
+        }
+        if (deviceAuth.getType() == CBORType.Map) {
+            deviceAuth = deviceAuth.get("deviceSignature");
+        }
+        if (deviceAuth == null) {
+            throw new IllegalStateException("Missing deviceSignature in deviceAuth");
+        }
+
+        try {
+            // Decode the COSE_Sign1 device signature
+            Sign1Message sign1;
+            CBORObject sign1Cbor;
+            if (deviceAuth.getType() == CBORType.ByteString) {
+                sign1Cbor = CBORObject.DecodeFromBytes(deviceAuth.GetByteString());
+            } else {
+                sign1Cbor = deviceAuth;
+            }
+            if (!sign1Cbor.HasMostOuterTag(18)) {
+                sign1Cbor = CBORObject.FromObjectAndTag(sign1Cbor, 18);
+            }
+            sign1 = (Sign1Message) Sign1Message.DecodeFromBytes(sign1Cbor.EncodeToBytes());
+
+            // Extract device key from MSO
+            PublicKey deviceKey = extractDeviceKeyFromMso(mso);
+            if (deviceKey == null) {
+                throw new IllegalStateException("Missing deviceKeyInfo in MSO");
+            }
+            OneKey coseDeviceKey = new OneKey(deviceKey, null);
+
+            // Build DeviceNameSpaces (empty map for the payload)
+            CBORObject deviceNameSpaces = deviceSigned.get("nameSpaces");
+            if (deviceNameSpaces == null) {
+                deviceNameSpaces = CBORObject.NewMap();
+            }
+
+            // Try verification with transcript format(s)
+            boolean verified = false;
+
+            String verifiedFormat = null;
+
+            if (mdocGeneratedNonce != null && !mdocGeneratedNonce.isBlank()) {
+                // Try ISO 18013-7 first
+                CBORObject isoTranscript =
+                        MdocSessionTranscriptBuilder.buildIso18013_7(clientId, nonce, responseUri, mdocGeneratedNonce);
+                verified = tryVerifyDeviceSignature(sign1, coseDeviceKey, isoTranscript, docType, deviceNameSpaces);
+                if (verified) {
+                    verifiedFormat = "ISO 18013-7";
+                }
+
+                if (!verified) {
+                    // Fallback to OID4VP 1.0
+                    LOG.debugf("ISO 18013-7 device auth failed, trying OID4VP 1.0 format");
+                    CBORObject oid4vpTranscript =
+                            MdocSessionTranscriptBuilder.buildOid4vp(clientId, nonce, responseUri, jwkThumbprint);
+                    verified =
+                            tryVerifyDeviceSignature(sign1, coseDeviceKey, oid4vpTranscript, docType, deviceNameSpaces);
+                    if (verified) {
+                        verifiedFormat = "OID4VP 1.0";
+                    }
+                }
+            } else {
+                // OID4VP 1.0 only
+                CBORObject oid4vpTranscript =
+                        MdocSessionTranscriptBuilder.buildOid4vp(clientId, nonce, responseUri, jwkThumbprint);
+                verified = tryVerifyDeviceSignature(sign1, coseDeviceKey, oid4vpTranscript, docType, deviceNameSpaces);
+                if (verified) {
+                    verifiedFormat = "OID4VP 1.0";
+                }
+            }
+
+            if (!verified) {
+                throw new IllegalStateException("deviceAuth signature invalid");
+            }
+            LOG.debugf("mDoc device authentication verified using %s session transcript", verifiedFormat);
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalStateException("deviceAuth verification failed: " + e.getMessage(), e);
+        }
+    }
+
+    private boolean tryVerifyDeviceSignature(
+            Sign1Message sign1,
+            OneKey coseDeviceKey,
+            CBORObject sessionTranscript,
+            String docType,
+            CBORObject deviceNameSpaces) {
+        try {
+            byte[] payload = buildDeviceAuthenticationPayload(sessionTranscript, docType, deviceNameSpaces);
+            sign1.SetContent(payload);
+            return sign1.validate(coseDeviceKey);
+        } catch (Exception e) {
+            LOG.debugf("Device signature verification attempt failed: %s", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Builds the DeviceAuthentication payload:
+     * tag-24(CBOR(["DeviceAuthentication", SessionTranscript, DocType, DeviceNameSpacesBytes]))
+     */
+    private byte[] buildDeviceAuthenticationPayload(
+            CBORObject sessionTranscript, String docType, CBORObject deviceNameSpaces) {
+        CBORObject deviceAuthentication = CBORObject.NewArray();
+        deviceAuthentication.Add("DeviceAuthentication");
+        deviceAuthentication.Add(sessionTranscript);
+        deviceAuthentication.Add(docType != null ? docType : "");
+        deviceAuthentication.Add(deviceNameSpaces != null ? deviceNameSpaces : CBORObject.NewMap());
+
+        byte[] bytes = deviceAuthentication.EncodeToBytes();
+        return CBORObject.FromObjectAndTag(CBORObject.FromObject(bytes), 24).EncodeToBytes();
+    }
+
+    // ===== Digest Verification =====
+
+    /**
+     * Verifies value digests in the MSO match the actual IssuerSignedItems.
+     * Computes SHA-256 of raw CBOR bytes (before tag-24 unwrapping) and compares
+     * against the digest map in the MSO.
+     */
+    private void verifyDigests(CBORObject mso, CBORObject document) {
+        CBORObject valueDigests = mso.get("valueDigests");
+        if (valueDigests == null || valueDigests.getType() != CBORType.Map) {
+            return;
+        }
+
+        CBORObject issuerSigned = document.get("issuerSigned");
+        if (issuerSigned == null) return;
+        CBORObject nameSpaces = issuerSigned.get("nameSpaces");
+        if (nameSpaces == null) return;
+
+        try {
+            MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
+
+            for (CBORObject nsKey : nameSpaces.getKeys()) {
+                String namespace = nsKey.AsString();
+                CBORObject elements = nameSpaces.get(nsKey);
+                CBORObject nsDigests = valueDigests.get(namespace);
+                if (elements == null || elements.getType() != CBORType.Array) continue;
+                if (nsDigests == null || nsDigests.getType() != CBORType.Map) continue;
+
+                for (int i = 0; i < elements.size(); i++) {
+                    CBORObject element = elements.get(i);
+
+                    // Decode the item to get its digestID
+                    CBORObject item;
+                    if (element.HasMostOuterTag(24) && element.getType() == CBORType.ByteString) {
+                        item = CBORObject.DecodeFromBytes(element.GetByteString());
+                    } else if (element.getType() == CBORType.Map) {
+                        item = element;
+                    } else {
+                        item = CBORObject.DecodeFromBytes(element.GetByteString());
+                    }
+
+                    if (!item.ContainsKey("digestID")) continue;
+                    int digestId = item.get("digestID").AsInt32Value();
+
+                    CBORObject expectedDigest = nsDigests.get(CBORObject.FromObject(digestId));
+                    if (expectedDigest == null || expectedDigest.getType() != CBORType.ByteString) {
+                        throw new IllegalStateException("Missing digest for element " + digestId);
+                    }
+
+                    // Hash the raw CBOR bytes (the tag-24 wrapped form)
+                    byte[] computedDigest = sha256.digest(element.EncodeToBytes());
+                    if (!Arrays.equals(computedDigest, expectedDigest.GetByteString())) {
+                        throw new IllegalStateException("Digest mismatch for element " + digestId);
+                    }
+                }
+            }
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalStateException("Digest verification failed: " + e.getMessage(), e);
+        }
+    }
+
+    // ===== Validity Verification =====
+
+    /**
+     * Validates the MSO validity period: {@code validFrom} ≤ now ≤ {@code validUntil}.
+     */
+    private void validateValidity(CBORObject mso) {
+        CBORObject validityInfo = mso.get("validityInfo");
+        if (validityInfo == null || validityInfo.getType() != CBORType.Map) {
+            return;
+        }
+
+        Instant now = Instant.now();
+
+        CBORObject validFrom = validityInfo.get("validFrom");
+        if (validFrom != null) {
+            Instant notBefore = parseInstant(validFrom);
+            if (notBefore != null && notBefore.isAfter(now)) {
+                throw new IllegalStateException("Credential not yet valid");
+            }
+        }
+
+        CBORObject validUntil = validityInfo.get("validUntil");
+        if (validUntil != null) {
+            Instant notAfter = parseInstant(validUntil);
+            if (notAfter != null && notAfter.isBefore(now)) {
+                throw new IllegalStateException("Credential expired");
+            }
+        }
+    }
+
+    private Instant parseInstant(CBORObject value) {
+        if (value == null) return null;
+        try {
+            // Tag 0 = date-time string (RFC 3339)
+            if (value.HasMostOuterTag(0)) {
+                return Instant.parse(value.AsString());
+            }
+            if (value.getType() == CBORType.TextString) {
+                return Instant.parse(value.AsString());
+            }
+            if (value.getType() == CBORType.Integer) {
+                return Instant.ofEpochSecond(value.AsInt64Value());
+            }
+        } catch (Exception e) {
+            LOG.debugf("Failed to parse validity timestamp: %s", e.getMessage());
+        }
+        return null;
+    }
+
+    // ===== Device Key Extraction =====
+
+    /**
+     * Extracts the device public key from {@code mso.deviceKeyInfo.deviceKey} (COSE key format).
+     * Supports EC2 keys with P-256 curve (kty=2, crv=1).
+     */
+    private PublicKey extractDeviceKeyFromMso(CBORObject mso) {
+        CBORObject deviceKeyInfo = mso.get("deviceKeyInfo");
+        if (deviceKeyInfo == null || deviceKeyInfo.getType() != CBORType.Map) {
+            return null;
+        }
+
+        CBORObject deviceKey = deviceKeyInfo.get("deviceKey");
+        if (deviceKey == null || deviceKey.getType() != CBORType.Map) {
+            return null;
+        }
+
+        return parseCoseKey(deviceKey);
+    }
+
+    /**
+     * Parses a COSE key (EC2/P-256) to a Java {@link ECPublicKey}.
+     * COSE key labels: 1=kty, -1=crv, -2=x, -3=y.
+     */
+    private PublicKey parseCoseKey(CBORObject coseKey) {
+        try {
+            CBORObject kty = coseKey.get(CBORObject.FromObject(1));
+            if (kty == null || kty.AsInt32Value() != 2) return null; // kty must be EC2 (2)
+
+            CBORObject crv = coseKey.get(CBORObject.FromObject(-1));
+            if (crv == null || crv.AsInt32Value() != 1) return null; // crv must be P-256 (1)
+
+            CBORObject x = coseKey.get(CBORObject.FromObject(-2));
+            CBORObject y = coseKey.get(CBORObject.FromObject(-3));
+            if (x == null || y == null) return null;
+
+            com.nimbusds.jose.jwk.ECKey jwk = new com.nimbusds.jose.jwk.ECKey.Builder(
+                            Curve.P_256, Base64URL.encode(x.GetByteString()), Base64URL.encode(y.GetByteString()))
+                    .build();
+            return jwk.toECPublicKey();
+        } catch (Exception e) {
+            LOG.debugf("Failed to parse COSE key: %s", e.getMessage());
             return null;
         }
     }

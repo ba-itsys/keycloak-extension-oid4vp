@@ -74,7 +74,7 @@ public class Oid4vpResponseDecryptor {
             String mdocGeneratedNonce = null;
             Base64URL apu = jwe.getHeader().getAgreementPartyUInfo();
             if (apu != null) {
-                mdocGeneratedNonce = apu.toString();
+                mdocGeneratedNonce = apu.decodeToString();
             }
 
             Object errorObj = payloadMap.get(OAuth2Constants.ERROR);

@@ -7,7 +7,7 @@ A Keycloak identity provider extension that enables login with EUDI-compatible d
 ## Features
 
 - Same-device and cross-device (QR code) wallet flows
-- SD-JWT and mDoc (mso_mdoc) credential formats
+- SD-JWT and mDoc (mso_mdoc) credential formats with full verification (issuer signature, device authentication via OID4VP 1.0 and ISO 18013-7 session transcripts, digest integrity, MSO validity)
 - DCQL (Digital Credentials Query Language) for credential requests
 - HAIP (High Assurance Interoperability Profile) compliance with encrypted responses
 - X.509 certificate-based client authentication (`x509_san_dns`, `x509_hash`)

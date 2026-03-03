@@ -293,6 +293,7 @@ public class Oid4vpIdentityProviderEndpoint {
                 if (kid != null) {
                     requestObjectStore.storeKidIndex(session, kid, signedRequest.encryptionKeyJson(), state);
                 }
+                storeEncryptionJwkThumbprint(authSession, signedRequest.encryptionKeyJson());
             }
 
             String responseJwt = signedRequest.jwt();
@@ -314,6 +315,17 @@ public class Oid4vpIdentityProviderEndpoint {
         } catch (Exception e) {
             LOG.errorf(e, "Failed to generate request object: %s", e.getMessage());
             return jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", e.getMessage());
+        }
+    }
+
+    private void storeEncryptionJwkThumbprint(AuthenticationSessionModel authSession, String encryptionKeyJson) {
+        try {
+            ECKey ecKey = ECKey.parse(encryptionKeyJson);
+            byte[] thumbprint = ecKey.toPublicJWK().computeThumbprint("SHA-256").decode();
+            String encoded = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(thumbprint);
+            authSession.setAuthNote(SESSION_ENCRYPTION_JWK_THUMBPRINT, encoded);
+        } catch (Exception e) {
+            LOG.warnf("Failed to compute JWK thumbprint for encryption key: %s", e.getMessage());
         }
     }
 
