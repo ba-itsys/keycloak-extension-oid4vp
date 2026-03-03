@@ -80,6 +80,10 @@ Some wallets support nonce binding ([OID4VP Section 7.3](https://openid.net/spec
 2. Keycloak generates a new request object that includes the `wallet_nonce` claim.
 3. The wallet uses this nonce to bind the presentation to the specific request.
 
+### Wallet Metadata (Request Object Encryption)
+
+Wallets may optionally include a `wallet_metadata` form parameter when POSTing to the `request_uri`. If this metadata contains encryption keys (via `jwks`) and supported algorithms (`authorization_encryption_alg_values_supported`, `authorization_encryption_enc_values_supported`), Keycloak encrypts the signed request object as a JWE (sign-then-encrypt) using the wallet's public key. This is purely wallet-driven -- if the wallet does not send `wallet_metadata`, the request object is returned as a signed JWT only. Supported algorithms: ECDH-ES with A128GCM or A256GCM.
+
 For a detailed code-level walkthrough of both flows, see [docs/request-flow.md](docs/request-flow.md).
 
 ## Requirements

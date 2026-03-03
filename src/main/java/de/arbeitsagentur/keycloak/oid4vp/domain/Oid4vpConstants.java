@@ -42,6 +42,7 @@ public final class Oid4vpConstants {
     public static final String CLIENT_METADATA = "client_metadata";
     public static final String VERIFIER_INFO = "verifier_info";
     public static final String WALLET_NONCE = "wallet_nonce";
+    public static final String WALLET_METADATA = "wallet_metadata";
     public static final String RESPONSE_URI = "response_uri";
     public static final String RESPONSE = "response";
 
