@@ -39,7 +39,7 @@ import org.keycloak.util.JsonSerialization;
  * (sign-then-encrypt). This record holds the negotiated algorithm, encryption method, and the
  * wallet's EC public key extracted from the metadata JSON.
  *
- * @see Oid4vpRequestObjectEncryptor
+ * @see de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectEncryptor
  */
 public record WalletMetadata(ECKey encryptionKey, JWEAlgorithm algorithm, EncryptionMethod encryptionMethod) {
 
