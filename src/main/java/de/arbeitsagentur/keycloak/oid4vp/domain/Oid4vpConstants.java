@@ -52,7 +52,8 @@ public final class Oid4vpConstants {
     // Response type values
     public static final String RESPONSE_TYPE_VP_TOKEN = "vp_token";
 
-    // Self-issued audience
+    // Self-Issued OpenID Provider v2 static identifier
+    // https://openid.net/specs/openid-connect-self-issued-v2-1_0-ID1.html#name-static-self-issued-openid-p
     public static final String SELF_ISSUED_V2 = "https://self-issued.me/v2";
 
     // Flow types
@@ -64,7 +65,6 @@ public final class Oid4vpConstants {
     public static final String PARAM_TAB_ID = "tab_id";
     public static final String PARAM_SESSION_CODE = "session_code";
     public static final String PARAM_CLIENT_DATA = "client_data";
-    public static final String PARAM_TOKEN = "token";
     public static final String PARAM_REQUEST_HANDLE = "request_handle";
 
     // Request object media type

@@ -54,8 +54,7 @@ public class Oid4vpClaimToUserAttributeMapper extends AbstractIdentityProviderMa
         attributeProperty.setHelpText(
                 "Keycloak user attribute. Use 'email', 'firstName', 'lastName', 'username' for standard properties, or any name for custom attributes.");
         attributeProperty.setType(ProviderConfigProperty.STRING_TYPE);
-        // Insert before the optional property (which was added by addCommonProperties)
-        CONFIG_PROPERTIES.add(CONFIG_PROPERTIES.size() - 1, attributeProperty);
+        CONFIG_PROPERTIES.add(attributeProperty);
     }
 
     @Override

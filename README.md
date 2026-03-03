@@ -80,6 +80,8 @@ Some wallets support nonce binding ([OID4VP Section 7.3](https://openid.net/spec
 2. Keycloak generates a new request object that includes the `wallet_nonce` claim.
 3. The wallet uses this nonce to bind the presentation to the specific request.
 
+For a detailed code-level walkthrough of both flows, see [docs/request-flow.md](docs/request-flow.md).
+
 ## Requirements
 
 - Keycloak 26.x (tested with 26.5.4)

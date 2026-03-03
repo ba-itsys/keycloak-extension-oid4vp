@@ -56,24 +56,20 @@ public class Oid4vpResponseDecryptor {
                 mdocGeneratedNonce = apu.toString();
             }
 
-            if (payloadMap.containsKey(OAuth2Constants.ERROR)) {
+            Object errorObj = payloadMap.get(OAuth2Constants.ERROR);
+            if (errorObj != null) {
+                Object errorDescObj = payloadMap.get(OAuth2Constants.ERROR_DESCRIPTION);
                 return new DecryptedResponse(
                         null,
                         mdocGeneratedNonce,
-                        payloadMap.get(OAuth2Constants.ERROR).toString(),
-                        payloadMap.containsKey(OAuth2Constants.ERROR_DESCRIPTION)
-                                ? payloadMap
-                                        .get(OAuth2Constants.ERROR_DESCRIPTION)
-                                        .toString()
-                                : null);
+                        errorObj.toString(),
+                        errorDescObj != null ? errorDescObj.toString() : null);
             }
 
             String vpToken = null;
-            if (payloadMap.containsKey(VP_TOKEN)) {
-                Object vpTokenObj = payloadMap.get(VP_TOKEN);
-                vpToken = vpTokenObj instanceof String
-                        ? (String) vpTokenObj
-                        : JsonSerialization.writeValueAsString(vpTokenObj);
+            Object vpTokenObj = payloadMap.get(VP_TOKEN);
+            if (vpTokenObj != null) {
+                vpToken = vpTokenObj instanceof String s ? s : JsonSerialization.writeValueAsString(vpTokenObj);
             }
 
             return new DecryptedResponse(vpToken, mdocGeneratedNonce, null, null);

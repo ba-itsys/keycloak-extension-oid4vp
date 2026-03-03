@@ -51,8 +51,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProvider.class);
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
-
-    protected final ObjectMapper objectMapper;
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private final Oid4vpRedirectFlowService redirectFlowService;
     private final Oid4vpQrCodeService qrCodeService;
     private final Oid4vpCallbackProcessor callbackProcessor;
@@ -61,15 +60,14 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
     public Oid4vpIdentityProvider(KeycloakSession session, Oid4vpIdentityProviderConfig config) {
         super(session, config);
-        this.objectMapper = new ObjectMapper();
-        this.redirectFlowService = new Oid4vpRedirectFlowService(session, objectMapper);
+        this.redirectFlowService = new Oid4vpRedirectFlowService(session);
         this.qrCodeService = new Oid4vpQrCodeService();
         this.callbackProcessor = new Oid4vpCallbackProcessor(
                 config,
                 config,
                 this,
                 new VpTokenProcessor(
-                        objectMapper,
+                        OBJECT_MAPPER,
                         session,
                         config.getTrustListUrl(),
                         config.getStatusListMaxCacheTtl(),
@@ -136,7 +134,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
         if (!credentialTypes.isEmpty()) {
             return DcqlQueryBuilder.fromMapperSpecs(
-                            objectMapper,
+                            OBJECT_MAPPER,
                             credentialTypes,
                             getConfig().isAllCredentialsRequired(),
                             getConfig().getCredentialSetPurpose())
@@ -150,11 +148,9 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     private SessionState initializeSessionState(AuthenticationRequest request, AuthenticationSessionModel authSession) {
         String tabId = authSession.getTabId();
         String state = tabId + "." + randomState();
-        String nonce = randomState();
         String clientId = computeClientId(request);
 
         authSession.setAuthNote(SESSION_STATE, state);
-        authSession.setAuthNote(SESSION_NONCE, nonce);
         authSession.setAuthNote(SESSION_CLIENT_ID, clientId);
 
         String effectiveClientId = computeEffectiveClientId(clientId);
@@ -173,12 +169,14 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
         String formActionUrl = buildFormActionUrl(redirectUri, state, sessionTabId, sessionCode, clientData);
 
-        return new SessionState(state, nonce, effectiveClientId, formActionUrl);
+        return new SessionState(state, effectiveClientId, formActionUrl);
     }
 
     private String buildFormActionUrl(
             String redirectUri, String state, String tabId, String sessionCode, String clientData) {
-        UriBuilder builder = UriBuilder.fromUri(stripQueryParams(redirectUri));
+        int queryIndex = redirectUri != null ? redirectUri.indexOf('?') : -1;
+        String baseUri = queryIndex >= 0 ? redirectUri.substring(0, queryIndex) : redirectUri;
+        UriBuilder builder = UriBuilder.fromUri(baseUri);
         builder.queryParam(OAuth2Constants.STATE, state);
         if (StringUtil.isNotBlank(tabId)) {
             builder.queryParam(Oid4vpConstants.PARAM_TAB_ID, tabId);
@@ -291,16 +289,13 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         return session.getProvider(LoginFormsProvider.class)
                 .setAuthenticationSession(authSession)
                 .setAttribute("state", sessionState.state())
-                .setAttribute("nonce", sessionState.nonce())
                 .setAttribute("formActionUrl", sessionState.formActionUrl())
                 .setAttribute("sameDeviceEnabled", sameDeviceEnabled)
                 .setAttribute("crossDeviceEnabled", crossDeviceEnabled)
                 .setAttribute("sameDeviceWalletUrl", redirectFlowData.sameDeviceWalletUrl())
                 .setAttribute("crossDeviceWalletUrl", redirectFlowData.crossDeviceWalletUrl())
                 .setAttribute("qrCodeBase64", redirectFlowData.qrCodeBase64())
-                .setAttribute(
-                        "crossDeviceStatusUrl",
-                        (crossDeviceEnabled || sameDeviceEnabled) ? buildCrossDeviceStatusUrl() : null)
+                .setAttribute("crossDeviceStatusUrl", crossDeviceEnabled ? buildCrossDeviceStatusUrl() : null)
                 .createForm("login-oid4vp-idp.ftl");
     }
 
@@ -314,21 +309,13 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         return value.endsWith("/") ? value : value + "/";
     }
 
-    private String stripQueryParams(String uri) {
-        if (uri == null) {
-            return null;
-        }
-        int queryIndex = uri.indexOf('?');
-        return queryIndex >= 0 ? uri.substring(0, queryIndex) : uri;
-    }
-
     private static String randomState() {
         byte[] bytes = new byte[32];
         SECURE_RANDOM.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
-    record SessionState(String state, String nonce, String effectiveClientId, String formActionUrl) {}
+    record SessionState(String state, String effectiveClientId, String formActionUrl) {}
 
     record RedirectFlowData(String sameDeviceWalletUrl, String crossDeviceWalletUrl, String qrCodeBase64) {
         static final RedirectFlowData EMPTY = new RedirectFlowData(null, null, null);

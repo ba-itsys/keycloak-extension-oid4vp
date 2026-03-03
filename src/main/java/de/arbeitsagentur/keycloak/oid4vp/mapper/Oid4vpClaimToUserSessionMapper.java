@@ -54,8 +54,7 @@ public class Oid4vpClaimToUserSessionMapper extends AbstractIdentityProviderMapp
         sessionNoteProperty.setHelpText(
                 "Key name for storing the claim value in the user session. Use a 'User Session Note' protocol mapper to include in tokens.");
         sessionNoteProperty.setType(ProviderConfigProperty.STRING_TYPE);
-        // Insert before the optional property (which was added by addCommonProperties)
-        CONFIG_PROPERTIES.add(CONFIG_PROPERTIES.size() - 1, sessionNoteProperty);
+        CONFIG_PROPERTIES.add(sessionNoteProperty);
     }
 
     @Override

@@ -32,6 +32,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 import javax.security.auth.x500.X500Principal;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
@@ -97,7 +98,7 @@ class MdocVerifierTest {
                     "family_name", "Doe"
                 });
 
-        MdocVerificationResult result = verifier.verify(token, java.util.List.of(signingKeyPair.getPublic()));
+        MdocVerificationResult result = verifier.verifyWithTrustedCerts(token, List.of(signingCert));
 
         assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
         assertThat(result.claims()).containsEntry("org.iso.18013.5.1/given_name", "John");
@@ -110,7 +111,7 @@ class MdocVerifierTest {
         root.Add("documents", CBORObject.NewArray());
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(root.EncodeToBytes());
 
-        assertThatThrownBy(() -> verifier.verify(token, java.util.List.of(signingKeyPair.getPublic())))
+        assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(token, List.of(signingCert)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Empty documents array");
     }
@@ -121,7 +122,7 @@ class MdocVerifierTest {
         root.Add("something_else", "value");
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(root.EncodeToBytes());
 
-        assertThatThrownBy(() -> verifier.verify(token, java.util.List.of(signingKeyPair.getPublic())))
+        assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(token, List.of(signingCert)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Unknown mDoc structure");
     }
@@ -144,7 +145,7 @@ class MdocVerifierTest {
 
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(root.EncodeToBytes());
 
-        assertThatThrownBy(() -> verifier.verify(token, java.util.List.of()))
+        assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(token, List.of()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("No trusted keys available");
     }
@@ -171,7 +172,7 @@ class MdocVerifierTest {
 
         String token = buildSignedMdocWithNameSpaces("org.iso.18013.5.1.mDL", nameSpaces);
 
-        MdocVerificationResult result = verifier.verify(token, java.util.List.of(signingKeyPair.getPublic()));
+        MdocVerificationResult result = verifier.verifyWithTrustedCerts(token, List.of(signingCert));
 
         assertThat(result.claims()).containsEntry("org.iso.18013.5.1/given_name", "Alice");
         assertThat(result.claims()).containsEntry("org.iso.18013.5.1.aamva/age_over_18", true);
@@ -187,7 +188,7 @@ class MdocVerifierTest {
                 42,
                 new String[] {"given_name", "Alice"});
 
-        MdocVerificationResult result = verifier.verify(token, java.util.List.of(signingKeyPair.getPublic()));
+        MdocVerificationResult result = verifier.verifyWithTrustedCerts(token, List.of(signingCert));
 
         assertThat(result.claims()).containsKey("status");
         Map<String, Object> status = (Map<String, Object>) result.claims().get("status");
