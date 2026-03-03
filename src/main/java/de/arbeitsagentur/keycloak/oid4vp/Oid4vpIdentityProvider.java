@@ -47,6 +47,16 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.utils.StringUtil;
 
+/**
+ * Keycloak Identity Provider implementation for OpenID for Verifiable Presentations (OID4VP) 1.0.
+ *
+ * <p>Enables Keycloak to act as an OID4VP verifier, accepting Verifiable Credentials from
+ * digital wallets as a login mechanism. Supports same-device (wallet redirect) and cross-device
+ * (QR code scanning) flows. The {@link #performLogin} method renders the login page with wallet
+ * URLs and QR codes, while {@link #callback} returns the JAX-RS endpoint that handles wallet responses.
+ *
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html">OID4VP 1.0</a>
+ */
 public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdentityProviderConfig> {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProvider.class);

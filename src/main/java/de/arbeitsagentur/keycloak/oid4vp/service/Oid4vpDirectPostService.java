@@ -39,6 +39,17 @@ import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.sessions.RootAuthenticationSessionModel;
 import org.keycloak.util.JsonSerialization;
 
+/**
+ * Handles the direct_post response mode for OID4VP.
+ *
+ * <p>In the direct_post flow, the wallet posts the VP token directly to the verifier's endpoint.
+ * Since the browser is not involved in this HTTP request, the authentication cannot be completed
+ * inline. Instead, this service serializes the brokered identity into the authentication session
+ * and signals completion via a single-use object that the browser polls for (cross-device) or
+ * redirects to (same-device).
+ *
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.2">OID4VP 1.0 §6.2 — Response Mode direct_post</a>
+ */
 public class Oid4vpDirectPostService {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpDirectPostService.class);
@@ -74,6 +85,11 @@ public class Oid4vpDirectPostService {
         this.crossDeviceCompleteTtlSeconds = config.getCrossDeviceCompleteTtlSeconds();
     }
 
+    /**
+     * Stores the verified identity in the authentication session and signals completion.
+     * For cross-device flows, returns an empty 200 OK (the browser polls via SSE).
+     * For same-device flows, returns a JSON redirect to the complete-auth endpoint.
+     */
     public Response storeAndSignal(
             AuthenticationSessionModel authSession,
             String state,
@@ -123,6 +139,11 @@ public class Oid4vpDirectPostService {
         return jsonRedirectResponse(completeAuthUrl);
     }
 
+    /**
+     * Completes the authentication by deserializing the stored identity and invoking the
+     * Keycloak authentication callback. Called by the browser after the wallet's direct_post
+     * has been processed.
+     */
     public Response completeAuth(
             String state, AbstractIdentityProvider.AuthenticationCallback callback, EventBuilder event) {
 

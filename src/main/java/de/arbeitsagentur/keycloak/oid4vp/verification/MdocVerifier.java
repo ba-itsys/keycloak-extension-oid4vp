@@ -32,6 +32,15 @@ import java.util.Map;
 import org.jboss.logging.Logger;
 import org.keycloak.utils.StringUtil;
 
+/**
+ * Verifies mDoc (ISO 18013-5) credentials presented in a VP token.
+ *
+ * <p>Parses CBOR-encoded DeviceResponse structures, verifies the COSE_Sign1 issuer signature
+ * (via x5chain or direct trust), and extracts namespace-prefixed claims. Also extracts MSO
+ * (Mobile Security Object) status for revocation checking.
+ *
+ * @see <a href="https://www.iso.org/standard/69084.html">ISO/IEC 18013-5:2021</a>
+ */
 public class MdocVerifier {
 
     private static final Logger LOG = Logger.getLogger(MdocVerifier.class);
@@ -47,6 +56,12 @@ public class MdocVerifier {
         }
     }
 
+    /**
+     * Verifies an mDoc DeviceResponse against trusted certificates and extracts claims.
+     *
+     * @param deviceResponseToken Base64-encoded CBOR DeviceResponse
+     * @param trustedCertificates trusted CA certificates for COSE_Sign1 signature verification
+     */
     public MdocVerificationResult verifyWithTrustedCerts(
             String deviceResponseToken, List<X509Certificate> trustedCertificates) {
         List<PublicKey> trustedKeys =

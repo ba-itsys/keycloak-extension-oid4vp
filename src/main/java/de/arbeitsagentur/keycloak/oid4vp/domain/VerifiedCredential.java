@@ -21,6 +21,13 @@ import java.util.Base64;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * A credential that has been cryptographically verified and had its claims extracted.
+ *
+ * <p>Produced by {@link de.arbeitsagentur.keycloak.oid4vp.verification.SdJwtVerifier} or
+ * {@link de.arbeitsagentur.keycloak.oid4vp.verification.MdocVerifier} after validating
+ * the issuer signature, key binding, and revocation status.
+ */
 public record VerifiedCredential(
         String credentialId,
         String issuer,

@@ -33,6 +33,15 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.SingleUseObjectProvider;
 import org.keycloak.util.JsonSerialization;
 
+/**
+ * Provides Server-Sent Events (SSE) for cross-device OID4VP login polling.
+ *
+ * <p>In the cross-device flow, the user scans a QR code with their wallet on a separate device.
+ * The browser holds an SSE connection to this service, which polls Keycloak's
+ * {@link org.keycloak.models.SingleUseObjectProvider} for a completion signal. When the wallet's
+ * direct_post response has been processed, the SSE stream emits a {@code complete} event with
+ * a redirect URL so the browser can finalize authentication.
+ */
 public class Oid4vpCrossDeviceSseService {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpCrossDeviceSseService.class);

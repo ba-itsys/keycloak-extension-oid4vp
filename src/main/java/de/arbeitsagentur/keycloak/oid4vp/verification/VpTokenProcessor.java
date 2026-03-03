@@ -32,6 +32,15 @@ import org.keycloak.broker.provider.IdentityBrokerException;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.utils.StringUtil;
 
+/**
+ * Top-level processor for VP tokens received from wallets.
+ *
+ * <p>Handles format detection (SD-JWT vs mDoc), single and multi-credential VP tokens,
+ * signature verification (delegated to {@link SdJwtVerifier} / {@link MdocVerifier}),
+ * trust list validation, and revocation checking (via {@link StatusListVerifier}).
+ *
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-7">OID4VP 1.0 §7 — VP Token</a>
+ */
 public class VpTokenProcessor {
 
     private static final Logger LOG = Logger.getLogger(VpTokenProcessor.class);
@@ -72,6 +81,14 @@ public class VpTokenProcessor {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * Processes a VP token: detects format, verifies credentials, checks revocation status.
+     *
+     * @param vpToken the raw VP token (single SD-JWT/mDoc string, or JSON wrapper for multi-credential)
+     * @param clientId the expected audience for key binding JWT verification
+     * @param expectedNonce the nonce from the request object for replay protection
+     * @param alternateResponseUri fallback audience (response_uri) for wallets that use it instead of client_id
+     */
     public VpTokenResult process(String vpToken, String clientId, String expectedNonce, String alternateResponseUri) {
         List<X509Certificate> trustedCerts =
                 trustListProvider != null ? trustListProvider.getTrustedCertificates() : List.of();

@@ -20,6 +20,14 @@ import java.util.List;
 import java.util.stream.Collectors;
 import org.keycloak.utils.StringUtil;
 
+/**
+ * Specification of a single claim to request within a DCQL credential query.
+ *
+ * <p>The {@code path} uses {@code /} as separator for nested claims (e.g. {@code address/street}).
+ * For mDoc credentials, the namespace is automatically prepended when building DCQL paths.
+ *
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.4">OID4VP 1.0 §5.4 — DCQL Query</a>
+ */
 public record ClaimSpec(String path, boolean optional, boolean multivalued) {
 
     private static final String PATH_SEPARATOR = "/";
@@ -32,6 +40,7 @@ public record ClaimSpec(String path, boolean optional, boolean multivalued) {
         this(path, optional, false);
     }
 
+    /** Converts this claim path to a DCQL {@code claims[].path} array for the given credential format and type. */
     public List<Object> toDcqlPath(String format, String type) {
         if (StringUtil.isBlank(path)) {
             return List.of();

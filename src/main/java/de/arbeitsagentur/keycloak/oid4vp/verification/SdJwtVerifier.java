@@ -40,6 +40,15 @@ import org.keycloak.sdjwt.vp.SdJwtVP;
 import org.keycloak.util.JsonSerialization;
 import org.keycloak.util.KeyWrapperUtil;
 
+/**
+ * Verifies SD-JWT Verifiable Credentials presented in a VP token.
+ *
+ * <p>Performs issuer signature verification (via x5c chain or direct trust), key binding JWT
+ * validation (audience, nonce, iat/exp), selective disclosure resolution, and claim extraction.
+ * Uses Keycloak's built-in SD-JWT library ({@link SdJwtVP}).
+ *
+ * @see <a href="https://www.ietf.org/archive/id/draft-ietf-oauth-selective-disclosure-jwt-13.html">SD-JWT VC</a>
+ */
 public class SdJwtVerifier {
 
     private static final Logger LOG = Logger.getLogger(SdJwtVerifier.class);
@@ -57,6 +66,14 @@ public class SdJwtVerifier {
     }
 
     @SuppressWarnings("unchecked")
+    /**
+     * Verifies an SD-JWT VP: validates issuer signature, key binding, and extracts disclosed claims.
+     *
+     * @param sdJwt the compact SD-JWT string (issuer JWT + disclosures + optional KB-JWT, tilde-separated)
+     * @param expectedAudience the expected {@code aud} claim in the key binding JWT
+     * @param expectedNonce the expected {@code nonce} claim in the key binding JWT
+     * @param trustedCertificates trusted CA certificates for issuer signature verification
+     */
     public SdJwtVerificationResult verify(
             String sdJwt, String expectedAudience, String expectedNonce, List<X509Certificate> trustedCertificates) {
 

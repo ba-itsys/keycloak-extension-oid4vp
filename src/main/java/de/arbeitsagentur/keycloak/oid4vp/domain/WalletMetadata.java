@@ -27,8 +27,19 @@ import java.util.Set;
 import org.keycloak.util.JsonSerialization;
 
 /**
- * Parsed wallet_metadata from a wallet's POST to the request_uri endpoint.
- * Contains the wallet's encryption key and preferred algorithms for request object encryption.
+ * Parsed {@code wallet_metadata} from a wallet's POST to the request-object endpoint.
+ *
+ * <p>In the OID4VP redirect flow, a wallet may optionally include a {@code wallet_metadata} form
+ * parameter when fetching the request object (POST to {@code /request-object/{handle}}). This
+ * metadata advertises the wallet's encryption capabilities — specifically, which JWE algorithms
+ * and content encryption methods it supports, along with a public key the verifier must use to
+ * encrypt the request object before returning it.
+ *
+ * <p>When present, the verifier is required to encrypt the signed request object JWT into a JWE
+ * (sign-then-encrypt). This record holds the negotiated algorithm, encryption method, and the
+ * wallet's EC public key extracted from the metadata JSON.
+ *
+ * @see Oid4vpRequestObjectEncryptor
  */
 public record WalletMetadata(ECKey encryptionKey, JWEAlgorithm algorithm, EncryptionMethod encryptionMethod) {
 
@@ -36,6 +47,17 @@ public record WalletMetadata(ECKey encryptionKey, JWEAlgorithm algorithm, Encryp
     private static final Set<EncryptionMethod> SUPPORTED_ENCRYPTION_METHODS =
             Set.of(EncryptionMethod.A128GCM, EncryptionMethod.A256GCM);
 
+    /**
+     * Parses the raw {@code wallet_metadata} JSON string from the form parameter.
+     *
+     * <p>Extracts the first EC key from {@code jwks.keys}, and negotiates the JWE algorithm and
+     * content encryption method by intersecting the wallet's advertised values with our supported
+     * set (ECDH-ES + A128GCM/A256GCM). Defaults to ECDH-ES and A128GCM when the wallet omits
+     * the algorithm/encryption fields.
+     *
+     * @throws IllegalArgumentException if the JSON is invalid, contains no EC key, or advertises
+     *     only unsupported algorithms
+     */
     @SuppressWarnings("unchecked")
     public static WalletMetadata parse(String walletMetadataJson) {
         Map<String, Object> metadata;

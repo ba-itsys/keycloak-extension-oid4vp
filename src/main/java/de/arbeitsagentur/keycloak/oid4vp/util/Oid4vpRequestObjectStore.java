@@ -58,6 +58,7 @@ public class Oid4vpRequestObjectStore {
 
     public record KidEntry(String encryptionKeyJson, String state) {}
 
+    /** Stores a request handle → authentication session mapping. Called when the login page is rendered. */
     public void storeRequestHandle(KeycloakSession session, String requestHandle, String rootSessionId, String tabId) {
         long lifespanSeconds = ttl.toSeconds();
         session.singleUseObjects()
@@ -68,6 +69,7 @@ public class Oid4vpRequestObjectStore {
         LOG.debugf("Stored request handle: handle=%s, rootSessionId=%s", requestHandle, rootSessionId);
     }
 
+    /** Stores a state → authentication session mapping for session recovery in direct_post flows. */
     public void storeStateIndex(KeycloakSession session, String state, String rootSessionId, String tabId) {
         if (StringUtil.isBlank(state)) return;
         session.singleUseObjects()
@@ -77,6 +79,7 @@ public class Oid4vpRequestObjectStore {
                         Map.of("rootSessionId", rootSessionId, "tabId", tabId));
     }
 
+    /** Stores a KID → encryption key mapping for decrypting direct_post.jwt responses. */
     public void storeKidIndex(KeycloakSession session, String kid, String encryptionKeyJson, String state) {
         if (StringUtil.isBlank(kid) || encryptionKeyJson == null) return;
         session.singleUseObjects()
@@ -113,6 +116,7 @@ public class Oid4vpRequestObjectStore {
         store.remove(STATE_INDEX_PREFIX + state);
     }
 
+    /** Extracts the Key ID from a JWK JSON string, or {@code null} if parsing fails. */
     public static String extractKidFromJwk(String jwkJson) {
         try {
             return ECKey.parse(jwkJson).getKeyID();
