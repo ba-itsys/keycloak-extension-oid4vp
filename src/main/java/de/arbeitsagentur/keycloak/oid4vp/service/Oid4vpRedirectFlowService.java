@@ -58,6 +58,19 @@ import org.keycloak.protocol.oidc.OIDCLoginProtocol;
 import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 
+/**
+ * Builds OID4VP authorization request objects and wallet redirect URLs.
+ *
+ * <p>Handles Phase 1 of the OID4VP flow: constructing the signed request object JWT with DCQL
+ * query, client metadata (including response encryption keys when HAIP is enabled), verifier info,
+ * and the wallet authorization URL ({@code openid4vp://?client_id=...&request_uri=...}).
+ *
+ * <p>Supports both Keycloak realm signing keys and external X.509 signing keys (Nimbus JOSE),
+ * and computes client IDs for {@code x509_san_dns} and {@code x509_hash} schemes.
+ *
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5">OID4VP 1.0 §5 — Authorization Request</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1">OID4VP 1.0 §5.1 — Signed Authorization Request</a>
+ */
 public class Oid4vpRedirectFlowService {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpRedirectFlowService.class);
@@ -68,6 +81,7 @@ public class Oid4vpRedirectFlowService {
         this.session = Objects.requireNonNull(session);
     }
 
+    /** Builds the wallet authorization URL with {@code client_id} and {@code request_uri} parameters. */
     public URI buildWalletAuthorizationUrl(String walletScheme, String clientId, URI requestUri) {
         String scheme = StringUtil.isNotBlank(walletScheme) ? walletScheme : DEFAULT_WALLET_SCHEME;
         if (!scheme.endsWith("://")) {
@@ -84,6 +98,11 @@ public class Oid4vpRedirectFlowService {
         return URI.create(url.toString());
     }
 
+    /**
+     * Builds and signs the OID4VP request object JWT from the given parameters.
+     * When HAIP is enforced, also generates an ephemeral response encryption key
+     * included in the request's {@code client_metadata}.
+     */
     public SignedRequestObject buildSignedRequestObject(RequestObjectParams params) {
 
         ResolvedSigningKey resolved = resolveSigningMaterial(params.x509SigningKeyJwk());
@@ -180,6 +199,7 @@ public class Oid4vpRedirectFlowService {
         }
     }
 
+    /** Computes a {@code x509_san_dns:<dns-name>} client ID from the certificate's SAN DNS entry. */
     public String computeX509SanDnsClientId(String pemCertificate) {
         try {
             X509Certificate cert = decodeFirstCertificate(pemCertificate);
@@ -199,6 +219,7 @@ public class Oid4vpRedirectFlowService {
         }
     }
 
+    /** Computes a {@code x509_hash:<base64url-sha256>} client ID from the certificate's DER encoding. */
     public String computeX509HashClientId(String pemCertificate) {
         try {
             X509Certificate cert = decodeFirstCertificate(pemCertificate);

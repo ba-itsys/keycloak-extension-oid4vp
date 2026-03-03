@@ -24,13 +24,27 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.domain.WalletMetadata;
 
 /**
- * Encrypts a signed request object JWT into a JWE using the wallet's encryption key
- * from wallet_metadata. Produces a nested JWT (sign-then-encrypt) per RFC 7516.
+ * Encrypts a signed request object JWT into a JWE using the wallet's encryption key from
+ * {@code wallet_metadata}. This is the counterpart to {@link Oid4vpResponseDecryptor} — while
+ * that class decrypts wallet responses, this class encrypts verifier request objects.
+ *
+ * <p>Called from {@code Oid4vpIdentityProviderEndpoint.generateRequestObject} when the wallet
+ * includes {@code wallet_metadata} in its POST to the request-object endpoint. The result is a
+ * nested JWT: the signed request object (JWS) wrapped in a JWE, with {@code cty: oauth-authz-req+jwt}
+ * per RFC 7516 §4.1.12 to indicate the inner content type.
  */
 public final class Oid4vpRequestObjectEncryptor {
 
     private Oid4vpRequestObjectEncryptor() {}
 
+    /**
+     * Wraps a signed request object JWT in a JWE encrypted with the wallet's public key.
+     *
+     * @param signedJwt the compact-serialized signed JWT (JWS) produced by
+     *     {@link de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpRedirectFlowService#buildSignedRequestObject}
+     * @param walletMetadata the parsed wallet metadata containing the encryption key and negotiated algorithms
+     * @return the compact-serialized JWE string
+     */
     public static String encrypt(String signedJwt, WalletMetadata walletMetadata) {
         try {
             JWEHeader.Builder headerBuilder = new JWEHeader.Builder(

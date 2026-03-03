@@ -47,10 +47,12 @@ public class TrustListProvider {
     private final List<X509Certificate> staticCertificates;
     private final Duration maxCacheTtl;
 
+    /** Creates a provider that fetches the trust list from the given URL. */
     public TrustListProvider(KeycloakSession session, String trustListUrl) {
         this(session, trustListUrl, null);
     }
 
+    /** Creates a provider that fetches the trust list from the given URL with a cache TTL cap. */
     public TrustListProvider(KeycloakSession session, String trustListUrl, Duration maxCacheTtl) {
         this.session = session;
         this.trustListUrl = trustListUrl;

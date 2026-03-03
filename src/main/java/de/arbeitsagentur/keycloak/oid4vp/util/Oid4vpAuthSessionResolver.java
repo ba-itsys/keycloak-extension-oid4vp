@@ -20,6 +20,16 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.sessions.RootAuthenticationSessionModel;
 
+/**
+ * Resolves Keycloak authentication sessions from OID4VP session state.
+ *
+ * <p>In the OID4VP direct_post flow, the wallet's response arrives in a separate HTTP request
+ * without session cookies. This resolver recovers the original authentication session using
+ * the state parameter (via {@link Oid4vpRequestObjectStore}) or root session ID stored during
+ * request object generation.
+ *
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.2">OID4VP 1.0 §6.2 — Response Mode direct_post</a>
+ */
 public class Oid4vpAuthSessionResolver {
 
     private final KeycloakSession session;
@@ -33,6 +43,7 @@ public class Oid4vpAuthSessionResolver {
         this.requestObjectStore = requestObjectStore;
     }
 
+    /** Resolves an authentication session using the OAuth {@code state} parameter from the store. */
     public AuthenticationSessionModel resolveFromStore(String state, String tabIdHint) {
         if (state == null) return null;
 
@@ -52,6 +63,7 @@ public class Oid4vpAuthSessionResolver {
         return resolveFromTokenEntry(stateEntry.rootSessionId(), tabId);
     }
 
+    /** Resolves an authentication session directly from root session and tab IDs. */
     public AuthenticationSessionModel resolveFromTokenEntry(String rootSessionId, String tabId) {
         if (rootSessionId == null) return null;
 

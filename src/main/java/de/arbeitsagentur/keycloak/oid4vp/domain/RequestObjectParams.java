@@ -15,6 +15,16 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
+/**
+ * Parameters for building an OID4VP Authorization Request Object (a signed JWT).
+ *
+ * <p>Passed from {@link de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderEndpoint} to
+ * {@link de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpRedirectFlowService#buildSignedRequestObject}
+ * each time the wallet fetches the {@code request_uri}. A fresh instance is created per fetch so
+ * that nonce, timestamps, and encryption keys are never reused.
+ *
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5">OID4VP 1.0 §5 — Authorization Request</a>
+ */
 public record RequestObjectParams(
         String dcqlQuery,
         String verifierInfo,

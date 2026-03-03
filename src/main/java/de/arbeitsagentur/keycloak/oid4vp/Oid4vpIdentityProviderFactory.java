@@ -37,6 +37,13 @@ import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.provider.ProviderConfigurationBuilder;
 import org.keycloak.utils.StringUtil;
 
+/**
+ * Keycloak SPI factory for the OID4VP Identity Provider.
+ *
+ * <p>Registered via {@code META-INF/services} and discovered by Keycloak at startup.
+ * Defines all configuration properties shown in the Admin Console, resolves X.509 signing keys
+ * from inline PEM certificates, and validates HAIP configuration on provider creation.
+ */
 public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFactory<Oid4vpIdentityProvider> {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProviderFactory.class);

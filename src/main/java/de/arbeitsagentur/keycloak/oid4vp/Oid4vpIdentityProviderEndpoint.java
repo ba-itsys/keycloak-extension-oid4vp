@@ -57,6 +57,21 @@ import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 
+/**
+ * JAX-RS endpoint handling all OID4VP protocol interactions with wallets.
+ *
+ * <p>Exposes the following sub-resources:
+ * <ul>
+ *   <li>{@code POST /} — receives the wallet's direct_post response ({@code vp_token} or encrypted JWE)
+ *   <li>{@code GET|POST /request-object/{handle}} — serves the signed (and optionally encrypted)
+ *       authorization request object to the wallet
+ *   <li>{@code GET /cross-device/status} — SSE stream for cross-device login polling
+ *   <li>{@code GET /complete-auth} — finalizes authentication after the wallet's response is processed
+ * </ul>
+ *
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5">OID4VP 1.0 §5 — Authorization Request</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.2">OID4VP 1.0 §6.2 — Response Mode direct_post</a>
+ */
 @Vetoed
 @Path("")
 public class Oid4vpIdentityProviderEndpoint {

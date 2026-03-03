@@ -17,4 +17,10 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
 
 import java.util.Map;
 
+/**
+ * Result of verifying an mDoc (ISO 18013-5) credential presented in a {@code vp_token}.
+ *
+ * <p>Contains the extracted namespace-prefixed claims and the document type (doctype).
+ * Produced by {@link de.arbeitsagentur.keycloak.oid4vp.verification.MdocVerifier}.
+ */
 public record MdocVerificationResult(Map<String, Object> claims, String docType) {}

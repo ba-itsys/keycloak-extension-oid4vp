@@ -29,6 +29,16 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.utils.StringUtil;
 
+/**
+ * Builds DCQL (Digital Credentials Query Language) queries for OID4VP authorization requests.
+ *
+ * <p>DCQL queries specify which credential types and claims the verifier requires from the wallet.
+ * This builder can either construct a query from configured IdP mapper settings (auto-generated)
+ * or be used programmatically. Supports optional/required claims, multi-credential sets, and
+ * both SD-JWT VC and mDoc (ISO 18013-5) credential formats.
+ *
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.4">OID4VP 1.0 §5.4 — DCQL Query</a>
+ */
 public class DcqlQueryBuilder {
 
     private static final Logger LOG = Logger.getLogger(DcqlQueryBuilder.class);
@@ -59,6 +69,7 @@ public class DcqlQueryBuilder {
         return this;
     }
 
+    /** Builds the DCQL query JSON string from the configured credential types and claims. */
     public String build() {
         if (credentialTypes.isEmpty()) {
             throw new IllegalStateException(
@@ -89,6 +100,7 @@ public class DcqlQueryBuilder {
         }
     }
 
+    /** Creates a builder pre-populated from aggregated mapper credential type specifications. */
     public static DcqlQueryBuilder fromMapperSpecs(
             ObjectMapper objectMapper,
             Map<String, CredentialTypeSpec> credentialTypes,
@@ -103,6 +115,11 @@ public class DcqlQueryBuilder {
         return builder;
     }
 
+    /**
+     * Aggregates credential type specifications from all IdP mappers configured for this provider.
+     * Scans mapper configurations for credential format, type, and claim paths, then groups them
+     * into {@link CredentialTypeSpec} entries suitable for DCQL query generation.
+     */
     public static Map<String, CredentialTypeSpec> aggregateFromMappers(
             KeycloakSession session, Oid4vpConfigProvider config) {
         Map<String, CredentialTypeSpec> result = new LinkedHashMap<>();

@@ -15,6 +15,13 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
+/**
+ * Abstraction over OID4VP identity provider configuration settings.
+ *
+ * <p>Implemented by {@link de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig} and
+ * used by services that need configuration without depending on the full Keycloak
+ * {@code IdentityProviderModel}. This also allows unit testing with simple stubs.
+ */
 public interface Oid4vpConfigProvider {
 
     String getAlias();

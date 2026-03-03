@@ -32,6 +32,16 @@ import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.utils.StringUtil;
 
+/**
+ * Processes verified VP token responses into Keycloak {@link BrokeredIdentityContext} objects.
+ *
+ * <p>Orchestrates the post-response phase of the OID4VP flow: validates the state parameter,
+ * delegates VP token verification to {@link VpTokenProcessor}, enforces issuer/credential type
+ * allow-lists, resolves the user identity from the configured mapping claim, and populates
+ * the brokered identity context with credential claims for downstream mappers.
+ *
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-7">OID4VP 1.0 §7 — VP Token Validation</a>
+ */
 public class Oid4vpCallbackProcessor {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpCallbackProcessor.class);
@@ -52,6 +62,10 @@ public class Oid4vpCallbackProcessor {
         this.vpTokenProcessor = vpTokenProcessor;
     }
 
+    /**
+     * Validates the VP token and builds a brokered identity context for Keycloak's identity broker.
+     * Clears session notes on both success and failure to prevent stale state on retry.
+     */
     public BrokeredIdentityContext process(AuthenticationSessionModel authSession, String state, String vpToken) {
 
         try {

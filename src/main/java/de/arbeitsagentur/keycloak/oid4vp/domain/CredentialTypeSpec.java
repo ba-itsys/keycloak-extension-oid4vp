@@ -17,4 +17,12 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
 
 import java.util.List;
 
+/**
+ * Specification of a credential type to request, used when building DCQL queries from IdP mappers.
+ *
+ * @param format the credential format ({@code dc+sd-jwt} or {@code mso_mdoc})
+ * @param type the credential type identifier (VCT for SD-JWT, doctype for mDoc)
+ * @param claimSpecs the claims to request within this credential
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.4">OID4VP 1.0 §5.4 — DCQL Query</a>
+ */
 public record CredentialTypeSpec(String format, String type, List<ClaimSpec> claimSpecs) {}

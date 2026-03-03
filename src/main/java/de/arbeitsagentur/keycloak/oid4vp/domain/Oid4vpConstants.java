@@ -17,10 +17,18 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
 
 import java.net.URI;
 
+/**
+ * Protocol constants for the OID4VP 1.0 identity provider extension.
+ *
+ * <p>Contains parameter names, response modes, credential format identifiers, client ID scheme
+ * values, and session note keys used throughout the OID4VP authorization flow as defined in
+ * <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html">OID4VP 1.0</a>.
+ */
 public final class Oid4vpConstants {
 
     private Oid4vpConstants() {}
 
+    /** Builds the base URL for the IdP endpoint: {@code {baseUri}/realms/{realm}/broker/{alias}/endpoint}. */
     public static String buildEndpointBaseUrl(URI baseUri, String realmName, String idpAlias) {
         String base = baseUri.toString();
         if (!base.endsWith("/")) {

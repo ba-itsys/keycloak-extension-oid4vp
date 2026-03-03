@@ -33,6 +33,17 @@ import org.keycloak.models.UserModel;
 import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.utils.StringUtil;
 
+/**
+ * Maps claims from verified OID4VP credentials to Keycloak user attributes.
+ *
+ * <p>Configured in the Keycloak Admin Console under the OID4VP Identity Provider's mappers.
+ * Each mapper instance specifies a credential format/type filter, a claim path, and a target
+ * user attribute. Supports standard attributes (email, firstName, etc.) and custom attributes,
+ * including multivalued claims. Also drives DCQL query generation — the claim paths configured
+ * here determine which claims are requested from the wallet.
+ *
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.4">OID4VP 1.0 §5.4 — DCQL Query</a>
+ */
 public class Oid4vpClaimToUserAttributeMapper extends AbstractIdentityProviderMapper {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpClaimToUserAttributeMapper.class);

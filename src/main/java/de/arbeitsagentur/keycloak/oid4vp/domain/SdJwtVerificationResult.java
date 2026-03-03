@@ -17,4 +17,10 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
 
 import java.util.Map;
 
+/**
+ * Result of verifying an SD-JWT Verifiable Credential presented in a {@code vp_token}.
+ *
+ * <p>Contains the disclosed claims after selective disclosure resolution, the issuer identifier,
+ * and the credential type (VCT). Produced by {@link de.arbeitsagentur.keycloak.oid4vp.verification.SdJwtVerifier}.
+ */
 public record SdJwtVerificationResult(Map<String, Object> claims, String issuer, String credentialType) {}

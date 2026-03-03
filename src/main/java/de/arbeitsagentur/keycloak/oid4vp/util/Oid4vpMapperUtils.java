@@ -26,6 +26,14 @@ import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.models.IdentityProviderMapperModel;
 import org.keycloak.utils.StringUtil;
 
+/**
+ * Utility methods for OID4VP identity provider mappers.
+ *
+ * <p>Provides claim extraction from the {@link BrokeredIdentityContext} populated by
+ * {@link de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpCallbackProcessor}, credential format
+ * matching, and value conversion. Supports nested claim paths (DCQL-style {@code address/street}),
+ * mDoc namespace-prefixed keys, and multivalued claims.
+ */
 public final class Oid4vpMapperUtils {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpMapperUtils.class);
@@ -39,6 +47,7 @@ public final class Oid4vpMapperUtils {
     private Oid4vpMapperUtils() {}
 
     @SuppressWarnings("unchecked")
+    /** Extracts a claim value from the brokered identity context by claim path. */
     public static Object getClaimValue(BrokeredIdentityContext context, String claimPath) {
         Map<String, Object> claims =
                 (Map<String, Object>) context.getContextData().get(CONTEXT_CLAIMS_KEY);
@@ -50,6 +59,7 @@ public final class Oid4vpMapperUtils {
         return getNestedValue(claims, claimPath);
     }
 
+    /** Checks if a mapper's credential format/type filter matches the current presentation. */
     public static boolean matchesCredential(IdentityProviderMapperModel mapperModel, BrokeredIdentityContext context) {
         String mapperFormat = mapperModel.getConfig().get(Oid4vpMapperConfigProperties.CREDENTIAL_FORMAT);
         String mapperType = mapperModel.getConfig().get(Oid4vpMapperConfigProperties.CREDENTIAL_TYPE);
@@ -146,6 +156,10 @@ public final class Oid4vpMapperUtils {
         return value;
     }
 
+    /**
+     * Navigates a claims map by path, supporting nested objects, mDoc namespaced keys,
+     * and DCQL {@code null} array traversal. Tries exact match, then nested path, then suffix match.
+     */
     public static Object getNestedValue(Map<String, Object> claims, String claimPath) {
         if (claims == null || claimPath == null) return null;
 

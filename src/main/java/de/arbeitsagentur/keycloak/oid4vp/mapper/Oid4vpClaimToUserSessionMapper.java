@@ -33,6 +33,14 @@ import org.keycloak.models.UserModel;
 import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.utils.StringUtil;
 
+/**
+ * Maps claims from verified OID4VP credentials to Keycloak user session notes.
+ *
+ * <p>Session notes are transient key-value pairs attached to the user session. They can be
+ * included in tokens using a "User Session Note" protocol mapper. This is useful for passing
+ * credential claims (e.g. issuer, credential type) through to relying parties without persisting
+ * them as user attributes. Also drives DCQL query generation like the attribute mapper.
+ */
 public class Oid4vpClaimToUserSessionMapper extends AbstractIdentityProviderMapper {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpClaimToUserSessionMapper.class);

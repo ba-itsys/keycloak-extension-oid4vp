@@ -19,6 +19,15 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import java.util.List;
 import org.keycloak.provider.ProviderConfigProperty;
 
+/**
+ * Shared configuration property definitions for OID4VP identity provider mappers.
+ *
+ * <p>Provides reusable Keycloak {@link ProviderConfigProperty} instances for credential format,
+ * credential type, claim path, multivalued, and optional flags. Used by both
+ * {@link de.arbeitsagentur.keycloak.oid4vp.mapper.Oid4vpClaimToUserAttributeMapper} and
+ * {@link de.arbeitsagentur.keycloak.oid4vp.mapper.Oid4vpClaimToUserSessionMapper} to present
+ * consistent configuration in the Keycloak Admin Console.
+ */
 public final class Oid4vpMapperConfigProperties {
 
     public static final String CREDENTIAL_FORMAT = "credential.format";

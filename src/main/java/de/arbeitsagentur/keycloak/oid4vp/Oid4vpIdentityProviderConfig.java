@@ -21,6 +21,14 @@ import java.time.Duration;
 import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.utils.StringUtil;
 
+/**
+ * Configuration model for the OID4VP Identity Provider.
+ *
+ * <p>Wraps the Keycloak {@link IdentityProviderModel} and provides typed accessors for all
+ * OID4VP-specific settings: credential formats, client ID schemes, HAIP enforcement, trust list
+ * URL, SSE polling parameters, and claim mappings. Implements {@link Oid4vpConfigProvider} for
+ * use by domain services without depending on the full Keycloak model.
+ */
 public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implements Oid4vpConfigProvider {
 
     public static final String DCQL_QUERY = "dcqlQuery";
