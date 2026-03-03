@@ -611,6 +611,43 @@ class KeycloakOid4vpE2eIT {
                 .contains("request_uri=");
     }
 
+    @Test
+    @Order(16)
+    void loginWithEncryptedRequestObject() throws Exception {
+        // A wallet that requires encrypted request objects sends wallet_metadata
+        // with an encryption key when fetching the request object. The verifier
+        // must encrypt the signed JWT as a JWE before returning it.
+        callback.reset();
+        flow.clearBrowserSession();
+        Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient, REALM);
+
+        Oid4vcContainer encWallet = new Oid4vcContainer()
+                .withHostAccess()
+                .withNetwork(network)
+                .withRequireEncryptedRequest()
+                .withStatusList()
+                .withStatusListBaseUrl("http://oid4vc-dev:8085")
+                .withLogConsumer(frame ->
+                        LOG.info("[OID4VC-ENC] {}", frame.getUtf8String().stripTrailing()));
+        encWallet.start();
+
+        try {
+            String kcUrl = "http://localhost:" + keycloak.getMappedPort(8080);
+            Oid4vpLoginFlowHelper encFlow =
+                    new Oid4vpLoginFlowHelper(page, context, encWallet, kcUrl, callback.localCallbackUrl(), REALM);
+
+            encFlow.navigateToLoginPage();
+            encFlow.clickOid4vpIdpButton();
+            String walletUrl = encFlow.getSameDeviceWalletUrl();
+            PresentationResponse response = encFlow.submitToWallet(walletUrl);
+            encFlow.waitForLoginCompletion(response);
+            encFlow.completeFirstBrokerLoginIfNeeded("enc-request-user");
+            encFlow.assertLoginSucceeded();
+        } finally {
+            encWallet.stop();
+        }
+    }
+
     // ===== Composite Helpers =====
 
     private void assertRevokedCredentialIsRejected(String formatLabel) throws Exception {

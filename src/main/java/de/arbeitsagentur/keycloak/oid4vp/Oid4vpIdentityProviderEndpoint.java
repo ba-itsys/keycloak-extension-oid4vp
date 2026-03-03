@@ -22,9 +22,11 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.DecryptedResponse;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestObjectParams;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SignedRequestObject;
+import de.arbeitsagentur.keycloak.oid4vp.domain.WalletMetadata;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpCrossDeviceSseService;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
+import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectEncryptor;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpResponseDecryptor;
 import jakarta.enterprise.inject.Vetoed;
@@ -204,7 +206,7 @@ public class Oid4vpIdentityProviderEndpoint {
     @Produces(REQUEST_OBJECT_CONTENT_TYPE)
     public Response getRequestObject(
             @PathParam(PARAM_REQUEST_HANDLE) String requestHandle, @QueryParam(FLOW_PARAM) String flow) {
-        return generateRequestObject(requestHandle, flow, null);
+        return generateRequestObject(requestHandle, flow, null, null);
     }
 
     @POST
@@ -214,11 +216,13 @@ public class Oid4vpIdentityProviderEndpoint {
     public Response postRequestObject(
             @PathParam(PARAM_REQUEST_HANDLE) String requestHandle,
             @QueryParam(FLOW_PARAM) String flow,
-            @FormParam(WALLET_NONCE) String walletNonce) {
-        return generateRequestObject(requestHandle, flow, walletNonce);
+            @FormParam(WALLET_NONCE) String walletNonce,
+            @FormParam(WALLET_METADATA) String walletMetadata) {
+        return generateRequestObject(requestHandle, flow, walletNonce, walletMetadata);
     }
 
-    private Response generateRequestObject(String requestHandle, String flow, String walletNonce) {
+    private Response generateRequestObject(
+            String requestHandle, String flow, String walletNonce, String walletMetadataJson) {
         if (StringUtil.isBlank(requestHandle)) {
             return jsonErrorResponse(Response.Status.BAD_REQUEST, "invalid_request", "Missing request handle");
         }
@@ -276,9 +280,22 @@ public class Oid4vpIdentityProviderEndpoint {
                 }
             }
 
-            return Response.ok(signedRequest.jwt())
-                    .type(REQUEST_OBJECT_CONTENT_TYPE)
-                    .build();
+            String responseJwt = signedRequest.jwt();
+
+            if (StringUtil.isNotBlank(walletMetadataJson)) {
+                try {
+                    WalletMetadata walletMeta = WalletMetadata.parse(walletMetadataJson);
+                    responseJwt = Oid4vpRequestObjectEncryptor.encrypt(responseJwt, walletMeta);
+                } catch (Exception e) {
+                    LOG.warnf("Failed to encrypt request object per wallet_metadata: %s", e.getMessage());
+                    return jsonErrorResponse(
+                            Response.Status.BAD_REQUEST,
+                            "invalid_request",
+                            "Failed to encrypt request object: " + e.getMessage());
+                }
+            }
+
+            return Response.ok(responseJwt).type(REQUEST_OBJECT_CONTENT_TYPE).build();
         } catch (Exception e) {
             LOG.errorf(e, "Failed to generate request object: %s", e.getMessage());
             return jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", e.getMessage());

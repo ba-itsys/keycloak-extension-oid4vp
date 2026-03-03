@@ -59,6 +59,8 @@ This method:
 
 Returns `SignedRequestObject(jwt, encryptionKeyJson)`. Back in the endpoint, if encryption was used, the KID is stored for later lookup.
 
+7. **Encrypts if wallet_metadata present** (POST only) — if the wallet included a `wallet_metadata` form parameter with encryption keys (`jwks`), the signed JWT is wrapped in a JWE using ECDH-ES with the wallet's public key (`Oid4vpRequestObjectEncryptor.encrypt`). The `cty` header is set to `oauth-authz-req+jwt` to indicate a nested JWT. The HTTP content type remains `application/oauth-authz-req+jwt`.
+
 ## Phase 2: Wallet Posts VP Token
 
 The wallet verifies the request, prompts the user, and POSTs the VP token.
@@ -176,4 +178,5 @@ Errors can occur at multiple points:
 | `Oid4vpRequestObjectStore` | Transient storage for request handles, state→session mappings, KID→key mappings |
 | `Oid4vpAuthSessionResolver` | Auth session lookup from request object store (state→session, rootSessionId→tabId) |
 | `Oid4vpResponseDecryptor` | JWE decryption for direct_post.jwt responses |
+| `Oid4vpRequestObjectEncryptor` | JWE encryption for request objects when wallet sends wallet_metadata |
 | `DcqlQueryBuilder` | Builds DCQL queries from IdP mapper configurations |
