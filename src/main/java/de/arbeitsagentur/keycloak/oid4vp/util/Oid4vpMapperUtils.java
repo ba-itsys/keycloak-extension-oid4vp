@@ -159,8 +159,8 @@ public final class Oid4vpMapperUtils {
         for (String part : pathParts) {
             if ("null".equals(part)) {
                 // DCQL null: select all elements of the current array
-                if (current instanceof List<?> list) {
-                    current = new ArrayList<>(list);
+                if (current instanceof List<?>) {
+                    // DCQL null: select all elements — list is already the value
                 } else {
                     current = null;
                     break;

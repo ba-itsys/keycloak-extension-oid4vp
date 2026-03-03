@@ -59,7 +59,7 @@ class Oid4vpRedirectFlowServiceHaipTest {
     @BeforeEach
     void setUp() throws Exception {
         KeycloakSession session = Mockito.mock(KeycloakSession.class);
-        service = new Oid4vpRedirectFlowService(session, new ObjectMapper());
+        service = new Oid4vpRedirectFlowService(session);
 
         signingKey = new ECKeyGenerator(Curve.P_256).generate();
         X509Certificate cert = generateSelfSignedCert(signingKey);

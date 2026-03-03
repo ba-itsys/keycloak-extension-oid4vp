@@ -24,7 +24,6 @@ import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import jakarta.ws.rs.core.Response;
 import java.net.URI;
-import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.forms.login.LoginFormsProvider;
@@ -70,59 +69,6 @@ class Oid4vpDirectPostServiceTest {
         Oid4vpRequestObjectStore store = mock(Oid4vpRequestObjectStore.class);
 
         service = new Oid4vpDirectPostService(session, realm, config, resolver, store);
-    }
-
-    @Test
-    void handleCompletion_noEntry_returnsBadRequest() {
-        when(singleUseObjects.remove(CROSS_DEVICE_COMPLETE_PREFIX + "token123")).thenReturn(null);
-
-        Response response = service.handleCompletion("token123");
-
-        assertThat(response.getStatus()).isEqualTo(400);
-    }
-
-    @Test
-    void handleCompletion_missingRedirectUri_returnsServerError() {
-        when(singleUseObjects.remove(CROSS_DEVICE_COMPLETE_PREFIX + "token123"))
-                .thenReturn(Map.of(KEY_ROOT_SESSION_ID, "root-1"));
-
-        Response response = service.handleCompletion("token123");
-
-        assertThat(response.getStatus()).isEqualTo(500);
-    }
-
-    @Test
-    void handleCompletion_validEntry_redirects() {
-        String redirectUri = "http://localhost:8080/realms/test/broker/oid4vp/endpoint/complete-auth?state=abc";
-        when(singleUseObjects.remove(CROSS_DEVICE_COMPLETE_PREFIX + "token123"))
-                .thenReturn(Map.of(KEY_COMPLETE_AUTH_URL, redirectUri));
-
-        Response response = service.handleCompletion("token123");
-
-        assertThat(response.getStatus()).isEqualTo(302);
-        assertThat(response.getLocation().toString()).isEqualTo(redirectUri);
-    }
-
-    @Test
-    void handleCompletion_walletSource_redirectsSameAsBrowser() {
-        String redirectUri = "http://localhost:8080/realms/test/broker/oid4vp/endpoint/complete-auth?state=abc";
-        when(singleUseObjects.remove(CROSS_DEVICE_COMPLETE_PREFIX + "token123"))
-                .thenReturn(Map.of(KEY_COMPLETE_AUTH_URL, redirectUri));
-
-        Response response = service.handleCompletion("token123");
-
-        assertThat(response.getStatus()).isEqualTo(302);
-        assertThat(response.getLocation().toString()).isEqualTo(redirectUri);
-    }
-
-    @Test
-    void handleCompletion_openRedirectAttempt_returnsBadRequest() {
-        when(singleUseObjects.remove(CROSS_DEVICE_COMPLETE_PREFIX + "token123"))
-                .thenReturn(Map.of(KEY_COMPLETE_AUTH_URL, "https://evil.example.com/steal"));
-
-        Response response = service.handleCompletion("token123");
-
-        assertThat(response.getStatus()).isEqualTo(400);
     }
 
     @Test

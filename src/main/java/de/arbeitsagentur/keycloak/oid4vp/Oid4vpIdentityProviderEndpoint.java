@@ -39,8 +39,8 @@ import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriBuilder;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import org.jboss.logging.Logger;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
@@ -49,7 +49,6 @@ import org.keycloak.broker.provider.IdentityBrokerException;
 import org.keycloak.events.Errors;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.events.EventType;
-import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
@@ -93,131 +92,96 @@ public class Oid4vpIdentityProviderEndpoint {
         this.sseService = new Oid4vpCrossDeviceSseService(session, realm, provider.getConfig());
     }
 
-    private IdentityProviderModel getIdpModel() {
-        return provider.getConfig();
-    }
-
+    /**
+     * Handles GET requests to the endpoint. This is a fallback for wallets that redirect errors
+     * via GET instead of using direct_post. Not part of the normal OID4VP flow.
+     */
     @GET
     public Response handleGet(
-            @QueryParam(OAuth2Constants.STATE) String state,
             @QueryParam(OAuth2Constants.ERROR) String error,
             @QueryParam(OAuth2Constants.ERROR_DESCRIPTION) String errorDescription) {
 
-        AuthenticationSessionModel authSession = session.getContext().getAuthenticationSession();
-        if (authSession == null && state != null) {
-            authSession = authSessionResolver.resolveFromStore(state, null);
-        }
-
         if (StringUtil.isNotBlank(error)) {
-            if (authSession != null) {
-                return handleError(error, errorDescription, false);
-            }
             event.event(EventType.LOGIN_ERROR)
                     .detail(OAuth2Constants.ERROR, error)
                     .detail(OAuth2Constants.ERROR_DESCRIPTION, errorDescription)
                     .error(Errors.IDENTITY_PROVIDER_ERROR);
-            return callback.error(getIdpModel(), error + (errorDescription != null ? ": " + errorDescription : ""));
+            String message = error + (errorDescription != null ? ": " + errorDescription : "");
+            return callback.error(provider.getConfig(), message);
         }
 
-        return callback.error(getIdpModel(), "No credential response received");
+        return callback.error(provider.getConfig(), "No credential response received");
     }
 
     @POST
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     public Response handlePost(
-            @QueryParam(OAuth2Constants.STATE) String queryState,
-            @QueryParam(PARAM_TAB_ID) String tabId,
             @QueryParam(FLOW_PARAM) String flow,
-            @FormParam(OAuth2Constants.STATE) String formState,
+            @FormParam(OAuth2Constants.STATE) String state,
             @FormParam(VP_TOKEN) String vpToken,
             @FormParam(RESPONSE) String encryptedResponse,
             @FormParam(OAuth2Constants.ERROR) String error,
             @FormParam(OAuth2Constants.ERROR_DESCRIPTION) String errorDescription) {
 
         try {
-            return handlePostInternal(
-                    queryState, tabId, flow, formState, vpToken, encryptedResponse, error, errorDescription);
-        } catch (Exception e) {
-            LOG.errorf(e, "Uncaught exception in handlePost: %s", e.getMessage());
-            return jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", e.getMessage());
-        }
-    }
+            boolean isCrossDeviceFlow = FLOW_CROSS_DEVICE.equals(flow);
 
-    private Response handlePostInternal(
-            String queryState,
-            String tabId,
-            String flow,
-            String formState,
-            String vpToken,
-            String encryptedResponse,
-            String error,
-            String errorDescription) {
-
-        boolean isCrossDeviceFlow = FLOW_CROSS_DEVICE.equals(flow);
-        String state = StringUtil.isNotBlank(queryState) ? queryState : formState;
-
-        // Resolve state + decryption key from KID when state is absent (direct_post.jwt flow)
-        ECKey kidBasedKey = null;
-        if (StringUtil.isBlank(state) && StringUtil.isNotBlank(encryptedResponse)) {
-            ResolvedKid resolved = resolveFromKid(encryptedResponse);
-            if (resolved != null) {
-                kidBasedKey = resolved.key();
-                state = resolved.state();
-            }
-        }
-
-        // Resolve auth session
-        boolean isDirectPostFlow = isCrossDeviceFlow;
-        AuthenticationSessionModel authSession = authSessionResolver.resolve(state, tabId, callback);
-        if (authSession == null && state != null) {
-            authSession = authSessionResolver.resolveFromStore(state, null);
-            if (authSession != null) {
-                isDirectPostFlow = true;
-            }
-        }
-
-        if (authSession == null) {
-            event.event(EventType.LOGIN_ERROR).error(Errors.SESSION_EXPIRED);
-            return jsonErrorResponse(Response.Status.BAD_REQUEST, "session_expired", null);
-        }
-
-        // Decrypt if encrypted
-        boolean wasEncrypted = false;
-        if (StringUtil.isNotBlank(encryptedResponse)) {
-            if (kidBasedKey != null) {
-                DecryptedResponse decrypted = responseDecryptor.decrypt(encryptedResponse, kidBasedKey);
-                wasEncrypted = true;
-                vpToken = decrypted.vpToken() != null ? decrypted.vpToken() : vpToken;
-                error = decrypted.error() != null ? decrypted.error() : error;
-                errorDescription = decrypted.error() != null ? decrypted.errorDescription() : errorDescription;
-                if (decrypted.mdocGeneratedNonce() != null) {
-                    authSession.setAuthNote(SESSION_MDOC_GENERATED_NONCE, decrypted.mdocGeneratedNonce());
+            // Resolve state + decryption key from KID when state is absent (direct_post.jwt flow)
+            ECKey kidBasedKey = null;
+            if (StringUtil.isBlank(state) && StringUtil.isNotBlank(encryptedResponse)) {
+                ResolvedKid resolved = resolveFromKid(encryptedResponse);
+                if (resolved != null) {
+                    kidBasedKey = resolved.key();
+                    state = resolved.state();
                 }
             }
-        }
 
-        if (isDirectPostFlow) {
+            // Resolve auth session from the state→session index
+            AuthenticationSessionModel authSession = authSessionResolver.resolveFromStore(state, null);
+
+            if (authSession == null) {
+                event.event(EventType.LOGIN_ERROR).error(Errors.SESSION_EXPIRED);
+                return jsonErrorResponse(Response.Status.BAD_REQUEST, "session_expired", null);
+            }
+
+            // Decrypt if encrypted
+            boolean wasEncrypted = false;
+            if (StringUtil.isNotBlank(encryptedResponse)) {
+                if (kidBasedKey != null) {
+                    DecryptedResponse decrypted = responseDecryptor.decrypt(encryptedResponse, kidBasedKey);
+                    wasEncrypted = true;
+                    vpToken = decrypted.vpToken() != null ? decrypted.vpToken() : vpToken;
+                    error = decrypted.error() != null ? decrypted.error() : error;
+                    errorDescription = decrypted.error() != null ? decrypted.errorDescription() : errorDescription;
+                    if (decrypted.mdocGeneratedNonce() != null) {
+                        authSession.setAuthNote(SESSION_MDOC_GENERATED_NONCE, decrypted.mdocGeneratedNonce());
+                    }
+                }
+            }
+
             String actualResponseUri = UriBuilder.fromUri(
                             session.getContext().getUri().getRequestUri())
                     .replaceQueryParam(OAuth2Constants.STATE)
                     .build()
                     .toString();
             authSession.setAuthNote(SESSION_RESPONSE_URI, actualResponseUri);
-        }
 
-        if (StringUtil.isNotBlank(error)) {
-            return handleError(error, errorDescription, isDirectPostFlow);
-        }
+            if (StringUtil.isNotBlank(error)) {
+                return handleError(error, errorDescription);
+            }
 
-        boolean encryptionExpected = provider.getConfig().isEnforceHaip();
-        if (encryptionExpected && !wasEncrypted) {
-            return handleError(
-                    "identity_provider_error",
-                    "Encrypted response expected (direct_post.jwt) but received unencrypted vp_token.",
-                    isDirectPostFlow);
-        }
+            boolean encryptionExpected = provider.getConfig().isEnforceHaip();
+            if (encryptionExpected && !wasEncrypted) {
+                return handleError(
+                        "identity_provider_error",
+                        "Encrypted response expected (direct_post.jwt) but received unencrypted vp_token.");
+            }
 
-        return processVpToken(authSession, state, vpToken, isDirectPostFlow, isCrossDeviceFlow);
+            return processVpToken(authSession, state, vpToken, isCrossDeviceFlow);
+        } catch (Exception e) {
+            LOG.errorf(e, "Uncaught exception in handlePost: %s", e.getMessage());
+            return jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", e.getMessage());
+        }
     }
 
     private record ResolvedKid(ECKey key, String state) {}
@@ -276,8 +240,12 @@ public class Oid4vpIdentityProviderEndpoint {
 
         try {
             String state = authSession.getAuthNote(SESSION_STATE);
-            String nonce = authSession.getAuthNote(SESSION_NONCE);
             String effectiveClientId = authSession.getAuthNote(SESSION_EFFECTIVE_CLIENT_ID);
+
+            // Generate a fresh nonce for each request-object fetch to prevent replay attacks.
+            // A captured VP token from a failed attempt must not be valid for subsequent requests.
+            String nonce = UUID.randomUUID().toString();
+            authSession.setAuthNote(SESSION_NONCE, nonce);
 
             String responseUri = computeResponseUri(flow);
             authSession.setAuthNote(SESSION_RESPONSE_URI, responseUri);
@@ -340,15 +308,6 @@ public class Oid4vpIdentityProviderEndpoint {
     }
 
     @GET
-    @Path("/cross-device/complete")
-    public Response crossDeviceComplete(@QueryParam(PARAM_TOKEN) String token) {
-        if (StringUtil.isBlank(token)) {
-            return jsonErrorResponse(Response.Status.BAD_REQUEST, "invalid_request", "Missing token parameter");
-        }
-        return directPostService.handleCompletion(token);
-    }
-
-    @GET
     @Path("/complete-auth")
     public Response completeAuth(@QueryParam(OAuth2Constants.STATE) String state) {
         if (StringUtil.isBlank(state)) {
@@ -358,69 +317,68 @@ public class Oid4vpIdentityProviderEndpoint {
     }
 
     private Response processVpToken(
-            AuthenticationSessionModel authSession,
-            String state,
-            String vpToken,
-            boolean isDirectPostFlow,
-            boolean isCrossDeviceFlow) {
+            AuthenticationSessionModel authSession, String state, String vpToken, boolean isCrossDeviceFlow) {
 
         try {
             BrokeredIdentityContext context = provider.getCallbackProcessor().process(authSession, state, vpToken);
-
-            if (isDirectPostFlow) {
-                return handleDirectPostAuthentication(authSession, state, context, isCrossDeviceFlow);
-            }
-
-            context.setAuthenticationSession(authSession);
-            event.event(EventType.LOGIN);
-            return callback.authenticated(context);
-
+            return directPostService.storeAndSignal(authSession, state, context, isCrossDeviceFlow);
         } catch (IdentityBrokerException e) {
-            return handleError("identity_provider_error", e.getMessage(), isDirectPostFlow);
+            return handleError("identity_provider_error", e.getMessage());
         } catch (Exception e) {
             LOG.errorf(e, "Failed to process VP token: %s", e.getMessage());
             return jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", e.getMessage());
         }
     }
 
-    private Response handleDirectPostAuthentication(
-            AuthenticationSessionModel authSession,
-            String state,
-            BrokeredIdentityContext context,
-            boolean isCrossDeviceFlow) {
-        return directPostService.storeAndSignal(authSession, state, context, isCrossDeviceFlow);
-    }
-
-    private Response handleError(String error, String errorDescription, boolean isDirectPostFlow) {
+    private Response handleError(String error, String errorDescription) {
 
         event.event(EventType.LOGIN_ERROR)
                 .detail(OAuth2Constants.ERROR, error)
                 .detail(OAuth2Constants.ERROR_DESCRIPTION, errorDescription)
                 .error(Errors.IDENTITY_PROVIDER_ERROR);
 
-        if (isDirectPostFlow) {
-            return jsonErrorResponse(Response.Status.BAD_REQUEST, error, errorDescription);
-        }
+        // Return a redirect_uri so the wallet can redirect the browser to the error page.
+        // The GET handler renders the error via callback.error().
+        String errorRedirectUri = buildErrorRedirectUri(error, errorDescription);
+        return jsonRedirectResponse(errorRedirectUri);
+    }
 
-        String message = error + (errorDescription != null ? ": " + errorDescription : "");
-        return callback.error(getIdpModel(), message);
+    private String buildErrorRedirectUri(String error, String errorDescription) {
+        String base = Oid4vpConstants.buildEndpointBaseUrl(
+                session.getContext().getUri().getBaseUri(),
+                realm.getName(),
+                provider.getConfig().getAlias());
+        UriBuilder builder = UriBuilder.fromUri(base);
+        builder.queryParam(OAuth2Constants.ERROR, error);
+        if (errorDescription != null) {
+            builder.queryParam(OAuth2Constants.ERROR_DESCRIPTION, errorDescription);
+        }
+        return builder.build().toString();
+    }
+
+    private Response jsonRedirectResponse(String redirectUri) {
+        try {
+            String json = JsonSerialization.writeValueAsString(Map.of(OAuth2Constants.REDIRECT_URI, redirectUri));
+            return Response.ok(json).type(MediaType.APPLICATION_JSON).build();
+        } catch (Exception e) {
+            return Response.ok("{\"redirect_uri\":\"\"}")
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
     }
 
     private Response jsonErrorResponse(Response.Status status, String error, String description) {
         try {
-            Map<String, String> body = new HashMap<>();
-            body.put(OAuth2Constants.ERROR, error);
-            if (description != null) {
-                body.put(OAuth2Constants.ERROR_DESCRIPTION, description);
-            }
-            String json = JsonSerialization.writeValueAsString(body);
+            Object body = description != null
+                    ? Map.of(OAuth2Constants.ERROR, error, OAuth2Constants.ERROR_DESCRIPTION, description)
+                    : Map.of(OAuth2Constants.ERROR, error);
             return Response.status(status)
-                    .entity(json)
+                    .entity(JsonSerialization.writeValueAsString(body))
                     .type(MediaType.APPLICATION_JSON)
                     .build();
         } catch (Exception e) {
             return Response.status(status)
-                    .entity("{\"error\":\"" + error + "\"}")
+                    .entity("{\"error\":\"server_error\"}")
                     .type(MediaType.APPLICATION_JSON)
                     .build();
         }

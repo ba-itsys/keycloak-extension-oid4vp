@@ -22,10 +22,8 @@ import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
 import java.util.Map;
 import org.jboss.logging.Logger;
 import org.keycloak.OAuth2Constants;
@@ -37,11 +35,9 @@ import org.keycloak.events.EventType;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.services.ErrorPage;
-import org.keycloak.services.managers.AuthenticationSessionManager;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.sessions.RootAuthenticationSessionModel;
 import org.keycloak.util.JsonSerialization;
-import org.keycloak.utils.StringUtil;
 
 public class Oid4vpDirectPostService {
 
@@ -106,15 +102,20 @@ public class Oid4vpDirectPostService {
         }
 
         String completeAuthUrl = buildCompleteAuthUrl(state);
-        Map<String, String> deferredSignal = new HashMap<>();
-        deferredSignal.put(KEY_ROOT_SESSION_ID, rootSessionId != null ? rootSessionId : "");
-        deferredSignal.put(KEY_TAB_ID, tabId != null ? tabId : "");
-        session.singleUseObjects().put(DEFERRED_AUTH_PREFIX + state, crossDeviceCompleteTtlSeconds, deferredSignal);
-
-        Map<String, String> completeEntry = new HashMap<>();
-        completeEntry.put(KEY_COMPLETE_AUTH_URL, completeAuthUrl);
         session.singleUseObjects()
-                .put(CROSS_DEVICE_COMPLETE_PREFIX + state, crossDeviceCompleteTtlSeconds, completeEntry);
+                .put(
+                        DEFERRED_AUTH_PREFIX + state,
+                        crossDeviceCompleteTtlSeconds,
+                        Map.of(
+                                KEY_ROOT_SESSION_ID,
+                                rootSessionId != null ? rootSessionId : "",
+                                KEY_TAB_ID,
+                                tabId != null ? tabId : ""));
+        session.singleUseObjects()
+                .put(
+                        CROSS_DEVICE_COMPLETE_PREFIX + state,
+                        crossDeviceCompleteTtlSeconds,
+                        Map.of(KEY_COMPLETE_AUTH_URL, completeAuthUrl));
 
         if (isCrossDevice) {
             return Response.ok("{}").type(MediaType.APPLICATION_JSON).build();
@@ -137,20 +138,12 @@ public class Oid4vpDirectPostService {
         String rootSessionId = signal.get(KEY_ROOT_SESSION_ID);
         String tabId = signal.get(KEY_TAB_ID);
 
-        if (rootSessionId != null) {
-            try {
-                new AuthenticationSessionManager(session).setAuthSessionCookie(rootSessionId);
-            } catch (Exception e) {
-                LOG.warnf("Failed to set AUTH_SESSION_ID cookie: %s", e.getMessage());
-            }
-        }
-
         AuthenticationSessionModel authSession = null;
         if (rootSessionId != null) {
             RootAuthenticationSessionModel rootSession =
                     session.authenticationSessions().getRootAuthenticationSession(realm, rootSessionId);
             if (rootSession != null && tabId != null) {
-                authSession = authSessionResolver.findAuthSessionInRoot(rootSession, tabId);
+                authSession = rootSession.getAuthenticationSessions().get(tabId);
             }
         }
         if (authSession == null) {
@@ -202,31 +195,6 @@ public class Oid4vpDirectPostService {
         }
 
         return response;
-    }
-
-    public Response handleCompletion(String token) {
-        Map<String, String> entry = session.singleUseObjects().remove(CROSS_DEVICE_COMPLETE_PREFIX + token);
-        if (entry == null) {
-            return ErrorPage.error(
-                    session, null, Response.Status.BAD_REQUEST, "Session expired. Please try logging in again.");
-        }
-
-        String redirectUri = entry.get(KEY_COMPLETE_AUTH_URL);
-
-        if (StringUtil.isBlank(redirectUri)) {
-            return ErrorPage.error(
-                    session, null, Response.Status.INTERNAL_SERVER_ERROR, "Authentication failed. Please try again.");
-        }
-
-        String baseUri = session.getContext().getUri().getBaseUri().toString();
-        if (!redirectUri.startsWith(baseUri)) {
-            LOG.warnf("Redirect URI does not start with base URI: %s", redirectUri);
-            return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, "Invalid redirect.");
-        }
-
-        return Response.status(Response.Status.FOUND)
-                .location(URI.create(redirectUri))
-                .build();
     }
 
     public String buildCompleteAuthUrl(String state) {

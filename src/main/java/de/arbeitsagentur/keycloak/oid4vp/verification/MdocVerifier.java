@@ -47,11 +47,6 @@ public class MdocVerifier {
         }
     }
 
-    public MdocVerificationResult verify(String deviceResponseToken, List<PublicKey> trustedKeys) {
-        // Legacy method for backward compatibility
-        return verifyWithCertificates(deviceResponseToken, trustedKeys, List.of());
-    }
-
     public MdocVerificationResult verifyWithTrustedCerts(
             String deviceResponseToken, List<X509Certificate> trustedCertificates) {
         List<PublicKey> trustedKeys =
@@ -94,34 +89,14 @@ public class MdocVerifier {
         if (document.ContainsKey("docType")) {
             return document.get("docType").AsString();
         }
-
-        // Try to extract from MSO
-        CBORObject issuerSigned = document.get("issuerSigned");
-        if (issuerSigned != null && issuerSigned.ContainsKey("issuerAuth")) {
-            try {
-                CBORObject issuerAuth = issuerSigned.get("issuerAuth");
-                CBORObject sign1;
-                if (issuerAuth.getType() == CBORType.Array && issuerAuth.size() == 4) {
-                    sign1 = issuerAuth;
-                } else {
-                    sign1 = CBORObject.DecodeFromBytes(issuerAuth.GetByteString());
-                }
-                CBORObject payload = sign1.get(2);
-                CBORObject mso;
-                if (payload.HasMostOuterTag(24)) {
-                    mso = CBORObject.DecodeFromBytes(
-                            CBORObject.DecodeFromBytes(payload.EncodeToBytes()).GetByteString());
-                } else {
-                    mso = CBORObject.DecodeFromBytes(payload.GetByteString());
-                }
-                if (mso.ContainsKey("docType")) {
-                    return mso.get("docType").AsString();
-                }
-            } catch (Exception e) {
-                LOG.debugf("Failed to extract docType from MSO: %s", e.getMessage());
+        try {
+            CBORObject mso = parseMso(document);
+            if (mso != null && mso.ContainsKey("docType")) {
+                return mso.get("docType").AsString();
             }
+        } catch (Exception e) {
+            LOG.debugf("Failed to extract docType from MSO: %s", e.getMessage());
         }
-
         return "mso_mdoc";
     }
 
@@ -305,7 +280,6 @@ public class MdocVerifier {
             List<X509Certificate> chain = new ArrayList<>();
 
             if (x5chainObj.getType() == CBORType.ByteString) {
-                // Single certificate
                 chain.add(
                         (X509Certificate) cf.generateCertificate(new ByteArrayInputStream(x5chainObj.GetByteString())));
             } else if (x5chainObj.getType() == CBORType.Array) {
@@ -319,32 +293,7 @@ public class MdocVerifier {
                 return null;
             }
 
-            X509Certificate leaf = chain.get(0);
-            LOG.debugf(
-                    "mDoc x5chain leaf certificate: %s",
-                    leaf.getSubjectX500Principal().getName());
-
-            // Walk up the chain
-            for (int i = 0; i < chain.size() - 1; i++) {
-                chain.get(i).verify(chain.get(i + 1).getPublicKey());
-            }
-
-            // Verify top of chain is signed by a trusted certificate
-            X509Certificate topOfChain = chain.get(chain.size() - 1);
-            for (X509Certificate trusted : trustedCertificates) {
-                try {
-                    topOfChain.verify(trusted.getPublicKey());
-                    LOG.debugf(
-                            "mDoc x5chain anchored by trusted certificate: %s",
-                            trusted.getSubjectX500Principal().getName());
-                    return leaf.getPublicKey();
-                } catch (Exception ignored) {
-                    // Try next
-                }
-            }
-
-            LOG.debug("mDoc x5chain not anchored by any trusted certificate");
-            return null;
+            return X5cChainValidator.validateCertChain(chain, trustedCertificates);
         } catch (Exception e) {
             LOG.debugf("Failed to extract/validate mDoc x5chain: %s", e.getMessage());
             return null;

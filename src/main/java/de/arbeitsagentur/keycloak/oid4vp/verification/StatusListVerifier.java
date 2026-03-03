@@ -21,11 +21,9 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import java.io.ByteArrayInputStream;
 import java.security.PublicKey;
-import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
@@ -196,7 +194,7 @@ public class StatusListVerifier {
                 : null;
         if (x5c != null && !x5c.isEmpty()) {
             try {
-                PublicKey leafKey = validateX5cChain(x5c, trustedCerts);
+                PublicKey leafKey = X5cChainValidator.validateChain(x5c, trustedCerts);
                 DefaultJWSVerifierFactory factory = new DefaultJWSVerifierFactory();
                 JWSVerifier verifier = factory.createJWSVerifier(signedJWT.getHeader(), leafKey);
                 if (signedJWT.verify(verifier)) {
@@ -229,44 +227,6 @@ public class StatusListVerifier {
         throw new IllegalStateException("Status list JWT signature verification failed: no trusted key matched");
     }
 
-    private PublicKey validateX5cChain(List<String> x5c, List<X509Certificate> trustedCertificates) throws Exception {
-        CertificateFactory cf = CertificateFactory.getInstance("X.509");
-
-        List<X509Certificate> chain = new ArrayList<>();
-        for (String certB64 : x5c) {
-            byte[] certDer = Base64.getDecoder().decode(certB64);
-            chain.add((X509Certificate) cf.generateCertificate(new ByteArrayInputStream(certDer)));
-        }
-
-        if (chain.isEmpty()) {
-            throw new IllegalStateException("Empty x5c chain");
-        }
-
-        X509Certificate leaf = chain.get(0);
-        LOG.debugf(
-                "Status list JWT x5c leaf certificate: %s",
-                leaf.getSubjectX500Principal().getName());
-
-        for (int i = 0; i < chain.size() - 1; i++) {
-            chain.get(i).verify(chain.get(i + 1).getPublicKey());
-        }
-
-        X509Certificate topOfChain = chain.get(chain.size() - 1);
-        for (X509Certificate trusted : trustedCertificates) {
-            try {
-                topOfChain.verify(trusted.getPublicKey());
-                LOG.debugf(
-                        "Status list JWT x5c chain anchored by trusted certificate: %s",
-                        trusted.getSubjectX500Principal().getName());
-                return leaf.getPublicKey();
-            } catch (Exception ignored) {
-                // Try next trusted certificate
-            }
-        }
-
-        throw new IllegalStateException("Status list JWT x5c chain not anchored by any trusted certificate");
-    }
-
     private Instant resolveExpiry(JWTClaimsSet claimsSet) {
         Date exp = claimsSet.getExpirationTime();
         Instant expiry = exp != null ? exp.toInstant() : Instant.now();
@@ -288,11 +248,16 @@ public class StatusListVerifier {
     }
 
     static byte[] inflate(byte[] compressed) throws Exception {
-        try {
-            return new InflaterInputStream(new ByteArrayInputStream(compressed)).readAllBytes();
+        try (var is = new InflaterInputStream(new ByteArrayInputStream(compressed))) {
+            return is.readAllBytes();
         } catch (Exception e) {
             // Fallback: try raw DEFLATE (without zlib header)
-            return new InflaterInputStream(new ByteArrayInputStream(compressed), new Inflater(true)).readAllBytes();
+            Inflater rawInflater = new Inflater(true);
+            try (var is = new InflaterInputStream(new ByteArrayInputStream(compressed), rawInflater)) {
+                return is.readAllBytes();
+            } finally {
+                rawInflater.end();
+            }
         }
     }
 

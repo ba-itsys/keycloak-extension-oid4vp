@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import org.jboss.logging.Logger;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
@@ -33,6 +34,8 @@ import org.keycloak.models.SingleUseObjectProvider;
 import org.keycloak.util.JsonSerialization;
 
 public class Oid4vpCrossDeviceSseService {
+
+    private static final Logger LOG = Logger.getLogger(Oid4vpCrossDeviceSseService.class);
 
     private final KeycloakSessionFactory sessionFactory;
     private final String realmName;
@@ -80,6 +83,7 @@ public class Oid4vpCrossDeviceSseService {
                             }
                             pollingSession.getTransactionManager().commit();
                         } catch (Exception e) {
+                            LOG.warnf("Error during SSE poll iteration: %s", e.getMessage());
                             pollingSession.getTransactionManager().rollback();
                         }
                     }

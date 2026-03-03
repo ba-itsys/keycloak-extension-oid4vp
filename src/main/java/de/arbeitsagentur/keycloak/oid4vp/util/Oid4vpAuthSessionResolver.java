@@ -15,17 +15,12 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
-import org.jboss.logging.Logger;
-import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.sessions.RootAuthenticationSessionModel;
-import org.keycloak.utils.StringUtil;
 
 public class Oid4vpAuthSessionResolver {
-
-    private static final Logger LOG = Logger.getLogger(Oid4vpAuthSessionResolver.class);
 
     private final KeycloakSession session;
     private final RealmModel realm;
@@ -36,22 +31,6 @@ public class Oid4vpAuthSessionResolver {
         this.session = session;
         this.realm = realm;
         this.requestObjectStore = requestObjectStore;
-    }
-
-    public AuthenticationSessionModel resolve(
-            String state, String tabId, AbstractIdentityProvider.AuthenticationCallback callback) {
-        AuthenticationSessionModel authSession = session.getContext().getAuthenticationSession();
-        if (authSession != null) {
-            return authSession;
-        }
-        if (StringUtil.isNotBlank(tabId)) {
-            try {
-                return callback.getAndVerifyAuthenticationSession(state);
-            } catch (Exception e) {
-                LOG.debugf("Failed to resolve auth session via callback: %s", e.getMessage());
-            }
-        }
-        return null;
     }
 
     public AuthenticationSessionModel resolveFromStore(String state, String tabIdHint) {
@@ -82,10 +61,6 @@ public class Oid4vpAuthSessionResolver {
             return null;
         }
 
-        return tabId != null ? findAuthSessionInRoot(rootSession, tabId) : null;
-    }
-
-    public AuthenticationSessionModel findAuthSessionInRoot(RootAuthenticationSessionModel rootSession, String tabId) {
-        return rootSession.getAuthenticationSessions().get(tabId);
+        return tabId != null ? rootSession.getAuthenticationSessions().get(tabId) : null;
     }
 }

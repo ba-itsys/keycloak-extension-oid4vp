@@ -389,7 +389,7 @@ class KeycloakOid4vpE2eIT {
 
     @Test
     @Order(10)
-    void walletErrorShowsErrorAndAllowsRetry() throws Exception {
+    void walletErrorAllowsRetry() throws Exception {
         callback.reset();
         flow.clearBrowserSession();
         wallet.client().setNextError("access_denied", "User denied consent");
@@ -400,27 +400,19 @@ class KeycloakOid4vpE2eIT {
             String walletUrl = flow.getSameDeviceWalletUrl();
             PresentationResponse walletResponse = flow.submitToWallet(walletUrl);
 
-            String redirectUri = walletResponse.redirectUri();
-            if (redirectUri != null) {
-                page.navigate(redirectUri);
-                page.waitForLoadState();
-            }
-
-            Thread.sleep(2000);
-            String bodyText = page.locator("body").textContent().toLowerCase();
-            boolean hasError = bodyText.contains("error")
-                    || bodyText.contains("denied")
-                    || bodyText.contains("cancelled")
-                    || bodyText.contains("failed");
-
-            assertThat(hasError)
-                    .as(
-                            "Error page should be shown. URL: %s, Body: %s",
-                            page.url(), bodyText.substring(0, Math.min(500, bodyText.length())))
-                    .isTrue();
+            // The wallet rejects client-side without POSTing to the verifier,
+            // so the browser stays on the OID4VP login page.
+            assertThat(walletResponse.redirectUri()).isNull();
+            assertThat(walletResponse.rawBody()).contains("access_denied");
         } finally {
             wallet.client().clearNextError();
         }
+
+        // Verify the user can retry: clear the error and perform a successful login
+        flow.clearBrowserSession();
+        Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient, REALM);
+        performSameDeviceLogin("retry-user");
+        flow.assertLoginSucceeded();
     }
 
     @Test

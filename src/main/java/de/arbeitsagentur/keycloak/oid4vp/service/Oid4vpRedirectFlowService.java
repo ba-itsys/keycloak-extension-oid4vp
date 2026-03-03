@@ -17,7 +17,6 @@ package de.arbeitsagentur.keycloak.oid4vp.service;
 
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.EncryptionMethod;
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWEAlgorithm;
@@ -56,6 +55,7 @@ import org.keycloak.jose.jws.JWSBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.protocol.oidc.OIDCLoginProtocol;
+import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 
 public class Oid4vpRedirectFlowService {
@@ -63,11 +63,9 @@ public class Oid4vpRedirectFlowService {
     private static final Logger LOG = Logger.getLogger(Oid4vpRedirectFlowService.class);
 
     private final KeycloakSession session;
-    private final ObjectMapper objectMapper;
 
-    public Oid4vpRedirectFlowService(KeycloakSession session, ObjectMapper objectMapper) {
+    public Oid4vpRedirectFlowService(KeycloakSession session) {
         this.session = Objects.requireNonNull(session);
-        this.objectMapper = Objects.requireNonNull(objectMapper);
     }
 
     public URI buildWalletAuthorizationUrl(String walletScheme, String clientId, URI requestUri) {
@@ -78,8 +76,11 @@ public class Oid4vpRedirectFlowService {
 
         StringBuilder url = new StringBuilder();
         url.append(scheme).append("?");
-        url.append(OAuth2Constants.CLIENT_ID).append("=").append(urlEncode(clientId));
-        url.append("&").append(REQUEST_URI).append("=").append(urlEncode(requestUri.toString()));
+        url.append(OAuth2Constants.CLIENT_ID).append("=").append(URLEncoder.encode(clientId, StandardCharsets.UTF_8));
+        url.append("&")
+                .append(REQUEST_URI)
+                .append("=")
+                .append(URLEncoder.encode(requestUri.toString(), StandardCharsets.UTF_8));
         return URI.create(url.toString());
     }
 
@@ -121,13 +122,14 @@ public class Oid4vpRedirectFlowService {
                 throw new IllegalStateException("Failed to parse x509 signing key JWK", e);
             }
         }
-        return new ResolvedSigningKey(null, resolveSigningKey(null));
+        return new ResolvedSigningKey(null, resolveSigningKey());
     }
 
     private LinkedHashMap<String, Object> buildBaseClaims(
             String clientId, String responseUri, String state, String nonce, boolean enforceHaip, int lifespanSeconds) {
-        long issuedAt = Instant.now().getEpochSecond();
-        long expiresAt = Instant.now().plusSeconds(lifespanSeconds).getEpochSecond();
+        Instant now = Instant.now();
+        long issuedAt = now.getEpochSecond();
+        long expiresAt = now.plusSeconds(lifespanSeconds).getEpochSecond();
 
         var claims = new LinkedHashMap<String, Object>();
         claims.put("jti", UUID.randomUUID().toString());
@@ -148,10 +150,7 @@ public class Oid4vpRedirectFlowService {
 
     private void addClientMetadataClaim(LinkedHashMap<String, Object> claims, ECKey encryptionKey) {
         if (encryptionKey == null) return;
-        Map<String, Object> clientMeta = buildClientMetadata(encryptionKey);
-        if (!clientMeta.isEmpty()) {
-            claims.put(CLIENT_METADATA, clientMeta);
-        }
+        claims.put(CLIENT_METADATA, buildClientMetadata(encryptionKey));
     }
 
     private void addDcqlAndVerifierInfo(LinkedHashMap<String, Object> claims, String dcqlQuery, String verifierInfo) {
@@ -262,19 +261,10 @@ public class Oid4vpRedirectFlowService {
         return builder.jsonContent(claims).sign(new AsymmetricSignatureSignerContext(signingKey));
     }
 
-    private KeyWrapper resolveSigningKey(String preferredKid) {
+    private KeyWrapper resolveSigningKey() {
         RealmModel realm = session.getContext().getRealm();
         if (realm == null) {
             throw new IllegalStateException("Missing realm context");
-        }
-        if (StringUtil.isNotBlank(preferredKid)) {
-            return session.keys()
-                    .getKeysStream(realm)
-                    .filter(key -> preferredKid.equals(key.getKid()))
-                    .filter(key -> KeyUse.SIG.equals(key.getUse()))
-                    .filter(key -> key.getPrivateKey() != null)
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalStateException("Signing key not found: kid=" + preferredKid));
         }
         KeyWrapper key = session.keys().getActiveKey(realm, KeyUse.SIG, realm.getDefaultSignatureAlgorithm());
         if (key == null) {
@@ -297,24 +287,23 @@ public class Oid4vpRedirectFlowService {
     }
 
     private Map<String, Object> buildClientMetadata(ECKey responseEncryptionKey) {
+        ECKey publicKey = responseEncryptionKey.toPublicJWK();
+        Map<String, Object> jwk = new LinkedHashMap<>(publicKey.toJSONObject());
+        jwk.put("alg", JWEAlgorithm.ECDH_ES.getName());
+        jwk.put("use", "enc");
+
+        var vpFormats = new LinkedHashMap<String, Object>();
+        vpFormats.put(
+                FORMAT_SD_JWT_VC, Map.of("sd-jwt_alg_values", List.of("ES256"), "kb-jwt_alg_values", List.of("ES256")));
+        vpFormats.put(FORMAT_MSO_MDOC, Map.of("alg", List.of("ES256")));
+
         var meta = new LinkedHashMap<String, Object>();
-        if (responseEncryptionKey != null) {
-            ECKey publicKey = responseEncryptionKey.toPublicJWK();
-            Map<String, Object> jwk = new LinkedHashMap<>(publicKey.toJSONObject());
-            jwk.put("alg", JWEAlgorithm.ECDH_ES.getName());
-            jwk.put("use", "enc");
-            meta.put("jwks", Map.of("keys", List.of(jwk)));
-            meta.put("encrypted_response_alg_values_supported", List.of(JWEAlgorithm.ECDH_ES.getName()));
-            meta.put(
-                    "encrypted_response_enc_values_supported",
-                    List.of(EncryptionMethod.A128GCM.getName(), EncryptionMethod.A256GCM.getName()));
-            var vpFormats = new LinkedHashMap<String, Object>();
-            vpFormats.put(
-                    FORMAT_SD_JWT_VC,
-                    Map.of("sd-jwt_alg_values", List.of("ES256"), "kb-jwt_alg_values", List.of("ES256")));
-            vpFormats.put(FORMAT_MSO_MDOC, Map.of("alg", List.of("ES256")));
-            meta.put("vp_formats_supported", vpFormats);
-        }
+        meta.put("jwks", Map.of("keys", List.of(jwk)));
+        meta.put("encrypted_response_alg_values_supported", List.of(JWEAlgorithm.ECDH_ES.getName()));
+        meta.put(
+                "encrypted_response_enc_values_supported",
+                List.of(EncryptionMethod.A128GCM.getName(), EncryptionMethod.A256GCM.getName()));
+        meta.put("vp_formats_supported", vpFormats);
         return meta;
     }
 
@@ -336,13 +325,9 @@ public class Oid4vpRedirectFlowService {
             return null;
         }
         try {
-            return objectMapper.readValue(json, Object.class);
+            return JsonSerialization.readValue(json, Object.class);
         } catch (Exception e) {
             return json;
         }
-    }
-
-    private String urlEncode(String value) {
-        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 }

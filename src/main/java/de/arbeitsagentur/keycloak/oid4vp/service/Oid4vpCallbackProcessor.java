@@ -18,7 +18,6 @@ package de.arbeitsagentur.keycloak.oid4vp.service;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
@@ -72,8 +71,6 @@ public class Oid4vpCallbackProcessor {
             throw new IdentityBrokerException("Invalid state parameter");
         }
 
-        authSession.removeAuthNote(SESSION_MDOC_GENERATED_NONCE);
-
         if (StringUtil.isBlank(vpToken)) {
             throw new IdentityBrokerException("Missing vp_token");
         }
@@ -98,10 +95,10 @@ public class Oid4vpCallbackProcessor {
                 primary.credentialType(),
                 primary.claims().keySet());
 
-        String issuer = primary.issuer() != null ? primary.issuer() : "unknown";
+        String issuer = primary.issuer();
         String credentialType = primary.credentialType();
 
-        if (!configProvider.isIssuerAllowed(issuer)) {
+        if (issuer != null && !configProvider.isIssuerAllowed(issuer)) {
             throw new IdentityBrokerException("Issuer not allowed: " + issuer);
         }
         if (!configProvider.isCredentialTypeAllowed(credentialType)) {
@@ -110,9 +107,8 @@ public class Oid4vpCallbackProcessor {
 
         Map<String, Object> claims = Oid4vpMapperUtils.toMutableClaims(
                 vpResult.isMultiCredential() ? vpResult.mergedClaims() : primary.claims());
-        String credentialFormat = primary.presentationType() == PresentationType.MDOC
-                ? Oid4vpConstants.FORMAT_MSO_MDOC
-                : Oid4vpConstants.FORMAT_SD_JWT_VC;
+        String credentialFormat =
+                primary.presentationType() == PresentationType.MDOC ? FORMAT_MSO_MDOC : FORMAT_SD_JWT_VC;
         String userMappingClaimName = configProvider.getUserMappingClaimForFormat(credentialFormat);
         Object subjectObj = Oid4vpMapperUtils.getNestedValue(claims, userMappingClaimName);
         String subject = Oid4vpMapperUtils.toStringValue(subjectObj);
@@ -127,7 +123,9 @@ public class Oid4vpCallbackProcessor {
         context.setIdp(provider);
         context.setUsername(subject);
         context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CLAIMS_KEY, claims);
-        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_ISSUER_KEY, issuer);
+        if (issuer != null) {
+            context.getContextData().put(Oid4vpMapperUtils.CONTEXT_ISSUER_KEY, issuer);
+        }
         context.getContextData().put(Oid4vpMapperUtils.CONTEXT_SUBJECT_KEY, subject);
         context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CREDENTIAL_TYPE_KEY, credentialType);
         context.getContextData()
@@ -146,5 +144,6 @@ public class Oid4vpCallbackProcessor {
         authSession.removeAuthNote(SESSION_REDIRECT_FLOW_RESPONSE_URI);
         authSession.removeAuthNote(SESSION_CLIENT_ID);
         authSession.removeAuthNote(SESSION_EFFECTIVE_CLIENT_ID);
+        authSession.removeAuthNote(SESSION_MDOC_GENERATED_NONCE);
     }
 }

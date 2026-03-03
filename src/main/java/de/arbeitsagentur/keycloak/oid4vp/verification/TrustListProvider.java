@@ -186,12 +186,7 @@ public class TrustListProvider {
         CACHE.clear();
     }
 
-    record TrustListParseResult(List<X509Certificate> certificates, Instant expiresAt) {
-        /** Convenience accessor for public keys. */
-        List<PublicKey> keys() {
-            return certificates.stream().map(X509Certificate::getPublicKey).toList();
-        }
-    }
+    record TrustListParseResult(List<X509Certificate> certificates, Instant expiresAt) {}
 
     private record CachedTrustList(List<X509Certificate> certificates, Instant expiresAt) {
         boolean isValid() {
