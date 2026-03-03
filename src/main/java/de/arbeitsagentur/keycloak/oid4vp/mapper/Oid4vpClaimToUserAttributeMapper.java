@@ -119,8 +119,7 @@ public class Oid4vpClaimToUserAttributeMapper extends AbstractIdentityProviderMa
             return;
         }
 
-        String stringValue = claimValue.toString();
-        applyToContext(context, userAttribute, stringValue);
+        applyToContext(context, userAttribute, claimValue);
     }
 
     @Override
@@ -150,27 +149,32 @@ public class Oid4vpClaimToUserAttributeMapper extends AbstractIdentityProviderMa
             return;
         }
 
-        String stringValue = claimValue.toString();
-        applyToUser(user, userAttribute, stringValue);
+        applyToUser(user, userAttribute, claimValue);
     }
 
-    private void applyToContext(BrokeredIdentityContext context, String attribute, String value) {
+    private void applyToContext(BrokeredIdentityContext context, String attribute, Object claimValue) {
+        String stringValue = Oid4vpMapperUtils.toStringValue(claimValue);
+        if (stringValue == null) return;
+
         switch (attribute.toLowerCase()) {
-            case "email" -> context.setEmail(value);
-            case "firstname", "first_name", "givenname", "given_name" -> context.setFirstName(value);
-            case "lastname", "last_name", "familyname", "family_name" -> context.setLastName(value);
-            case "username" -> context.setUsername(value);
-            default -> context.setUserAttribute(attribute, value);
+            case "email" -> context.setEmail(stringValue);
+            case "firstname", "first_name", "givenname", "given_name" -> context.setFirstName(stringValue);
+            case "lastname", "last_name", "familyname", "family_name" -> context.setLastName(stringValue);
+            case "username" -> context.setUsername(stringValue);
+            default -> context.setUserAttribute(attribute, Oid4vpMapperUtils.toStringList(claimValue));
         }
     }
 
-    private void applyToUser(UserModel user, String attribute, String value) {
+    private void applyToUser(UserModel user, String attribute, Object claimValue) {
+        String stringValue = Oid4vpMapperUtils.toStringValue(claimValue);
+        if (stringValue == null) return;
+
         switch (attribute.toLowerCase()) {
-            case "email" -> user.setEmail(value);
-            case "firstname", "first_name", "givenname", "given_name" -> user.setFirstName(value);
-            case "lastname", "last_name", "familyname", "family_name" -> user.setLastName(value);
-            case "username" -> user.setUsername(value);
-            default -> user.setSingleAttribute(attribute, value);
+            case "email" -> user.setEmail(stringValue);
+            case "firstname", "first_name", "givenname", "given_name" -> user.setFirstName(stringValue);
+            case "lastname", "last_name", "familyname", "family_name" -> user.setLastName(stringValue);
+            case "username" -> user.setUsername(stringValue);
+            default -> user.setAttribute(attribute, Oid4vpMapperUtils.toStringList(claimValue));
         }
     }
 }

@@ -32,6 +32,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.Date;
+import java.util.Map;
 import javax.security.auth.x500.X500Principal;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
@@ -176,6 +177,26 @@ class MdocVerifierTest {
         assertThat(result.claims()).containsEntry("org.iso.18013.5.1.aamva/age_over_18", true);
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void verify_signedDocumentWithMsoStatus_extractsStatusClaim() throws Exception {
+        String token = buildSignedMdocWithStatus(
+                "eu.europa.ec.eudi.pid.1",
+                "eu.europa.ec.eudi.pid.1",
+                "https://status.example.com/list/1",
+                42,
+                new String[] {"given_name", "Alice"});
+
+        MdocVerificationResult result = verifier.verify(token, java.util.List.of(signingKeyPair.getPublic()));
+
+        assertThat(result.claims()).containsKey("status");
+        Map<String, Object> status = (Map<String, Object>) result.claims().get("status");
+        assertThat(status).containsKey("status_list");
+        Map<String, Object> statusList = (Map<String, Object>) status.get("status_list");
+        assertThat(statusList.get("uri")).isEqualTo("https://status.example.com/list/1");
+        assertThat(((Number) statusList.get("idx")).intValue()).isEqualTo(42);
+    }
+
     // ===== Helper Methods =====
 
     private String buildSignedMdoc(String docType, String namespace, String[]... claimPairs) throws Exception {
@@ -191,12 +212,44 @@ class MdocVerifierTest {
         return buildSignedMdocWithNameSpaces(docType, nameSpaces);
     }
 
+    private String buildSignedMdocWithStatus(
+            String docType, String namespace, String statusUri, int statusIdx, String[]... claimPairs)
+            throws Exception {
+        CBORObject nameSpaces = CBORObject.NewMap();
+        CBORObject elements = CBORObject.NewArray();
+        for (String[] pair : claimPairs) {
+            CBORObject item = CBORObject.NewMap();
+            item.Add("elementIdentifier", pair[0]);
+            item.Add("elementValue", pair[1]);
+            elements.Add(item);
+        }
+        nameSpaces.Add(namespace, elements);
+
+        // Build MSO with status
+        CBORObject mso = CBORObject.NewMap();
+        mso.Add("docType", docType);
+        mso.Add("version", "1.0");
+
+        CBORObject statusListObj = CBORObject.NewMap();
+        statusListObj.Add("idx", statusIdx);
+        statusListObj.Add("uri", statusUri);
+        CBORObject statusObj = CBORObject.NewMap();
+        statusObj.Add("status_list", statusListObj);
+        mso.Add("status", statusObj);
+
+        return buildSignedMdocWithMso(docType, nameSpaces, mso);
+    }
+
     private String buildSignedMdocWithNameSpaces(String docType, CBORObject nameSpaces) throws Exception {
         // Build MSO (Mobile Security Object)
         CBORObject mso = CBORObject.NewMap();
         mso.Add("docType", docType);
         mso.Add("version", "1.0");
 
+        return buildSignedMdocWithMso(docType, nameSpaces, mso);
+    }
+
+    private String buildSignedMdocWithMso(String docType, CBORObject nameSpaces, CBORObject mso) throws Exception {
         // Tag-24 wrap the MSO
         byte[] msoBytes = mso.EncodeToBytes();
         CBORObject taggedMso = CBORObject.FromObjectAndTag(CBORObject.FromObject(msoBytes), 24);

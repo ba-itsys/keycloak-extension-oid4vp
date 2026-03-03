@@ -73,9 +73,6 @@ public class VpTokenProcessor {
     }
 
     public VpTokenResult process(String vpToken, String clientId, String expectedNonce, String alternateResponseUri) {
-
-        LOG.tracef("Processing VP token (length=%d): %s", vpToken.length(), vpToken);
-
         List<X509Certificate> trustedCerts =
                 trustListProvider != null ? trustListProvider.getTrustedCertificates() : List.of();
         LOG.debugf("Trust list provides %d trusted keys", trustedCerts.size());

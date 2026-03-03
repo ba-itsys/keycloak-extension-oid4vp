@@ -122,6 +122,8 @@ public class DcqlQueryBuilder {
                 String type = mapper.getConfig().get("credential.type");
                 String claimPath = mapper.getConfig().get("claim");
                 boolean isOptional = "true".equalsIgnoreCase(mapper.getConfig().get("optional"));
+                boolean isMultivalued =
+                        "true".equalsIgnoreCase(mapper.getConfig().get("multivalued"));
 
                 if (StringUtil.isBlank(format)) {
                     format = Oid4vpConstants.FORMAT_SD_JWT_VC;
@@ -134,7 +136,7 @@ public class DcqlQueryBuilder {
                 formatByType.put(typeKey, format);
 
                 if (StringUtil.isNotBlank(claimPath)) {
-                    ClaimSpec claimSpec = new ClaimSpec(claimPath, isOptional);
+                    ClaimSpec claimSpec = new ClaimSpec(claimPath, isOptional, isMultivalued);
                     claimsByType
                             .computeIfAbsent(typeKey, k -> new ArrayList<>())
                             .add(claimSpec);

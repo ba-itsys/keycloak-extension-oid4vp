@@ -169,7 +169,61 @@ public class MdocVerifier {
             }
         }
 
+        // Extract status from MSO (Mobile Security Object) if present
+        extractMsoStatus(document, claims);
+
         return claims;
+    }
+
+    /**
+     * Extracts the {@code status} field from the MSO payload inside {@code issuerAuth}.
+     * The MSO may contain a {@code status.status_list} with {@code idx} and {@code uri}
+     * for revocation checking via Token Status List.
+     */
+    private void extractMsoStatus(CBORObject document, Map<String, Object> claims) {
+        try {
+            CBORObject mso = parseMso(document);
+            if (mso == null) {
+                return;
+            }
+
+            if (mso.ContainsKey("status")) {
+                Object statusValue = cborToJava(mso.get("status"));
+                claims.put("status", statusValue);
+                LOG.debugf("Extracted status from MSO: %s", statusValue);
+            }
+        } catch (Exception e) {
+            LOG.debugf("Failed to extract status from MSO: %s", e.getMessage());
+        }
+    }
+
+    /**
+     * Parses the MSO (Mobile Security Object) from the COSE_Sign1 issuerAuth payload.
+     * The payload is a CBOR ByteString that may contain a tag-24 wrapped MSO.
+     */
+    private CBORObject parseMso(CBORObject document) {
+        CBORObject issuerSigned = document.get("issuerSigned");
+        if (issuerSigned == null || !issuerSigned.ContainsKey("issuerAuth")) {
+            return null;
+        }
+
+        CBORObject issuerAuth = issuerSigned.get("issuerAuth");
+        CBORObject sign1;
+        if (issuerAuth.getType() == CBORType.Array && issuerAuth.size() == 4) {
+            sign1 = issuerAuth;
+        } else {
+            sign1 = CBORObject.DecodeFromBytes(issuerAuth.GetByteString());
+        }
+
+        // COSE_Sign1 element [2] is the payload: a ByteString containing the encoded MSO
+        CBORObject payload = sign1.get(2);
+        CBORObject decoded = CBORObject.DecodeFromBytes(payload.GetByteString());
+
+        // MSO may be tag-24 wrapped (bstr-wrapped CBOR)
+        if (decoded.HasMostOuterTag(24)) {
+            return CBORObject.DecodeFromBytes(decoded.GetByteString());
+        }
+        return decoded;
     }
 
     private void verifyIssuerSignature(

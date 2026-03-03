@@ -18,6 +18,7 @@ package de.arbeitsagentur.keycloak.oid4vp.util;
 import static org.assertj.core.api.Assertions.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
@@ -109,6 +110,83 @@ class Oid4vpMapperUtilsTest {
         claims.put("eu.europa.ec.eudi.pid.1/family_name", "Namespaced");
 
         assertThat(Oid4vpMapperUtils.getNestedValue(claims, "family_name")).isEqualTo("Direct");
+    }
+
+    @Test
+    void getNestedValue_nullPathSegment_selectsAllArrayElements() {
+        Map<String, Object> claims = Map.of("nationalities", List.of("DE", "FR"));
+
+        Object result = Oid4vpMapperUtils.getNestedValue(claims, "nationalities/null");
+        assertThat(result).isEqualTo(List.of("DE", "FR"));
+    }
+
+    @Test
+    void getNestedValue_nullPathSegment_onNonArray_returnsNull() {
+        Map<String, Object> claims = Map.of("name", "Alice");
+
+        assertThat(Oid4vpMapperUtils.getNestedValue(claims, "name/null")).isNull();
+    }
+
+    @Test
+    void toStringValue_scalarValue_returnsString() {
+        assertThat(Oid4vpMapperUtils.toStringValue("hello")).isEqualTo("hello");
+        assertThat(Oid4vpMapperUtils.toStringValue(42)).isEqualTo("42");
+    }
+
+    @Test
+    void toStringValue_list_returnsFirstElement() {
+        assertThat(Oid4vpMapperUtils.toStringValue(List.of("DE", "FR"))).isEqualTo("DE");
+    }
+
+    @Test
+    void toStringValue_emptyList_returnsNull() {
+        assertThat(Oid4vpMapperUtils.toStringValue(List.of())).isNull();
+    }
+
+    @Test
+    void toStringValue_null_returnsNull() {
+        assertThat(Oid4vpMapperUtils.toStringValue(null)).isNull();
+    }
+
+    @Test
+    void toStringList_list_returnsAllElements() {
+        assertThat(Oid4vpMapperUtils.toStringList(List.of("DE", "FR"))).containsExactly("DE", "FR");
+    }
+
+    @Test
+    void toStringList_scalar_wrapsInList() {
+        assertThat(Oid4vpMapperUtils.toStringList("DE")).containsExactly("DE");
+    }
+
+    @Test
+    void toStringList_null_returnsEmptyList() {
+        assertThat(Oid4vpMapperUtils.toStringList(null)).isEmpty();
+    }
+
+    @Test
+    void toMutableClaims_convertsImmutableCollections() {
+        Map<String, Object> claims = Map.of(
+                "name", "Alice",
+                "nationalities", List.of("DE", "FR"),
+                "address", Map.of("city", "Berlin", "tags", List.of("home")));
+
+        Map<String, Object> mutable = Oid4vpMapperUtils.toMutableClaims(claims);
+
+        // Values are equal
+        assertThat(mutable.get("name")).isEqualTo("Alice");
+        assertThat(mutable.get("nationalities")).isEqualTo(List.of("DE", "FR"));
+
+        // But collections are mutable (ArrayList/HashMap, not immutable)
+        assertThat(mutable.get("nationalities")).isInstanceOf(java.util.ArrayList.class);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> addr = (Map<String, Object>) mutable.get("address");
+        assertThat(addr).isInstanceOf(java.util.HashMap.class);
+        assertThat(addr.get("tags")).isInstanceOf(java.util.ArrayList.class);
+    }
+
+    @Test
+    void toMutableClaims_null_returnsNull() {
+        assertThat(Oid4vpMapperUtils.toMutableClaims(null)).isNull();
     }
 
     @Test

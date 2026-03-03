@@ -23,12 +23,7 @@ Two flows are supported: **same-device** (wallet app on the same device as the b
 
 ### Request Object: On-Demand Generation
 
-The OID4VP request object (a signed JWT containing the authorization parameters) is **not pre-built** when the login page loads. Instead, the login page only contains a `request_uri` pointing to the Keycloak endpoint. The request object is generated on the fly when the wallet actually fetches that URI.
-
-This design has several advantages:
-- **Retry-safe** -- If the wallet errors out (e.g., credential not yet issued), the user can scan the same QR code again and get a fresh request object with new timestamps and encryption keys.
-- **Lightweight** -- No signed JWTs are stored server-side; only a small session-to-token mapping.
-- **Single token** -- Both same-device and cross-device flows share the same request token, distinguished only by a `?flow=` query parameter.
+The OID4VP request object (a signed JWT containing the authorization parameters) is **not pre-built** when the login page loads. Instead, the login page only contains a `request_uri` pointing to the Keycloak endpoint. The request object is generated on the fly when the wallet actually fetches that URI. This means the same QR code can be scanned multiple times (e.g., after a wallet error) and each fetch produces a fresh request object with new timestamps and encryption keys.
 
 ### Presentation Flow
 
@@ -280,6 +275,20 @@ This will:
 4. Launch ngrok + Keycloak with the correct public HTTPS hostname
 
 The ngrok domain is auto-detected from the certificate's SAN DNS entry.
+
+**Certificate material:** Sandbox mode requires a `sandbox/` directory (gitignored) with two files:
+
+| File | Format | Description |
+|------|--------|-------------|
+| `sandbox-ngrok-combined.pem` | Combined PEM: leaf cert, optional intermediates, then EC private key (see [X.509 modes](#client-authentication-x509)) | Used for request object signing and `x5c` header. The certificate's SAN DNS entry determines the ngrok domain. |
+| `sandbox-verifier-info.json` | JSON object (or JWT-wrapped registration certificate) matching the `verifier_info` claim format | Included in the request object as verifier attestation. |
+
+Override the default location with `--pem` / `--verifier-info` flags, or set `SANDBOX_DIR` to point to a different directory:
+
+```bash
+SANDBOX_DIR=/opt/certs scripts/dev.sh
+scripts/dev.sh --pem /tmp/my.pem --verifier-info /tmp/vi.json
+```
 
 #### Options
 
