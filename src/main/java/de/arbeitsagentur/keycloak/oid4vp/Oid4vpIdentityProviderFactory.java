@@ -143,6 +143,28 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .helpText("JSON array of verifier attestations for EUDI Wallet registration certificates.")
                 .type(ProviderConfigProperty.TEXT_TYPE)
                 .add()
+                .property()
+                .name(Oid4vpIdentityProviderConfig.TRUST_LIST_URL)
+                .label("Trust List URL")
+                .helpText("URL of the ETSI TS 119 612 trust list JWT. "
+                        + "Used to verify issuer signatures on credentials (SD-JWT x5c chains and mDoc COSE_Sign1). "
+                        + "If empty, credential signature verification is skipped.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .add()
+                .property()
+                .name(Oid4vpIdentityProviderConfig.TRUST_LIST_MAX_CACHE_TTL_SECONDS)
+                .label("Trust List Cache TTL (seconds)")
+                .helpText("Maximum time to cache the trust list (overrides JWT expiry if shorter). "
+                        + "Leave empty to use the JWT's own expiration.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .add()
+                .property()
+                .name(Oid4vpIdentityProviderConfig.STATUS_LIST_MAX_CACHE_TTL_SECONDS)
+                .label("Status List Cache TTL (seconds)")
+                .helpText("Maximum time to cache credential status lists (overrides JWT expiry if shorter). "
+                        + "Leave empty to use the JWT's own expiration.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .add()
                 .build();
     }
 

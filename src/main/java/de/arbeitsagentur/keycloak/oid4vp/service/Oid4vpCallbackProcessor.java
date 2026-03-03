@@ -108,13 +108,14 @@ public class Oid4vpCallbackProcessor {
             throw new IdentityBrokerException("Credential type not allowed: " + credentialType);
         }
 
-        Map<String, Object> claims = vpResult.isMultiCredential() ? vpResult.mergedClaims() : primary.claims();
+        Map<String, Object> claims = Oid4vpMapperUtils.toMutableClaims(
+                vpResult.isMultiCredential() ? vpResult.mergedClaims() : primary.claims());
         String credentialFormat = primary.presentationType() == PresentationType.MDOC
                 ? Oid4vpConstants.FORMAT_MSO_MDOC
                 : Oid4vpConstants.FORMAT_SD_JWT_VC;
         String userMappingClaimName = configProvider.getUserMappingClaimForFormat(credentialFormat);
         Object subjectObj = Oid4vpMapperUtils.getNestedValue(claims, userMappingClaimName);
-        String subject = subjectObj != null ? subjectObj.toString() : null;
+        String subject = Oid4vpMapperUtils.toStringValue(subjectObj);
 
         if (StringUtil.isBlank(subject)) {
             throw new IdentityBrokerException("Missing subject claim '" + userMappingClaimName + "' in credential");

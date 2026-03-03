@@ -353,47 +353,42 @@ class KeycloakOid4vpE2eIT {
 
     @Test
     @Order(8)
-    void revokedCredentialIsRejected() throws Exception {
-        callback.reset();
-        flow.clearBrowserSession();
-        Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient, REALM);
-
-        var credentials = wallet.client().getCredentials();
-        assertThat(credentials).as("Wallet should have at least one credential").isNotEmpty();
-        String credentialId = credentials.get(0).id();
-        wallet.client().revokeCredential(credentialId);
-
-        try {
-            flow.navigateToLoginPage();
-            flow.clickOid4vpIdpButton();
-            String walletUrl = flow.getSameDeviceWalletUrl();
-            PresentationResponse walletResponse = flow.submitToWallet(walletUrl);
-
-            String redirectUri = walletResponse.redirectUri();
-            if (redirectUri != null) {
-                page.navigate(redirectUri);
-                page.waitForLoadState();
-            }
-
-            Thread.sleep(2000);
-            String bodyText = page.locator("body").textContent().toLowerCase();
-            boolean hasError = bodyText.contains("error")
-                    || bodyText.contains("revoked")
-                    || bodyText.contains("failed")
-                    || bodyText.contains("denied");
-
-            assertThat(hasError)
-                    .as(
-                            "Revoked credential should be rejected. URL: %s, Body: %s",
-                            page.url(), bodyText.substring(0, Math.min(500, bodyText.length())))
-                    .isTrue();
-        } finally {
-            wallet.client().unrevokeCredential(credentialId);
-        }
+    void revokedSdJwtCredentialIsRejected() throws Exception {
+        assertRevokedCredentialIsRejected("SD-JWT");
     }
 
     @Test
     @Order(9)
+    void revokedMdocCredentialIsRejected() throws Exception {
+        String mdocDcqlQuery = """
+                {
+                  "credentials": [
+                    {
+                      "id": "pid",
+                      "format": "mso_mdoc",
+                      "meta": { "doctype_value": "eu.europa.ec.eudi.pid.1" },
+                      "claims": [
+                        { "path": ["eu.europa.ec.eudi.pid.1", "family_name"] },
+                        { "path": ["eu.europa.ec.eudi.pid.1", "given_name"] },
+                        { "path": ["eu.europa.ec.eudi.pid.1", "birth_date"] }
+                      ]
+                    }
+                  ]
+                }
+                """;
+        Oid4vpTestKeycloakSetup.configureDcqlQuery(adminClient, REALM, mdocDcqlQuery);
+        wallet.client().setPreferredFormat(CredentialFormat.MSO_MDOC);
+
+        try {
+            assertRevokedCredentialIsRejected("mDoc", "eu.europa.ec.eudi.pid.1");
+        } finally {
+            wallet.client().clearPreferredFormat();
+            Oid4vpTestKeycloakSetup.configureDcqlQuery(adminClient, REALM, buildDefaultDcqlQuery());
+        }
+    }
+
+    @Test
+    @Order(10)
     void walletErrorShowsErrorAndAllowsRetry() throws Exception {
         callback.reset();
         flow.clearBrowserSession();
@@ -429,7 +424,7 @@ class KeycloakOid4vpE2eIT {
     }
 
     @Test
-    @Order(10)
+    @Order(11)
     void requestObjectCanBeFetchedMultipleTimes() throws Exception {
         callback.reset();
         flow.clearBrowserSession();
@@ -482,7 +477,7 @@ class KeycloakOid4vpE2eIT {
     }
 
     @Test
-    @Order(11)
+    @Order(12)
     void loginSucceedsAfterMultipleRequestObjectFetches() throws Exception {
         callback.reset();
         flow.clearBrowserSession();
@@ -514,7 +509,7 @@ class KeycloakOid4vpE2eIT {
     }
 
     @Test
-    @Order(12)
+    @Order(13)
     void walletCanRespondUsingEarlierRequestObject() throws Exception {
         callback.reset();
         flow.clearBrowserSession();
@@ -541,7 +536,7 @@ class KeycloakOid4vpE2eIT {
     }
 
     @Test
-    @Order(13)
+    @Order(14)
     void loginWithX509CertChainPem() throws Exception {
         // Mimics dev.sh: combined PEM (cert chain + private key) stored in x509CertificatePem.
         // Before the fix, PemUtils.decodeCertificate failed with Base64 error when
@@ -595,7 +590,7 @@ class KeycloakOid4vpE2eIT {
     }
 
     @Test
-    @Order(14)
+    @Order(15)
     void loginWithCertOnlyPemAndRealmKey() throws Exception {
         // Cert-only mode: x509CertificatePem contains only the certificate (no private key).
         // Request objects are signed with the Keycloak realm key; the cert is used for
@@ -625,6 +620,60 @@ class KeycloakOid4vpE2eIT {
     }
 
     // ===== Composite Helpers =====
+
+    private void assertRevokedCredentialIsRejected(String formatLabel) throws Exception {
+        assertRevokedCredentialIsRejected(formatLabel, null);
+    }
+
+    private void assertRevokedCredentialIsRejected(String formatLabel, String credentialType) throws Exception {
+        callback.reset();
+        flow.clearBrowserSession();
+        Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient, REALM);
+
+        String credentialId;
+        if (credentialType != null) {
+            var typedCredentials = wallet.client().getCredentialsByType(credentialType);
+            assertThat(typedCredentials)
+                    .as("Wallet should have a credential of type %s", credentialType)
+                    .isNotEmpty();
+            credentialId = typedCredentials.get(0).id();
+        } else {
+            var credentials = wallet.client().getCredentials();
+            assertThat(credentials)
+                    .as("Wallet should have at least one credential")
+                    .isNotEmpty();
+            credentialId = credentials.get(0).id();
+        }
+        wallet.client().revokeCredential(credentialId);
+
+        try {
+            flow.navigateToLoginPage();
+            flow.clickOid4vpIdpButton();
+            String walletUrl = flow.getSameDeviceWalletUrl();
+            PresentationResponse walletResponse = flow.submitToWallet(walletUrl);
+
+            String redirectUri = walletResponse.redirectUri();
+            if (redirectUri != null) {
+                page.navigate(redirectUri);
+                page.waitForLoadState();
+            }
+
+            Thread.sleep(2000);
+            String bodyText = page.locator("body").textContent().toLowerCase();
+            boolean hasError = bodyText.contains("error")
+                    || bodyText.contains("revoked")
+                    || bodyText.contains("failed")
+                    || bodyText.contains("denied");
+
+            assertThat(hasError)
+                    .as(
+                            "Revoked %s credential should be rejected. URL: %s, Body: %s",
+                            formatLabel, page.url(), bodyText.substring(0, Math.min(500, bodyText.length())))
+                    .isTrue();
+        } finally {
+            wallet.client().unrevokeCredential(credentialId);
+        }
+    }
 
     private void performSameDeviceLogin(String usernamePrefix) throws Exception {
         flow.navigateToLoginPage();
@@ -681,7 +730,7 @@ class KeycloakOid4vpE2eIT {
         keycloak.withCopyFileToContainer(
                 MountableFile.forHostPath(providerJar), "/opt/keycloak/providers/" + providerJar.getFileName());
 
-        Path deps = Path.of("target/providers").toAbsolutePath();
+        Path deps = Path.of("target/dependency").toAbsolutePath();
         if (!Files.isDirectory(deps)) {
             return;
         }
@@ -744,7 +793,7 @@ class KeycloakOid4vpE2eIT {
     private static Path findProviderJar() throws IOException {
         Path target = Path.of("target").toAbsolutePath();
         try (Stream<Path> stream = Files.list(target)) {
-            return stream.filter(path -> path.getFileName().toString().startsWith("keycloak-extension-wallet-"))
+            return stream.filter(path -> path.getFileName().toString().startsWith("keycloak-extension-oid4vp-"))
                     .filter(path -> path.getFileName().toString().endsWith(".jar"))
                     .filter(path -> !path.getFileName().toString().endsWith("-sources.jar"))
                     .filter(path -> !path.getFileName().toString().endsWith("-javadoc.jar"))

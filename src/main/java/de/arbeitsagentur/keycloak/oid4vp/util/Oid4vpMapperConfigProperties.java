@@ -24,6 +24,7 @@ public final class Oid4vpMapperConfigProperties {
     public static final String CREDENTIAL_FORMAT = "credential.format";
     public static final String CREDENTIAL_TYPE = "credential.type";
     public static final String CLAIM_PATH = "claim";
+    public static final String MULTIVALUED = "multivalued";
     public static final String OPTIONAL = "optional";
 
     private Oid4vpMapperConfigProperties() {}
@@ -50,7 +51,9 @@ public final class Oid4vpMapperConfigProperties {
 
     public static ProviderConfigProperty claimPath() {
         return claimPath(
-                "Path to the claim in the credential. Use '/' for nested paths (e.g., 'given_name', 'eu.europa.ec.eudi.pid.1/family_name').");
+                "Path to the claim in the credential. Use '/' for nested paths (e.g., 'given_name', 'address/street_address'). "
+                        + "For array claims, use 'nationalities' or 'nationalities/null' depending on wallet support "
+                        + "(null requests all array elements per DCQL spec).");
     }
 
     public static ProviderConfigProperty claimPath(String helpText) {
@@ -59,6 +62,17 @@ public final class Oid4vpMapperConfigProperties {
         prop.setLabel("Claim Path");
         prop.setHelpText(helpText);
         prop.setType(ProviderConfigProperty.STRING_TYPE);
+        return prop;
+    }
+
+    public static ProviderConfigProperty multivalued() {
+        ProviderConfigProperty prop = new ProviderConfigProperty();
+        prop.setName(MULTIVALUED);
+        prop.setLabel("Multi-Valued");
+        prop.setHelpText("Enable for array-valued claims (e.g., nationalities). "
+                + "Stores all values as a multi-valued Keycloak attribute.");
+        prop.setType(ProviderConfigProperty.BOOLEAN_TYPE);
+        prop.setDefaultValue("false");
         return prop;
     }
 
@@ -76,6 +90,7 @@ public final class Oid4vpMapperConfigProperties {
         properties.add(credentialFormat());
         properties.add(credentialType());
         properties.add(claimPath());
+        properties.add(multivalued());
         properties.add(optional());
     }
 }

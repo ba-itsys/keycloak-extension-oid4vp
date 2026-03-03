@@ -67,13 +67,13 @@ class Oid4vpMapperConfigPropertiesTest {
     }
 
     @Test
-    void addCommonProperties_addsFourProperties() {
+    void addCommonProperties_addsFiveProperties() {
         List<ProviderConfigProperty> properties = new ArrayList<>();
 
         Oid4vpMapperConfigProperties.addCommonProperties(properties);
 
-        assertThat(properties).hasSize(4);
+        assertThat(properties).hasSize(5);
         assertThat(properties.stream().map(ProviderConfigProperty::getName))
-                .containsExactly("credential.format", "credential.type", "claim", "optional");
+                .containsExactly("credential.format", "credential.type", "claim", "multivalued", "optional");
     }
 }

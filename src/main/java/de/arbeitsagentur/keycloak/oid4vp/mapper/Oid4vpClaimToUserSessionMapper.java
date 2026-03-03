@@ -119,7 +119,9 @@ public class Oid4vpClaimToUserSessionMapper extends AbstractIdentityProviderMapp
             return;
         }
 
-        context.setSessionNote(sessionNote, claimValue.toString());
+        String stringValue = Oid4vpMapperUtils.toStringValue(claimValue);
+        if (stringValue == null) return;
+        context.setSessionNote(sessionNote, stringValue);
     }
 
     @Override

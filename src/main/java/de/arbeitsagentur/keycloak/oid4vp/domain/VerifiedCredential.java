@@ -28,13 +28,17 @@ public record VerifiedCredential(
         Map<String, Object> claims,
         PresentationType presentationType) {
 
+    /**
+     * Generates a stable identity key from the subject claim only.
+     * The key is scoped to the IdP alias by Keycloak, so issuer is not included —
+     * this allows the same user to authenticate with different credential formats
+     * (SD-JWT / mDoc) and still be matched to the same Keycloak identity.
+     */
     public String generateIdentityKey(String subject) {
-        String normalizedIssuer = normalize(issuer);
         String normalizedSubject = normalize(subject);
-        String input = normalizedIssuer + "|" + normalizedSubject;
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+            byte[] hash = digest.digest(normalizedSubject.getBytes(StandardCharsets.UTF_8));
             return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
         } catch (Exception e) {
             throw new IllegalStateException("SHA-256 not available", e);

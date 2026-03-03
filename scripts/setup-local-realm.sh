@@ -365,7 +365,8 @@ cat > "$REALM_OUT" <<REALMEOF
         "syncMode": "INHERIT",
         "credential.format": "dc+sd-jwt",
         "credential.type": "urn:eudi:pid:de:1",
-        "claim": "nationalities/null",
+        "claim": "nationalities",
+        "multivalued": "true",
         "user.attribute": "nationality"
       }
     },

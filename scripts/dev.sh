@@ -31,7 +31,7 @@ Options:
   --no-proxy               Disable oid4vc-dev proxy even if available
   --no-ngrok               Run Keycloak without ngrok (localhost only)
   --ngrok-only             Start only ngrok tunnel, no Keycloak
-  --wallet-port <port>     oid4vc-dev wallet port (default: 8085, only with --local-wallet)
+  --wallet-port <port>     oid4vc-dev wallet port (default: 8086, only with --local-wallet)
   -h, --help               Show this help
 
 Environment variables (override defaults):

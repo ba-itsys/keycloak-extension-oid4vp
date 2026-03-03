@@ -20,12 +20,16 @@ import java.util.List;
 import java.util.stream.Collectors;
 import org.keycloak.utils.StringUtil;
 
-public record ClaimSpec(String path, boolean optional) {
+public record ClaimSpec(String path, boolean optional, boolean multivalued) {
 
     private static final String PATH_SEPARATOR = "/";
 
     public ClaimSpec(String path) {
-        this(path, false);
+        this(path, false, false);
+    }
+
+    public ClaimSpec(String path, boolean optional) {
+        this(path, optional, false);
     }
 
     public List<Object> toDcqlPath(String format, String type) {

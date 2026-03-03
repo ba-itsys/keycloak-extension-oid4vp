@@ -16,7 +16,11 @@
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.models.IdentityProviderMapperModel;
@@ -77,6 +81,71 @@ public final class Oid4vpMapperUtils {
         return presentationType;
     }
 
+    /**
+     * Converts a claim value to a string. If the value is a list, returns the first element's
+     * string representation. Returns {@code null} for null, empty list, or empty string values.
+     */
+    public static String toStringValue(Object claimValue) {
+        if (claimValue == null) return null;
+
+        if (claimValue instanceof List<?> list) {
+            if (list.isEmpty()) return null;
+            return list.get(0).toString();
+        }
+
+        return claimValue.toString();
+    }
+
+    /**
+     * Converts a claim value to a list of strings for multi-valued Keycloak attributes.
+     * Scalar values are wrapped in a single-element list.
+     */
+    public static List<String> toStringList(Object claimValue) {
+        if (claimValue == null) return new ArrayList<>();
+
+        if (claimValue instanceof List<?> list) {
+            return list.stream().map(Object::toString).collect(Collectors.toList());
+        }
+
+        ArrayList<String> result = new ArrayList<>(1);
+        result.add(claimValue.toString());
+        return result;
+    }
+
+    /**
+     * Deep-copies a claims map so that all nested Maps and Lists are mutable standard types
+     * (HashMap/ArrayList). This is required because Keycloak's {@code SerializedBrokeredIdentityContext}
+     * round-trips context data through JSON and fails when it encounters immutable collection types.
+     */
+    @SuppressWarnings("unchecked")
+    public static Map<String, Object> toMutableClaims(Map<String, Object> claims) {
+        if (claims == null) return null;
+        Map<String, Object> result = new HashMap<>(claims.size());
+        for (Map.Entry<String, Object> entry : claims.entrySet()) {
+            result.put(entry.getKey(), toMutableValue(entry.getValue()));
+        }
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Object toMutableValue(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> result = new HashMap<>(map.size());
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                result.put(String.valueOf(entry.getKey()), toMutableValue(entry.getValue()));
+            }
+            return result;
+        }
+        if (value instanceof List<?> list) {
+            List<Object> result = new ArrayList<>(list.size());
+            for (Object item : list) {
+                result.add(toMutableValue(item));
+            }
+            return result;
+        }
+        return value;
+    }
+
     public static Object getNestedValue(Map<String, Object> claims, String claimPath) {
         if (claims == null || claimPath == null) return null;
 
@@ -84,11 +153,19 @@ public final class Oid4vpMapperUtils {
         Object direct = claims.get(claimPath);
         if (direct != null) return direct;
 
-        // Fall back to nested path navigation
+        // Fall back to nested path navigation (supports DCQL-style null for array traversal)
         String[] pathParts = claimPath.split("/");
         Object current = claims;
         for (String part : pathParts) {
-            if (current instanceof Map) {
+            if ("null".equals(part)) {
+                // DCQL null: select all elements of the current array
+                if (current instanceof List<?> list) {
+                    current = new ArrayList<>(list);
+                } else {
+                    current = null;
+                    break;
+                }
+            } else if (current instanceof Map) {
                 current = ((Map<?, ?>) current).get(part);
                 if (current == null) break;
             } else {
