@@ -209,10 +209,13 @@ Alternatively, add it via realm import JSON:
 
 Both the trust list and the token status list are cached based on the JWT `exp` claim. If no `exp` is present, the response is not cached. You can optionally cap the maximum cache duration.
 
+When a trust list refresh fails (e.g., network timeout), the extension can fall back to a stale (expired) cache entry within a configurable time window. This prevents transient network issues from blocking all credential verifications.
+
 | Key | Description | Default |
 |-----|-------------|---------|
 | `statusListMaxCacheTtlSeconds` | Maximum cache duration for token status lists (seconds). When set, the cache TTL is the minimum of this value and the JWT `exp`. | *(use JWT exp)* |
 | `trustListMaxCacheTtlSeconds` | Maximum cache duration for the trust list (seconds). When set, the cache TTL is the minimum of this value and the JWT `exp`. | *(use JWT exp)* |
+| `trustListMaxStaleAgeSeconds` | Maximum age of a stale (expired) trust list cache entry that can be used as fallback when a trust list refresh fails. Set to `0` to disable stale cache usage entirely. | `86400` (1 day) |
 
 #### Cross-Device SSE (Server-Sent Events)
 

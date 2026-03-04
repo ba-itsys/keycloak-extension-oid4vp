@@ -90,7 +90,8 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                         config.getTrustListMaxCacheTtl(),
                         config.getClockSkewSeconds(),
                         config.getKbJwtMaxAgeSeconds(),
-                        trustListSigningCerts));
+                        trustListSigningCerts,
+                        config.getTrustListMaxStaleAge()));
 
         RealmModel realm = session.getContext().getRealm();
         this.loginTimeoutSeconds = realm != null ? realm.getAccessCodeLifespanLogin() : 1800;

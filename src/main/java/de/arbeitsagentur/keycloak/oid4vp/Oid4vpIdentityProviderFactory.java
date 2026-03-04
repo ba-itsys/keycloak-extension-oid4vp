@@ -183,6 +183,15 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
+                .name(Oid4vpIdentityProviderConfig.TRUST_LIST_MAX_STALE_AGE_SECONDS)
+                .label("Trust List Max Stale Age (seconds)")
+                .helpText("Maximum age of a stale (expired) trust list cache entry that can be used as fallback "
+                        + "when a trust list refresh fails (e.g., network timeout). "
+                        + "Set to 0 to disable stale cache usage entirely.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .defaultValue(String.valueOf(Oid4vpIdentityProviderConfig.DEFAULT_TRUST_LIST_MAX_STALE_AGE_SECONDS))
+                .add()
+                .property()
                 .name(Oid4vpIdentityProviderConfig.STATUS_LIST_MAX_CACHE_TTL_SECONDS)
                 .label("Status List Cache TTL (seconds)")
                 .helpText("Maximum time to cache credential status lists (overrides JWT expiry if shorter). "

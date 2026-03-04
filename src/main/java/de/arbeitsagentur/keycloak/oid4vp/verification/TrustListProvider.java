@@ -47,21 +47,23 @@ public class TrustListProvider {
 
     private static final Logger LOG = Logger.getLogger(TrustListProvider.class);
     private static final ConcurrentHashMap<String, CachedTrustList> CACHE = new ConcurrentHashMap<>();
+    static final Duration DEFAULT_MAX_STALE_AGE = Duration.ofDays(1);
 
     private final KeycloakSession session;
     private final String trustListUrl;
     private final List<X509Certificate> staticCertificates;
     private final Duration maxCacheTtl;
+    private final Duration maxStaleAge;
     private final List<X509Certificate> signingCertificates;
 
     /** Creates a provider that fetches the trust list from the given URL. */
     public TrustListProvider(KeycloakSession session, String trustListUrl) {
-        this(session, trustListUrl, null, (List<X509Certificate>) null);
+        this(session, trustListUrl, null, null, (List<X509Certificate>) null);
     }
 
     /** Creates a provider that fetches the trust list from the given URL with a cache TTL cap. */
     public TrustListProvider(KeycloakSession session, String trustListUrl, Duration maxCacheTtl) {
-        this(session, trustListUrl, maxCacheTtl, (List<X509Certificate>) null);
+        this(session, trustListUrl, maxCacheTtl, null, (List<X509Certificate>) null);
     }
 
     /**
@@ -77,10 +79,27 @@ public class TrustListProvider {
             String trustListUrl,
             Duration maxCacheTtl,
             List<X509Certificate> signingCertificates) {
+        this(session, trustListUrl, maxCacheTtl, null, signingCertificates);
+    }
+
+    /**
+     * Creates a provider with full configuration.
+     *
+     * @param maxStaleAge maximum age of a stale (expired) cache entry that can be used as fallback
+     *     when a trust list refresh fails. If {@code null}, defaults to 1 day. Set to
+     *     {@link Duration#ZERO} to disable stale cache usage entirely.
+     */
+    public TrustListProvider(
+            KeycloakSession session,
+            String trustListUrl,
+            Duration maxCacheTtl,
+            Duration maxStaleAge,
+            List<X509Certificate> signingCertificates) {
         this.session = session;
         this.trustListUrl = trustListUrl;
         this.staticCertificates = null;
         this.maxCacheTtl = maxCacheTtl;
+        this.maxStaleAge = maxStaleAge != null ? maxStaleAge : DEFAULT_MAX_STALE_AGE;
         this.signingCertificates = signingCertificates;
     }
 
@@ -90,6 +109,7 @@ public class TrustListProvider {
         this.trustListUrl = null;
         this.staticCertificates = staticCertificates;
         this.maxCacheTtl = null;
+        this.maxStaleAge = DEFAULT_MAX_STALE_AGE;
         this.signingCertificates = null;
     }
 
@@ -128,13 +148,22 @@ public class TrustListProvider {
             TrustListParseResult result = parseTrustListJwt(jwt);
 
             Instant effectiveExpiry = capExpiry(result.expiresAt);
-            CACHE.put(trustListUrl, new CachedTrustList(result.certificates, effectiveExpiry));
+            CACHE.put(trustListUrl, new CachedTrustList(result.certificates, effectiveExpiry, Instant.now()));
 
             LOG.infof(
                     "Trust list loaded from %s: %d keys (expires %s)",
                     trustListUrl, result.certificates.size(), result.expiresAt);
             return result.certificates;
         } catch (Exception e) {
+            if (cached != null
+                    && !cached.certificates.isEmpty()
+                    && !Duration.ZERO.equals(maxStaleAge)
+                    && Instant.now().isBefore(cached.fetchedAt.plus(maxStaleAge))) {
+                LOG.warnf(
+                        "Failed to refresh trust list from %s: %s — using stale cache (%d keys, fetched %s, expired %s)",
+                        trustListUrl, e.getMessage(), cached.certificates.size(), cached.fetchedAt, cached.expiresAt);
+                return cached.certificates;
+            }
             LOG.warnf("Failed to fetch trust list from %s: %s", trustListUrl, e.getMessage());
             return List.of();
         }
@@ -260,9 +289,14 @@ public class TrustListProvider {
         CACHE.clear();
     }
 
+    /** Seeds the cache with an already-expired entry. Intended for testing stale cache fallback. */
+    static void seedExpiredCache(String url, List<X509Certificate> certificates, Instant expiredAt, Instant fetchedAt) {
+        CACHE.put(url, new CachedTrustList(certificates, expiredAt, fetchedAt));
+    }
+
     record TrustListParseResult(List<X509Certificate> certificates, Instant expiresAt) {}
 
-    private record CachedTrustList(List<X509Certificate> certificates, Instant expiresAt) {
+    private record CachedTrustList(List<X509Certificate> certificates, Instant expiresAt, Instant fetchedAt) {
         boolean isValid() {
             return Instant.now().isBefore(expiresAt);
         }
