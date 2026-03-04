@@ -22,10 +22,14 @@ import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWEAlgorithm;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
-import com.nimbusds.jose.crypto.ECDSASigner;
+import com.nimbusds.jose.JWSSigner;
+import com.nimbusds.jose.crypto.factories.DefaultJWSSignerFactory;
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
+import com.nimbusds.jose.jwk.OctetKeyPair;
+import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
+import com.nimbusds.jose.produce.JWSSignerFactory;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestObjectParams;
@@ -129,16 +133,16 @@ public class Oid4vpRedirectFlowService {
         return new SignedRequestObject(jwt, encryptionKeyJson);
     }
 
-    private record ResolvedSigningKey(ECKey ecKey, KeyWrapper keycloakKey) {
+    private record ResolvedSigningKey(com.nimbusds.jose.jwk.JWK nimbusKey, KeyWrapper keycloakKey) {
         boolean useNimbus() {
-            return ecKey != null;
+            return nimbusKey != null;
         }
     }
 
     private ResolvedSigningKey resolveSigningMaterial(String x509SigningKeyJwk) {
         if (StringUtil.isNotBlank(x509SigningKeyJwk)) {
             try {
-                return new ResolvedSigningKey(ECKey.parse(x509SigningKeyJwk), null);
+                return new ResolvedSigningKey(com.nimbusds.jose.jwk.JWK.parse(x509SigningKeyJwk), null);
             } catch (Exception e) {
                 throw new IllegalStateException("Failed to parse x509 signing key JWK", e);
             }
@@ -203,7 +207,7 @@ public class Oid4vpRedirectFlowService {
             LinkedHashMap<String, Object> claims) {
         try {
             if (resolved.useNimbus()) {
-                return signWithNimbus(resolved.ecKey(), claims);
+                return signWithNimbus(resolved.nimbusKey(), claims);
             }
             return signWithKeycloak(resolved.keycloakKey(), clientIdScheme, x509CertPem, claims);
         } catch (Exception e) {
@@ -253,14 +257,16 @@ public class Oid4vpRedirectFlowService {
         return certs[0];
     }
 
-    private String signWithNimbus(ECKey ecSigningKey, LinkedHashMap<String, Object> claims) throws Exception {
-        JWSHeader.Builder headerBuilder = new JWSHeader.Builder(JWSAlgorithm.ES256)
+    private String signWithNimbus(com.nimbusds.jose.jwk.JWK signingKey, LinkedHashMap<String, Object> claims)
+            throws Exception {
+        JWSAlgorithm algorithm = resolveJwsAlgorithm(signingKey);
+        JWSHeader.Builder headerBuilder = new JWSHeader.Builder(algorithm)
                 .type(new JOSEObjectType(REQUEST_OBJECT_TYP))
-                .keyID(ecSigningKey.getKeyID());
+                .keyID(signingKey.getKeyID());
 
-        if (ecSigningKey.getX509CertChain() != null
-                && !ecSigningKey.getX509CertChain().isEmpty()) {
-            headerBuilder.x509CertChain(ecSigningKey.getX509CertChain());
+        if (signingKey.getX509CertChain() != null
+                && !signingKey.getX509CertChain().isEmpty()) {
+            headerBuilder.x509CertChain(signingKey.getX509CertChain());
         }
 
         JWTClaimsSet.Builder claimsBuilder = new JWTClaimsSet.Builder();
@@ -268,9 +274,31 @@ public class Oid4vpRedirectFlowService {
             claimsBuilder.claim(entry.getKey(), entry.getValue());
         }
 
+        JWSSignerFactory signerFactory = new DefaultJWSSignerFactory();
+        JWSSigner signer = signerFactory.createJWSSigner(signingKey, algorithm);
         SignedJWT signedJwt = new SignedJWT(headerBuilder.build(), claimsBuilder.build());
-        signedJwt.sign(new ECDSASigner(ecSigningKey));
+        signedJwt.sign(signer);
         return signedJwt.serialize();
+    }
+
+    private static JWSAlgorithm resolveJwsAlgorithm(com.nimbusds.jose.jwk.JWK jwk) {
+        if (jwk.getAlgorithm() != null) {
+            return new JWSAlgorithm(jwk.getAlgorithm().getName());
+        }
+        if (jwk instanceof ECKey ecKey) {
+            Curve curve = ecKey.getCurve();
+            if (Curve.P_256.equals(curve)) return JWSAlgorithm.ES256;
+            if (Curve.P_384.equals(curve)) return JWSAlgorithm.ES384;
+            if (Curve.P_521.equals(curve)) return JWSAlgorithm.ES512;
+            throw new IllegalArgumentException("Unsupported EC curve: " + curve);
+        }
+        if (jwk instanceof RSAKey) {
+            return JWSAlgorithm.RS256;
+        }
+        if (jwk instanceof OctetKeyPair) {
+            return JWSAlgorithm.EdDSA;
+        }
+        throw new IllegalArgumentException("Unsupported JWK key type: " + jwk.getKeyType());
     }
 
     private String signWithKeycloak(
@@ -327,7 +355,10 @@ public class Oid4vpRedirectFlowService {
 
         var vpFormats = new LinkedHashMap<String, Object>();
         vpFormats.put(
-                FORMAT_SD_JWT_VC, Map.of("sd-jwt_alg_values", List.of("ES256"), "kb-jwt_alg_values", List.of("ES256")));
+                FORMAT_SD_JWT_VC,
+                Map.of(
+                        "sd-jwt_alg_values", List.of("ES256", "ES384", "ES512", "EdDSA"),
+                        "kb-jwt_alg_values", List.of("ES256", "ES384", "ES512", "EdDSA")));
         vpFormats.put(FORMAT_MSO_MDOC, Map.of("alg", List.of("ES256")));
 
         var meta = new LinkedHashMap<String, Object>();
@@ -349,6 +380,11 @@ public class Oid4vpRedirectFlowService {
         }
         if ("EC".equalsIgnoreCase(pubAlg)) {
             return builder.ec(key.getPublicKey(), KeyUse.SIG);
+        }
+        if ("EdDSA".equalsIgnoreCase(pubAlg)
+                || "Ed25519".equalsIgnoreCase(pubAlg)
+                || "Ed448".equalsIgnoreCase(pubAlg)) {
+            return builder.okp(key.getPublicKey(), KeyUse.SIG);
         }
         throw new IllegalStateException("Unsupported signing key algorithm: " + pubAlg);
     }

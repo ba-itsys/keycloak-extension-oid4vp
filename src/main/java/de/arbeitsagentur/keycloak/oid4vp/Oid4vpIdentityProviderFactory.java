@@ -17,12 +17,16 @@ package de.arbeitsagentur.keycloak.oid4vp;
 
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
+import com.nimbusds.jose.jwk.JWK;
+import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.util.Base64;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.security.cert.X509Certificate;
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
+import java.security.interfaces.RSAPublicKey;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -296,31 +300,20 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
             PrivateKey privateKey = PemUtils.decodePrivateKey(keyBlocks.get(0));
 
             X509Certificate leafCert = certChain.get(0);
-            if (!(leafCert.getPublicKey() instanceof ECPublicKey ecPub)) {
-                LOG.warnf(
-                        "Leaf certificate is not EC (got %s), cannot build signing key JWK",
-                        leafCert.getPublicKey().getAlgorithm());
-                return;
-            }
+            PublicKey publicKey = leafCert.getPublicKey();
 
-            Curve curve = Curve.forECParameterSpec(ecPub.getParams());
             List<Base64> x5c = new ArrayList<>();
             for (X509Certificate cert : certChain) {
                 x5c.add(Base64.encode(cert.getEncoded()));
             }
 
-            ECKey ecKey = new ECKey.Builder(curve, ecPub)
-                    .privateKey((ECPrivateKey) privateKey)
-                    .x509CertChain(x5c)
-                    .keyIDFromThumbprint()
-                    .build();
-
-            String jwkJson = ecKey.toJSONString();
+            JWK jwk = buildSigningJwk(publicKey, privateKey, x5c);
+            String jwkJson = jwk.toJSONString();
             config.setX509SigningKeyJwk(jwkJson);
             RESOLVED_KEY_CACHE.put(pem, jwkJson);
             LOG.debugf(
                     "Resolved x509 signing key from inline PEM (chain size=%d, kid=%s)",
-                    certChain.size(), ecKey.getKeyID());
+                    certChain.size(), jwk.getKeyID());
 
         } catch (Exception e) {
             throw new IllegalStateException(
@@ -328,6 +321,25 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                             + "Fix or remove the private key from the PEM configuration.",
                     e);
         }
+    }
+
+    private static JWK buildSigningJwk(PublicKey publicKey, PrivateKey privateKey, List<Base64> x5c) throws Exception {
+        if (publicKey instanceof ECPublicKey ecPub) {
+            Curve curve = Curve.forECParameterSpec(ecPub.getParams());
+            return new ECKey.Builder(curve, ecPub)
+                    .privateKey((ECPrivateKey) privateKey)
+                    .x509CertChain(x5c)
+                    .keyIDFromThumbprint()
+                    .build();
+        }
+        if (publicKey instanceof RSAPublicKey rsaPub) {
+            return new RSAKey.Builder(rsaPub)
+                    .privateKey(privateKey)
+                    .x509CertChain(x5c)
+                    .keyIDFromThumbprint()
+                    .build();
+        }
+        throw new IllegalArgumentException("Unsupported certificate key type: " + publicKey.getAlgorithm());
     }
 
     private static List<String> extractPemBlocks(String pem, String type) {
