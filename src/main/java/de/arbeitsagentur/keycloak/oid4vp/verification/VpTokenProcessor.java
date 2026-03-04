@@ -60,9 +60,33 @@ public class VpTokenProcessor {
             Duration trustListMaxCacheTtl,
             int clockSkewSeconds,
             int kbJwtMaxAgeSeconds) {
+        this(
+                objectMapper,
+                session,
+                trustListUrl,
+                statusListMaxCacheTtl,
+                trustListMaxCacheTtl,
+                clockSkewSeconds,
+                kbJwtMaxAgeSeconds,
+                null);
+    }
+
+    /**
+     * @param trustListSigningCerts if non-null/non-empty, the trust list JWT signature is verified against these certificates
+     */
+    public VpTokenProcessor(
+            ObjectMapper objectMapper,
+            KeycloakSession session,
+            String trustListUrl,
+            Duration statusListMaxCacheTtl,
+            Duration trustListMaxCacheTtl,
+            int clockSkewSeconds,
+            int kbJwtMaxAgeSeconds,
+            List<X509Certificate> trustListSigningCerts) {
         this.sdJwtVerifier = new SdJwtVerifier(clockSkewSeconds, kbJwtMaxAgeSeconds);
         this.mdocVerifier = new MdocVerifier();
-        this.trustListProvider = new TrustListProvider(session, trustListUrl, trustListMaxCacheTtl);
+        this.trustListProvider =
+                new TrustListProvider(session, trustListUrl, trustListMaxCacheTtl, trustListSigningCerts);
         this.statusListVerifier = new StatusListVerifier(session, this.trustListProvider, statusListMaxCacheTtl);
         this.objectMapper = objectMapper;
     }

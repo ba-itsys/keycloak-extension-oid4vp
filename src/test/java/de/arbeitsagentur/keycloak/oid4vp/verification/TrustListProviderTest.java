@@ -21,23 +21,37 @@ import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jose.jwk.Curve;
+import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
+import java.math.BigInteger;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.cert.X509Certificate;
+import java.security.spec.ECGenParameterSpec;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
+import javax.security.auth.x500.X500Principal;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
+import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
+import org.bouncycastle.operator.ContentSigner;
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 class TrustListProviderTest {
 
+    private ECKey signingKey;
     private ECDSASigner signer;
 
     @BeforeEach
     void setUp() throws Exception {
-        signer = new ECDSASigner(new ECKeyGenerator(Curve.P_256).generate());
+        signingKey = new ECKeyGenerator(Curve.P_256).generate();
+        signer = new ECDSASigner(signingKey);
     }
 
     @AfterEach
@@ -103,6 +117,84 @@ class TrustListProviderTest {
     void blankTrustListUrl_returnsEmptyKeys() {
         TrustListProvider provider = new TrustListProvider(null, "  ");
         assertThat(provider.getTrustedKeys()).isEmpty();
+    }
+
+    @Nested
+    class SignatureVerification {
+
+        @Test
+        void verifySignature_withMatchingCert_succeeds() throws Exception {
+            X509Certificate cert = generateSelfSignedCert(signingKey);
+            TrustListProvider provider = new TrustListProvider(null, "https://example.com", null, List.of(cert));
+
+            String jwt = buildSignedJwt(new JWTClaimsSet.Builder()
+                    .claim("TrustedEntitiesList", List.of())
+                    .build());
+
+            assertThatCode(() -> provider.verifySignature(jwt)).doesNotThrowAnyException();
+        }
+
+        @Test
+        void verifySignature_withWrongCert_throws() throws Exception {
+            ECKey otherKey = new ECKeyGenerator(Curve.P_256).generate();
+            X509Certificate wrongCert = generateSelfSignedCert(otherKey);
+            TrustListProvider provider = new TrustListProvider(null, "https://example.com", null, List.of(wrongCert));
+
+            String jwt = buildSignedJwt(new JWTClaimsSet.Builder()
+                    .claim("TrustedEntitiesList", List.of())
+                    .build());
+
+            assertThatThrownBy(() -> provider.verifySignature(jwt))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("signature verification failed");
+        }
+
+        @Test
+        void verifySignature_withNoCert_skipsVerification() throws Exception {
+            TrustListProvider provider =
+                    new TrustListProvider(null, "https://example.com", null, (List<X509Certificate>) null);
+
+            // Sign with any key — verification should be skipped
+            String jwt = buildSignedJwt(new JWTClaimsSet.Builder()
+                    .claim("TrustedEntitiesList", List.of())
+                    .build());
+
+            assertThatCode(() -> provider.verifySignature(jwt)).doesNotThrowAnyException();
+        }
+
+        @Test
+        void verifySignature_withMultipleCerts_matchesSecond() throws Exception {
+            ECKey otherKey = new ECKeyGenerator(Curve.P_256).generate();
+            X509Certificate wrongCert = generateSelfSignedCert(otherKey);
+            X509Certificate correctCert = generateSelfSignedCert(signingKey);
+            TrustListProvider provider =
+                    new TrustListProvider(null, "https://example.com", null, List.of(wrongCert, correctCert));
+
+            String jwt = buildSignedJwt(new JWTClaimsSet.Builder()
+                    .claim("TrustedEntitiesList", List.of())
+                    .build());
+
+            assertThatCode(() -> provider.verifySignature(jwt)).doesNotThrowAnyException();
+        }
+
+        private X509Certificate generateSelfSignedCert(ECKey ecKey) throws Exception {
+            KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC");
+            kpg.initialize(new ECGenParameterSpec("secp256r1"));
+            // We need a KeyPair from the ECKey
+            KeyPair kp = new KeyPair(ecKey.toECPublicKey(), ecKey.toECPrivateKey());
+
+            X500Principal subject = new X500Principal("CN=TrustList Signer");
+            Instant now = Instant.now();
+            ContentSigner contentSigner = new JcaContentSignerBuilder("SHA256withECDSA").build(kp.getPrivate());
+            var certBuilder = new JcaX509v3CertificateBuilder(
+                    subject,
+                    BigInteger.valueOf(now.toEpochMilli()),
+                    Date.from(now.minusSeconds(3600)),
+                    Date.from(now.plusSeconds(86400)),
+                    subject,
+                    kp.getPublic());
+            return new JcaX509CertificateConverter().getCertificate(certBuilder.build(contentSigner));
+        }
     }
 
     private String buildSignedJwt(JWTClaimsSet claims) throws Exception {

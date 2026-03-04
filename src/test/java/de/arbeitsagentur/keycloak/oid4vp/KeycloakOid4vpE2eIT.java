@@ -142,7 +142,12 @@ class KeycloakOid4vpE2eIT {
         adminClient = KeycloakAdminClient.login(OBJECT_MAPPER, kcHostUrl, "admin", "admin");
 
         String trustListUrl = "http://oid4vc-dev:8085/api/trustlist";
-        Oid4vpTestKeycloakSetup.configureOid4vpIdentityProvider(adminClient, REALM, trustListUrl);
+        KeyPair haipKeyPair = generateEcKeyPair();
+        X509Certificate haipCert = generateCaCert(haipKeyPair);
+        String haipCertPem = toPem("CERTIFICATE", haipCert.getEncoded())
+                + "\n"
+                + toPem("PRIVATE KEY", haipKeyPair.getPrivate().getEncoded());
+        Oid4vpTestKeycloakSetup.configureOid4vpIdentityProvider(adminClient, REALM, trustListUrl, haipCertPem);
         Oid4vpTestKeycloakSetup.configureSameDeviceFlow(adminClient, REALM, true);
         Oid4vpTestKeycloakSetup.addRedirectUriToClient(adminClient, REALM, "wallet-mock", callbackUrl);
 

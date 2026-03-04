@@ -30,8 +30,10 @@ import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriBuilder;
 import java.net.URI;
 import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.jboss.logging.Logger;
@@ -39,6 +41,7 @@ import org.keycloak.OAuth2Constants;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.broker.provider.AuthenticationRequest;
 import org.keycloak.broker.provider.IdentityBrokerException;
+import org.keycloak.common.util.PemUtils;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.FederatedIdentityModel;
@@ -72,6 +75,9 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         super(session, config);
         this.redirectFlowService = new Oid4vpRedirectFlowService(session);
         this.qrCodeService = new Oid4vpQrCodeService();
+
+        List<X509Certificate> trustListSigningCerts = parseTrustListSigningCerts(config.getTrustListSigningCertPem());
+
         this.callbackProcessor = new Oid4vpCallbackProcessor(
                 config,
                 config,
@@ -83,7 +89,8 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                         config.getStatusListMaxCacheTtl(),
                         config.getTrustListMaxCacheTtl(),
                         config.getClockSkewSeconds(),
-                        config.getKbJwtMaxAgeSeconds()));
+                        config.getKbJwtMaxAgeSeconds(),
+                        trustListSigningCerts));
 
         RealmModel realm = session.getContext().getRealm();
         this.loginTimeoutSeconds = realm != null ? realm.getAccessCodeLifespanLogin() : 1800;
@@ -317,6 +324,21 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 .build();
         String value = realmBase.toString();
         return value.endsWith("/") ? value : value + "/";
+    }
+
+    private static List<X509Certificate> parseTrustListSigningCerts(String pem) {
+        if (pem == null || pem.isBlank()) {
+            return null;
+        }
+        try {
+            X509Certificate[] certs = PemUtils.decodeCertificates(pem);
+            if (certs != null && certs.length > 0) {
+                return List.of(certs);
+            }
+        } catch (Exception e) {
+            LOG.warnf("Failed to parse trust list signing certificate(s): %s", e.getMessage());
+        }
+        return null;
     }
 
     private static String randomState() {

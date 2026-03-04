@@ -159,6 +159,13 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
+                .name(Oid4vpIdentityProviderConfig.TRUST_LIST_SIGNING_CERT_PEM)
+                .label("Trust List Signing Certificate (PEM)")
+                .helpText("PEM-encoded X.509 certificate used to verify the trust list JWT signature. "
+                        + "If not configured, the trust list JWT signature is not verified (any JWT is accepted).")
+                .type(ProviderConfigProperty.TEXT_TYPE)
+                .add()
+                .property()
                 .name(Oid4vpIdentityProviderConfig.TRUST_LIST_MAX_CACHE_TTL_SECONDS)
                 .label("Trust List Cache TTL (seconds)")
                 .helpText("Maximum time to cache the trust list (overrides JWT expiry if shorter). "
