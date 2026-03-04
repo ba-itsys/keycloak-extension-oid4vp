@@ -59,6 +59,8 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public static final String STATUS_LIST_MAX_CACHE_TTL_SECONDS = "statusListMaxCacheTtlSeconds";
     public static final String TRUST_LIST_MAX_CACHE_TTL_SECONDS = "trustListMaxCacheTtlSeconds";
+    public static final String TRUST_LIST_MAX_STALE_AGE_SECONDS = "trustListMaxStaleAgeSeconds";
+    public static final int DEFAULT_TRUST_LIST_MAX_STALE_AGE_SECONDS = 86400;
 
     public static final String SSE_POLL_INTERVAL_MS = "ssePollIntervalMs";
     public static final String SSE_TIMEOUT_SECONDS = "sseTimeoutSeconds";
@@ -289,6 +291,27 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public void setTrustListMaxCacheTtlSeconds(int seconds) {
         getConfig().put(TRUST_LIST_MAX_CACHE_TTL_SECONDS, String.valueOf(seconds));
+    }
+
+    /**
+     * Maximum age of a stale (expired) trust list cache entry that can be used as fallback when
+     * a trust list refresh fails (e.g., network timeout). Defaults to 1 day (86400 seconds).
+     * Set to 0 to disable stale cache usage entirely.
+     */
+    public Duration getTrustListMaxStaleAge() {
+        String value = getConfig().get(TRUST_LIST_MAX_STALE_AGE_SECONDS);
+        if (StringUtil.isBlank(value)) {
+            return Duration.ofSeconds(DEFAULT_TRUST_LIST_MAX_STALE_AGE_SECONDS);
+        }
+        try {
+            return Duration.ofSeconds(Long.parseLong(value));
+        } catch (NumberFormatException e) {
+            return Duration.ofSeconds(DEFAULT_TRUST_LIST_MAX_STALE_AGE_SECONDS);
+        }
+    }
+
+    public void setTrustListMaxStaleAgeSeconds(int seconds) {
+        getConfig().put(TRUST_LIST_MAX_STALE_AGE_SECONDS, String.valueOf(seconds));
     }
 
     private Duration parseDurationSeconds(String configKey) {

@@ -110,24 +110,50 @@ public class Oid4vpIdentityProviderEndpoint {
     }
 
     /**
-     * Handles GET requests to the endpoint. This is a fallback for wallets that redirect errors
-     * via GET instead of using direct_post. Not part of the normal OID4VP flow.
+     * Handles GET requests to the endpoint. This is the error landing page for wallets that
+     * redirect errors via GET (the {@code redirect_uri} from {@link #handleError}).
+     * The state parameter is used to resolve the authentication session so that Keycloak's
+     * standard error page template can be rendered via {@code callback.error()}.
      */
     @GET
     public Response handleGet(
+            @QueryParam(OAuth2Constants.STATE) String state,
             @QueryParam(OAuth2Constants.ERROR) String error,
             @QueryParam(OAuth2Constants.ERROR_DESCRIPTION) String errorDescription) {
 
+        String message;
         if (StringUtil.isNotBlank(error)) {
             event.event(EventType.LOGIN_ERROR)
                     .detail(OAuth2Constants.ERROR, error)
                     .detail(OAuth2Constants.ERROR_DESCRIPTION, errorDescription)
                     .error(Errors.IDENTITY_PROVIDER_ERROR);
-            String message = error + (errorDescription != null ? ": " + errorDescription : "");
-            return callback.error(provider.getConfig(), message);
+            message = error + (errorDescription != null ? ": " + errorDescription : "");
+        } else {
+            message = "No credential response received";
         }
 
-        return callback.error(provider.getConfig(), "No credential response received");
+        // Resolve the auth session from state so callback.error() can render Keycloak's error page.
+        // callback.error() requires an active auth session in the KeycloakContext.
+        if (StringUtil.isNotBlank(state)) {
+            try {
+                AuthenticationSessionModel authSession = authSessionResolver.resolveFromStore(state, null);
+                if (authSession != null) {
+                    session.getContext().setAuthenticationSession(authSession);
+                }
+            } catch (Exception e) {
+                LOG.debugf("Could not resolve auth session from state: %s", e.getMessage());
+            }
+        }
+
+        try {
+            return callback.error(provider.getConfig(), message);
+        } catch (Exception e) {
+            LOG.warnf("Failed to render error page (auth session may have expired): %s", e.getMessage());
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Authentication failed: " + error)
+                    .type(MediaType.TEXT_PLAIN)
+                    .build();
+        }
     }
 
     @POST
@@ -184,14 +210,15 @@ public class Oid4vpIdentityProviderEndpoint {
             authSession.setAuthNote(SESSION_RESPONSE_URI, actualResponseUri);
 
             if (StringUtil.isNotBlank(error)) {
-                return handleError(error, errorDescription);
+                return handleError(error, errorDescription, state);
             }
 
             boolean encryptionExpected = provider.getConfig().isEnforceHaip();
             if (encryptionExpected && !wasEncrypted) {
                 return handleError(
                         "identity_provider_error",
-                        "Encrypted response expected (direct_post.jwt) but received unencrypted vp_token.");
+                        "Encrypted response expected (direct_post.jwt) but received unencrypted vp_token.",
+                        state);
             }
 
             return processVpToken(authSession, state, vpToken, isCrossDeviceFlow);
@@ -367,7 +394,7 @@ public class Oid4vpIdentityProviderEndpoint {
             BrokeredIdentityContext context = provider.getCallbackProcessor().process(authSession, state, vpToken);
             return directPostService.storeAndSignal(authSession, state, context, isCrossDeviceFlow);
         } catch (IdentityBrokerException e) {
-            return handleError("identity_provider_error", e.getMessage());
+            return handleError("identity_provider_error", e.getMessage(), state);
         } catch (Exception e) {
             LOG.errorf(e, "Failed to process VP token: %s", e.getMessage());
             return jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", null);
@@ -375,6 +402,10 @@ public class Oid4vpIdentityProviderEndpoint {
     }
 
     private Response handleError(String error, String errorDescription) {
+        return handleError(error, errorDescription, null);
+    }
+
+    private Response handleError(String error, String errorDescription, String state) {
 
         event.event(EventType.LOGIN_ERROR)
                 .detail(OAuth2Constants.ERROR, error)
@@ -383,16 +414,20 @@ public class Oid4vpIdentityProviderEndpoint {
 
         // Return a redirect_uri so the wallet can redirect the browser to the error page.
         // The GET handler renders the error via callback.error().
-        String errorRedirectUri = buildErrorRedirectUri(error, errorDescription);
+        // Include the state so the GET handler can resolve the auth session for Keycloak's error template.
+        String errorRedirectUri = buildErrorRedirectUri(error, errorDescription, state);
         return jsonRedirectResponse(errorRedirectUri);
     }
 
-    private String buildErrorRedirectUri(String error, String errorDescription) {
+    private String buildErrorRedirectUri(String error, String errorDescription, String state) {
         String base = Oid4vpConstants.buildEndpointBaseUrl(
                 session.getContext().getUri().getBaseUri(),
                 realm.getName(),
                 provider.getConfig().getAlias());
         UriBuilder builder = UriBuilder.fromUri(base);
+        if (state != null) {
+            builder.queryParam(OAuth2Constants.STATE, state);
+        }
         builder.queryParam(OAuth2Constants.ERROR, error);
         if (errorDescription != null) {
             builder.queryParam(OAuth2Constants.ERROR_DESCRIPTION, errorDescription);

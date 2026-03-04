@@ -83,10 +83,36 @@ public class VpTokenProcessor {
             int clockSkewSeconds,
             int kbJwtMaxAgeSeconds,
             List<X509Certificate> trustListSigningCerts) {
+        this(
+                objectMapper,
+                session,
+                trustListUrl,
+                statusListMaxCacheTtl,
+                trustListMaxCacheTtl,
+                clockSkewSeconds,
+                kbJwtMaxAgeSeconds,
+                trustListSigningCerts,
+                null);
+    }
+
+    /**
+     * @param trustListSigningCerts if non-null/non-empty, the trust list JWT signature is verified against these certificates
+     * @param trustListMaxStaleAge maximum age of a stale (expired) trust list cache entry usable as fallback on fetch failure
+     */
+    public VpTokenProcessor(
+            ObjectMapper objectMapper,
+            KeycloakSession session,
+            String trustListUrl,
+            Duration statusListMaxCacheTtl,
+            Duration trustListMaxCacheTtl,
+            int clockSkewSeconds,
+            int kbJwtMaxAgeSeconds,
+            List<X509Certificate> trustListSigningCerts,
+            Duration trustListMaxStaleAge) {
         this.sdJwtVerifier = new SdJwtVerifier(clockSkewSeconds, kbJwtMaxAgeSeconds);
         this.mdocVerifier = new MdocVerifier();
-        this.trustListProvider =
-                new TrustListProvider(session, trustListUrl, trustListMaxCacheTtl, trustListSigningCerts);
+        this.trustListProvider = new TrustListProvider(
+                session, trustListUrl, trustListMaxCacheTtl, trustListMaxStaleAge, trustListSigningCerts);
         this.statusListVerifier = new StatusListVerifier(session, this.trustListProvider, statusListMaxCacheTtl);
         this.objectMapper = objectMapper;
     }
