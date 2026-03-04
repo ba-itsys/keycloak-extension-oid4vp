@@ -52,6 +52,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public static final String TRUST_LIST_URL = "trustListUrl";
     public static final String TRUST_LIST_SIGNING_CERT_PEM = "trustListSigningCertPem";
+    public static final String INCLUDE_TRUSTED_AUTHORITIES = "includeTrustedAuthorities";
 
     public static final String ALLOWED_ISSUERS = "allowedIssuers";
     public static final String ALLOWED_CREDENTIAL_TYPES = "allowedCredentialTypes";
@@ -224,6 +225,21 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public void setTrustListSigningCertPem(String pem) {
         getConfig().put(TRUST_LIST_SIGNING_CERT_PEM, pem);
+    }
+
+    /**
+     * Whether to include {@code trusted_authorities} with type {@code etsi_tl} in auto-generated
+     * DCQL credential queries, using the configured trust list URL. Defaults to {@code true}.
+     *
+     * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1.1">OID4VP 1.0 §6.1.1 — Trusted Authorities Query</a>
+     */
+    public boolean isIncludeTrustedAuthorities() {
+        String value = getConfig().get(INCLUDE_TRUSTED_AUTHORITIES);
+        return value == null || !"false".equalsIgnoreCase(value);
+    }
+
+    public void setIncludeTrustedAuthorities(boolean include) {
+        getConfig().put(INCLUDE_TRUSTED_AUTHORITIES, String.valueOf(include));
     }
 
     public boolean isEnforceHaip() {

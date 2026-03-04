@@ -159,6 +159,16 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
+                .name(Oid4vpIdentityProviderConfig.INCLUDE_TRUSTED_AUTHORITIES)
+                .label("Include Trusted Authorities in DCQL")
+                .helpText("When enabled and a Trust List URL is configured, adds 'trusted_authorities' with type "
+                        + "'etsi_tl' to each credential in the auto-generated DCQL query. "
+                        + "This tells wallets to only present credentials from issuers in the trust list. "
+                        + "Has no effect on manually configured DCQL queries.")
+                .type(ProviderConfigProperty.BOOLEAN_TYPE)
+                .defaultValue("true")
+                .add()
+                .property()
                 .name(Oid4vpIdentityProviderConfig.TRUST_LIST_SIGNING_CERT_PEM)
                 .label("Trust List Signing Certificate (PEM)")
                 .helpText("PEM-encoded X.509 certificate used to verify the trust list JWT signature. "

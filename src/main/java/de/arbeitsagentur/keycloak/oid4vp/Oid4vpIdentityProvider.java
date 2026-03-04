@@ -150,11 +150,14 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         Map<String, CredentialTypeSpec> credentialTypes = DcqlQueryBuilder.aggregateFromMappers(session, getConfig());
 
         if (!credentialTypes.isEmpty()) {
+            String trustListUrl =
+                    getConfig().isIncludeTrustedAuthorities() ? getConfig().getTrustListUrl() : null;
             return DcqlQueryBuilder.fromMapperSpecs(
                             OBJECT_MAPPER,
                             credentialTypes,
                             getConfig().isAllCredentialsRequired(),
-                            getConfig().getCredentialSetPurpose())
+                            getConfig().getCredentialSetPurpose(),
+                            trustListUrl)
                     .build();
         }
 
