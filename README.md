@@ -143,13 +143,16 @@ Alternatively, add it via realm import JSON:
 | `dcqlQuery` | DCQL query JSON defining which credentials to request. Auto-generated from IdP mappers if not set. | *(auto-generated)* |
 | `credentialSetMode` | How credential sets are combined: `optional` (any one suffices) or `all` (all required). | `optional` |
 | `credentialSetPurpose` | Human-readable purpose string included in the DCQL credential set. | *(none)* |
+| `requestObjectLifespanSeconds` | How long the signed request object JWT is valid (seconds). The wallet fetches and processes it immediately, so this should be short. | `10` |
 
 #### User Mapping
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `userMappingClaim` | Claim from the SD-JWT credential used as the unique user identifier. | `sub` |
-| `userMappingClaimMdoc` | Claim from the mDoc credential used as the unique user identifier. Falls back to `userMappingClaim` if not set. | *(falls back)* |
+| `userMappingClaim` | Claim from the SD-JWT credential used as the unique user identifier. Not required when `useIdTokenSubject` is enabled. | `sub` |
+| `userMappingClaimMdoc` | Claim from the mDoc credential used as the unique user identifier. Falls back to `userMappingClaim` if not set. Not required when `useIdTokenSubject` is enabled. | *(falls back)* |
+| `useIdTokenSubject` | When enabled, requests a [SIOPv2](https://openid.net/specs/openid-connect-self-issued-v2-1_0.html) Self-Issued ID Token alongside the VP Token (`response_type=vp_token id_token`). The user's subject is the JWK Thumbprint from the ID Token's `sub` claim instead of a credential claim. The VP Token is still always required for credential attributes. When enabled, `userMappingClaim` is not required and not auto-added to DCQL queries. | `false` |
+| `clockSkewSeconds` | Allowed clock skew (in seconds) for ID Token time validity checks (`exp`, `iat`). | `30` |
 
 #### Flow Control
 

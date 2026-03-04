@@ -60,6 +60,10 @@ public final class Oid4vpConstants {
 
     // Response type values
     public static final String RESPONSE_TYPE_VP_TOKEN = "vp_token";
+    public static final String RESPONSE_TYPE_VP_TOKEN_ID_TOKEN = "vp_token id_token";
+
+    // ID Token parameter
+    public static final String ID_TOKEN = "id_token";
 
     // Self-Issued OpenID Provider v2 static identifier
     // https://openid.net/specs/openid-connect-self-issued-v2-1_0-ID1.html#name-static-self-issued-openid-p

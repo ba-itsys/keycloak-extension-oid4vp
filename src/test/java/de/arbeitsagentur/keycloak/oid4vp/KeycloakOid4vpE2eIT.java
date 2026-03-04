@@ -782,6 +782,47 @@ class KeycloakOid4vpE2eIT {
         }
     }
 
+    @Test
+    @Order(19)
+    void loginWithIdTokenSubject() throws Exception {
+        callback.reset();
+        flow.clearBrowserSession();
+        Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient, REALM);
+
+        Oid4vcContainer idTokenWallet = new Oid4vcContainer()
+                .withHostAccess()
+                .withNetwork(network)
+                .withNetworkAliases("oid4vc-idtoken")
+                .withStatusList()
+                .withStatusListBaseUrl("http://oid4vc-idtoken:8085")
+                .withLogConsumer(frame ->
+                        LOG.info("[OID4VC-IDTOKEN] {}", frame.getUtf8String().stripTrailing()));
+        idTokenWallet.start();
+
+        String idTokenTrustListUrl = "http://oid4vc-idtoken:8085/api/trustlist";
+
+        idpConfig
+                .set(Oid4vpIdentityProviderConfig.USE_ID_TOKEN_SUBJECT, "true")
+                .set(Oid4vpIdentityProviderConfig.TRUST_LIST_URL, idTokenTrustListUrl)
+                .apply();
+
+        try {
+            String kcUrl = "http://localhost:" + keycloak.getMappedPort(8080);
+            Oid4vpLoginFlowHelper idTokenFlow =
+                    new Oid4vpLoginFlowHelper(page, context, idTokenWallet, kcUrl, callback.localCallbackUrl(), REALM);
+
+            idTokenFlow.navigateToLoginPage();
+            idTokenFlow.clickOid4vpIdpButton();
+            String walletUrl = idTokenFlow.getSameDeviceWalletUrl();
+            PresentationResponse response = idTokenFlow.submitToWallet(walletUrl);
+            idTokenFlow.waitForLoginCompletion(response);
+            idTokenFlow.completeFirstBrokerLoginIfNeeded("id-token-user");
+            idTokenFlow.assertLoginSucceeded();
+        } finally {
+            idTokenWallet.stop();
+        }
+    }
+
     // ===== Composite Helpers =====
 
     private void assertRevokedCredentialIsRejected(String formatLabel) throws Exception {

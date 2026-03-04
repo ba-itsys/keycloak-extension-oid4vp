@@ -22,6 +22,7 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
+import de.arbeitsagentur.keycloak.oid4vp.verification.SelfIssuedIdTokenValidator;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor;
 import java.util.Map;
 import org.jboss.logging.Logger;
@@ -37,8 +38,9 @@ import org.keycloak.utils.StringUtil;
  *
  * <p>Orchestrates the post-response phase of the OID4VP flow: validates the state parameter,
  * delegates VP token verification to {@link VpTokenProcessor}, enforces issuer/credential type
- * allow-lists, resolves the user identity from the configured mapping claim, and populates
- * the brokered identity context with credential claims for downstream mappers.
+ * allow-lists, resolves the user identity from the configured mapping claim (or from a SIOPv2
+ * Self-Issued ID Token when {@code useIdTokenSubject} is enabled), and populates the brokered
+ * identity context with credential claims for downstream mappers.
  *
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-7">OID4VP 1.0 §7 — VP Token Validation</a>
  */
@@ -63,13 +65,15 @@ public class Oid4vpCallbackProcessor {
     }
 
     /**
-     * Validates the VP token and builds a brokered identity context for Keycloak's identity broker.
+     * Validates the VP token (and optionally a Self-Issued ID Token) and builds a brokered
+     * identity context for Keycloak's identity broker.
      * Clears session notes on both success and failure to prevent stale state on retry.
      */
-    public BrokeredIdentityContext process(AuthenticationSessionModel authSession, String state, String vpToken) {
+    public BrokeredIdentityContext process(
+            AuthenticationSessionModel authSession, String state, String vpToken, String idToken) {
 
         try {
-            return processInternal(authSession, state, vpToken);
+            return processInternal(authSession, state, vpToken, idToken);
         } catch (Exception e) {
             // Always clean up session notes to prevent stale state on retry
             clearSessionNotes(authSession);
@@ -78,7 +82,7 @@ public class Oid4vpCallbackProcessor {
     }
 
     private BrokeredIdentityContext processInternal(
-            AuthenticationSessionModel authSession, String state, String vpToken) {
+            AuthenticationSessionModel authSession, String state, String vpToken, String idToken) {
 
         String expectedState = authSession.getAuthNote(SESSION_STATE);
         if (expectedState == null || !expectedState.equals(state)) {
@@ -124,14 +128,12 @@ public class Oid4vpCallbackProcessor {
 
         Map<String, Object> claims = Oid4vpMapperUtils.toMutableClaims(
                 vpResult.isMultiCredential() ? vpResult.mergedClaims() : primary.claims());
-        String credentialFormat =
-                primary.presentationType() == PresentationType.MDOC ? FORMAT_MSO_MDOC : FORMAT_SD_JWT_VC;
-        String userMappingClaimName = configProvider.getUserMappingClaimForFormat(credentialFormat);
-        Object subjectObj = Oid4vpMapperUtils.getNestedValue(claims, userMappingClaimName);
-        String subject = Oid4vpMapperUtils.toStringValue(subjectObj);
 
-        if (StringUtil.isBlank(subject)) {
-            throw new IdentityBrokerException("Missing subject claim '" + userMappingClaimName + "' in credential");
+        String subject;
+        if (configProvider.isUseIdTokenSubject()) {
+            subject = validateIdTokenAndExtractSubject(idToken, clientId, expectedNonce);
+        } else {
+            subject = extractSubjectFromCredential(claims, primary);
         }
 
         String identityKey = primary.generateIdentityKey(subject);
@@ -152,6 +154,33 @@ public class Oid4vpCallbackProcessor {
 
         clearSessionNotes(authSession);
         return context;
+    }
+
+    private String validateIdTokenAndExtractSubject(String idToken, String clientId, String expectedNonce) {
+        if (StringUtil.isBlank(idToken)) {
+            throw new IdentityBrokerException("ID token subject mode enabled but no id_token received");
+        }
+        try {
+            SelfIssuedIdTokenValidator validator = new SelfIssuedIdTokenValidator(configProvider.getClockSkewSeconds());
+            String subject = validator.validate(idToken, clientId, expectedNonce);
+            LOG.debugf("ID token validated, subject (JWK Thumbprint): %s", subject);
+            return subject;
+        } catch (IllegalArgumentException e) {
+            throw new IdentityBrokerException("ID token validation failed: " + e.getMessage(), e);
+        }
+    }
+
+    private String extractSubjectFromCredential(Map<String, Object> claims, VerifiedCredential primary) {
+        String credentialFormat =
+                primary.presentationType() == PresentationType.MDOC ? FORMAT_MSO_MDOC : FORMAT_SD_JWT_VC;
+        String userMappingClaimName = configProvider.getUserMappingClaimForFormat(credentialFormat);
+        Object subjectObj = Oid4vpMapperUtils.getNestedValue(claims, userMappingClaimName);
+        String subject = Oid4vpMapperUtils.toStringValue(subjectObj);
+
+        if (StringUtil.isBlank(subject)) {
+            throw new IdentityBrokerException("Missing subject claim '" + userMappingClaimName + "' in credential");
+        }
+        return subject;
     }
 
     private void clearSessionNotes(AuthenticationSessionModel authSession) {

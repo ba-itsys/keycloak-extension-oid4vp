@@ -59,7 +59,7 @@ class Oid4vpRedirectFlowServiceHaipTest {
     @BeforeEach
     void setUp() throws Exception {
         KeycloakSession session = Mockito.mock(KeycloakSession.class);
-        service = new Oid4vpRedirectFlowService(session);
+        service = new Oid4vpRedirectFlowService(session, 300);
 
         signingKey = new ECKeyGenerator(Curve.P_256).generate();
         X509Certificate cert = generateSelfSignedCert(signingKey);
@@ -194,7 +194,29 @@ class Oid4vpRedirectFlowServiceHaipTest {
         assertThat(sdJwtAlg).containsExactly("ES256");
     }
 
+    @Test
+    void requestObject_useIdTokenSubject_setsResponseTypeAndScope() throws Exception {
+        SignedRequestObject result = buildRequestObject(false, true);
+        Map<String, Object> claims = parseClaims(result.jwt());
+
+        assertThat(claims.get("response_type")).isEqualTo("vp_token id_token");
+        assertThat(claims.get("scope")).isEqualTo("openid");
+    }
+
+    @Test
+    void requestObject_noIdTokenSubject_noScope() throws Exception {
+        SignedRequestObject result = buildRequestObject(false, false);
+        Map<String, Object> claims = parseClaims(result.jwt());
+
+        assertThat(claims.get("response_type")).isEqualTo("vp_token");
+        assertThat(claims).doesNotContainKey("scope");
+    }
+
     private SignedRequestObject buildRequestObject(boolean enforceHaip) {
+        return buildRequestObject(enforceHaip, false);
+    }
+
+    private SignedRequestObject buildRequestObject(boolean enforceHaip, boolean useIdTokenSubject) {
         return service.buildSignedRequestObject(new RequestObjectParams(
                 "{\"credentials\":[{\"id\":\"test\",\"format\":\"dc+sd-jwt\",\"meta\":{\"vct_values\":[\"IdentityCredential\"]},\"claims\":[{\"path\":[\"sub\"]}]}]}",
                 null,
@@ -207,7 +229,7 @@ class Oid4vpRedirectFlowServiceHaipTest {
                 signingKeyJwk,
                 null,
                 enforceHaip,
-                300));
+                useIdTokenSubject));
     }
 
     @SuppressWarnings("unchecked")

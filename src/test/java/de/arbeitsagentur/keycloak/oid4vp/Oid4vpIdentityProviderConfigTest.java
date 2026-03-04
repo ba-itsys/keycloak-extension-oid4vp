@@ -217,6 +217,23 @@ class Oid4vpIdentityProviderConfigTest {
     }
 
     @Test
+    void requestObjectLifespan_default() {
+        assertThat(config.getRequestObjectLifespanSeconds()).isEqualTo(10);
+    }
+
+    @Test
+    void requestObjectLifespan_customValue() {
+        config.setRequestObjectLifespanSeconds(30);
+        assertThat(config.getRequestObjectLifespanSeconds()).isEqualTo(30);
+    }
+
+    @Test
+    void requestObjectLifespan_invalidFallsBackToDefault() {
+        config.getConfig().put("requestObjectLifespanSeconds", "not-a-number");
+        assertThat(config.getRequestObjectLifespanSeconds()).isEqualTo(10);
+    }
+
+    @Test
     void sseInvalidIntFallsBackToDefault() {
         config.getConfig().put("ssePollIntervalMs", "not-a-number");
         config.getConfig().put("sseTimeoutSeconds", "");

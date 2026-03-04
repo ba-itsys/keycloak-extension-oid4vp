@@ -162,6 +162,7 @@ public class Oid4vpIdentityProviderEndpoint {
             @QueryParam(FLOW_PARAM) String flow,
             @FormParam(OAuth2Constants.STATE) String state,
             @FormParam(VP_TOKEN) String vpToken,
+            @FormParam(ID_TOKEN) String idToken,
             @FormParam(RESPONSE) String encryptedResponse,
             @FormParam(OAuth2Constants.ERROR) String error,
             @FormParam(OAuth2Constants.ERROR_DESCRIPTION) String errorDescription) {
@@ -194,6 +195,7 @@ public class Oid4vpIdentityProviderEndpoint {
                     DecryptedResponse decrypted = responseDecryptor.decrypt(encryptedResponse, kidBasedKey);
                     wasEncrypted = true;
                     vpToken = decrypted.vpToken() != null ? decrypted.vpToken() : vpToken;
+                    idToken = decrypted.idToken() != null ? decrypted.idToken() : idToken;
                     error = decrypted.error() != null ? decrypted.error() : error;
                     errorDescription = decrypted.error() != null ? decrypted.errorDescription() : errorDescription;
                     if (decrypted.mdocGeneratedNonce() != null) {
@@ -221,7 +223,7 @@ public class Oid4vpIdentityProviderEndpoint {
                         state);
             }
 
-            return processVpToken(authSession, state, vpToken, isCrossDeviceFlow);
+            return processVpToken(authSession, state, vpToken, idToken, isCrossDeviceFlow);
         } catch (Exception e) {
             LOG.errorf(e, "Uncaught exception in handlePost: %s", e.getMessage());
             return jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", null);
@@ -313,7 +315,7 @@ public class Oid4vpIdentityProviderEndpoint {
                             config.getX509SigningKeyJwk(),
                             walletNonce,
                             config.isEnforceHaip(),
-                            provider.getLoginTimeoutSeconds()));
+                            config.isUseIdTokenSubject()));
 
             if (signedRequest.encryptionKeyJson() != null) {
                 String kid = Oid4vpRequestObjectStore.extractKidFromJwk(signedRequest.encryptionKeyJson());
@@ -388,10 +390,15 @@ public class Oid4vpIdentityProviderEndpoint {
     }
 
     private Response processVpToken(
-            AuthenticationSessionModel authSession, String state, String vpToken, boolean isCrossDeviceFlow) {
+            AuthenticationSessionModel authSession,
+            String state,
+            String vpToken,
+            String idToken,
+            boolean isCrossDeviceFlow) {
 
         try {
-            BrokeredIdentityContext context = provider.getCallbackProcessor().process(authSession, state, vpToken);
+            BrokeredIdentityContext context =
+                    provider.getCallbackProcessor().process(authSession, state, vpToken, idToken);
             return directPostService.storeAndSignal(authSession, state, context, isCrossDeviceFlow);
         } catch (IdentityBrokerException e) {
             return handleError("identity_provider_error", e.getMessage(), state);
