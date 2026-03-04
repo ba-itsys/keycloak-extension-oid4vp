@@ -197,8 +197,8 @@ Errors can occur at multiple points:
 | `MdocVerifier` | mDoc issuer/device auth verification, digest/validity checks, claim extraction |
 | `MdocSessionTranscriptBuilder` | Builds OID4VP 1.0 and ISO 18013-7 SessionTranscript structures |
 | `StatusListVerifier` | Token Status List fetching, caching, revocation bit checking |
-| `TrustListProvider` | ETSI trust list fetching, certificate extraction, caching |
-| `X5cChainValidator` | x5c certificate chain validation (shared by SD-JWT, mDoc, status list) |
+| `TrustListProvider` | ETSI trust list fetching, certificate extraction, caching, optional JWT signature verification |
+| `X5cChainValidator` | x5c certificate chain validation (shared by SD-JWT, mDoc, status list, trust list) |
 | `Oid4vpDirectPostService` | Deferred auth storage for both flows, session restoration at `/complete-auth` |
 | `Oid4vpCrossDeviceSseService` | SSE long-polling for cross-device completion |
 | `Oid4vpRequestObjectStore` | Transient storage for request handles, state→session mappings, KID→key mappings |

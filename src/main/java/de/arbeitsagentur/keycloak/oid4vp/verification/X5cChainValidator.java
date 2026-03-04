@@ -17,7 +17,9 @@ package de.arbeitsagentur.keycloak.oid4vp.verification;
 
 import java.io.ByteArrayInputStream;
 import java.security.PublicKey;
+import java.security.cert.CertificateExpiredException;
 import java.security.cert.CertificateFactory;
+import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -26,7 +28,10 @@ import org.jboss.logging.Logger;
 
 /**
  * Validates x5c certificate chains against a set of trusted CA certificates.
- * Shared by SD-JWT, mDoc, and status list signature verification.
+ * Shared by SD-JWT, mDoc, status list, and trust list signature verification.
+ *
+ * <p>Performs both signature chain validation and certificate validity period checks
+ * ({@link X509Certificate#checkValidity()}) on all certificates in the presented chain.
  */
 final class X5cChainValidator {
 
@@ -67,6 +72,23 @@ final class X5cChainValidator {
 
         X509Certificate leaf = chain.get(0);
         LOG.debugf("x5c leaf certificate: %s", leaf.getSubjectX500Principal().getName());
+
+        // Check validity period of all certificates in the presented chain
+        for (int i = 0; i < chain.size(); i++) {
+            try {
+                chain.get(i).checkValidity();
+            } catch (CertificateExpiredException e) {
+                throw new IllegalStateException(
+                        "x5c certificate at position " + i + " has expired: "
+                                + chain.get(i).getSubjectX500Principal().getName(),
+                        e);
+            } catch (CertificateNotYetValidException e) {
+                throw new IllegalStateException(
+                        "x5c certificate at position " + i + " is not yet valid: "
+                                + chain.get(i).getSubjectX500Principal().getName(),
+                        e);
+            }
+        }
 
         // Walk up the chain: each cert should be signed by the next one
         for (int i = 0; i < chain.size() - 1; i++) {

@@ -15,6 +15,8 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
+import com.nimbusds.jose.JWSVerifier;
+import com.nimbusds.jose.crypto.factories.DefaultJWSVerifierFactory;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import java.io.ByteArrayInputStream;
@@ -36,6 +38,10 @@ import org.keycloak.models.KeycloakSession;
 /**
  * Fetches and caches an ETSI TS 119 602 trust list JWT from a configured URL.
  * Extracts X.509 issuer certificates and their public keys for credential verification.
+ *
+ * <p>When a signing certificate is configured, the trust list JWT signature is verified
+ * before extracting certificates. Without a signing certificate, the JWT is accepted
+ * without signature verification.
  */
 public class TrustListProvider {
 
@@ -46,18 +52,36 @@ public class TrustListProvider {
     private final String trustListUrl;
     private final List<X509Certificate> staticCertificates;
     private final Duration maxCacheTtl;
+    private final List<X509Certificate> signingCertificates;
 
     /** Creates a provider that fetches the trust list from the given URL. */
     public TrustListProvider(KeycloakSession session, String trustListUrl) {
-        this(session, trustListUrl, null);
+        this(session, trustListUrl, null, (List<X509Certificate>) null);
     }
 
     /** Creates a provider that fetches the trust list from the given URL with a cache TTL cap. */
     public TrustListProvider(KeycloakSession session, String trustListUrl, Duration maxCacheTtl) {
+        this(session, trustListUrl, maxCacheTtl, (List<X509Certificate>) null);
+    }
+
+    /**
+     * Creates a provider that fetches the trust list from the given URL with a cache TTL cap
+     * and optional signature verification.
+     *
+     * @param signingCertificates if non-null/non-empty, the trust list JWT signature is verified.
+     *     The JWT's x5c chain is validated against these certificates, or the JWT signature is
+     *     verified directly against each certificate's public key.
+     */
+    public TrustListProvider(
+            KeycloakSession session,
+            String trustListUrl,
+            Duration maxCacheTtl,
+            List<X509Certificate> signingCertificates) {
         this.session = session;
         this.trustListUrl = trustListUrl;
         this.staticCertificates = null;
         this.maxCacheTtl = maxCacheTtl;
+        this.signingCertificates = signingCertificates;
     }
 
     /** Creates a provider with static trusted certificates. Useful for testing. */
@@ -66,6 +90,7 @@ public class TrustListProvider {
         this.trustListUrl = null;
         this.staticCertificates = staticCertificates;
         this.maxCacheTtl = null;
+        this.signingCertificates = null;
     }
 
     /**
@@ -99,6 +124,7 @@ public class TrustListProvider {
 
         try {
             String jwt = fetchTrustListJwt();
+            verifySignature(jwt);
             TrustListParseResult result = parseTrustListJwt(jwt);
 
             Instant effectiveExpiry = capExpiry(result.expiresAt);
@@ -112,6 +138,52 @@ public class TrustListProvider {
             LOG.warnf("Failed to fetch trust list from %s: %s", trustListUrl, e.getMessage());
             return List.of();
         }
+    }
+
+    void verifySignature(String jwt) throws Exception {
+        if (signingCertificates == null || signingCertificates.isEmpty()) {
+            LOG.debugf("Trust list JWT signature not verified: no signing certificate configured");
+            return;
+        }
+
+        SignedJWT signedJWT = SignedJWT.parse(jwt);
+
+        // Try x5c chain validation first
+        List<String> x5c = signedJWT.getHeader().getX509CertChain() != null
+                ? signedJWT.getHeader().getX509CertChain().stream()
+                        .map(c -> c.toString())
+                        .toList()
+                : null;
+        if (x5c != null && !x5c.isEmpty()) {
+            try {
+                PublicKey leafKey = X5cChainValidator.validateChain(x5c, signingCertificates);
+                DefaultJWSVerifierFactory factory = new DefaultJWSVerifierFactory();
+                JWSVerifier verifier = factory.createJWSVerifier(signedJWT.getHeader(), leafKey);
+                if (signedJWT.verify(verifier)) {
+                    LOG.debugf("Trust list JWT signature verified via x5c chain");
+                    return;
+                }
+            } catch (Exception e) {
+                LOG.debugf("Trust list JWT x5c chain validation failed: %s", e.getMessage());
+            }
+        }
+
+        // Fallback: try each configured certificate's public key directly
+        DefaultJWSVerifierFactory factory = new DefaultJWSVerifierFactory();
+        for (X509Certificate cert : signingCertificates) {
+            try {
+                JWSVerifier verifier = factory.createJWSVerifier(signedJWT.getHeader(), cert.getPublicKey());
+                if (signedJWT.verify(verifier)) {
+                    LOG.debugf("Trust list JWT signature verified against configured signing certificate");
+                    return;
+                }
+            } catch (Exception e) {
+                // Key type doesn't match algorithm — try next
+            }
+        }
+
+        throw new IllegalStateException(
+                "Trust list JWT signature verification failed: signature does not match any configured signing certificate");
     }
 
     private Instant capExpiry(Instant expiry) {

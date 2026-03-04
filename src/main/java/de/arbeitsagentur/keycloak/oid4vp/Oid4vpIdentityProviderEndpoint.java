@@ -197,7 +197,7 @@ public class Oid4vpIdentityProviderEndpoint {
             return processVpToken(authSession, state, vpToken, isCrossDeviceFlow);
         } catch (Exception e) {
             LOG.errorf(e, "Uncaught exception in handlePost: %s", e.getMessage());
-            return jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", e.getMessage());
+            return jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", null);
         }
     }
 
@@ -307,14 +307,14 @@ public class Oid4vpIdentityProviderEndpoint {
                     return jsonErrorResponse(
                             Response.Status.BAD_REQUEST,
                             "invalid_request",
-                            "Failed to encrypt request object: " + e.getMessage());
+                            "Failed to encrypt request object with provided wallet_metadata");
                 }
             }
 
             return Response.ok(responseJwt).type(REQUEST_OBJECT_CONTENT_TYPE).build();
         } catch (Exception e) {
             LOG.errorf(e, "Failed to generate request object: %s", e.getMessage());
-            return jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", e.getMessage());
+            return jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", null);
         }
     }
 
@@ -370,7 +370,7 @@ public class Oid4vpIdentityProviderEndpoint {
             return handleError("identity_provider_error", e.getMessage());
         } catch (Exception e) {
             LOG.errorf(e, "Failed to process VP token: %s", e.getMessage());
-            return jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", e.getMessage());
+            return jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", null);
         }
     }
 

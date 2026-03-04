@@ -51,6 +51,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final String CREDENTIAL_SET_PURPOSE = "credentialSetPurpose";
 
     public static final String TRUST_LIST_URL = "trustListUrl";
+    public static final String TRUST_LIST_SIGNING_CERT_PEM = "trustListSigningCertPem";
 
     public static final String ALLOWED_ISSUERS = "allowedIssuers";
     public static final String ALLOWED_CREDENTIAL_TYPES = "allowedCredentialTypes";
@@ -211,6 +212,18 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public void setTrustListUrl(String url) {
         getConfig().put(TRUST_LIST_URL, url);
+    }
+
+    public String getTrustListSigningCertPem() {
+        String pem = getConfig().get(TRUST_LIST_SIGNING_CERT_PEM);
+        if (pem != null && pem.contains("\\n")) {
+            pem = pem.replace("\\n", "\n");
+        }
+        return pem;
+    }
+
+    public void setTrustListSigningCertPem(String pem) {
+        getConfig().put(TRUST_LIST_SIGNING_CERT_PEM, pem);
     }
 
     public boolean isEnforceHaip() {

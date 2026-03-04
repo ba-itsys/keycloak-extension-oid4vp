@@ -198,6 +198,7 @@ Alternatively, add it via realm import JSON:
 |-----|-------------|---------|
 | `enforceHaip` | Enforce HAIP compliance (ES256 signatures, encrypted responses via `direct_post.jwt`). | `true` |
 | `trustListUrl` | URL of an ETSI TS 119 602 trust list JWT. Used to obtain trusted issuer certificates for SD-JWT and mDoc signature verification. | *(none)* |
+| `trustListSigningCertPem` | PEM-encoded X.509 certificate chain used to verify the trust list JWT signature. If the JWT contains an `x5c` header, the chain is validated against these certificates. If not configured, the trust list JWT signature is **not verified**. | *(none — signature not checked)* |
 | `allowedIssuers` | Comma-separated list of allowed credential issuer identifiers, or `*` for any. | `*` |
 | `allowedCredentialTypes` | Comma-separated list of allowed credential types (VCT/doctype), or `*` for any. | `*` |
 | `clockSkewSeconds` | Clock skew tolerance (in seconds) for SD-JWT signature verification (`iat`, `exp`, `nbf` checks). | `60` |

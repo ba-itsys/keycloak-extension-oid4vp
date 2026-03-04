@@ -81,8 +81,8 @@ final class Oid4vpTestKeycloakSetup {
         admin.putJson("/admin/realms/" + realm + "/clients/" + id, rep);
     }
 
-    static void configureOid4vpIdentityProvider(KeycloakAdminClient admin, String realm, String trustListUrl)
-            throws Exception {
+    static void configureOid4vpIdentityProvider(
+            KeycloakAdminClient admin, String realm, String trustListUrl, String x509CertPem) throws Exception {
         Map<String, Object> idpConfig = new LinkedHashMap<>();
         idpConfig.put("alias", "oid4vp");
         idpConfig.put("displayName", "Sign in with Wallet");
@@ -103,6 +103,7 @@ final class Oid4vpTestKeycloakSetup {
         config.put(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM_MDOC, "eu.europa.ec.eudi.pid.1/family_name");
         config.put(Oid4vpIdentityProviderConfig.TRUST_LIST_URL, trustListUrl);
         config.put(Oid4vpIdentityProviderConfig.STATUS_LIST_MAX_CACHE_TTL_SECONDS, "0");
+        config.put(Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM, x509CertPem);
         idpConfig.put("config", config);
 
         admin.deleteIfExists("/admin/realms/" + realm + "/identity-provider/instances/oid4vp");

@@ -18,7 +18,6 @@ package de.arbeitsagentur.keycloak.oid4vp;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 import org.junit.jupiter.api.extension.AfterEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 
@@ -44,7 +43,7 @@ class IdpConfigScope implements AfterEachCallback {
     private final Supplier<KeycloakAdminClient> adminSupplier;
     private final String realm;
     private final Map<String, String> pending = new LinkedHashMap<>();
-    private final Map<String, String> applied = new LinkedHashMap<>();
+    private final Map<String, String> originals = new LinkedHashMap<>();
 
     IdpConfigScope(Supplier<KeycloakAdminClient> adminSupplier, String realm) {
         this.adminSupplier = adminSupplier;
@@ -58,23 +57,30 @@ class IdpConfigScope implements AfterEachCallback {
     }
 
     /** Send all buffered changes to Keycloak in a single admin API PUT. */
+    @SuppressWarnings("unchecked")
     void apply() throws Exception {
         if (pending.isEmpty()) {
             return;
         }
-        applied.putAll(pending);
-        Oid4vpTestKeycloakSetup.setIdpConfigs(adminSupplier.get(), realm, pending);
+        KeycloakAdminClient admin = adminSupplier.get();
+        Map<String, Object> idp = admin.getJson("/admin/realms/" + realm + "/identity-provider/instances/oid4vp");
+        Map<String, String> config = (Map<String, String>) idp.get("config");
+        for (String key : pending.keySet()) {
+            if (!originals.containsKey(key)) {
+                originals.put(key, config.getOrDefault(key, ""));
+            }
+        }
+        Oid4vpTestKeycloakSetup.setIdpConfigs(admin, realm, pending);
         pending.clear();
     }
 
     @Override
     public void afterEach(ExtensionContext context) throws Exception {
         pending.clear();
-        if (applied.isEmpty()) {
+        if (originals.isEmpty()) {
             return;
         }
-        Map<String, String> reset = applied.keySet().stream().collect(Collectors.toMap(k -> k, k -> ""));
-        Oid4vpTestKeycloakSetup.setIdpConfigs(adminSupplier.get(), realm, reset);
-        applied.clear();
+        Oid4vpTestKeycloakSetup.setIdpConfigs(adminSupplier.get(), realm, originals);
+        originals.clear();
     }
 }
