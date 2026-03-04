@@ -43,4 +43,8 @@ public interface Oid4vpConfigProvider {
     int getSsePingIntervalSeconds();
 
     int getCrossDeviceCompleteTtlSeconds();
+
+    boolean isUseIdTokenSubject();
+
+    int getClockSkewSeconds();
 }

@@ -192,11 +192,28 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .defaultValue(String.valueOf(Oid4vpIdentityProviderConfig.DEFAULT_TRUST_LIST_MAX_STALE_AGE_SECONDS))
                 .add()
                 .property()
+                .name(Oid4vpIdentityProviderConfig.USE_ID_TOKEN_SUBJECT)
+                .label("Use ID Token Subject (SIOPv2)")
+                .helpText("When enabled, requests a Self-Issued ID Token alongside the VP Token. "
+                        + "The user's subject is determined from the ID Token's sub claim (JWK Thumbprint) "
+                        + "instead of a credential claim. The VP Token is still required for credential attributes.")
+                .type(ProviderConfigProperty.BOOLEAN_TYPE)
+                .defaultValue("false")
+                .add()
+                .property()
                 .name(Oid4vpIdentityProviderConfig.STATUS_LIST_MAX_CACHE_TTL_SECONDS)
                 .label("Status List Cache TTL (seconds)")
                 .helpText("Maximum time to cache credential status lists (overrides JWT expiry if shorter). "
                         + "Leave empty to use the JWT's own expiration.")
                 .type(ProviderConfigProperty.STRING_TYPE)
+                .add()
+                .property()
+                .name(Oid4vpIdentityProviderConfig.REQUEST_OBJECT_LIFESPAN_SECONDS)
+                .label("Request Object Lifespan (seconds)")
+                .helpText("How long the signed request object JWT is valid. "
+                        + "The wallet fetches and processes it immediately, so this should be short.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .defaultValue(String.valueOf(Oid4vpIdentityProviderConfig.DEFAULT_REQUEST_OBJECT_LIFESPAN_SECONDS))
                 .add()
                 .build();
     }

@@ -37,4 +37,4 @@ public record RequestObjectParams(
         String x509SigningKeyJwk,
         String walletNonce,
         boolean enforceHaip,
-        int lifespanSeconds) {}
+        boolean useIdTokenSubject) {}

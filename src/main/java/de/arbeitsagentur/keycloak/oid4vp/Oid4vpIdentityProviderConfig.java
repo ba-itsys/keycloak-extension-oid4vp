@@ -69,6 +69,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public static final String CLOCK_SKEW_SECONDS = "clockSkewSeconds";
     public static final String KB_JWT_MAX_AGE_SECONDS = "kbJwtMaxAgeSeconds";
+    public static final String REQUEST_OBJECT_LIFESPAN_SECONDS = "requestObjectLifespanSeconds";
 
     public static final int DEFAULT_SSE_POLL_INTERVAL_MS = 2000;
     public static final int DEFAULT_SSE_TIMEOUT_SECONDS = 120;
@@ -76,6 +77,9 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final int DEFAULT_CROSS_DEVICE_COMPLETE_TTL_SECONDS = 300;
     public static final int DEFAULT_CLOCK_SKEW_SECONDS = 60;
     public static final int DEFAULT_KB_JWT_MAX_AGE_SECONDS = 300;
+    public static final int DEFAULT_REQUEST_OBJECT_LIFESPAN_SECONDS = 10;
+
+    public static final String USE_ID_TOKEN_SUBJECT = "useIdTokenSubject";
 
     public static final String ENFORCE_HAIP = "enforceHaip";
     public static final String HAIP_CLIENT_ID_SCHEME = Oid4vpConstants.CLIENT_ID_SCHEME_X509_HASH;
@@ -253,6 +257,14 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         getConfig().put(ENFORCE_HAIP, String.valueOf(enforce));
     }
 
+    public boolean isUseIdTokenSubject() {
+        return "true".equalsIgnoreCase(getConfig().get(USE_ID_TOKEN_SUBJECT));
+    }
+
+    public void setUseIdTokenSubject(boolean use) {
+        getConfig().put(USE_ID_TOKEN_SUBJECT, String.valueOf(use));
+    }
+
     public String getAllowedIssuers() {
         return getConfig().get(ALLOWED_ISSUERS);
     }
@@ -372,6 +384,14 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public void setKbJwtMaxAgeSeconds(int seconds) {
         getConfig().put(KB_JWT_MAX_AGE_SECONDS, String.valueOf(seconds));
+    }
+
+    public int getRequestObjectLifespanSeconds() {
+        return getIntConfig(REQUEST_OBJECT_LIFESPAN_SECONDS, DEFAULT_REQUEST_OBJECT_LIFESPAN_SECONDS);
+    }
+
+    public void setRequestObjectLifespanSeconds(int seconds) {
+        getConfig().put(REQUEST_OBJECT_LIFESPAN_SECONDS, String.valueOf(seconds));
     }
 
     private int getIntConfig(String key, int defaultValue) {

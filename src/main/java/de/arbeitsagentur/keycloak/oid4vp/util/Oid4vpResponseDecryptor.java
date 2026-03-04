@@ -15,6 +15,7 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
+import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.ID_TOKEN;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.VP_TOKEN;
 
 import com.nimbusds.jose.JWEObject;
@@ -82,6 +83,7 @@ public class Oid4vpResponseDecryptor {
                 Object errorDescObj = payloadMap.get(OAuth2Constants.ERROR_DESCRIPTION);
                 return new DecryptedResponse(
                         null,
+                        null,
                         mdocGeneratedNonce,
                         errorObj.toString(),
                         errorDescObj != null ? errorDescObj.toString() : null);
@@ -93,7 +95,13 @@ public class Oid4vpResponseDecryptor {
                 vpToken = vpTokenObj instanceof String s ? s : JsonSerialization.writeValueAsString(vpTokenObj);
             }
 
-            return new DecryptedResponse(vpToken, mdocGeneratedNonce, null, null);
+            String idToken = null;
+            Object idTokenObj = payloadMap.get(ID_TOKEN);
+            if (idTokenObj instanceof String s) {
+                idToken = s;
+            }
+
+            return new DecryptedResponse(vpToken, idToken, mdocGeneratedNonce, null, null);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to decrypt response: " + e.getMessage(), e);
         }

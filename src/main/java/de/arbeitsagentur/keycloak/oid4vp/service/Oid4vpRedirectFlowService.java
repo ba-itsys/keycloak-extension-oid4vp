@@ -76,9 +76,11 @@ public class Oid4vpRedirectFlowService {
     private static final Logger LOG = Logger.getLogger(Oid4vpRedirectFlowService.class);
 
     private final KeycloakSession session;
+    private final int requestObjectLifespanSeconds;
 
-    public Oid4vpRedirectFlowService(KeycloakSession session) {
+    public Oid4vpRedirectFlowService(KeycloakSession session, int requestObjectLifespanSeconds) {
         this.session = Objects.requireNonNull(session);
+        this.requestObjectLifespanSeconds = requestObjectLifespanSeconds;
     }
 
     /** Builds the wallet authorization URL with {@code client_id} and {@code request_uri} parameters. */
@@ -115,7 +117,7 @@ public class Oid4vpRedirectFlowService {
                 params.state(),
                 params.nonce(),
                 params.enforceHaip(),
-                params.lifespanSeconds());
+                params.useIdTokenSubject());
         if (StringUtil.isNotBlank(params.walletNonce())) {
             claims.put(WALLET_NONCE, params.walletNonce());
         }
@@ -145,10 +147,15 @@ public class Oid4vpRedirectFlowService {
     }
 
     private LinkedHashMap<String, Object> buildBaseClaims(
-            String clientId, String responseUri, String state, String nonce, boolean enforceHaip, int lifespanSeconds) {
+            String clientId,
+            String responseUri,
+            String state,
+            String nonce,
+            boolean enforceHaip,
+            boolean useIdTokenSubject) {
         Instant now = Instant.now();
         long issuedAt = now.getEpochSecond();
-        long expiresAt = now.plusSeconds(lifespanSeconds).getEpochSecond();
+        long expiresAt = now.plusSeconds(requestObjectLifespanSeconds).getEpochSecond();
 
         var claims = new LinkedHashMap<String, Object>();
         claims.put("jti", UUID.randomUUID().toString());
@@ -157,7 +164,12 @@ public class Oid4vpRedirectFlowService {
         claims.put("iss", clientId);
         claims.put("aud", SELF_ISSUED_V2);
         claims.put(OAuth2Constants.CLIENT_ID, clientId);
-        claims.put(OAuth2Constants.RESPONSE_TYPE, RESPONSE_TYPE_VP_TOKEN);
+        claims.put(
+                OAuth2Constants.RESPONSE_TYPE,
+                useIdTokenSubject ? RESPONSE_TYPE_VP_TOKEN_ID_TOKEN : RESPONSE_TYPE_VP_TOKEN);
+        if (useIdTokenSubject) {
+            claims.put(OAuth2Constants.SCOPE, "openid");
+        }
         claims.put(
                 OIDCLoginProtocol.RESPONSE_MODE_PARAM,
                 enforceHaip ? RESPONSE_MODE_DIRECT_POST_JWT : RESPONSE_MODE_DIRECT_POST);

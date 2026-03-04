@@ -175,21 +175,24 @@ public class DcqlQueryBuilder {
                 }
             });
 
-            String sdJwtUserMappingClaim = config.getUserMappingClaim();
-            String mdocUserMappingClaim = config.getUserMappingClaimMdoc();
+            if (!config.isUseIdTokenSubject()) {
+                String sdJwtUserMappingClaim = config.getUserMappingClaim();
+                String mdocUserMappingClaim = config.getUserMappingClaimMdoc();
 
-            for (String typeKey : formatByType.keySet()) {
-                String format = formatByType.get(typeKey);
-                List<ClaimSpec> claims = claimsByType.computeIfAbsent(typeKey, k -> new ArrayList<>());
+                for (String typeKey : formatByType.keySet()) {
+                    String format = formatByType.get(typeKey);
+                    List<ClaimSpec> claims = claimsByType.computeIfAbsent(typeKey, k -> new ArrayList<>());
 
-                String userMappingClaim =
-                        Oid4vpConstants.FORMAT_MSO_MDOC.equals(format) ? mdocUserMappingClaim : sdJwtUserMappingClaim;
+                    String userMappingClaim = Oid4vpConstants.FORMAT_MSO_MDOC.equals(format)
+                            ? mdocUserMappingClaim
+                            : sdJwtUserMappingClaim;
 
-                if (StringUtil.isNotBlank(userMappingClaim)) {
-                    boolean alreadyPresent =
-                            claims.stream().anyMatch(spec -> spec.path().equals(userMappingClaim));
-                    if (!alreadyPresent) {
-                        claims.add(new ClaimSpec(userMappingClaim, false));
+                    if (StringUtil.isNotBlank(userMappingClaim)) {
+                        boolean alreadyPresent =
+                                claims.stream().anyMatch(spec -> spec.path().equals(userMappingClaim));
+                        if (!alreadyPresent) {
+                            claims.add(new ClaimSpec(userMappingClaim, false));
+                        }
                     }
                 }
             }

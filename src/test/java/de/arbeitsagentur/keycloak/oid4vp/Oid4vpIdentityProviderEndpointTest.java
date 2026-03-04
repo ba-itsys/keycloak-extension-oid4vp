@@ -69,7 +69,7 @@ class Oid4vpIdentityProviderEndpointTest {
 
     @Test
     void handlePost_withNoSessionMatch_returnsSessionExpiredError() {
-        Response response = endpoint.handlePost(null, null, null, null, null, null);
+        Response response = endpoint.handlePost(null, null, null, null, null, null, null);
         assertThat(response.getStatus()).isEqualTo(400);
         String body = (String) response.getEntity();
         assertThat(body).contains("session_expired");

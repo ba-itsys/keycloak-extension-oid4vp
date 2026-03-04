@@ -69,11 +69,10 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     private final Oid4vpQrCodeService qrCodeService;
     private final Oid4vpCallbackProcessor callbackProcessor;
     private final Oid4vpRequestObjectStore requestObjectStore;
-    private final int loginTimeoutSeconds;
 
     public Oid4vpIdentityProvider(KeycloakSession session, Oid4vpIdentityProviderConfig config) {
         super(session, config);
-        this.redirectFlowService = new Oid4vpRedirectFlowService(session);
+        this.redirectFlowService = new Oid4vpRedirectFlowService(session, config.getRequestObjectLifespanSeconds());
         this.qrCodeService = new Oid4vpQrCodeService();
 
         List<X509Certificate> trustListSigningCerts = parseTrustListSigningCerts(config.getTrustListSigningCertPem());
@@ -94,7 +93,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                         config.getTrustListMaxStaleAge()));
 
         RealmModel realm = session.getContext().getRealm();
-        this.loginTimeoutSeconds = realm != null ? realm.getAccessCodeLifespanLogin() : 1800;
+        int loginTimeoutSeconds = realm != null ? realm.getAccessCodeLifespanLogin() : 1800;
         this.requestObjectStore = new Oid4vpRequestObjectStore(Duration.ofSeconds(loginTimeoutSeconds));
     }
 
@@ -104,10 +103,6 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
     Oid4vpCallbackProcessor getCallbackProcessor() {
         return callbackProcessor;
-    }
-
-    int getLoginTimeoutSeconds() {
-        return loginTimeoutSeconds;
     }
 
     @Override

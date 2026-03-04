@@ -28,4 +28,5 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
  * @param errorDescription human-readable error description, or {@code null}
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.2">OID4VP 1.0 §6.2 — Response Mode direct_post.jwt</a>
  */
-public record DecryptedResponse(String vpToken, String mdocGeneratedNonce, String error, String errorDescription) {}
+public record DecryptedResponse(
+        String vpToken, String idToken, String mdocGeneratedNonce, String error, String errorDescription) {}
