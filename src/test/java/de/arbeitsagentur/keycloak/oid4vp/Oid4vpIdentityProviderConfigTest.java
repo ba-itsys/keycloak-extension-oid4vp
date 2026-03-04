@@ -200,6 +200,23 @@ class Oid4vpIdentityProviderConfigTest {
     }
 
     @Test
+    void isIncludeTrustedAuthorities_defaultTrue() {
+        assertThat(config.isIncludeTrustedAuthorities()).isTrue();
+    }
+
+    @Test
+    void isIncludeTrustedAuthorities_explicitlyDisabled() {
+        config.setIncludeTrustedAuthorities(false);
+        assertThat(config.isIncludeTrustedAuthorities()).isFalse();
+    }
+
+    @Test
+    void isIncludeTrustedAuthorities_explicitlyEnabled() {
+        config.setIncludeTrustedAuthorities(true);
+        assertThat(config.isIncludeTrustedAuthorities()).isTrue();
+    }
+
+    @Test
     void sseInvalidIntFallsBackToDefault() {
         config.getConfig().put("ssePollIntervalMs", "not-a-number");
         config.getConfig().put("sseTimeoutSeconds", "");

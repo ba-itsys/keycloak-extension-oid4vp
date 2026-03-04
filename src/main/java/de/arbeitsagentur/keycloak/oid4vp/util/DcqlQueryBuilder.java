@@ -49,6 +49,7 @@ public class DcqlQueryBuilder {
     private final List<CredentialTypeSpec> credentialTypes = new ArrayList<>();
     private boolean allCredentialsRequired = false;
     private String purpose;
+    private String trustListUrl;
 
     public DcqlQueryBuilder(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
@@ -66,6 +67,18 @@ public class DcqlQueryBuilder {
 
     public DcqlQueryBuilder setPurpose(String purpose) {
         this.purpose = purpose;
+        return this;
+    }
+
+    /**
+     * Sets the ETSI Trusted List URL to include as a {@code trusted_authorities} constraint
+     * on each credential entry. When set, each credential in the DCQL query will contain
+     * {@code "trusted_authorities": [{"type": "etsi_tl", "values": ["<url>"]}]}.
+     *
+     * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1.1">OID4VP 1.0 §6.1.1 — Trusted Authorities Query</a>
+     */
+    public DcqlQueryBuilder setTrustListUrl(String trustListUrl) {
+        this.trustListUrl = trustListUrl;
         return this;
     }
 
@@ -105,10 +118,12 @@ public class DcqlQueryBuilder {
             ObjectMapper objectMapper,
             Map<String, CredentialTypeSpec> credentialTypes,
             boolean allCredentialsRequired,
-            String purpose) {
+            String purpose,
+            String trustListUrl) {
         DcqlQueryBuilder builder = new DcqlQueryBuilder(objectMapper);
         builder.setAllCredentialsRequired(allCredentialsRequired);
         builder.setPurpose(purpose);
+        builder.setTrustListUrl(trustListUrl);
         for (CredentialTypeSpec spec : credentialTypes.values()) {
             builder.credentialTypes.add(spec);
         }
@@ -198,6 +213,10 @@ public class DcqlQueryBuilder {
         credential.put("id", credId);
         credential.put("format", typeSpec.format());
         credential.put("meta", buildMetaConstraint(typeSpec));
+
+        if (StringUtil.isNotBlank(trustListUrl)) {
+            credential.put("trusted_authorities", List.of(Map.of("type", "etsi_tl", "values", List.of(trustListUrl))));
+        }
 
         if (!typeSpec.claimSpecs().isEmpty()) {
             addClaimsWithOptionalSets(credential, typeSpec.claimSpecs(), typeSpec.format(), typeSpec.type());

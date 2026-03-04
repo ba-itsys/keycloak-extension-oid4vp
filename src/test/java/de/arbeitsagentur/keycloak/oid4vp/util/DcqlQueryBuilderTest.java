@@ -144,17 +144,86 @@ class DcqlQueryBuilderTest {
     }
 
     @Test
+    void build_withTrustListUrl_includesTrustedAuthorities() throws Exception {
+        builder.addCredentialType("dc+sd-jwt", "IdentityCredential", List.of(new ClaimSpec("given_name")));
+        builder.setTrustListUrl("https://trust-list.example.com/tl.jwt");
+
+        String json = builder.build();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> result = objectMapper.readValue(json, Map.class);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> credentials = (List<Map<String, Object>>) result.get("credentials");
+        Map<String, Object> cred = credentials.get(0);
+
+        assertThat(cred).containsKey("trusted_authorities");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> authorities = (List<Map<String, Object>>) cred.get("trusted_authorities");
+        assertThat(authorities).hasSize(1);
+        assertThat(authorities.get(0).get("type")).isEqualTo("etsi_tl");
+        assertThat(authorities.get(0).get("values")).isEqualTo(List.of("https://trust-list.example.com/tl.jwt"));
+    }
+
+    @Test
+    void build_withoutTrustListUrl_noTrustedAuthorities() throws Exception {
+        builder.addCredentialType("dc+sd-jwt", "IdentityCredential", List.of(new ClaimSpec("given_name")));
+
+        String json = builder.build();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> result = objectMapper.readValue(json, Map.class);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> credentials = (List<Map<String, Object>>) result.get("credentials");
+        assertThat(credentials.get(0)).doesNotContainKey("trusted_authorities");
+    }
+
+    @Test
+    void build_multipleCredentials_eachHasTrustedAuthorities() throws Exception {
+        builder.addCredentialType("dc+sd-jwt", "Type1", List.of());
+        builder.addCredentialType("mso_mdoc", "org.iso.18013.5.1.mDL", List.of());
+        builder.setTrustListUrl("https://trust-list.example.com/tl.jwt");
+
+        String json = builder.build();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> result = objectMapper.readValue(json, Map.class);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> credentials = (List<Map<String, Object>>) result.get("credentials");
+        for (Map<String, Object> cred : credentials) {
+            assertThat(cred).containsKey("trusted_authorities");
+        }
+    }
+
+    @Test
     void fromMapperSpecs_createsBuilderCorrectly() throws Exception {
         Map<String, CredentialTypeSpec> specs = new LinkedHashMap<>();
         specs.put(
                 "dc+sd-jwt|IdentityCredential",
                 new CredentialTypeSpec("dc+sd-jwt", "IdentityCredential", List.of(new ClaimSpec("sub"))));
 
-        DcqlQueryBuilder result = DcqlQueryBuilder.fromMapperSpecs(objectMapper, specs, false, "Test purpose");
+        DcqlQueryBuilder result = DcqlQueryBuilder.fromMapperSpecs(objectMapper, specs, false, "Test purpose", null);
         String json = result.build();
 
         @SuppressWarnings("unchecked")
         Map<String, Object> parsed = objectMapper.readValue(json, Map.class);
         assertThat(parsed).containsKey("credentials");
+    }
+
+    @Test
+    void fromMapperSpecs_withTrustListUrl_includesTrustedAuthorities() throws Exception {
+        Map<String, CredentialTypeSpec> specs = new LinkedHashMap<>();
+        specs.put(
+                "dc+sd-jwt|IdentityCredential",
+                new CredentialTypeSpec("dc+sd-jwt", "IdentityCredential", List.of(new ClaimSpec("sub"))));
+
+        DcqlQueryBuilder result = DcqlQueryBuilder.fromMapperSpecs(
+                objectMapper, specs, false, null, "https://trust-list.example.com/tl.jwt");
+        String json = result.build();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> parsed = objectMapper.readValue(json, Map.class);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> credentials = (List<Map<String, Object>>) parsed.get("credentials");
+        assertThat(credentials.get(0)).containsKey("trusted_authorities");
     }
 }
