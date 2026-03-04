@@ -191,7 +191,7 @@ class Oid4vpRedirectFlowServiceHaipTest {
         Map<String, Object> sdJwtFormat = (Map<String, Object>) vpFormats.get("dc+sd-jwt");
         @SuppressWarnings("unchecked")
         List<String> sdJwtAlg = (List<String>) sdJwtFormat.get("sd-jwt_alg_values");
-        assertThat(sdJwtAlg).containsExactly("ES256");
+        assertThat(sdJwtAlg).containsExactly("ES256", "ES384", "ES512", "EdDSA");
     }
 
     @Test

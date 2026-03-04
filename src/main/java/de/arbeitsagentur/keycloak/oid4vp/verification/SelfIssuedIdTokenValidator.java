@@ -18,9 +18,10 @@ package de.arbeitsagentur.keycloak.oid4vp.verification;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.SELF_ISSUED_V2;
 
 import com.nimbusds.jose.JWSVerifier;
-import com.nimbusds.jose.crypto.ECDSAVerifier;
-import com.nimbusds.jose.jwk.ECKey;
+import com.nimbusds.jose.crypto.factories.DefaultJWSVerifierFactory;
+import com.nimbusds.jose.jwk.AsymmetricJWK;
 import com.nimbusds.jose.jwk.JWK;
+import com.nimbusds.jose.proc.JWSVerifierFactory;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import java.time.Instant;
@@ -57,7 +58,7 @@ public class SelfIssuedIdTokenValidator {
             SignedJWT jwt = SignedJWT.parse(idTokenString);
             JWTClaimsSet claims = jwt.getJWTClaimsSet();
 
-            ECKey subJwk = extractSubJwk(claims);
+            JWK subJwk = extractSubJwk(claims);
             verifySignature(jwt, subJwk);
             String sub = verifySubjectBinding(claims, subJwk);
             verifyIssuer(claims, sub);
@@ -73,26 +74,26 @@ public class SelfIssuedIdTokenValidator {
         }
     }
 
-    private ECKey extractSubJwk(JWTClaimsSet claims) throws Exception {
+    private JWK extractSubJwk(JWTClaimsSet claims) throws Exception {
         Map<String, Object> subJwkMap = claims.getJSONObjectClaim("sub_jwk");
         if (subJwkMap == null) {
             throw new IllegalArgumentException("Missing sub_jwk claim in ID token");
         }
-        JWK jwk = JWK.parse(subJwkMap);
-        if (!(jwk instanceof ECKey ecKey)) {
-            throw new IllegalArgumentException("sub_jwk must be an EC key");
-        }
-        return ecKey;
+        return JWK.parse(subJwkMap);
     }
 
-    private void verifySignature(SignedJWT jwt, ECKey subJwk) throws Exception {
-        JWSVerifier verifier = new ECDSAVerifier(subJwk);
+    private void verifySignature(SignedJWT jwt, JWK subJwk) throws Exception {
+        if (!(subJwk instanceof AsymmetricJWK asymmetricJwk)) {
+            throw new IllegalArgumentException("sub_jwk must be an asymmetric key");
+        }
+        JWSVerifierFactory factory = new DefaultJWSVerifierFactory();
+        JWSVerifier verifier = factory.createJWSVerifier(jwt.getHeader(), asymmetricJwk.toPublicKey());
         if (!jwt.verify(verifier)) {
             throw new IllegalArgumentException("ID token signature verification failed");
         }
     }
 
-    private String verifySubjectBinding(JWTClaimsSet claims, ECKey subJwk) throws Exception {
+    private String verifySubjectBinding(JWTClaimsSet claims, JWK subJwk) throws Exception {
         String sub = claims.getSubject();
         String expectedSub = subJwk.computeThumbprint("SHA-256").toString();
         if (sub == null || !sub.equals(expectedSub)) {
