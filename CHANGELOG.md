@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.1.1...v0.2.0) (2026-03-05)
+
+
+### Features
+
+* add SIOPv2 support ([a9c9d54](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/a9c9d5486ae69997fb00966664969877dcd9792e))
+* add trusted_authorities to dcql optionally ([6d18d60](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/6d18d60e27dc1a97394432233a4b4dfc868ca288))
+
+
+### Bug Fixes
+
+* advocate all allowed cred signing algs ([0aad724](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/0aad724ef0d6814f310ce9e74f0dd717a18f6f4b))
+* trust list verification, cert validity checks, haip in tests ([76ecb6f](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/76ecb6f8793abde0c32f6e4a606cb8f2c40c7ef9))
+* use stale trust list (max age configurable), if fetch fails ([2c7ae90](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/2c7ae90688a1dd3b5a8d88bb39bad2c93606204b))
+
 ## [0.1.1](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.1.0...v0.1.1) (2026-03-04)
 
 
