@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.2.0...v0.3.0) (2026-03-11)
+
+
+### Features
+
+* update request handling, browser flows, and conformance coverage ([089b214](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/089b214f57327b3c692c9728e370b9a5643fe627))
+
+
+### Bug Fixes
+
+* require auth session cookie matching the request handle for login ([0bfa675](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/0bfa675d4724434313e6fad4e0128725f7fc0323))
+* tighten HAIP validation and shared flow cleanup ([711cc3b](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/711cc3b1dbfa104c8fba78de269f2f7f58abd20e))
+
+
+### Dependencies
+
+* **deps-dev:** bump com.diffplug.spotless:spotless-maven-plugin ([a5f0046](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/a5f0046ac92e472fa5244993665daabc0f32fd7c))
+* **deps-dev:** bump org.apache.httpcomponents.client5:httpclient5 ([a69e660](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/a69e66055d5061424d6545a3cbcfaee8c5db0122))
+* **deps-dev:** bump org.junit.jupiter:junit-jupiter ([e87eca2](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/e87eca2388507a292709df0713a09dcc503fb517))
+* **deps-dev:** bump org.mockito:mockito-core from 5.21.0 to 5.22.0 ([2cd08ac](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/2cd08ac99040e7fb93cc4482435ced89c9220cd3))
+
 ## [0.2.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.1.1...v0.2.0) (2026-03-05)
 
 
