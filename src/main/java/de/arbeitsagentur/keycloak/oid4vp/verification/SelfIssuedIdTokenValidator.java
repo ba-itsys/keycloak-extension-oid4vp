@@ -17,15 +17,11 @@ package de.arbeitsagentur.keycloak.oid4vp.verification;
 
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.SELF_ISSUED_V2;
 
-import com.nimbusds.jose.JWSVerifier;
-import com.nimbusds.jose.crypto.factories.DefaultJWSVerifierFactory;
-import com.nimbusds.jose.jwk.AsymmetricJWK;
-import com.nimbusds.jose.jwk.JWK;
-import com.nimbusds.jose.proc.JWSVerifierFactory;
-import com.nimbusds.jwt.JWTClaimsSet;
-import com.nimbusds.jwt.SignedJWT;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
+import org.keycloak.jose.jws.JWSInput;
 
 /**
  * Validates Self-Issued ID Tokens per the SIOPv2 specification.
@@ -44,28 +40,17 @@ public class SelfIssuedIdTokenValidator {
         this.clockSkewSeconds = clockSkewSeconds;
     }
 
-    /**
-     * Validates a SIOPv2 Self-Issued ID Token and returns the {@code sub} claim.
-     *
-     * @param idTokenString the compact-serialized JWT
-     * @param expectedAudience the client_id from the authorization request
-     * @param expectedNonce the nonce from the authorization request
-     * @return the validated {@code sub} claim (JWK Thumbprint of {@code sub_jwk})
-     * @throws IllegalArgumentException if validation fails
-     */
     public String validate(String idTokenString, String expectedAudience, String expectedNonce) {
         try {
-            SignedJWT jwt = SignedJWT.parse(idTokenString);
-            JWTClaimsSet claims = jwt.getJWTClaimsSet();
-
-            JWK subJwk = extractSubJwk(claims);
+            JWSInput jwt = X5cChainValidator.parseJwt(idTokenString);
+            Map<String, Object> claims = X5cChainValidator.parseClaims(jwt);
+            Oid4vpJwk subJwk = extractSubJwk(claims);
             verifySignature(jwt, subJwk);
             String sub = verifySubjectBinding(claims, subJwk);
             verifyIssuer(claims, sub);
             verifyAudience(claims, expectedAudience);
             verifyNonce(claims, expectedNonce);
             verifyTimeValidity(claims);
-
             return sub;
         } catch (IllegalArgumentException e) {
             throw e;
@@ -74,68 +59,86 @@ public class SelfIssuedIdTokenValidator {
         }
     }
 
-    private JWK extractSubJwk(JWTClaimsSet claims) throws Exception {
-        Map<String, Object> subJwkMap = claims.getJSONObjectClaim("sub_jwk");
+    @SuppressWarnings("unchecked")
+    private Oid4vpJwk extractSubJwk(Map<String, Object> claims) {
+        Object value = claims.get("sub_jwk");
+        Map<String, Object> subJwkMap = value instanceof Map<?, ?> map ? (Map<String, Object>) map : null;
         if (subJwkMap == null) {
             throw new IllegalArgumentException("Missing sub_jwk claim in ID token");
         }
-        return JWK.parse(subJwkMap);
+        return Oid4vpJwk.parse(subJwkMap);
     }
 
-    private void verifySignature(SignedJWT jwt, JWK subJwk) throws Exception {
-        if (!(subJwk instanceof AsymmetricJWK asymmetricJwk)) {
-            throw new IllegalArgumentException("sub_jwk must be an asymmetric key");
-        }
-        JWSVerifierFactory factory = new DefaultJWSVerifierFactory();
-        JWSVerifier verifier = factory.createJWSVerifier(jwt.getHeader(), asymmetricJwk.toPublicKey());
-        if (!jwt.verify(verifier)) {
-            throw new IllegalArgumentException("ID token signature verification failed");
-        }
+    private void verifySignature(JWSInput jwt, Oid4vpJwk subJwk) throws Exception {
+        X5cChainValidator.verifyJwtSignature(jwt, subJwk.toPublicKey());
     }
 
-    private String verifySubjectBinding(JWTClaimsSet claims, JWK subJwk) throws Exception {
-        String sub = claims.getSubject();
-        String expectedSub = subJwk.computeThumbprint("SHA-256").toString();
+    private String verifySubjectBinding(Map<String, Object> claims, Oid4vpJwk subJwk) {
+        String sub = stringClaim(claims, "sub");
+        String expectedSub = subJwk.thumbprint();
         if (sub == null || !sub.equals(expectedSub)) {
             throw new IllegalArgumentException("ID token sub does not match JWK Thumbprint of sub_jwk");
         }
         return sub;
     }
 
-    private void verifyIssuer(JWTClaimsSet claims, String sub) {
-        String iss = claims.getIssuer();
+    private void verifyIssuer(Map<String, Object> claims, String sub) {
+        String iss = stringClaim(claims, "iss");
         if (!sub.equals(iss) && !SELF_ISSUED_V2.equals(iss)) {
             throw new IllegalArgumentException("ID token iss must equal sub or be " + SELF_ISSUED_V2);
         }
     }
 
-    private void verifyAudience(JWTClaimsSet claims, String expectedAudience) {
-        if (!claims.getAudience().contains(expectedAudience)) {
+    private void verifyAudience(Map<String, Object> claims, String expectedAudience) {
+        List<String> audience = audience(claims);
+        if (!audience.contains(expectedAudience)) {
             throw new IllegalArgumentException("ID token aud does not contain expected audience: " + expectedAudience);
         }
     }
 
-    private void verifyNonce(JWTClaimsSet claims, String expectedNonce) throws Exception {
-        if (expectedNonce == null) return;
-        String nonce = claims.getStringClaim("nonce");
-        if (!expectedNonce.equals(nonce)) {
+    private void verifyNonce(Map<String, Object> claims, String expectedNonce) {
+        if (expectedNonce == null) {
+            return;
+        }
+        Object nonce = claims.get("nonce");
+        if (nonce == null || !expectedNonce.equals(nonce.toString())) {
             throw new IllegalArgumentException("ID token nonce does not match expected nonce");
         }
     }
 
-    private void verifyTimeValidity(JWTClaimsSet claims) {
+    private void verifyTimeValidity(Map<String, Object> claims) {
         Instant now = Instant.now();
-        if (claims.getExpirationTime() != null) {
-            Instant exp = claims.getExpirationTime().toInstant().plusSeconds(clockSkewSeconds);
-            if (now.isAfter(exp)) {
-                throw new IllegalArgumentException("ID token is expired");
-            }
+        Instant exp = instantClaim(claims, "exp");
+        if (exp != null && now.isAfter(exp.plusSeconds(clockSkewSeconds))) {
+            throw new IllegalArgumentException("ID token is expired");
         }
-        if (claims.getIssueTime() != null) {
-            Instant iat = claims.getIssueTime().toInstant().minusSeconds(clockSkewSeconds);
-            if (now.isBefore(iat)) {
-                throw new IllegalArgumentException("ID token issued in the future");
-            }
+        Instant iat = instantClaim(claims, "iat");
+        if (iat != null && now.isBefore(iat.minusSeconds(clockSkewSeconds))) {
+            throw new IllegalArgumentException("ID token issued in the future");
         }
+    }
+
+    private String stringClaim(Map<String, Object> claims, String name) {
+        Object value = claims.get(name);
+        return value != null ? value.toString() : null;
+    }
+
+    private Instant instantClaim(Map<String, Object> claims, String name) {
+        Object value = claims.get(name);
+        if (value instanceof Number number) {
+            return Instant.ofEpochSecond(number.longValue());
+        }
+        if (value != null) {
+            return Instant.ofEpochSecond(Long.parseLong(value.toString()));
+        }
+        return null;
+    }
+
+    private List<String> audience(Map<String, Object> claims) {
+        Object aud = claims.get("aud");
+        if (aud instanceof List<?> list) {
+            return list.stream().map(Object::toString).toList();
+        }
+        return aud != null ? List.of(aud.toString()) : List.of();
     }
 }

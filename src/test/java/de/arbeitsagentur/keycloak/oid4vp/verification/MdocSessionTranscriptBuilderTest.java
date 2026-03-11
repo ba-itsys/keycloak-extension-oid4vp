@@ -17,8 +17,10 @@ package de.arbeitsagentur.keycloak.oid4vp.verification;
 
 import static org.assertj.core.api.Assertions.*;
 
-import com.upokecenter.cbor.CBORObject;
-import com.upokecenter.cbor.CBORType;
+import com.authlete.cbor.CBORByteArray;
+import com.authlete.cbor.CBORItemList;
+import com.authlete.cbor.CBORNull;
+import com.authlete.cbor.CBORString;
 import org.junit.jupiter.api.Test;
 
 class MdocSessionTranscriptBuilderTest {
@@ -30,72 +32,73 @@ class MdocSessionTranscriptBuilderTest {
 
     @Test
     void buildOid4vp_producesCorrectStructure() {
-        CBORObject transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+        CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
 
         // SessionTranscript = [null, null, OID4VPHandover]
-        assertThat(transcript.getType()).isEqualTo(CBORType.Array);
-        assertThat(transcript.size()).isEqualTo(3);
-        assertThat(transcript.get(0).isNull()).isTrue();
-        assertThat(transcript.get(1).isNull()).isTrue();
+        assertThat(transcript.getItems()).hasSize(3);
+        assertThat(transcript.getItems().get(0)).isInstanceOf(CBORNull.class);
+        assertThat(transcript.getItems().get(1)).isInstanceOf(CBORNull.class);
 
         // OID4VPHandover = ["OpenID4VPHandover", SHA-256(...)]
-        CBORObject handover = transcript.get(2);
-        assertThat(handover.getType()).isEqualTo(CBORType.Array);
-        assertThat(handover.size()).isEqualTo(2);
-        assertThat(handover.get(0).AsString()).isEqualTo("OpenID4VPHandover");
-        assertThat(handover.get(1).getType()).isEqualTo(CBORType.ByteString);
-        assertThat(handover.get(1).GetByteString()).hasSize(32); // SHA-256 output
+        CBORItemList handover = (CBORItemList) transcript.getItems().get(2);
+        assertThat(handover.getItems()).hasSize(2);
+        assertThat(handover.getItems().get(0)).isInstanceOf(CBORString.class);
+        assertThat(((CBORString) handover.getItems().get(0)).getValue()).isEqualTo("OpenID4VPHandover");
+        assertThat(handover.getItems().get(1)).isInstanceOf(CBORByteArray.class);
+        assertThat(((CBORByteArray) handover.getItems().get(1)).getValue()).hasSize(32); // SHA-256
     }
 
     @Test
     void buildOid4vp_withJwkThumbprint_includesInHash() {
         byte[] thumbprint = new byte[] {1, 2, 3, 4, 5};
 
-        CBORObject withThumbprint =
+        CBORItemList withThumbprint =
                 MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, thumbprint);
-        CBORObject withoutThumbprint = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+        CBORItemList withoutThumbprint = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
 
         // Different thumbprints should produce different hashes
-        byte[] hashWith = withThumbprint.get(2).get(1).GetByteString();
-        byte[] hashWithout = withoutThumbprint.get(2).get(1).GetByteString();
+        CBORItemList handoverWith = (CBORItemList) withThumbprint.getItems().get(2);
+        CBORItemList handoverWithout =
+                (CBORItemList) withoutThumbprint.getItems().get(2);
+        byte[] hashWith = ((CBORByteArray) handoverWith.getItems().get(1)).getValue();
+        byte[] hashWithout = ((CBORByteArray) handoverWithout.getItems().get(1)).getValue();
         assertThat(hashWith).isNotEqualTo(hashWithout);
     }
 
     @Test
     void buildIso18013_7_producesCorrectStructure() {
-        CBORObject transcript =
+        CBORItemList transcript =
                 MdocSessionTranscriptBuilder.buildIso18013_7(CLIENT_ID, NONCE, RESPONSE_URI, MDOC_GENERATED_NONCE);
 
         // SessionTranscript = [null, null, [clientIdHash, responseUriHash, nonce]]
-        assertThat(transcript.getType()).isEqualTo(CBORType.Array);
-        assertThat(transcript.size()).isEqualTo(3);
-        assertThat(transcript.get(0).isNull()).isTrue();
-        assertThat(transcript.get(1).isNull()).isTrue();
+        assertThat(transcript.getItems()).hasSize(3);
+        assertThat(transcript.getItems().get(0)).isInstanceOf(CBORNull.class);
+        assertThat(transcript.getItems().get(1)).isInstanceOf(CBORNull.class);
 
-        CBORObject handover = transcript.get(2);
-        assertThat(handover.getType()).isEqualTo(CBORType.Array);
-        assertThat(handover.size()).isEqualTo(3);
-        assertThat(handover.get(0).getType()).isEqualTo(CBORType.ByteString);
-        assertThat(handover.get(0).GetByteString()).hasSize(32); // SHA-256
-        assertThat(handover.get(1).getType()).isEqualTo(CBORType.ByteString);
-        assertThat(handover.get(1).GetByteString()).hasSize(32); // SHA-256
-        assertThat(handover.get(2).AsString()).isEqualTo(NONCE);
+        CBORItemList handover = (CBORItemList) transcript.getItems().get(2);
+        assertThat(handover.getItems()).hasSize(3);
+        assertThat(handover.getItems().get(0)).isInstanceOf(CBORByteArray.class);
+        assertThat(((CBORByteArray) handover.getItems().get(0)).getValue()).hasSize(32); // SHA-256
+        assertThat(handover.getItems().get(1)).isInstanceOf(CBORByteArray.class);
+        assertThat(((CBORByteArray) handover.getItems().get(1)).getValue()).hasSize(32); // SHA-256
+        assertThat(handover.getItems().get(2)).isInstanceOf(CBORString.class);
+        assertThat(((CBORString) handover.getItems().get(2)).getValue()).isEqualTo(NONCE);
     }
 
     @Test
     void bothFormats_produceDifferentTranscripts() {
-        CBORObject oid4vp = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
-        CBORObject iso =
+        CBORItemList oid4vp = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+        CBORItemList iso =
                 MdocSessionTranscriptBuilder.buildIso18013_7(CLIENT_ID, NONCE, RESPONSE_URI, MDOC_GENERATED_NONCE);
 
-        assertThat(oid4vp.EncodeToBytes()).isNotEqualTo(iso.EncodeToBytes());
+        assertThat(oid4vp.encode()).isNotEqualTo(iso.encode());
     }
 
     @Test
     void buildOid4vp_deterministicOutput() {
-        CBORObject first = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
-        CBORObject second = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+        CBORItemList first = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+        CBORItemList second = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
 
-        assertThat(first.EncodeToBytes()).isEqualTo(second.EncodeToBytes());
+        assertThat(first.encode()).isEqualTo(second.encode());
     }
 }

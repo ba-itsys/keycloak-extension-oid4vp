@@ -15,13 +15,21 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
+import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.COSE_ALG_ES256;
 import static org.assertj.core.api.Assertions.*;
 
-import COSE.AlgorithmID;
-import COSE.HeaderKeys;
-import COSE.OneKey;
-import COSE.Sign1Message;
-import com.upokecenter.cbor.CBORObject;
+import com.authlete.cbor.CBORByteArray;
+import com.authlete.cbor.CBORInteger;
+import com.authlete.cbor.CBORItemList;
+import com.authlete.cbor.CBORPair;
+import com.authlete.cbor.CBORPairList;
+import com.authlete.cbor.CBORString;
+import com.authlete.cbor.CBORTaggedItem;
+import com.authlete.cose.COSEProtectedHeaderBuilder;
+import com.authlete.cose.COSESign1Builder;
+import com.authlete.cose.COSESigner;
+import com.authlete.cose.COSEUnprotectedHeaderBuilder;
+import com.authlete.cose.SigStructureBuilder;
 import de.arbeitsagentur.keycloak.oid4vp.domain.MdocVerificationResult;
 import java.math.BigInteger;
 import java.security.KeyPair;
@@ -34,6 +42,7 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import javax.security.auth.x500.X500Principal;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
@@ -42,6 +51,8 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class MdocVerifierTest {
 
@@ -60,18 +71,17 @@ class MdocVerifierTest {
 
     @Test
     void isMdoc_validMdocWithDocuments_returnsTrue() {
-        CBORObject root = CBORObject.NewMap();
-        root.Add("documents", CBORObject.NewArray());
-        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(root.EncodeToBytes());
+        CBORPairList root = new CBORPairList(List.of(new CBORPair(new CBORString("documents"), new CBORItemList())));
+        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(root.encode());
 
         assertThat(verifier.isMdoc(token)).isTrue();
     }
 
     @Test
     void isMdoc_validMdocWithNameSpaces_returnsTrue() {
-        CBORObject root = CBORObject.NewMap();
-        root.Add("nameSpaces", CBORObject.NewMap());
-        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(root.EncodeToBytes());
+        CBORPairList root =
+                new CBORPairList(List.of(new CBORPair(new CBORString("nameSpaces"), new CBORPairList(List.of()))));
+        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(root.encode());
 
         assertThat(verifier.isMdoc(token)).isTrue();
     }
@@ -108,9 +118,8 @@ class MdocVerifierTest {
 
     @Test
     void verify_emptyDocumentsArray_throws() {
-        CBORObject root = CBORObject.NewMap();
-        root.Add("documents", CBORObject.NewArray());
-        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(root.EncodeToBytes());
+        CBORPairList root = new CBORPairList(List.of(new CBORPair(new CBORString("documents"), new CBORItemList())));
+        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(root.encode());
 
         assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(token, List.of(signingCert)))
                 .isInstanceOf(IllegalStateException.class)
@@ -119,9 +128,9 @@ class MdocVerifierTest {
 
     @Test
     void verify_unknownStructure_throws() {
-        CBORObject root = CBORObject.NewMap();
-        root.Add("something_else", "value");
-        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(root.EncodeToBytes());
+        CBORPairList root =
+                new CBORPairList(List.of(new CBORPair(new CBORString("something_else"), new CBORString("value"))));
+        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(root.encode());
 
         assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(token, List.of(signingCert)))
                 .isInstanceOf(IllegalStateException.class)
@@ -130,21 +139,18 @@ class MdocVerifierTest {
 
     @Test
     void verify_noKeyMaterial_throws() {
-        CBORObject item = CBORObject.NewMap();
-        item.Add("elementIdentifier", "given_name");
-        item.Add("elementValue", "John");
+        CBORPairList item = new CBORPairList(List.of(
+                new CBORPair(new CBORString("elementIdentifier"), new CBORString("given_name")),
+                new CBORPair(new CBORString("elementValue"), new CBORString("John"))));
 
-        CBORObject elements = CBORObject.NewArray();
-        elements.Add(item);
+        CBORPairList nameSpaces =
+                new CBORPairList(List.of(new CBORPair(new CBORString("org.iso.18013.5.1"), new CBORItemList(item))));
 
-        CBORObject nameSpaces = CBORObject.NewMap();
-        nameSpaces.Add("org.iso.18013.5.1", elements);
+        CBORPairList root = new CBORPairList(List.of(
+                new CBORPair(new CBORString("nameSpaces"), nameSpaces),
+                new CBORPair(new CBORString("docType"), new CBORString("org.iso.18013.5.1.mDL"))));
 
-        CBORObject root = CBORObject.NewMap();
-        root.Add("nameSpaces", nameSpaces);
-        root.Add("docType", "org.iso.18013.5.1.mDL");
-
-        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(root.EncodeToBytes());
+        String token = Base64.getUrlEncoder().withoutPadding().encodeToString(root.encode());
 
         assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(token, List.of()))
                 .isInstanceOf(IllegalStateException.class)
@@ -153,23 +159,17 @@ class MdocVerifierTest {
 
     @Test
     void verify_signedDocument_multipleNamespaces() throws Exception {
-        CBORObject item1 = CBORObject.NewMap();
-        item1.Add("elementIdentifier", "given_name");
-        item1.Add("elementValue", "Alice");
+        CBORPairList item1 = new CBORPairList(List.of(
+                new CBORPair(new CBORString("elementIdentifier"), new CBORString("given_name")),
+                new CBORPair(new CBORString("elementValue"), new CBORString("Alice"))));
 
-        CBORObject item2 = CBORObject.NewMap();
-        item2.Add("elementIdentifier", "age_over_18");
-        item2.Add("elementValue", true);
+        CBORPairList item2 = new CBORPairList(List.of(
+                new CBORPair(new CBORString("elementIdentifier"), new CBORString("age_over_18")),
+                new CBORPair(new CBORString("elementValue"), com.authlete.cbor.CBORBoolean.TRUE)));
 
-        CBORObject ns1 = CBORObject.NewArray();
-        ns1.Add(item1);
-
-        CBORObject ns2 = CBORObject.NewArray();
-        ns2.Add(item2);
-
-        CBORObject nameSpaces = CBORObject.NewMap();
-        nameSpaces.Add("org.iso.18013.5.1", ns1);
-        nameSpaces.Add("org.iso.18013.5.1.aamva", ns2);
+        CBORPairList nameSpaces = new CBORPairList(List.of(
+                new CBORPair(new CBORString("org.iso.18013.5.1"), new CBORItemList(item1)),
+                new CBORPair(new CBORString("org.iso.18013.5.1.aamva"), new CBORItemList(item2))));
 
         String token = buildSignedMdocWithNameSpaces("org.iso.18013.5.1.mDL", nameSpaces);
 
@@ -199,94 +199,109 @@ class MdocVerifierTest {
         assertThat(((Number) statusList.get("idx")).intValue()).isEqualTo(42);
     }
 
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("supportedIssuerAlgorithms")
+    void verify_supportedIssuerAlgorithms_pass(MdocDeviceResponseTestHelper.MdocAlgorithmSpec algorithm)
+            throws Exception {
+        MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper(algorithm);
+
+        MdocVerificationResult result = verifier.verifyWithTrustedCerts(helper.build(), List.of(helper.issuerCert));
+
+        assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
+        assertThat(result.claims()).containsEntry("org.iso.18013.5.1/given_name", "John");
+    }
+
+    static Stream<MdocDeviceResponseTestHelper.MdocAlgorithmSpec> supportedIssuerAlgorithms() {
+        return Stream.of(
+                MdocDeviceResponseTestHelper.MdocAlgorithmSpec.ES256,
+                MdocDeviceResponseTestHelper.MdocAlgorithmSpec.ES384,
+                MdocDeviceResponseTestHelper.MdocAlgorithmSpec.ES512);
+    }
+
     // ===== Helper Methods =====
 
     private String buildSignedMdoc(String docType, String namespace, String[]... claimPairs) throws Exception {
-        CBORObject nameSpaces = CBORObject.NewMap();
-        CBORObject elements = CBORObject.NewArray();
-        for (String[] pair : claimPairs) {
-            CBORObject item = CBORObject.NewMap();
-            item.Add("elementIdentifier", pair[0]);
-            item.Add("elementValue", pair[1]);
-            elements.Add(item);
-        }
-        nameSpaces.Add(namespace, elements);
+        CBORPairList nameSpaces =
+                new CBORPairList(List.of(new CBORPair(new CBORString(namespace), buildElements(claimPairs))));
         return buildSignedMdocWithNameSpaces(docType, nameSpaces);
     }
 
     private String buildSignedMdocWithStatus(
             String docType, String namespace, String statusUri, int statusIdx, String[]... claimPairs)
             throws Exception {
-        CBORObject nameSpaces = CBORObject.NewMap();
-        CBORObject elements = CBORObject.NewArray();
-        for (String[] pair : claimPairs) {
-            CBORObject item = CBORObject.NewMap();
-            item.Add("elementIdentifier", pair[0]);
-            item.Add("elementValue", pair[1]);
-            elements.Add(item);
-        }
-        nameSpaces.Add(namespace, elements);
+        CBORPairList nameSpaces =
+                new CBORPairList(List.of(new CBORPair(new CBORString(namespace), buildElements(claimPairs))));
 
         // Build MSO with status
-        CBORObject mso = CBORObject.NewMap();
-        mso.Add("docType", docType);
-        mso.Add("version", "1.0");
-
-        CBORObject statusListObj = CBORObject.NewMap();
-        statusListObj.Add("idx", statusIdx);
-        statusListObj.Add("uri", statusUri);
-        CBORObject statusObj = CBORObject.NewMap();
-        statusObj.Add("status_list", statusListObj);
-        mso.Add("status", statusObj);
+        CBORPairList statusList = new CBORPairList(List.of(
+                new CBORPair(new CBORString("idx"), new CBORInteger(statusIdx)),
+                new CBORPair(new CBORString("uri"), new CBORString(statusUri))));
+        CBORPairList statusObj = new CBORPairList(List.of(new CBORPair(new CBORString("status_list"), statusList)));
+        CBORPairList mso = new CBORPairList(List.of(
+                new CBORPair(new CBORString("docType"), new CBORString(docType)),
+                new CBORPair(new CBORString("version"), new CBORString("1.0")),
+                new CBORPair(new CBORString("status"), statusObj)));
 
         return buildSignedMdocWithMso(docType, nameSpaces, mso);
     }
 
-    private String buildSignedMdocWithNameSpaces(String docType, CBORObject nameSpaces) throws Exception {
-        // Build MSO (Mobile Security Object)
-        CBORObject mso = CBORObject.NewMap();
-        mso.Add("docType", docType);
-        mso.Add("version", "1.0");
+    private CBORItemList buildElements(String[]... claimPairs) {
+        CBORPairList[] items = new CBORPairList[claimPairs.length];
+        for (int i = 0; i < claimPairs.length; i++) {
+            items[i] = new CBORPairList(List.of(
+                    new CBORPair(new CBORString("elementIdentifier"), new CBORString(claimPairs[i][0])),
+                    new CBORPair(new CBORString("elementValue"), new CBORString(claimPairs[i][1]))));
+        }
+        return new CBORItemList(items);
+    }
 
+    private String buildSignedMdocWithNameSpaces(String docType, CBORPairList nameSpaces) throws Exception {
+        CBORPairList mso = new CBORPairList(List.of(
+                new CBORPair(new CBORString("docType"), new CBORString(docType)),
+                new CBORPair(new CBORString("version"), new CBORString("1.0"))));
         return buildSignedMdocWithMso(docType, nameSpaces, mso);
     }
 
-    private String buildSignedMdocWithMso(String docType, CBORObject nameSpaces, CBORObject mso) throws Exception {
+    private String buildSignedMdocWithMso(String docType, CBORPairList nameSpaces, CBORPairList mso) throws Exception {
         // Tag-24 wrap the MSO
-        byte[] msoBytes = mso.EncodeToBytes();
-        CBORObject taggedMso = CBORObject.FromObjectAndTag(CBORObject.FromObject(msoBytes), 24);
+        byte[] msoBytes = mso.encode();
+        byte[] payload = new CBORTaggedItem(24, new CBORByteArray(msoBytes)).encode();
 
-        // Create COSE_Sign1
-        Sign1Message sign1 = new Sign1Message();
-        sign1.addAttribute(HeaderKeys.Algorithm, AlgorithmID.ECDSA_256.AsCBOR(), COSE.Attribute.PROTECTED);
-        sign1.SetContent(taggedMso.EncodeToBytes());
+        // Build and sign COSE_Sign1
+        var protectedHeader =
+                new COSEProtectedHeaderBuilder().alg(COSE_ALG_ES256).build();
+        var unprotectedHeader =
+                new COSEUnprotectedHeaderBuilder().x5chain(List.of(signingCert)).build();
 
-        // Add x5c to unprotected header
-        CBORObject x5cArray = CBORObject.NewArray();
-        x5cArray.Add(CBORObject.FromObject(signingCert.getEncoded()));
-        sign1.addAttribute(CBORObject.FromObject(33), x5cArray, COSE.Attribute.UNPROTECTED);
+        var sigStructure = new SigStructureBuilder()
+                .signature1()
+                .bodyAttributes(protectedHeader)
+                .payload(payload)
+                .build();
+        byte[] signature = new COSESigner(signingKeyPair.getPrivate()).sign(sigStructure, COSE_ALG_ES256);
 
-        OneKey coseKey = new OneKey(signingKeyPair.getPublic(), signingKeyPair.getPrivate());
-        sign1.sign(coseKey);
+        var issuerAuth = new COSESign1Builder()
+                .protectedHeader(protectedHeader)
+                .unprotectedHeader(unprotectedHeader)
+                .payload(payload)
+                .signature(signature)
+                .build();
 
         // Build document structure
-        CBORObject issuerSigned = CBORObject.NewMap();
-        issuerSigned.Add("nameSpaces", nameSpaces);
-        issuerSigned.Add("issuerAuth", CBORObject.DecodeFromBytes(sign1.EncodeToBytes()));
+        CBORPairList issuerSigned = new CBORPairList(List.of(
+                new CBORPair(new CBORString("nameSpaces"), nameSpaces),
+                new CBORPair(new CBORString("issuerAuth"), issuerAuth)));
 
-        CBORObject document = CBORObject.NewMap();
-        document.Add("docType", docType);
-        document.Add("issuerSigned", issuerSigned);
+        CBORPairList document = new CBORPairList(List.of(
+                new CBORPair(new CBORString("docType"), new CBORString(docType)),
+                new CBORPair(new CBORString("issuerSigned"), issuerSigned)));
 
-        CBORObject documents = CBORObject.NewArray();
-        documents.Add(document);
+        CBORPairList root = new CBORPairList(List.of(
+                new CBORPair(new CBORString("documents"), new CBORItemList(document)),
+                new CBORPair(new CBORString("version"), new CBORString("1.0")),
+                new CBORPair(new CBORString("status"), new CBORInteger(0))));
 
-        CBORObject root = CBORObject.NewMap();
-        root.Add("documents", documents);
-        root.Add("version", "1.0");
-        root.Add("status", CBORObject.FromObject(0));
-
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(root.EncodeToBytes());
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(root.encode());
     }
 
     private static X509Certificate generateSelfSignedCert(KeyPair keyPair) throws Exception {
@@ -315,28 +330,32 @@ class MdocVerifierTest {
     @Nested
     class DeviceAuthVerification {
 
-        @Test
-        void verifyWithSessionTranscript_oid4vpFormat_passes() throws Exception {
-            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
-            CBORObject transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+        @ParameterizedTest(name = "{0}")
+        @MethodSource("de.arbeitsagentur.keycloak.oid4vp.verification.MdocVerifierTest#supportedIssuerAlgorithms")
+        void verifyWithSessionTranscript_oid4vpFormat_passes(MdocDeviceResponseTestHelper.MdocAlgorithmSpec algorithm)
+                throws Exception {
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper(algorithm);
+            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
             String token = helper.build(transcript);
 
             MdocVerificationResult result = verifier.verifyWithTrustedCerts(
-                    token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null);
+                    token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null);
 
             assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
             assertThat(result.claims()).containsEntry("org.iso.18013.5.1/given_name", "John");
         }
 
-        @Test
-        void verifyWithSessionTranscript_iso18013_7Format_passes() throws Exception {
-            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
-            CBORObject transcript =
+        @ParameterizedTest(name = "{0}")
+        @MethodSource("de.arbeitsagentur.keycloak.oid4vp.verification.MdocVerifierTest#supportedIssuerAlgorithms")
+        void verifyWithSessionTranscript_iso18013_7Format_passes(
+                MdocDeviceResponseTestHelper.MdocAlgorithmSpec algorithm) throws Exception {
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper(algorithm);
+            CBORItemList transcript =
                     MdocSessionTranscriptBuilder.buildIso18013_7(CLIENT_ID, NONCE, RESPONSE_URI, MDOC_GENERATED_NONCE);
             String token = helper.build(transcript);
 
             MdocVerificationResult result = verifier.verifyWithTrustedCerts(
-                    token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, MDOC_GENERATED_NONCE);
+                    token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, MDOC_GENERATED_NONCE, null);
 
             assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
             assertThat(result.claims()).containsEntry("org.iso.18013.5.1/given_name", "John");
@@ -345,25 +364,25 @@ class MdocVerifierTest {
         @Test
         void verifyWithSessionTranscript_wrongNonce_fails() throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
-            CBORObject transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
             String token = helper.build(transcript);
 
             assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(
-                            token, List.of(helper.issuerCert), CLIENT_ID, "wrong-nonce", RESPONSE_URI, null))
+                            token, List.of(helper.issuerCert), CLIENT_ID, "wrong-nonce", RESPONSE_URI, null, null))
                     .isInstanceOf(IllegalStateException.class);
         }
 
         @Test
         void verifyWithSessionTranscript_isoFallbackWhenMdocNoncePresent() throws Exception {
-            // Build with ISO format, verify should succeed when mdocGeneratedNonce is present
+            // Build with ISO format, verify should succeed since OID4VP fails and falls back to ISO
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
-            CBORObject transcript =
+            CBORItemList transcript =
                     MdocSessionTranscriptBuilder.buildIso18013_7(CLIENT_ID, NONCE, RESPONSE_URI, MDOC_GENERATED_NONCE);
             String token = helper.build(transcript);
 
-            // Verify passes — implementation should try ISO first when mdocGeneratedNonce is present
+            // Verify passes — OID4VP 1.0 is tried first, then falls back to ISO 18013-7
             MdocVerificationResult result = verifier.verifyWithTrustedCerts(
-                    token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, MDOC_GENERATED_NONCE);
+                    token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, MDOC_GENERATED_NONCE, null);
 
             assertThat(result).isNotNull();
         }
@@ -375,12 +394,12 @@ class MdocVerifierTest {
         @Test
         void verifyWithDigests_validDigests_passes() throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
-            CBORObject transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
             String token = helper.build(transcript);
 
             // Should pass — digests computed correctly by helper
             MdocVerificationResult result = verifier.verifyWithTrustedCerts(
-                    token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null);
+                    token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null);
 
             assertThat(result.claims()).isNotEmpty();
         }
@@ -395,11 +414,11 @@ class MdocVerifierTest {
                     .validFrom(Instant.now().minus(2, ChronoUnit.DAYS))
                     .validUntil(Instant.now().minus(1, ChronoUnit.DAYS));
 
-            CBORObject transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
             String token = helper.build(transcript);
 
             assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(
-                            token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null))
+                            token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("expired");
         }
@@ -410,11 +429,11 @@ class MdocVerifierTest {
                     .validFrom(Instant.now().plus(1, ChronoUnit.DAYS))
                     .validUntil(Instant.now().plus(2, ChronoUnit.DAYS));
 
-            CBORObject transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
             String token = helper.build(transcript);
 
             assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(
-                            token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null))
+                            token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("not yet valid");
         }

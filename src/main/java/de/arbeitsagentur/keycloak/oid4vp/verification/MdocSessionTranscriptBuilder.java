@@ -15,9 +15,13 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
-import com.upokecenter.cbor.CBORObject;
+import com.authlete.cbor.CBORByteArray;
+import com.authlete.cbor.CBORItemList;
+import com.authlete.cbor.CBORNull;
+import com.authlete.cbor.CBORString;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import org.keycloak.crypto.JavaAlgorithm;
 
 /**
  * Builds mDoc SessionTranscript structures for device authentication verification.
@@ -57,7 +61,7 @@ import java.security.NoSuchAlgorithmException;
 final class MdocSessionTranscriptBuilder {
 
     private static final String HANDOVER_TYPE = "OpenID4VPHandover";
-    private static final String HASH_ALGORITHM = "SHA-256";
+    private static final String HASH_ALGORITHM = JavaAlgorithm.SHA256;
 
     private MdocSessionTranscriptBuilder() {}
 
@@ -69,27 +73,19 @@ final class MdocSessionTranscriptBuilder {
      * @param responseUri the response_uri from the request
      * @param jwkThumbprint optional JWK thumbprint (may be null)
      */
-    static CBORObject buildOid4vp(String clientId, String nonce, String responseUri, byte[] jwkThumbprint) {
-        CBORObject info = CBORObject.NewArray();
-        info.Add(clientId);
-        info.Add(nonce);
-        if (jwkThumbprint != null && jwkThumbprint.length > 0) {
-            info.Add(jwkThumbprint);
-        } else {
-            info.Add(CBORObject.Null);
-        }
-        info.Add(responseUri);
-        byte[] hash = sha256(info.EncodeToBytes());
+    static CBORItemList buildOid4vp(String clientId, String nonce, String responseUri, byte[] jwkThumbprint) {
+        CBORItemList info = new CBORItemList(
+                new CBORString(clientId),
+                new CBORString(nonce),
+                jwkThumbprint != null && jwkThumbprint.length > 0
+                        ? new CBORByteArray(jwkThumbprint)
+                        : CBORNull.INSTANCE,
+                new CBORString(responseUri));
+        byte[] hash = sha256(info.encode());
 
-        CBORObject handover = CBORObject.NewArray();
-        handover.Add(HANDOVER_TYPE);
-        handover.Add(hash);
+        CBORItemList handover = new CBORItemList(new CBORString(HANDOVER_TYPE), new CBORByteArray(hash));
 
-        CBORObject sessionTranscript = CBORObject.NewArray();
-        sessionTranscript.Add(CBORObject.Null);
-        sessionTranscript.Add(CBORObject.Null);
-        sessionTranscript.Add(handover);
-        return sessionTranscript;
+        return new CBORItemList(CBORNull.INSTANCE, CBORNull.INSTANCE, handover);
     }
 
     /**
@@ -100,29 +96,17 @@ final class MdocSessionTranscriptBuilder {
      * @param responseUri the response_uri from the request
      * @param mdocGeneratedNonce the nonce from the JWE {@code apu} header
      */
-    static CBORObject buildIso18013_7(String clientId, String nonce, String responseUri, String mdocGeneratedNonce) {
-        // SHA-256(CBOR([clientId, mdocGeneratedNonce]))
-        CBORObject clientIdArray = CBORObject.NewArray();
-        clientIdArray.Add(clientId);
-        clientIdArray.Add(mdocGeneratedNonce);
-        byte[] clientIdHash = sha256(clientIdArray.EncodeToBytes());
+    static CBORItemList buildIso18013_7(String clientId, String nonce, String responseUri, String mdocGeneratedNonce) {
+        byte[] clientIdHash =
+                sha256(new CBORItemList(new CBORString(clientId), new CBORString(mdocGeneratedNonce)).encode());
 
-        // SHA-256(CBOR([responseUri, mdocGeneratedNonce]))
-        CBORObject responseUriArray = CBORObject.NewArray();
-        responseUriArray.Add(responseUri);
-        responseUriArray.Add(mdocGeneratedNonce);
-        byte[] responseUriHash = sha256(responseUriArray.EncodeToBytes());
+        byte[] responseUriHash =
+                sha256(new CBORItemList(new CBORString(responseUri), new CBORString(mdocGeneratedNonce)).encode());
 
-        CBORObject handover = CBORObject.NewArray();
-        handover.Add(clientIdHash);
-        handover.Add(responseUriHash);
-        handover.Add(nonce);
+        CBORItemList handover = new CBORItemList(
+                new CBORByteArray(clientIdHash), new CBORByteArray(responseUriHash), new CBORString(nonce));
 
-        CBORObject sessionTranscript = CBORObject.NewArray();
-        sessionTranscript.Add(CBORObject.Null);
-        sessionTranscript.Add(CBORObject.Null);
-        sessionTranscript.Add(handover);
-        return sessionTranscript;
+        return new CBORItemList(CBORNull.INSTANCE, CBORNull.INSTANCE, handover);
     }
 
     static byte[] sha256(byte[] data) {

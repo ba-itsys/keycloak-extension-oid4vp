@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 import java.util.zip.Deflater;
 import org.junit.jupiter.api.AfterEach;
@@ -110,6 +111,21 @@ class StatusListVerifierTest {
     }
 
     @Test
+    void getStatusAtIndexRejectsBitsValueOutsideSpec() {
+        byte[] bits = new byte[] {0x00};
+        assertThatThrownBy(() -> StatusListVerifier.getStatusAtIndex(bits, 0, 3))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("one of 1, 2, 4, or 8");
+    }
+
+    @Test
+    void getStatusAtIndexSupportsEightBitStatuses() {
+        byte[] bits = new byte[] {(byte) 0xFE, (byte) 0x7F};
+        assertThat(StatusListVerifier.getStatusAtIndex(bits, 0, 8)).isEqualTo(254);
+        assertThat(StatusListVerifier.getStatusAtIndex(bits, 1, 8)).isEqualTo(127);
+    }
+
+    @Test
     void inflateRoundTripRawDeflate() throws Exception {
         byte[] original = new byte[] {0x00, 0x01, 0x02, (byte) 0xFF, 0x00, 0x55};
 
@@ -171,5 +187,110 @@ class StatusListVerifierTest {
         assertThat(ref).isNotNull();
         assertThat(ref.uri()).isEqualTo("https://issuer.example/status");
         assertThat(ref.idx()).isEqualTo(7);
+    }
+
+    // --- validateStatusListToken tests ---
+
+    @Test
+    void validateStatusListTokenAcceptsValidToken() {
+        verifier.validateStatusListToken(
+                "statuslist+jwt",
+                "https://issuer.example/status/1",
+                Instant.now().plusSeconds(3600),
+                "https://issuer.example/status/1");
+    }
+
+    @Test
+    void validateStatusListTokenAcceptsNoExpiration() {
+        verifier.validateStatusListToken(
+                "statuslist+jwt", "https://issuer.example/status/1", null, "https://issuer.example/status/1");
+    }
+
+    @Test
+    void validateStatusListTokenRejectsWrongTyp() {
+        assertThatThrownBy(() -> verifier.validateStatusListToken(
+                        "jwt", "https://issuer.example/status/1", null, "https://issuer.example/status/1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("statuslist+jwt");
+    }
+
+    @Test
+    void validateStatusListTokenRejectsMissingTyp() {
+        assertThatThrownBy(() -> verifier.validateStatusListToken(
+                        null, "https://issuer.example/status/1", null, "https://issuer.example/status/1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("statuslist+jwt");
+    }
+
+    @Test
+    void validateStatusListTokenRejectsSubMismatch() {
+        assertThatThrownBy(() -> verifier.validateStatusListToken(
+                        "statuslist+jwt", "https://other.example/status/2", null, "https://issuer.example/status/1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("does not match");
+    }
+
+    @Test
+    void validateStatusListTokenRejectsExpiredToken() {
+        assertThatThrownBy(() -> verifier.validateStatusListToken(
+                        "statuslist+jwt",
+                        "https://issuer.example/status/1",
+                        Instant.now().minusSeconds(60),
+                        "https://issuer.example/status/1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("expired");
+    }
+
+    // --- resolveExpiry tests ---
+
+    @Test
+    void resolveExpiryUsesTtlClaim() {
+        Instant expiry = verifier.resolveExpiry(null, 300);
+        assertThat(expiry).isAfter(Instant.now().plusSeconds(290));
+        assertThat(expiry).isBefore(Instant.now().plusSeconds(310));
+    }
+
+    @Test
+    void resolveExpiryPrefersEarlierOfTtlAndExp() {
+        Instant expiry = verifier.resolveExpiry(Instant.now().plusSeconds(3600), 300);
+        assertThat(expiry).isBefore(Instant.now().plusSeconds(310));
+    }
+
+    @Test
+    void resolveExpiryPrefersExpWhenEarlierThanTtl() {
+        Instant expTime = Instant.now().plusSeconds(120);
+        Instant expiry = verifier.resolveExpiry(expTime, 3600);
+        assertThat(expiry).isBefore(Instant.now().plusSeconds(130));
+        assertThat(expiry).isAfter(Instant.now().plusSeconds(110));
+    }
+
+    @Test
+    void resolveExpiryFallsBackToExpWhenNoTtl() {
+        Instant expTime = Instant.now().plusSeconds(600);
+        Instant expiry = verifier.resolveExpiry(expTime, null);
+        assertThat(expiry).isAfter(Instant.now().plusSeconds(595));
+        assertThat(expiry).isBefore(Instant.now().plusSeconds(605));
+    }
+
+    @Test
+    void resolveExpiryReturnsNowWhenNeitherTtlNorExp() {
+        Instant before = Instant.now();
+        Instant expiry = verifier.resolveExpiry(null, null);
+        assertThat(expiry).isAfterOrEqualTo(before);
+        assertThat(expiry).isBefore(Instant.now().plusSeconds(2));
+    }
+
+    @Test
+    void resolveExpiryCapsAtMaxCacheTtl() {
+        StatusListVerifier capped = new StatusListVerifier(null, null, Duration.ofSeconds(60));
+        Instant expiry = capped.resolveExpiry(null, 3600);
+        assertThat(expiry).isBefore(Instant.now().plusSeconds(65));
+        assertThat(expiry).isAfter(Instant.now().plusSeconds(55));
+    }
+
+    @Test
+    void resolveExpiryIgnoresNonPositiveTtl() {
+        Instant expiry = verifier.resolveExpiry(Instant.now().plusSeconds(600), 0);
+        assertThat(expiry).isAfter(Instant.now().plusSeconds(595));
     }
 }

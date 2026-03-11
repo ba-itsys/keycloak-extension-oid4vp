@@ -15,11 +15,23 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
-import COSE.AlgorithmID;
-import COSE.HeaderKeys;
-import COSE.OneKey;
-import COSE.Sign1Message;
-import com.upokecenter.cbor.CBORObject;
+import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.COSE_ALG_ES256;
+import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.COSE_ALG_ES384;
+import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.COSE_ALG_ES512;
+
+import com.authlete.cbor.CBORByteArray;
+import com.authlete.cbor.CBORInteger;
+import com.authlete.cbor.CBORItem;
+import com.authlete.cbor.CBORItemList;
+import com.authlete.cbor.CBORPair;
+import com.authlete.cbor.CBORPairList;
+import com.authlete.cbor.CBORString;
+import com.authlete.cbor.CBORTaggedItem;
+import com.authlete.cose.COSEProtectedHeaderBuilder;
+import com.authlete.cose.COSESign1Builder;
+import com.authlete.cose.COSESigner;
+import com.authlete.cose.COSEUnprotectedHeaderBuilder;
+import com.authlete.cose.SigStructureBuilder;
 import java.math.BigInteger;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -29,8 +41,10 @@ import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Date;
+import java.util.List;
 import javax.security.auth.x500.X500Principal;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
@@ -42,9 +56,27 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
  */
 class MdocDeviceResponseTestHelper {
 
+    record MdocAlgorithmSpec(
+            String name,
+            int coseAlgorithm,
+            String keyAlgorithm,
+            String ecCurveName,
+            int coseCurveIdentifier,
+            int coordinateLength,
+            String certificateSignatureAlgorithm) {
+
+        static final MdocAlgorithmSpec ES256 =
+                new MdocAlgorithmSpec("ES256", COSE_ALG_ES256, "EC", "secp256r1", 1, 32, "SHA256withECDSA");
+        static final MdocAlgorithmSpec ES384 =
+                new MdocAlgorithmSpec("ES384", COSE_ALG_ES384, "EC", "secp384r1", 2, 48, "SHA384withECDSA");
+        static final MdocAlgorithmSpec ES512 =
+                new MdocAlgorithmSpec("ES512", COSE_ALG_ES512, "EC", "secp521r1", 3, 66, "SHA512withECDSA");
+    }
+
     final KeyPair issuerKeyPair;
     final KeyPair deviceKeyPair;
     final X509Certificate issuerCert;
+    final MdocAlgorithmSpec algorithm;
     String docType = "org.iso.18013.5.1.mDL";
     String namespace = "org.iso.18013.5.1";
     String[][] claimPairs = {{"given_name", "John"}, {"family_name", "Doe"}};
@@ -52,11 +84,14 @@ class MdocDeviceResponseTestHelper {
     Instant validUntil = Instant.now().plus(365, ChronoUnit.DAYS);
 
     MdocDeviceResponseTestHelper() throws Exception {
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC");
-        kpg.initialize(new ECGenParameterSpec("secp256r1"));
-        this.issuerKeyPair = kpg.generateKeyPair();
-        this.deviceKeyPair = kpg.generateKeyPair();
-        this.issuerCert = generateSelfSignedCert(issuerKeyPair);
+        this(MdocAlgorithmSpec.ES256);
+    }
+
+    MdocDeviceResponseTestHelper(MdocAlgorithmSpec algorithm) throws Exception {
+        this.algorithm = algorithm;
+        this.issuerKeyPair = generateKeyPair(algorithm);
+        this.deviceKeyPair = generateKeyPair(algorithm);
+        this.issuerCert = generateSelfSignedCert(issuerKeyPair, algorithm.certificateSignatureAlgorithm());
     }
 
     MdocDeviceResponseTestHelper docType(String docType) {
@@ -89,64 +124,62 @@ class MdocDeviceResponseTestHelper {
      *
      * @param sessionTranscript the session transcript CBOR to sign in deviceAuth (null to skip deviceAuth)
      */
-    String build(CBORObject sessionTranscript) throws Exception {
+    String build(CBORItemList sessionTranscript) throws Exception {
         // Build IssuerSignedItems and compute digests
-        CBORObject elements = CBORObject.NewArray();
-        CBORObject digestMap = CBORObject.NewMap();
+        List<CBORItem> elements = new ArrayList<>();
+        List<CBORPair> digestPairs = new ArrayList<>();
         MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
 
         for (int i = 0; i < claimPairs.length; i++) {
-            CBORObject item = CBORObject.NewMap();
-            item.Add("digestID", i);
-            item.Add("random", CBORObject.FromObject(new byte[] {(byte) i, 1, 2, 3}));
-            item.Add("elementIdentifier", claimPairs[i][0]);
-            item.Add("elementValue", claimPairs[i][1]);
+            CBORPairList item = new CBORPairList(List.of(
+                    new CBORPair(new CBORString("digestID"), new CBORInteger(i)),
+                    new CBORPair(new CBORString("random"), new CBORByteArray(new byte[] {(byte) i, 1, 2, 3})),
+                    new CBORPair(new CBORString("elementIdentifier"), new CBORString(claimPairs[i][0])),
+                    new CBORPair(new CBORString("elementValue"), new CBORString(claimPairs[i][1]))));
 
             // Wrap in tag-24 (as per ISO 18013-5)
-            byte[] itemBytes = item.EncodeToBytes();
-            CBORObject taggedItem = CBORObject.FromObjectAndTag(CBORObject.FromObject(itemBytes), 24);
-            elements.Add(taggedItem);
+            byte[] itemBytes = item.encode();
+            CBORTaggedItem taggedItem = new CBORTaggedItem(24, new CBORByteArray(itemBytes));
+            elements.add(taggedItem);
 
-            // Digest is SHA-256 of the tag-24 wrapped bytes (raw CBOR bytes before unwrap)
-            byte[] digest = sha256.digest(taggedItem.EncodeToBytes());
-            digestMap.Add(CBORObject.FromObject(i), digest);
+            // Digest is SHA-256 of the tag-24 wrapped bytes
+            byte[] digest = sha256.digest(taggedItem.encode());
+            digestPairs.add(new CBORPair(new CBORInteger(i), new CBORByteArray(digest)));
         }
 
-        CBORObject nameSpaces = CBORObject.NewMap();
-        nameSpaces.Add(namespace, elements);
+        CBORPairList nameSpaces =
+                new CBORPairList(List.of(new CBORPair(new CBORString(namespace), new CBORItemList(elements))));
+        CBORPairList digestMap = new CBORPairList(digestPairs);
 
         // Build MSO
-        CBORObject mso = buildMso(digestMap);
+        CBORPairList mso = buildMso(digestMap);
 
         // Build issuerAuth (COSE_Sign1 over MSO)
-        CBORObject issuerAuth = buildIssuerAuth(mso);
-
-        // Build issuerSigned
-        CBORObject issuerSigned = CBORObject.NewMap();
-        issuerSigned.Add("nameSpaces", nameSpaces);
-        issuerSigned.Add("issuerAuth", issuerAuth);
+        CBORItem issuerAuth = buildIssuerAuth(mso);
 
         // Build document
-        CBORObject document = CBORObject.NewMap();
-        document.Add("docType", docType);
-        document.Add("issuerSigned", issuerSigned);
+        List<CBORPair> docPairs = new ArrayList<>();
+        docPairs.add(new CBORPair(new CBORString("docType"), new CBORString(docType)));
+        docPairs.add(new CBORPair(
+                new CBORString("issuerSigned"),
+                new CBORPairList(List.of(
+                        new CBORPair(new CBORString("nameSpaces"), nameSpaces),
+                        new CBORPair(new CBORString("issuerAuth"), issuerAuth)))));
 
         // Build deviceSigned (if session transcript provided)
         if (sessionTranscript != null) {
-            CBORObject deviceSigned = buildDeviceSigned(sessionTranscript);
-            document.Add("deviceSigned", deviceSigned);
+            docPairs.add(new CBORPair(new CBORString("deviceSigned"), buildDeviceSigned(sessionTranscript)));
         }
 
+        CBORPairList document = new CBORPairList(docPairs);
+
         // Wrap in DeviceResponse
-        CBORObject documents = CBORObject.NewArray();
-        documents.Add(document);
+        CBORPairList root = new CBORPairList(List.of(
+                new CBORPair(new CBORString("documents"), new CBORItemList(document)),
+                new CBORPair(new CBORString("version"), new CBORString("1.0")),
+                new CBORPair(new CBORString("status"), new CBORInteger(0))));
 
-        CBORObject root = CBORObject.NewMap();
-        root.Add("documents", documents);
-        root.Add("version", "1.0");
-        root.Add("status", CBORObject.FromObject(0));
-
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(root.EncodeToBytes());
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(root.encode());
     }
 
     /** Builds without deviceAuth (issuer signature only). */
@@ -154,93 +187,111 @@ class MdocDeviceResponseTestHelper {
         return build(null);
     }
 
-    private CBORObject buildMso(CBORObject digestMap) {
-        CBORObject mso = CBORObject.NewMap();
-        mso.Add("version", "1.0");
-        mso.Add("digestAlgorithm", "SHA-256");
-        mso.Add("docType", docType);
-
-        // valueDigests
-        CBORObject valueDigests = CBORObject.NewMap();
-        valueDigests.Add(namespace, digestMap);
-        mso.Add("valueDigests", valueDigests);
-
+    private CBORPairList buildMso(CBORPairList digestMap) {
         // validityInfo
-        CBORObject validityInfo = CBORObject.NewMap();
-        validityInfo.Add("signed", CBORObject.FromObjectAndTag(validFrom.toString(), 0));
-        validityInfo.Add("validFrom", CBORObject.FromObjectAndTag(validFrom.toString(), 0));
-        validityInfo.Add("validUntil", CBORObject.FromObjectAndTag(validUntil.toString(), 0));
-        mso.Add("validityInfo", validityInfo);
+        CBORPairList validityInfo = new CBORPairList(List.of(
+                new CBORPair(new CBORString("signed"), new CBORTaggedItem(0, new CBORString(validFrom.toString()))),
+                new CBORPair(new CBORString("validFrom"), new CBORTaggedItem(0, new CBORString(validFrom.toString()))),
+                new CBORPair(
+                        new CBORString("validUntil"), new CBORTaggedItem(0, new CBORString(validUntil.toString())))));
 
         // deviceKeyInfo with COSE key
-        ECPublicKey ecPub = (ECPublicKey) deviceKeyPair.getPublic();
-        byte[] x = unsignedBytes(ecPub.getW().getAffineX(), 32);
-        byte[] y = unsignedBytes(ecPub.getW().getAffineY(), 32);
+        CBORPairList deviceKey = buildDeviceKey();
 
-        CBORObject deviceKey = CBORObject.NewMap();
-        deviceKey.Add(CBORObject.FromObject(1), CBORObject.FromObject(2)); // kty: EC2
-        deviceKey.Add(CBORObject.FromObject(-1), CBORObject.FromObject(1)); // crv: P-256
-        deviceKey.Add(CBORObject.FromObject(-2), x); // x
-        deviceKey.Add(CBORObject.FromObject(-3), y); // y
+        CBORPairList deviceKeyInfo = new CBORPairList(List.of(new CBORPair(new CBORString("deviceKey"), deviceKey)));
 
-        CBORObject deviceKeyInfo = CBORObject.NewMap();
-        deviceKeyInfo.Add("deviceKey", deviceKey);
-        mso.Add("deviceKeyInfo", deviceKeyInfo);
+        // valueDigests
+        CBORPairList valueDigests = new CBORPairList(List.of(new CBORPair(new CBORString(namespace), digestMap)));
 
-        return mso;
+        return new CBORPairList(List.of(
+                new CBORPair(new CBORString("version"), new CBORString("1.0")),
+                new CBORPair(new CBORString("digestAlgorithm"), new CBORString("SHA-256")),
+                new CBORPair(new CBORString("docType"), new CBORString(docType)),
+                new CBORPair(new CBORString("valueDigests"), valueDigests),
+                new CBORPair(new CBORString("validityInfo"), validityInfo),
+                new CBORPair(new CBORString("deviceKeyInfo"), deviceKeyInfo)));
     }
 
-    private CBORObject buildIssuerAuth(CBORObject mso) throws Exception {
+    private CBORItem buildIssuerAuth(CBORPairList mso) throws Exception {
         // Tag-24 wrap the MSO
-        byte[] msoBytes = mso.EncodeToBytes();
-        CBORObject taggedMso = CBORObject.FromObjectAndTag(CBORObject.FromObject(msoBytes), 24);
+        byte[] msoBytes = mso.encode();
+        CBORTaggedItem taggedMso = new CBORTaggedItem(24, new CBORByteArray(msoBytes));
+        byte[] payload = taggedMso.encode();
 
-        Sign1Message sign1 = new Sign1Message();
-        sign1.addAttribute(HeaderKeys.Algorithm, AlgorithmID.ECDSA_256.AsCBOR(), COSE.Attribute.PROTECTED);
-        sign1.SetContent(taggedMso.EncodeToBytes());
+        var protectedHeader =
+                new COSEProtectedHeaderBuilder().alg(algorithm.coseAlgorithm()).build();
+        var unprotectedHeader =
+                new COSEUnprotectedHeaderBuilder().x5chain(List.of(issuerCert)).build();
 
-        // Add x5c
-        CBORObject x5cArray = CBORObject.NewArray();
-        x5cArray.Add(CBORObject.FromObject(issuerCert.getEncoded()));
-        sign1.addAttribute(CBORObject.FromObject(33), x5cArray, COSE.Attribute.UNPROTECTED);
+        // Build sig structure and sign
+        var sigStructure = new SigStructureBuilder()
+                .signature1()
+                .bodyAttributes(protectedHeader)
+                .payload(payload)
+                .build();
+        byte[] signature = new COSESigner(issuerKeyPair.getPrivate()).sign(sigStructure, algorithm.coseAlgorithm());
 
-        OneKey coseKey = new OneKey(issuerKeyPair.getPublic(), issuerKeyPair.getPrivate());
-        sign1.sign(coseKey);
-
-        return CBORObject.DecodeFromBytes(sign1.EncodeToBytes());
+        return new COSESign1Builder()
+                .protectedHeader(protectedHeader)
+                .unprotectedHeader(unprotectedHeader)
+                .payload(payload)
+                .signature(signature)
+                .build();
     }
 
-    private CBORObject buildDeviceSigned(CBORObject sessionTranscript) throws Exception {
+    private CBORItem buildDeviceSigned(CBORItemList sessionTranscript) throws Exception {
         // DeviceAuthentication = ["DeviceAuthentication", SessionTranscript, DocType, DeviceNameSpacesBytes]
-        CBORObject deviceAuthentication = CBORObject.NewArray();
-        deviceAuthentication.Add("DeviceAuthentication");
-        deviceAuthentication.Add(sessionTranscript);
-        deviceAuthentication.Add(docType);
-        deviceAuthentication.Add(CBORObject.NewMap()); // empty device nameSpaces
+        CBORItemList deviceAuthentication = new CBORItemList(
+                new CBORString("DeviceAuthentication"),
+                sessionTranscript,
+                new CBORString(docType),
+                new CBORPairList(List.of())); // empty device nameSpaces
 
-        // Tag-24 wrap (external data for COSE_Sign1)
-        byte[] deviceAuthBytes = CBORObject.FromObjectAndTag(
-                        CBORObject.FromObject(deviceAuthentication.EncodeToBytes()), 24)
-                .EncodeToBytes();
+        // Tag-24 wrap
+        byte[] payload = new CBORTaggedItem(24, new CBORByteArray(deviceAuthentication.encode())).encode();
 
-        // Create COSE_Sign1 with detached payload
-        Sign1Message sign1 = new Sign1Message();
-        sign1.addAttribute(HeaderKeys.Algorithm, AlgorithmID.ECDSA_256.AsCBOR(), COSE.Attribute.PROTECTED);
-        sign1.SetContent(deviceAuthBytes);
+        var protectedHeader =
+                new COSEProtectedHeaderBuilder().alg(algorithm.coseAlgorithm()).build();
 
-        OneKey coseKey = new OneKey(deviceKeyPair.getPublic(), deviceKeyPair.getPrivate());
-        sign1.sign(coseKey);
+        // Build sig structure and sign
+        var sigStructure = new SigStructureBuilder()
+                .signature1()
+                .bodyAttributes(protectedHeader)
+                .payload(payload)
+                .build();
+        byte[] signature = new COSESigner(deviceKeyPair.getPrivate()).sign(sigStructure, algorithm.coseAlgorithm());
 
-        CBORObject deviceSignature = CBORObject.DecodeFromBytes(sign1.EncodeToBytes());
+        // Build device signature COSE_Sign1
+        CBORItem deviceSignature = new COSESign1Builder()
+                .protectedHeader(protectedHeader)
+                .payload(payload)
+                .signature(signature)
+                .build();
 
-        CBORObject deviceAuth = CBORObject.NewMap();
-        deviceAuth.Add("deviceSignature", deviceSignature);
+        return new CBORPairList(List.of(
+                new CBORPair(new CBORString("nameSpaces"), new CBORPairList(List.of())),
+                new CBORPair(
+                        new CBORString("deviceAuth"),
+                        new CBORPairList(List.of(new CBORPair(new CBORString("deviceSignature"), deviceSignature))))));
+    }
 
-        CBORObject deviceSigned = CBORObject.NewMap();
-        deviceSigned.Add("nameSpaces", CBORObject.NewMap());
-        deviceSigned.Add("deviceAuth", deviceAuth);
+    private CBORPairList buildDeviceKey() {
+        ECPublicKey ecPub = (ECPublicKey) deviceKeyPair.getPublic();
+        byte[] x = unsignedBytes(ecPub.getW().getAffineX(), algorithm.coordinateLength());
+        byte[] y = unsignedBytes(ecPub.getW().getAffineY(), algorithm.coordinateLength());
+        return new CBORPairList(List.of(
+                new CBORPair(new CBORInteger(1), new CBORInteger(2)),
+                new CBORPair(new CBORInteger(-1), new CBORInteger(algorithm.coseCurveIdentifier())),
+                new CBORPair(new CBORInteger(-2), new CBORByteArray(x)),
+                new CBORPair(new CBORInteger(-3), new CBORByteArray(y))));
+    }
 
-        return deviceSigned;
+    private static KeyPair generateKeyPair(MdocAlgorithmSpec algorithm) throws Exception {
+        KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance(algorithm.keyAlgorithm());
+        if ("EC".equals(algorithm.keyAlgorithm())) {
+            keyPairGenerator.initialize(new ECGenParameterSpec(algorithm.ecCurveName()));
+        }
+        return keyPairGenerator.generateKeyPair();
     }
 
     private static byte[] unsignedBytes(BigInteger value, int length) {
@@ -260,6 +311,11 @@ class MdocDeviceResponseTestHelper {
     }
 
     static X509Certificate generateSelfSignedCert(KeyPair keyPair) throws Exception {
+        return generateSelfSignedCert(keyPair, "SHA256withECDSA");
+    }
+
+    static X509Certificate generateSelfSignedCert(KeyPair keyPair, String certificateSignatureAlgorithm)
+            throws Exception {
         X500Principal subject = new X500Principal("CN=Test mDoc Issuer");
         Instant now = Instant.now();
         return new JcaX509CertificateConverter()
@@ -270,6 +326,6 @@ class MdocDeviceResponseTestHelper {
                                 Date.from(now.plus(365, ChronoUnit.DAYS)),
                                 subject,
                                 keyPair.getPublic())
-                        .build(new JcaContentSignerBuilder("SHA256withECDSA").build(keyPair.getPrivate())));
+                        .build(new JcaContentSignerBuilder(certificateSignatureAlgorithm).build(keyPair.getPrivate())));
     }
 }

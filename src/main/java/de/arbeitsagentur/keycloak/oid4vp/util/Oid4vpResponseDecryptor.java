@@ -18,14 +18,15 @@ package de.arbeitsagentur.keycloak.oid4vp.util;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.ID_TOKEN;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.VP_TOKEN;
 
-import com.nimbusds.jose.JWEObject;
-import com.nimbusds.jose.crypto.ECDHDecrypter;
-import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jose.util.Base64URL;
 import de.arbeitsagentur.keycloak.oid4vp.domain.DecryptedResponse;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.jboss.logging.Logger;
 import org.keycloak.OAuth2Constants;
+import org.keycloak.common.util.Base64Url;
+import org.keycloak.jose.jwe.JWE;
+import org.keycloak.jose.jwe.JWEHeader;
 import org.keycloak.util.JsonSerialization;
 
 /**
@@ -45,15 +46,24 @@ public class Oid4vpResponseDecryptor {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpResponseDecryptor.class);
 
-    /** Extracts the JWE Key ID header without decrypting, used to look up the decryption key. */
+    /**
+     * Extracts the JWE Key ID header without decrypting, used only to look up the candidate
+     * decryption key. This is intentionally tolerant: malformed JWEs or JWEs without {@code kid}
+     * return {@code null}, while the actual {@link #decrypt(String, Oid4vpJwk)} path remains
+     * strict and rejects invalid input.
+     */
     public String extractKid(String encryptedResponse) {
+        String kid;
         try {
-            JWEObject jwe = JWEObject.parse(encryptedResponse);
-            return jwe.getHeader().getKeyID();
+            kid = extractHeader(encryptedResponse).getKeyId();
         } catch (Exception e) {
-            LOG.warnf("Failed to extract KID from JWE: %s", e.getMessage());
+            LOG.warn("Failed to extract KID from JWE");
             return null;
         }
+        if (kid == null) {
+            LOG.warn("Failed to extract KID from JWE");
+        }
+        return kid;
     }
 
     /**
@@ -63,20 +73,16 @@ public class Oid4vpResponseDecryptor {
      * @param decryptionKey the ephemeral EC private key that was advertised in the request object
      * @return the decrypted response containing the VP token, mDoc nonce, or error details
      */
-    public DecryptedResponse decrypt(String encryptedResponse, ECKey decryptionKey) {
+    public DecryptedResponse decrypt(String encryptedResponse, Oid4vpJwk decryptionKey) {
         try {
-            JWEObject jwe = JWEObject.parse(encryptedResponse);
-            jwe.decrypt(new ECDHDecrypter(decryptionKey));
-            String payload = jwe.getPayload().toString();
+            JWE jwe = decryptJwe(encryptedResponse, decryptionKey);
+            JWEHeader header = (JWEHeader) jwe.getHeader();
+            String payload = new String(jwe.getContent(), StandardCharsets.UTF_8);
 
             @SuppressWarnings("unchecked")
             Map<String, Object> payloadMap = JsonSerialization.readValue(payload, Map.class);
 
-            String mdocGeneratedNonce = null;
-            Base64URL apu = jwe.getHeader().getAgreementPartyUInfo();
-            if (apu != null) {
-                mdocGeneratedNonce = apu.decodeToString();
-            }
+            String mdocGeneratedNonce = decodeHeaderValue(header.getAgreementPartyUInfo());
 
             Object errorObj = payloadMap.get(OAuth2Constants.ERROR);
             if (errorObj != null) {
@@ -105,5 +111,24 @@ public class Oid4vpResponseDecryptor {
         } catch (Exception e) {
             throw new IllegalStateException("Failed to decrypt response: " + e.getMessage(), e);
         }
+    }
+
+    static JWE decryptJwe(String compactJwe, Oid4vpJwk recipientKey) {
+        try {
+            JWE jwe = new JWE();
+            jwe.getKeyStorage().setDecryptionKey(recipientKey.toPrivateKey());
+            jwe.verifyAndDecodeJwe(compactJwe);
+            return jwe;
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to decrypt JWE", e);
+        }
+    }
+
+    static JWEHeader extractHeader(String compactJwe) {
+        return (JWEHeader) new JWE(compactJwe).getHeader();
+    }
+
+    static String decodeHeaderValue(String value) {
+        return value != null ? new String(Base64Url.decode(value), StandardCharsets.UTF_8) : null;
     }
 }

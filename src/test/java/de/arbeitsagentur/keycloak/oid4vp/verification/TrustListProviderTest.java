@@ -35,19 +35,28 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import javax.security.auth.x500.X500Principal;
+import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
+import org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.keycloak.common.crypto.CryptoIntegration;
 
 class TrustListProviderTest {
 
     private ECKey signingKey;
     private ECDSASigner signer;
+
+    @BeforeAll
+    static void initCrypto() {
+        CryptoIntegration.init(TrustListProviderTest.class.getClassLoader());
+    }
 
     @BeforeEach
     void setUp() throws Exception {
@@ -125,6 +134,23 @@ class TrustListProviderTest {
         assertThat(TrustListProvider.DEFAULT_MAX_STALE_AGE).isEqualTo(Duration.ofDays(1));
     }
 
+    @Test
+    void trustedAuthorityKeyIdentifiers_areReadFromCertificateExtensions() throws Exception {
+        X509Certificate cert = generateTestCert(true);
+
+        TrustListProvider provider = new TrustListProvider(List.of(cert));
+
+        assertThat(provider.getTrustedAuthorityKeyIdentifiers()).hasSize(1);
+        assertThat(provider.getTrustedAuthorityKeyIdentifiers().get(0)).isNotBlank();
+    }
+
+    @Test
+    void trustedAuthorityKeyIdentifiers_withoutCertificateExtensions_returnsEmpty() throws Exception {
+        TrustListProvider provider = new TrustListProvider(List.of(generateTestCert(false)));
+
+        assertThat(provider.getTrustedAuthorityKeyIdentifiers()).isEmpty();
+    }
+
     @Nested
     class StaleCacheFallback {
 
@@ -132,18 +158,15 @@ class TrustListProviderTest {
 
         @Test
         void fetchFailure_withRecentStaleEntry_returnsStaleCertificates() throws Exception {
-            X509Certificate cert = generateTestCert();
+            X509Certificate cert = generateTestCert(true);
 
             // Seed cache: expired 10 seconds ago, fetched 30 seconds ago
+            TrustListProvider provider = new TrustListProvider(null, TEST_URL, null, null, null);
             TrustListProvider.seedExpiredCache(
-                    TEST_URL,
+                    provider,
                     List.of(cert),
                     Instant.now().minusSeconds(10),
                     Instant.now().minusSeconds(30));
-
-            // No session → fetch will fail, but stale entry is within default maxStaleAge (1 day)
-            TrustListProvider provider =
-                    new TrustListProvider(null, TEST_URL, null, null, (List<X509Certificate>) null);
 
             List<X509Certificate> result = provider.getTrustedCertificates();
             assertThat(result).containsExactly(cert);
@@ -151,18 +174,15 @@ class TrustListProviderTest {
 
         @Test
         void fetchFailure_withStaleEntryBeyondMaxAge_returnsEmpty() throws Exception {
-            X509Certificate cert = generateTestCert();
+            X509Certificate cert = generateTestCert(true);
 
             // Seed cache: fetched 2 hours ago
+            TrustListProvider provider = new TrustListProvider(null, TEST_URL, null, Duration.ofHours(1), null);
             TrustListProvider.seedExpiredCache(
-                    TEST_URL,
+                    provider,
                     List.of(cert),
                     Instant.now().minusSeconds(10),
                     Instant.now().minusSeconds(7200));
-
-            // maxStaleAge = 1 hour, but entry was fetched 2 hours ago → too old
-            TrustListProvider provider =
-                    new TrustListProvider(null, TEST_URL, null, Duration.ofHours(1), (List<X509Certificate>) null);
 
             List<X509Certificate> result = provider.getTrustedCertificates();
             assertThat(result).isEmpty();
@@ -170,18 +190,15 @@ class TrustListProviderTest {
 
         @Test
         void fetchFailure_withMaxStaleAgeZero_returnsEmpty() throws Exception {
-            X509Certificate cert = generateTestCert();
+            X509Certificate cert = generateTestCert(true);
 
             // Seed cache: recently fetched
+            TrustListProvider provider = new TrustListProvider(null, TEST_URL, null, Duration.ZERO, null);
             TrustListProvider.seedExpiredCache(
-                    TEST_URL,
+                    provider,
                     List.of(cert),
                     Instant.now().minusSeconds(10),
                     Instant.now().minusSeconds(5));
-
-            // maxStaleAge = ZERO disables stale cache entirely
-            TrustListProvider provider =
-                    new TrustListProvider(null, TEST_URL, null, Duration.ZERO, (List<X509Certificate>) null);
 
             List<X509Certificate> result = provider.getTrustedCertificates();
             assertThat(result).isEmpty();
@@ -189,18 +206,15 @@ class TrustListProviderTest {
 
         @Test
         void fetchFailure_withStaleEntryWithinCustomMaxAge_returnsStaleCertificates() throws Exception {
-            X509Certificate cert = generateTestCert();
+            X509Certificate cert = generateTestCert(true);
 
             // Seed cache: fetched 5 minutes ago
+            TrustListProvider provider = new TrustListProvider(null, TEST_URL, null, Duration.ofMinutes(10), null);
             TrustListProvider.seedExpiredCache(
-                    TEST_URL,
+                    provider,
                     List.of(cert),
                     Instant.now().minusSeconds(10),
                     Instant.now().minusSeconds(300));
-
-            // maxStaleAge = 10 minutes → 5-minute-old entry is within range
-            TrustListProvider provider =
-                    new TrustListProvider(null, TEST_URL, null, Duration.ofMinutes(10), (List<X509Certificate>) null);
 
             List<X509Certificate> result = provider.getTrustedCertificates();
             assertThat(result).containsExactly(cert);
@@ -209,33 +223,52 @@ class TrustListProviderTest {
         @Test
         void fetchFailure_withEmptyStaleEntry_returnsEmpty() {
             // Seed cache with empty certificate list
+            TrustListProvider provider = new TrustListProvider(null, TEST_URL, null, null, null);
             TrustListProvider.seedExpiredCache(
-                    TEST_URL,
+                    provider,
                     List.of(),
                     Instant.now().minusSeconds(10),
                     Instant.now().minusSeconds(5));
 
-            TrustListProvider provider =
-                    new TrustListProvider(null, TEST_URL, null, null, (List<X509Certificate>) null);
-
             List<X509Certificate> result = provider.getTrustedCertificates();
             assertThat(result).isEmpty();
         }
+    }
 
-        private X509Certificate generateTestCert() throws Exception {
-            ECKey key = new ECKeyGenerator(Curve.P_256).generate();
-            KeyPair kp = new KeyPair(key.toECPublicKey(), key.toECPrivateKey());
-            X500Principal subject = new X500Principal("CN=Test Issuer");
-            Instant now = Instant.now();
-            ContentSigner contentSigner = new JcaContentSignerBuilder("SHA256withECDSA").build(kp.getPrivate());
-            var certBuilder = new JcaX509v3CertificateBuilder(
-                    subject,
-                    BigInteger.valueOf(now.toEpochMilli()),
-                    Date.from(now.minusSeconds(3600)),
-                    Date.from(now.plusSeconds(86400)),
-                    subject,
-                    kp.getPublic());
-            return new JcaX509CertificateConverter().getCertificate(certBuilder.build(contentSigner));
+    @Nested
+    class CacheIsolation {
+
+        private static final String TEST_URL = "https://cache-isolation.example.com/tl.jwt";
+
+        @Test
+        void cacheKey_includesSigningCertificateFingerprints() throws Exception {
+            X509Certificate cachedCert = generateTestCert(true);
+            X509Certificate wrongSigningCert = generateSelfSignedCert(new ECKeyGenerator(Curve.P_256).generate());
+
+            TrustListProvider unsignedProvider = new TrustListProvider(null, TEST_URL, null, null, null);
+            TrustListProvider signedProvider =
+                    new TrustListProvider(null, TEST_URL, null, null, List.of(wrongSigningCert));
+
+            TrustListProvider.seedExpiredCache(
+                    unsignedProvider, List.of(cachedCert), Instant.now().plusSeconds(300), Instant.now());
+
+            assertThat(unsignedProvider.getTrustedCertificates()).containsExactly(cachedCert);
+            assertThat(signedProvider.getTrustedCertificates()).isEmpty();
+        }
+
+        @Test
+        void cacheKey_includesCachePolicy() throws Exception {
+            X509Certificate cachedCert = generateTestCert(true);
+
+            TrustListProvider defaultProvider = new TrustListProvider(null, TEST_URL, null, null, null);
+            TrustListProvider shortTtlProvider =
+                    new TrustListProvider(null, TEST_URL, Duration.ofSeconds(30), null, null);
+
+            TrustListProvider.seedExpiredCache(
+                    defaultProvider, List.of(cachedCert), Instant.now().plusSeconds(300), Instant.now());
+
+            assertThat(defaultProvider.getTrustedCertificates()).containsExactly(cachedCert);
+            assertThat(shortTtlProvider.getTrustedCertificates()).isEmpty();
         }
     }
 
@@ -271,8 +304,7 @@ class TrustListProviderTest {
 
         @Test
         void verifySignature_withNoCert_skipsVerification() throws Exception {
-            TrustListProvider provider =
-                    new TrustListProvider(null, "https://example.com", null, (List<X509Certificate>) null);
+            TrustListProvider provider = new TrustListProvider(null, "https://example.com", null, null);
 
             // Sign with any key — verification should be skipped
             String jwt = buildSignedJwt(new JWTClaimsSet.Builder()
@@ -296,30 +328,50 @@ class TrustListProviderTest {
 
             assertThatCode(() -> provider.verifySignature(jwt)).doesNotThrowAnyException();
         }
-
-        private X509Certificate generateSelfSignedCert(ECKey ecKey) throws Exception {
-            KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC");
-            kpg.initialize(new ECGenParameterSpec("secp256r1"));
-            // We need a KeyPair from the ECKey
-            KeyPair kp = new KeyPair(ecKey.toECPublicKey(), ecKey.toECPrivateKey());
-
-            X500Principal subject = new X500Principal("CN=TrustList Signer");
-            Instant now = Instant.now();
-            ContentSigner contentSigner = new JcaContentSignerBuilder("SHA256withECDSA").build(kp.getPrivate());
-            var certBuilder = new JcaX509v3CertificateBuilder(
-                    subject,
-                    BigInteger.valueOf(now.toEpochMilli()),
-                    Date.from(now.minusSeconds(3600)),
-                    Date.from(now.plusSeconds(86400)),
-                    subject,
-                    kp.getPublic());
-            return new JcaX509CertificateConverter().getCertificate(certBuilder.build(contentSigner));
-        }
     }
 
     private String buildSignedJwt(JWTClaimsSet claims) throws Exception {
         SignedJWT signedJWT = new SignedJWT(new JWSHeader(JWSAlgorithm.ES256), claims);
         signedJWT.sign(signer);
         return signedJWT.serialize();
+    }
+
+    private static X509Certificate generateSelfSignedCert(ECKey ecKey) throws Exception {
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC");
+        kpg.initialize(new ECGenParameterSpec("secp256r1"));
+        KeyPair kp = new KeyPair(ecKey.toECPublicKey(), ecKey.toECPrivateKey());
+
+        X500Principal subject = new X500Principal("CN=TrustList Signer");
+        Instant now = Instant.now();
+        ContentSigner contentSigner = new JcaContentSignerBuilder("SHA256withECDSA").build(kp.getPrivate());
+        var certBuilder = new JcaX509v3CertificateBuilder(
+                subject,
+                BigInteger.valueOf(now.toEpochMilli()),
+                Date.from(now.minusSeconds(3600)),
+                Date.from(now.plusSeconds(86400)),
+                subject,
+                kp.getPublic());
+        return new JcaX509CertificateConverter().getCertificate(certBuilder.build(contentSigner));
+    }
+
+    private static X509Certificate generateTestCert(boolean includeSubjectKeyIdentifier) throws Exception {
+        ECKey key = new ECKeyGenerator(Curve.P_256).generate();
+        KeyPair kp = new KeyPair(key.toECPublicKey(), key.toECPrivateKey());
+        X500Principal subject = new X500Principal("CN=Test Issuer");
+        Instant now = Instant.now();
+        ContentSigner contentSigner = new JcaContentSignerBuilder("SHA256withECDSA").build(kp.getPrivate());
+        var certBuilder = new JcaX509v3CertificateBuilder(
+                subject,
+                BigInteger.valueOf(now.toEpochMilli()),
+                Date.from(now.minusSeconds(3600)),
+                Date.from(now.plusSeconds(86400)),
+                subject,
+                kp.getPublic());
+        if (includeSubjectKeyIdentifier) {
+            JcaX509ExtensionUtils extensionUtils = new JcaX509ExtensionUtils();
+            certBuilder.addExtension(
+                    Extension.subjectKeyIdentifier, false, extensionUtils.createSubjectKeyIdentifier(kp.getPublic()));
+        }
+        return new JcaX509CertificateConverter().getCertificate(certBuilder.build(contentSigner));
     }
 }

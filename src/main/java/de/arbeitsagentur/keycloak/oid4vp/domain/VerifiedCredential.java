@@ -20,6 +20,7 @@ import java.security.MessageDigest;
 import java.util.Base64;
 import java.util.Locale;
 import java.util.Map;
+import org.keycloak.crypto.JavaAlgorithm;
 
 /**
  * A credential that has been cryptographically verified and had its claims extracted.
@@ -42,9 +43,25 @@ public record VerifiedCredential(
      * (SD-JWT / mDoc) and still be matched to the same Keycloak identity.
      */
     public String generateIdentityKey(String subject) {
+        return generateIdentityKey(subject, false);
+    }
+
+    /**
+     * Generates a stable identity key with case-insensitive subject matching.
+     * Intended for human-readable credential claims that may vary in casing
+     * across formats while representing the same user identity.
+     */
+    public String generateCaseInsensitiveIdentityKey(String subject) {
+        return generateIdentityKey(subject, true);
+    }
+
+    private String generateIdentityKey(String subject, boolean caseInsensitive) {
         String normalizedSubject = normalize(subject);
+        if (caseInsensitive) {
+            normalizedSubject = normalizedSubject.toLowerCase(Locale.ROOT);
+        }
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            MessageDigest digest = MessageDigest.getInstance(JavaAlgorithm.SHA256);
             byte[] hash = digest.digest(normalizedSubject.getBytes(StandardCharsets.UTF_8));
             return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
         } catch (Exception e) {
@@ -53,6 +70,6 @@ public record VerifiedCredential(
     }
 
     private static String normalize(String value) {
-        return value != null ? value.strip().toLowerCase(Locale.ROOT) : "";
+        return value != null ? value.strip() : "";
     }
 }

@@ -45,6 +45,7 @@ import org.keycloak.utils.StringUtil;
 public class VpTokenProcessor {
 
     private static final Logger LOG = Logger.getLogger(VpTokenProcessor.class);
+    private static final String DEFAULT_CREDENTIAL_ID = "cred1";
 
     private final SdJwtVerifier sdJwtVerifier;
     private final MdocVerifier mdocVerifier;
@@ -207,7 +208,7 @@ public class VpTokenProcessor {
             String encryptionJwkThumbprint) {
 
         VerifiedCredential cred = verifyCredential(
-                "cred1",
+                DEFAULT_CREDENTIAL_ID,
                 vpToken,
                 clientId,
                 expectedNonce,
@@ -219,7 +220,7 @@ public class VpTokenProcessor {
             throw new IdentityBrokerException("Unsupported VP token format");
         }
 
-        return new VpTokenResult(Map.of("cred1", cred), cred.claims());
+        return new VpTokenResult(Map.of(DEFAULT_CREDENTIAL_ID, cred), cred.claims());
     }
 
     @SuppressWarnings("unchecked")
@@ -297,14 +298,13 @@ public class VpTokenProcessor {
 
         if (mdocVerifier.isMdoc(credential)) {
             // Use alternateResponseUri as the response_uri for session transcript
-            String responseUri = alternateResponseUri;
             byte[] jwkThumbprintBytes = decodeJwkThumbprint(encryptionJwkThumbprint);
             MdocVerificationResult result = mdocVerifier.verifyWithTrustedCerts(
                     credential,
                     trustedCerts,
                     clientId,
                     expectedNonce,
-                    responseUri,
+                    alternateResponseUri,
                     mdocGeneratedNonce,
                     jwkThumbprintBytes);
             statusListVerifier.checkRevocationStatus(result.claims());

@@ -23,6 +23,7 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
  * or an {@code error}/{@code error_description} pair.
  *
  * @param vpToken the decrypted VP token string, or {@code null} on error
+ * @param idToken the decrypted Self-Issued ID Token, or {@code null} if not present
  * @param mdocGeneratedNonce the mDoc session transcript nonce from the JWE APU header, or {@code null}
  * @param error the OAuth error code if the wallet reported an error, or {@code null}
  * @param errorDescription human-readable error description, or {@code null}

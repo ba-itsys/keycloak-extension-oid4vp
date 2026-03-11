@@ -15,94 +15,96 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
-import com.nimbusds.jose.EncryptionMethod;
-import com.nimbusds.jose.JWEAlgorithm;
-import com.nimbusds.jose.JWEObject;
-import com.nimbusds.jose.crypto.ECDHDecrypter;
-import com.nimbusds.jose.jwk.Curve;
-import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import de.arbeitsagentur.keycloak.oid4vp.domain.WalletMetadata;
+import java.nio.charset.StandardCharsets;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.keycloak.common.crypto.CryptoIntegration;
+import org.keycloak.jose.jwe.JWE;
 
 class Oid4vpRequestObjectEncryptorTest {
 
-    private ECKey walletKey;
+    private Oid4vpJwk walletKey;
+
+    @BeforeAll
+    static void initCrypto() {
+        CryptoIntegration.init(Oid4vpRequestObjectEncryptorTest.class.getClassLoader());
+    }
 
     @BeforeEach
-    void setUp() throws Exception {
-        walletKey = new ECKeyGenerator(Curve.P_256).keyID("wallet-enc-key").generate();
+    void setUp() {
+        walletKey = Oid4vpJwk.generate("P-256", "ECDH-ES", "enc");
+        walletKey = new Oid4vpJwk(
+                walletKey.curve(),
+                walletKey.x(),
+                walletKey.y(),
+                walletKey.privateKey(),
+                "wallet-enc-key",
+                walletKey.algorithm(),
+                walletKey.use());
     }
 
     @Test
-    void encrypt_producesValidJwe_decryptableWithPrivateKey() throws Exception {
+    void encrypt_producesValidJwe_decryptableWithPrivateKey() {
         String signedJwt = "eyJhbGciOiJFUzI1NiJ9.eyJ0ZXN0IjoidmFsdWUifQ.signature";
-        WalletMetadata metadata =
-                new WalletMetadata(walletKey.toPublicJWK(), JWEAlgorithm.ECDH_ES, EncryptionMethod.A128GCM);
+        WalletMetadata metadata = new WalletMetadata(walletKey.toPublicJwk(), "ECDH-ES", "A128GCM");
 
         String encrypted = Oid4vpRequestObjectEncryptor.encrypt(signedJwt, metadata);
 
-        JWEObject jwe = JWEObject.parse(encrypted);
-        jwe.decrypt(new ECDHDecrypter(walletKey));
-        assertThat(jwe.getPayload().toString()).isEqualTo(signedJwt);
+        JWE jwe = Oid4vpResponseDecryptor.decryptJwe(encrypted, walletKey);
+        assertThat(new String(jwe.getContent(), StandardCharsets.UTF_8)).isEqualTo(signedJwt);
     }
 
     @Test
-    void encrypt_setsContentTypeHeader() throws Exception {
+    void encrypt_setsContentTypeHeader() {
         String signedJwt = "eyJhbGciOiJFUzI1NiJ9.test.sig";
-        WalletMetadata metadata =
-                new WalletMetadata(walletKey.toPublicJWK(), JWEAlgorithm.ECDH_ES, EncryptionMethod.A128GCM);
+        WalletMetadata metadata = new WalletMetadata(walletKey.toPublicJwk(), "ECDH-ES", "A128GCM");
 
         String encrypted = Oid4vpRequestObjectEncryptor.encrypt(signedJwt, metadata);
 
-        JWEObject jwe = JWEObject.parse(encrypted);
-        assertThat(jwe.getHeader().getContentType()).isEqualTo(Oid4vpConstants.REQUEST_OBJECT_TYP);
+        assertThat(Oid4vpResponseDecryptor.extractHeader(encrypted).getContentType())
+                .isEqualTo(Oid4vpConstants.REQUEST_OBJECT_TYP);
     }
 
     @Test
-    void encrypt_usesWalletKeyId() throws Exception {
+    void encrypt_usesWalletKeyId() {
         String signedJwt = "eyJhbGciOiJFUzI1NiJ9.test.sig";
-        WalletMetadata metadata =
-                new WalletMetadata(walletKey.toPublicJWK(), JWEAlgorithm.ECDH_ES, EncryptionMethod.A128GCM);
+        WalletMetadata metadata = new WalletMetadata(walletKey.toPublicJwk(), "ECDH-ES", "A128GCM");
 
         String encrypted = Oid4vpRequestObjectEncryptor.encrypt(signedJwt, metadata);
 
-        JWEObject jwe = JWEObject.parse(encrypted);
-        assertThat(jwe.getHeader().getKeyID()).isEqualTo("wallet-enc-key");
+        assertThat(Oid4vpResponseDecryptor.extractHeader(encrypted).getKeyId()).isEqualTo("wallet-enc-key");
     }
 
     @Test
-    void encrypt_withA256gcm_usesCorrectEncryptionMethod() throws Exception {
+    void encrypt_withA256gcm_usesCorrectEncryptionMethod() {
         String signedJwt = "eyJhbGciOiJFUzI1NiJ9.test.sig";
-        WalletMetadata metadata =
-                new WalletMetadata(walletKey.toPublicJWK(), JWEAlgorithm.ECDH_ES, EncryptionMethod.A256GCM);
+        WalletMetadata metadata = new WalletMetadata(walletKey.toPublicJwk(), "ECDH-ES", "A256GCM");
 
         String encrypted = Oid4vpRequestObjectEncryptor.encrypt(signedJwt, metadata);
 
-        JWEObject jwe = JWEObject.parse(encrypted);
-        assertThat(jwe.getHeader().getEncryptionMethod()).isEqualTo(EncryptionMethod.A256GCM);
-
-        jwe.decrypt(new ECDHDecrypter(walletKey));
-        assertThat(jwe.getPayload().toString()).isEqualTo(signedJwt);
+        JWE jwe = Oid4vpResponseDecryptor.decryptJwe(encrypted, walletKey);
+        assertThat(Oid4vpResponseDecryptor.extractHeader(encrypted).getEncryptionAlgorithm())
+                .isEqualTo("A256GCM");
+        assertThat(new String(jwe.getContent(), StandardCharsets.UTF_8)).isEqualTo(signedJwt);
     }
 
     @Test
-    void encrypt_withoutKeyId_omitsKidInHeader() throws Exception {
-        ECKey noKidKey = new ECKeyGenerator(Curve.P_256).generate();
+    void encrypt_withoutKeyId_omitsKidInHeader() {
+        Oid4vpJwk noKidKey = new Oid4vpJwk(
+                walletKey.curve(), walletKey.x(), walletKey.y(), walletKey.privateKey(), null, "ECDH-ES", "enc");
         String signedJwt = "eyJhbGciOiJFUzI1NiJ9.test.sig";
-        WalletMetadata metadata =
-                new WalletMetadata(noKidKey.toPublicJWK(), JWEAlgorithm.ECDH_ES, EncryptionMethod.A128GCM);
+        WalletMetadata metadata = new WalletMetadata(noKidKey.toPublicJwk(), "ECDH-ES", "A128GCM");
 
         String encrypted = Oid4vpRequestObjectEncryptor.encrypt(signedJwt, metadata);
 
-        JWEObject jwe = JWEObject.parse(encrypted);
-        assertThat(jwe.getHeader().getKeyID()).isNull();
-
-        jwe.decrypt(new ECDHDecrypter(noKidKey));
-        assertThat(jwe.getPayload().toString()).isEqualTo(signedJwt);
+        JWE jwe = Oid4vpResponseDecryptor.decryptJwe(encrypted, noKidKey);
+        assertThat(Oid4vpResponseDecryptor.extractHeader(encrypted).getKeyId()).isNull();
+        assertThat(new String(jwe.getContent(), StandardCharsets.UTF_8)).isEqualTo(signedJwt);
     }
 }

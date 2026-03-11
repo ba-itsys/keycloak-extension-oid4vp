@@ -16,6 +16,7 @@
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
+import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -46,8 +47,8 @@ public final class Oid4vpMapperUtils {
 
     private Oid4vpMapperUtils() {}
 
-    @SuppressWarnings("unchecked")
     /** Extracts a claim value from the brokered identity context by claim path. */
+    @SuppressWarnings("unchecked")
     public static Object getClaimValue(BrokeredIdentityContext context, String claimPath) {
         Map<String, Object> claims =
                 (Map<String, Object>) context.getContextData().get(CONTEXT_CLAIMS_KEY);
@@ -83,9 +84,9 @@ public final class Oid4vpMapperUtils {
     }
 
     private static String formatFromPresentationType(String presentationType) {
-        if ("MDOC".equals(presentationType)) {
+        if (PresentationType.MDOC.name().equals(presentationType)) {
             return Oid4vpConstants.FORMAT_MSO_MDOC;
-        } else if ("SD_JWT".equals(presentationType)) {
+        } else if (PresentationType.SD_JWT.name().equals(presentationType)) {
             return Oid4vpConstants.FORMAT_SD_JWT_VC;
         }
         return presentationType;
@@ -174,11 +175,10 @@ public final class Oid4vpMapperUtils {
             if ("null".equals(part)) {
                 // DCQL null: select all elements of the current array
                 if (current instanceof List<?>) {
-                    // DCQL null: select all elements — list is already the value
-                } else {
-                    current = null;
-                    break;
+                    continue;
                 }
+                current = null;
+                break;
             } else if (current instanceof Map) {
                 current = ((Map<?, ?>) current).get(part);
                 if (current == null) break;
