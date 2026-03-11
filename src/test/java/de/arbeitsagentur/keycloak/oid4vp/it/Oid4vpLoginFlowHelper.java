@@ -101,6 +101,15 @@ class Oid4vpLoginFlowHelper {
     PresentationResponse submitToWallet(String walletUrl) {
         String presentationUri = convertToOpenid4vpUri(walletUrl);
         PresentationResponse response = wallet.acceptPresentationRequest(presentationUri);
+        if (response.rawBody() != null && response.rawBody().contains("\"error\":\"session_expired\"")) {
+            LOG.info("[Test] Wallet callback raced request-context visibility; retrying same presentation once");
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            response = wallet.acceptPresentationRequest(presentationUri);
+        }
         LOG.info("[Test] Wallet response: {}", response.rawBody());
         return response;
     }

@@ -17,6 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp.service;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
+import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import jakarta.ws.rs.core.MediaType;
@@ -34,7 +35,6 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.services.ErrorPage;
 import org.keycloak.sessions.AuthenticationSessionModel;
-import org.keycloak.sessions.RootAuthenticationSessionModel;
 import org.keycloak.util.JsonSerialization;
 
 /**
@@ -68,6 +68,7 @@ public class Oid4vpDirectPostService {
     private final RealmModel realm;
     private final Oid4vpConfigProvider config;
     private final Oid4vpRequestObjectStore requestObjectStore;
+    private final Oid4vpAuthSessionResolver authSessionResolver;
 
     public Oid4vpDirectPostService(
             KeycloakSession session,
@@ -78,6 +79,7 @@ public class Oid4vpDirectPostService {
         this.realm = realm;
         this.config = config;
         this.requestObjectStore = requestObjectStore;
+        this.authSessionResolver = new Oid4vpAuthSessionResolver(session, realm, requestObjectStore);
         this.deferredAuthTtlSeconds =
                 realm != null ? realm.getAccessCodeLifespanLogin() : config.getCrossDeviceCompleteTtlSeconds();
         this.crossDeviceCompleteTtlSeconds = config.getCrossDeviceCompleteTtlSeconds();
@@ -149,9 +151,8 @@ public class Oid4vpDirectPostService {
     public Response completeAuth(
             String requestHandle, AbstractIdentityProvider.AuthenticationCallback callback, EventBuilder event) {
 
-        session.singleUseObjects().remove(CROSS_DEVICE_COMPLETE_PREFIX + requestHandle);
-        Map<String, String> signal = session.singleUseObjects().remove(DEFERRED_AUTH_PREFIX + requestHandle);
-        if (signal == null) {
+        AuthenticationSessionModel storedAuthSession = resolveExpectedAuthSession(requestHandle);
+        if (storedAuthSession == null) {
             return ErrorPage.error(
                     session,
                     null,
@@ -159,43 +160,45 @@ public class Oid4vpDirectPostService {
                     "Authentication session expired. Please try logging in again.");
         }
 
-        String rootSessionId = signal.get(KEY_ROOT_SESSION_ID);
-        String tabId = signal.get(KEY_TAB_ID);
-
-        AuthenticationSessionModel authSession = null;
-        if (rootSessionId != null) {
-            RootAuthenticationSessionModel rootSession =
-                    session.authenticationSessions().getRootAuthenticationSession(realm, rootSessionId);
-            if (rootSession != null && tabId != null) {
-                authSession = rootSession.getAuthenticationSessions().get(tabId);
-            }
-        }
-        if (authSession == null) {
+        AuthenticationSessionModel currentBrowserSession =
+                authSessionResolver.resolveCurrentBrowserSession(storedAuthSession);
+        if (!authSessionResolver.sameAuthenticationSession(currentBrowserSession, storedAuthSession)) {
             return ErrorPage.error(
                     session,
-                    null,
+                    currentBrowserSession,
+                    Response.Status.BAD_REQUEST,
+                    "Authentication session does not match the current browser session. Please restart the login flow.");
+        }
+
+        session.singleUseObjects().remove(CROSS_DEVICE_COMPLETE_PREFIX + requestHandle);
+        Map<String, String> consumedSignal = session.singleUseObjects().remove(DEFERRED_AUTH_PREFIX + requestHandle);
+        if (consumedSignal == null) {
+            return ErrorPage.error(
+                    session,
+                    currentBrowserSession,
                     Response.Status.BAD_REQUEST,
                     "Authentication session expired. Please try logging in again.");
         }
 
         SerializedBrokeredIdentityContext serializedCtx =
-                SerializedBrokeredIdentityContext.readFromAuthenticationSession(authSession, DEFERRED_IDENTITY_NOTE);
+                SerializedBrokeredIdentityContext.readFromAuthenticationSession(
+                        storedAuthSession, DEFERRED_IDENTITY_NOTE);
         if (serializedCtx == null) {
             return ErrorPage.error(
                     session,
-                    authSession,
+                    storedAuthSession,
                     Response.Status.BAD_REQUEST,
                     "Authentication data not found. Please try logging in again.");
         }
 
-        session.getContext().setAuthenticationSession(authSession);
-        session.getContext().setClient(authSession.getClient());
+        session.getContext().setAuthenticationSession(storedAuthSession);
+        session.getContext().setClient(storedAuthSession.getClient());
 
-        BrokeredIdentityContext context = serializedCtx.deserialize(session, authSession);
-        context.setAuthenticationSession(authSession);
+        BrokeredIdentityContext context = serializedCtx.deserialize(session, storedAuthSession);
+        context.setAuthenticationSession(storedAuthSession);
         context.getContextData().keySet().removeIf(key -> key.startsWith("user.attributes."));
 
-        String claimsJson = authSession.getAuthNote(DEFERRED_CLAIMS_NOTE);
+        String claimsJson = storedAuthSession.getAuthNote(DEFERRED_CLAIMS_NOTE);
         if (claimsJson != null) {
             try {
                 @SuppressWarnings("unchecked")
@@ -204,13 +207,31 @@ public class Oid4vpDirectPostService {
             } catch (Exception e) {
                 LOG.warnf("Failed to deserialize claims: %s", e.getMessage());
             }
-            authSession.removeAuthNote(DEFERRED_CLAIMS_NOTE);
+            storedAuthSession.removeAuthNote(DEFERRED_CLAIMS_NOTE);
         }
 
-        authSession.removeAuthNote(DEFERRED_IDENTITY_NOTE);
+        storedAuthSession.removeAuthNote(DEFERRED_IDENTITY_NOTE);
 
         event.event(EventType.LOGIN);
         return callback.authenticated(context);
+    }
+
+    public AuthenticationSessionModel resolveExpectedAuthSession(String requestHandle) {
+        Map<String, String> signal = session.singleUseObjects().get(DEFERRED_AUTH_PREFIX + requestHandle);
+        if (signal != null) {
+            AuthenticationSessionModel authSession =
+                    authSessionResolver.resolveFromTokenEntry(signal.get(KEY_ROOT_SESSION_ID), signal.get(KEY_TAB_ID));
+            if (authSession != null) {
+                return authSession;
+            }
+        }
+
+        Oid4vpRequestObjectStore.FlowContextEntry flowContext =
+                requestObjectStore.resolveFlowHandle(session, requestHandle);
+        if (flowContext == null) {
+            return null;
+        }
+        return authSessionResolver.resolveFromTokenEntry(flowContext.rootSessionId(), flowContext.tabId());
     }
 
     public String buildCompleteAuthUrl(String requestHandle) {

@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.Page;
+import com.microsoft.playwright.options.Cookie;
 import com.nimbusds.jose.EncryptionMethod;
 import com.nimbusds.jose.JWEAlgorithm;
 import com.nimbusds.jose.JWEHeader;
@@ -40,6 +41,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 import javax.security.auth.x500.X500Principal;
 import org.bouncycastle.asn1.x509.BasicConstraints;
@@ -107,7 +109,7 @@ abstract class AbstractOid4vpE2eTest {
     }
 
     protected Oid4vcContainer newWallet(String alias) {
-        return new Oid4vcContainer()
+        return new Oid4vcContainer(env.walletImage())
                 .withHostAccess()
                 .withNetwork(env.network())
                 .withNetworkAliases(alias)
@@ -228,6 +230,17 @@ abstract class AbstractOid4vpE2eTest {
             }
         }
         throw new IllegalArgumentException("No redirect_uri found in SSE response: " + sseBody);
+    }
+
+    protected String browserCookieHeader(String url) {
+        List<Cookie> cookies = context.cookies(url);
+        if (cookies.isEmpty()) {
+            return "";
+        }
+        return cookies.stream()
+                .map(cookie -> cookie.name + "=" + cookie.value)
+                .reduce((a, b) -> a + "; " + b)
+                .orElse("");
     }
 
     protected static String extractQueryParam(String uri, String name) {

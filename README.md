@@ -25,6 +25,8 @@ Two flows are supported: **same-device** (wallet app on the same device as the b
 
 The OID4VP request object (a signed JWT containing the authorization parameters) is **not pre-built** when the login page loads. Instead, the login page only contains a `request_uri` pointing to the Keycloak endpoint. The request object is generated on the fly when the wallet actually fetches that URI. This means the same QR code can be scanned multiple times (e.g., after a wallet error) and each fetch produces a fresh request object with new timestamps and encryption keys.
 
+The login page creates one stable `request_handle` per enabled browser flow. That handle identifies the browser-side login attempt and is used later for `/complete-auth`. Each fetch of `/request-object/{request_handle}` then creates a fresh per-request `state` and `nonce` under that stable flow handle. In short: `request_handle` is stable per browser flow; `state` is fresh per created request object.
+
 ### Presentation Flow
 
 ```mermaid
@@ -56,12 +58,14 @@ sequenceDiagram
 1. The user clicks the OID4VP identity provider on the Keycloak login page.
 2. Keycloak creates one stable `request_handle` per enabled flow, stores the flow context in Keycloak's single-use object store, and renders the login page. In **same-device** mode, the page contains an `openid4vp://` deep link; in **cross-device** mode, a QR code encoding the same URL.
 3. The user taps the deep link (same-device) or scans the QR code with a wallet on another device (cross-device).
-4. The wallet fetches the request object from the `request_uri` (a Keycloak endpoint). The URL includes `?flow=same_device` or `?flow=cross_device`.
+4. The wallet fetches the request object from the `request_uri` (a Keycloak endpoint at `/request-object/{request_handle}`).
 5. Keycloak generates and signs the request object JWT on demand, including the DCQL query, nonce, state, and (if HAIP) an ephemeral encryption key.
 6. The wallet prompts the user to consent and builds the verifiable presentation token (`vp_token`).
 7. The wallet POSTs the `vp_token` (or encrypted `response` if HAIP) to the `response_uri` specified in the request object. Keycloak verifies the credential and maps claims to user attributes.
 8. **Same-device:** Keycloak returns a redirect URL; the wallet opens it in the browser and the login completes. **Cross-device:** Keycloak responds with `200 OK` and stores a completion signal in its single-use object store.
 9. **Cross-device only:** The browser has an open SSE connection (`/cross-device/status?request_handle=...`). It receives a `complete` event, navigates to `/complete-auth?request_handle=...`, which restores the authentication session and finalizes the login.
+
+`/cross-device/status` and `/complete-auth` both require a live one-time `request_handle` and the browser auth-session cookie for the original login tab. The handle is random, short-lived, and single-use, but observation and completion are also bound to the current browser's Keycloak authentication session.
 
 ### HAIP Mode (Encrypted Responses)
 
@@ -72,7 +76,7 @@ When `enforceHaip` is enabled, the flow includes response encryption:
 - Keycloak decrypts the JWE using the matching private key stored in the request-context entry for that specific fetched request object.
 - A new encryption key pair is generated for each request object fetch, so retries get fresh keys.
 
-When `enforceHaip` is disabled, the same encrypted response flow can still be used by setting `responseMode=direct_post.jwt` explicitly.
+Encrypted wallet responses can also be used without `enforceHaip` by setting `responseMode=direct_post.jwt` explicitly.
 
 ### Wallet Nonce Binding
 
@@ -144,7 +148,7 @@ Alternatively, add it via realm import JSON:
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `dcqlQuery` | DCQL query JSON defining which credentials to request. Auto-generated from IdP mappers if not set. When set manually, Keycloak still normalizes each credential entry by backfilling missing format metadata (`meta.vct_values` for `dc+sd-jwt`, `meta.doctype_value` for `mso_mdoc`) and, if enabled, `trusted_authorities`. Request-object `client_metadata` for `direct_post.jwt` remains independent of DCQL and is added separately. | *(auto-generated)* |
+| `dcqlQuery` | DCQL query JSON defining which credentials to request. Auto-generated from IdP mappers if not set. When set manually, Keycloak normalizes each credential entry by backfilling missing format metadata (`meta.vct_values` for `dc+sd-jwt`, `meta.doctype_value` for `mso_mdoc`) and, if enabled, `trusted_authorities`. Request-object `client_metadata` for `direct_post.jwt` remains independent of DCQL and is added separately. | *(auto-generated)* |
 | `credentialSetMode` | How credential sets are combined: `optional` (any one suffices) or `all` (all required). | `optional` |
 | `credentialSetPurpose` | Human-readable purpose string included in the DCQL credential set. | *(none)* |
 | `requestObjectLifespanSeconds` | How long the signed request object JWT is valid for wallet fetch/validation (seconds). This is not the user-consent timeout after the wallet has already accepted the request, so it should stay short. | `10` |
@@ -155,7 +159,7 @@ Alternatively, add it via realm import JSON:
 |-----|-------------|---------|
 | `userMappingClaim` | Claim from the SD-JWT credential used as the unique user identifier. Not required when `useIdTokenSubject` is enabled. | `sub` |
 | `userMappingClaimMdoc` | Claim from the mDoc credential used as the unique user identifier. Falls back to `userMappingClaim` if not set. Not required when `useIdTokenSubject` is enabled. | *(falls back)* |
-| `useIdTokenSubject` | When enabled, requests a [SIOPv2](https://openid.net/specs/openid-connect-self-issued-v2-1_0.html) Self-Issued ID Token alongside the VP Token (`response_type=vp_token id_token`). The user's subject is the JWK Thumbprint from the ID Token's `sub` claim instead of a credential claim. The VP Token is still always required for credential attributes. When enabled, `userMappingClaim` is not required and not auto-added to DCQL queries. | `false` |
+| `useIdTokenSubject` | When enabled, requests a [SIOPv2](https://openid.net/specs/openid-connect-self-issued-v2-1_0.html) Self-Issued ID Token alongside the VP Token (`response_type=vp_token id_token`). The user's subject is the JWK Thumbprint from the ID Token's `sub` claim instead of a credential claim. The VP Token is always required for credential attributes. When enabled, `userMappingClaim` is not required and not auto-added to DCQL queries. | `false` |
 | `clockSkewSeconds` | Allowed clock skew (in seconds) for ID Token time validity checks (`exp`, `iat`). | `30` |
 
 #### Flow Control
@@ -245,13 +249,13 @@ The extension provides two mapper types that can be added to the OID4VP identity
 
 Each mapper specifies a credential format (`dc+sd-jwt` or `mso_mdoc`), a claim path, and a credential type (VCT or doctype). When mappers are configured, the DCQL query is auto-generated from them unless `dcqlQuery` is explicitly set.
 
-If `dcqlQuery` is set manually, Keycloak still applies the same inferred credential metadata that mapper-generated queries would have:
+If `dcqlQuery` is set manually, Keycloak applies the same inferred credential metadata that mapper-generated queries would have:
 
 - `dc+sd-jwt`: adds `meta.vct_values` from the credential `id` when missing
 - `mso_mdoc`: adds `meta.doctype_value` from the credential `id` when missing
 - `trusted_authorities`: normalized according to `trustedAuthoritiesMode` when `trustListUrl` is configured, unless already present on the credential
 
-This normalization only affects credential-level DCQL fields. Request-object encryption metadata such as `client_metadata.jwks` and `encrypted_response_enc_values_supported` is not derived from DCQL and is still added separately when `response_mode=direct_post.jwt`.
+This normalization only affects credential-level DCQL fields. Request-object encryption metadata such as `client_metadata.jwks` and `encrypted_response_enc_values_supported` is not derived from DCQL and is added separately when `response_mode=direct_post.jwt`.
 
 ### Multi-Node Note
 

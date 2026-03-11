@@ -31,12 +31,14 @@ import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.broker.provider.IdentityProviderDataMarshaller;
 import org.keycloak.broker.provider.UserAuthenticationIdentityProvider;
 import org.keycloak.forms.login.LoginFormsProvider;
+import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakUriInfo;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.SingleUseObjectProvider;
 import org.keycloak.sessions.AuthenticationSessionModel;
+import org.keycloak.sessions.AuthenticationSessionProvider;
 import org.keycloak.sessions.RootAuthenticationSessionModel;
 
 class Oid4vpDirectPostServiceTest {
@@ -45,21 +47,25 @@ class Oid4vpDirectPostServiceTest {
     private KeycloakSession session;
     private SingleUseObjectProvider singleUseObjects;
     private RealmModel realm;
+    private KeycloakContext context;
+    private AuthenticationSessionProvider authenticationSessions;
 
     @BeforeEach
     void setUp() {
         session = mock(KeycloakSession.class);
         realm = mock(RealmModel.class);
         singleUseObjects = mock(SingleUseObjectProvider.class);
+        authenticationSessions = mock(AuthenticationSessionProvider.class);
         Oid4vpIdentityProviderConfig config = mock(Oid4vpIdentityProviderConfig.class);
 
         when(session.singleUseObjects()).thenReturn(singleUseObjects);
+        when(session.authenticationSessions()).thenReturn(authenticationSessions);
         when(realm.getName()).thenReturn("test-realm");
         when(realm.getAccessCodeLifespanLogin()).thenReturn(600);
         when(config.getAlias()).thenReturn("oid4vp");
         when(config.getCrossDeviceCompleteTtlSeconds()).thenReturn(300);
 
-        KeycloakContext context = mock(KeycloakContext.class);
+        context = mock(KeycloakContext.class);
         KeycloakUriInfo uriInfo = mock(KeycloakUriInfo.class);
         when(session.getContext()).thenReturn(context);
         when(context.getUri()).thenReturn(uriInfo);
@@ -96,12 +102,37 @@ class Oid4vpDirectPostServiceTest {
 
     @Test
     void completeAuth_noSignal_returnsBadRequest() {
-        when(singleUseObjects.remove(DEFERRED_AUTH_PREFIX + "missing-handle")).thenReturn(null);
+        when(singleUseObjects.get(DEFERRED_AUTH_PREFIX + "missing-handle")).thenReturn(null);
 
         Response response = service.completeAuth("missing-handle", null, null);
 
         assertThat(response.getStatus()).isEqualTo(400);
-        verify(singleUseObjects).remove(CROSS_DEVICE_COMPLETE_PREFIX + "missing-handle");
+        verify(singleUseObjects, never()).remove(CROSS_DEVICE_COMPLETE_PREFIX + "missing-handle");
+    }
+
+    @Test
+    void completeAuth_mismatchedBrowserSession_returnsBadRequestWithoutConsumingSignal() {
+        RootAuthenticationSessionModel storedRootSession = mock(RootAuthenticationSessionModel.class);
+        AuthenticationSessionModel storedAuthSession = mock(AuthenticationSessionModel.class);
+        ClientModel client = mock(ClientModel.class);
+
+        when(singleUseObjects.get(DEFERRED_AUTH_PREFIX + "handle-1"))
+                .thenReturn(Map.of(KEY_ROOT_SESSION_ID, "root-session", KEY_TAB_ID, "tab-1"));
+        when(authenticationSessions.getRootAuthenticationSession(realm, "root-session"))
+                .thenReturn(storedRootSession);
+        when(storedRootSession.getAuthenticationSessions()).thenReturn(Map.of("tab-1", storedAuthSession));
+        when(storedAuthSession.getTabId()).thenReturn("tab-1");
+        when(storedAuthSession.getParentSession()).thenReturn(storedRootSession);
+        when(storedRootSession.getId()).thenReturn("root-session");
+        when(storedAuthSession.getClient()).thenReturn(client);
+        when(client.getId()).thenReturn("client-1");
+        when(context.getAuthenticationSession()).thenReturn(null);
+
+        Response response = service.completeAuth("handle-1", null, null);
+
+        assertThat(response.getStatus()).isEqualTo(400);
+        verify(singleUseObjects, never()).remove(DEFERRED_AUTH_PREFIX + "handle-1");
+        verify(singleUseObjects, never()).remove(CROSS_DEVICE_COMPLETE_PREFIX + "handle-1");
     }
 
     @Test

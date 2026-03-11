@@ -4,6 +4,19 @@ This document traces the OID4VP authorization request through the code for both 
 
 ## Key Concepts
 
+### The `request_handle`
+
+The `request_handle` is a unique, unguessable token generated once per rendered browser flow. It is the stable handle for the browser-side login attempt.
+
+1. **Flow lookup** — maps the browser flow back to the stored flow context `{rootSessionId, tabId, effectiveClientId, responseUri}`.
+2. **Completion handle** — identifies which deferred authentication result `/complete-auth` should consume after a successful wallet callback.
+
+**Format:** Random UUID. Generated when the login page is rendered, before any wallet fetches the request object.
+
+**Lifecycle:** Generated during login page rendering → embedded in the `request_uri` path and, for cross-device, in the SSE status subscription → reused across multiple request-object fetches for the same browser flow → removed after the first successful callback consumes the flow.
+
+**Security note:** The `request_handle` is not enough on its own to observe or finish the flow. Both `/cross-device/status` and `/complete-auth` use the stored `{rootSessionId, tabId}` from the single-use store to recover the original Keycloak authentication session and require the current browser request to be attached to that same auth session. In practice, security relies on both: a live one-time handle and the matching browser auth-session cookie.
+
 ### The `state` Parameter
 
 The `state` parameter is a unique, unguessable token generated per created request object. It serves two purposes:
@@ -15,7 +28,9 @@ The `state` parameter is a unique, unguessable token generated per created reque
 
 **Lifecycle:** Generated when the wallet fetches a request object → included in the signed request object JWT → returned by the wallet in the direct_post `state` form parameter → resolved back to a stored request context → discarded after TTL or after the flow is consumed.
 
-**Security note:** The `state` value itself is not a secret — it is transmitted in URLs and form parameters. The flow's security does not rely on `state` being confidential. Instead, integrity is ensured by other layers: the request object is **signed** (preventing tampering with `state`, `nonce`, `response_uri`, and other claims), and when HAIP is enabled the wallet response is **encrypted** (protecting `vp_token` and `state` in transit). The `nonce` in the request object provides replay protection, and the KB-JWT (SD-JWT) / device authentication (mDoc) binds the presentation to the specific transaction.
+**Security note:** The `state` value itself is not a secret — it is transmitted in signed request objects and form parameters. The flow's security does not rely on `state` being confidential. Instead, integrity is ensured by other layers: the request object is **signed** (preventing tampering with `state`, `nonce`, `response_uri`, and other claims), and when HAIP is enabled the wallet response is **encrypted** (protecting `vp_token` and `state` in transit). The `nonce` in the request object provides replay protection, and the KB-JWT (SD-JWT) / device authentication (mDoc) binds the presentation to the specific transaction.
+
+**Difference from `request_handle`:** `request_handle` is stable for one browser flow and is used to recover or complete that flow later. `state` is per fetched request object and binds the wallet callback to one specific created request instance under that flow.
 
 ## Entry Point: Login Page
 
@@ -33,8 +48,8 @@ This method:
 
 The login page contains:
 - A hidden form that posts `vp_token`/`response` back to the Keycloak endpoint
-- A same-device deep link (`openid4vp://...?request_uri=...&flow=same_device`)
-- A cross-device QR code encoding a similar URL (`openid4vp://...?request_uri=...&flow=cross_device`)
+- A same-device deep link (`openid4vp://...?request_uri=...`)
+- A cross-device QR code encoding a similar URL (`openid4vp://...?request_uri=...`)
 - JavaScript that opens an SSE connection to `/cross-device/status?request_handle=...` using the cross-device flow's stable request handle when that flow is enabled, while the hidden form fields remain bound to the same-device flow when it exists
 
 **Key detail:** The `request_uri` points to `/endpoint/request-object/{requestHandle}`. The request handle is stable for the browser flow, but each request-object fetch creates a fresh request context with its own `state`, `nonce`, and response-encryption key when the effective `response_mode` is `direct_post.jwt`. The request object JWT itself expires quickly (default 10 seconds) to limit fetch/replay windows, but once a wallet has fetched it, the later callback is accepted as long as the stored request context and authentication session still exist.
@@ -157,11 +172,13 @@ Oid4vpIdentityProviderEndpoint.completeAuth(requestHandle)
 
 `completeAuth`:
 
-1. Removes the `oid4vp_deferred:{requestHandle}` single-use object → gets `{rootSessionId, tabId}`
-2. Resolves the auth session from `rootSessionId` + `tabId`
-3. Deserializes the `BrokeredIdentityContext` from `DEFERRED_IDENTITY_NOTE`
-4. Restores claims from `DEFERRED_CLAIMS_NOTE`
-5. Calls `callback.authenticated(context)` — Keycloak completes the login
+1. Reads `oid4vp_deferred:{requestHandle}` without consuming it yet → gets `{rootSessionId, tabId}`
+2. Resolves the stored auth session from `rootSessionId` + `tabId`
+3. Resolves the current browser auth session from Keycloak's auth-session cookie and requires it to match the stored session
+4. Consumes `oid4vp_deferred:{requestHandle}` and the cross-device completion marker
+5. Deserializes the `BrokeredIdentityContext` from `DEFERRED_IDENTITY_NOTE`
+6. Restores claims from `DEFERRED_CLAIMS_NOTE`
+7. Calls `callback.authenticated(context)` — Keycloak completes the login
 
 ### Cross-Device: SSE Browser Notification
 
@@ -172,7 +189,7 @@ Oid4vpIdentityProviderEndpoint.crossDeviceStatus(requestHandle)
     → Oid4vpCrossDeviceSseService.subscribe(requestHandle, eventSink, sse)
 ```
 
-The SSE service polls `singleUseObjects` for `oid4vp_complete:{requestHandle}`. When found:
+Before accepting the subscription, the endpoint resolves the auth session for the `requestHandle` and requires the current browser auth-session cookie to match it. The SSE service then polls `singleUseObjects` for `oid4vp_complete:{requestHandle}`. When found:
 - Sends `event: complete` with `{"redirect_uri": "/complete-auth?request_handle=..."}` to the browser
 - Leaves the completion marker in place so a reconnecting SSE client can observe the same completion event until `/complete-auth` consumes it
 
@@ -218,4 +235,4 @@ Errors can occur at multiple points:
 
 - `trustedAuthoritiesMode` is explicit verifier policy. `none` is the default, `etsi_tl` adds the trust-list URL to DCQL, and `aki` adds extension-derived certificate key identifiers from the trust list.
 - If `trustListSigningCertPem` is not configured, the trust-list JWT signature is not verified and the fetched trust list is trusted as-is. The code warns about that configuration but does not fail startup.
-- When HAIP is enabled with `x509_hash`, the configured verifier certificate PEM must contain a CA-issued chain. The code validates the configured chain structure before use instead of only rejecting self-signed leaves.
+- When HAIP is enabled with `x509_hash`, the configured verifier certificate PEM is used for client ID derivation and request-object signing metadata. A full CA-issued chain is validated when present; a single non-self-signed leaf is also accepted, in which case issuer trust is expected to come from configured trust lists.

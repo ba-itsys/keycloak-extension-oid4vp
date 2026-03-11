@@ -17,6 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -51,6 +52,7 @@ class Oid4vpIdentityProviderTest {
     private AuthenticationSessionModel authSession;
     private LoginFormsProvider forms;
     private KeycloakContext context;
+    private SingleUseObjectProvider singleUseObjects;
 
     @BeforeEach
     void setUp() {
@@ -61,7 +63,8 @@ class Oid4vpIdentityProviderTest {
         when(realm.getAccessCodeLifespanLogin()).thenReturn(300);
         when(context.getRealm()).thenReturn(realm);
         when(session.getContext()).thenReturn(context);
-        when(session.singleUseObjects()).thenReturn(mock(SingleUseObjectProvider.class));
+        singleUseObjects = mock(SingleUseObjectProvider.class);
+        when(session.singleUseObjects()).thenReturn(singleUseObjects);
 
         forms = mock(LoginFormsProvider.class);
         Response response = Response.ok("login-form").build();
@@ -203,6 +206,50 @@ class Oid4vpIdentityProviderTest {
 
         verify(forms, times(1)).setAttribute(org.mockito.ArgumentMatchers.eq("requestHandle"), any());
         verify(forms, times(1)).setAttribute(org.mockito.ArgumentMatchers.eq("crossDeviceRequestHandle"), any());
+    }
+
+    @Test
+    void performLogin_usesAuthSessionTabForFlowBindingAndRequestTabForBrowserRouting() {
+        config.setSameDeviceEnabled(true);
+
+        AuthenticationRequest request = mock(AuthenticationRequest.class);
+        RealmModel realm = mock(RealmModel.class);
+        when(realm.getName()).thenReturn("test-realm");
+        when(request.getRealm()).thenReturn(realm);
+        when(request.getAuthenticationSession()).thenReturn(authSession);
+        when(request.getRedirectUri()).thenReturn("http://localhost:8080/callback");
+        when(authSession.getTabId()).thenReturn("auth-tab");
+
+        MultivaluedHashMap<String, String> queryParams = new MultivaluedHashMap<>();
+        queryParams.putSingle("tab_id", "request-tab");
+        queryParams.putSingle("session_code", "session-code");
+        queryParams.putSingle("client_data", "client-data");
+
+        KeycloakUriInfo uriInfo = mock(KeycloakUriInfo.class);
+        when(uriInfo.getBaseUri()).thenReturn(URI.create("http://localhost:8080/"));
+        when(uriInfo.getBaseUriBuilder()).thenReturn(UriBuilder.fromUri("http://localhost:8080/"));
+        when(uriInfo.getQueryParameters()).thenReturn(queryParams);
+        when(request.getUriInfo()).thenReturn(uriInfo);
+        when(context.getUri()).thenReturn(uriInfo);
+
+        provider.performLogin(request);
+
+        verify(singleUseObjects)
+                .put(
+                        org.mockito.ArgumentMatchers.startsWith("oid4vp_request_handle:"),
+                        anyLong(),
+                        org.mockito.ArgumentMatchers.<Map<String, String>>argThat(
+                                values -> "auth-tab".equals(values.get("tabId"))));
+        verify(forms)
+                .setAttribute(
+                        org.mockito.ArgumentMatchers.eq("state"),
+                        org.mockito.ArgumentMatchers.argThat(
+                                value -> value instanceof String && ((String) value).startsWith("auth-tab.")));
+        verify(forms)
+                .setAttribute(
+                        org.mockito.ArgumentMatchers.eq("formActionUrl"),
+                        org.mockito.ArgumentMatchers.argThat(
+                                value -> value instanceof String && ((String) value).contains("tab_id=request-tab")));
     }
 
     @SuppressWarnings("unchecked")

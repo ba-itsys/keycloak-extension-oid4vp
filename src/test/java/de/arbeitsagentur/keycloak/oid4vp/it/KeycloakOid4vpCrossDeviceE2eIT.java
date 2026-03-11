@@ -171,7 +171,7 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
-    void crossDeviceCompletionCanBeObservedBySecondSseClient() throws Exception {
+    void crossDeviceCompletionCanBeObservedBySecondSseClientWithSameBrowserSession() throws Exception {
         callback().reset();
         flow.clearBrowserSession();
         Oid4vpTestKeycloakSetup.configureCrossDeviceFlow(adminClient(), Oid4vpE2eEnvironment.REALM, true);
@@ -192,10 +192,12 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
             String sseStatusUrl = env.keycloakHostUrl() + "/realms/" + Oid4vpE2eEnvironment.REALM
                     + "/broker/oid4vp/endpoint/cross-device/status?request_handle="
                     + URLEncoder.encode(requestHandle, StandardCharsets.UTF_8);
+            String cookieHeader = browserCookieHeader(sseStatusUrl);
             HttpResponse<String> sseResponse = HttpClient.newHttpClient()
                     .send(
                             HttpRequest.newBuilder()
                                     .uri(URI.create(sseStatusUrl))
+                                    .header("Cookie", cookieHeader)
                                     .GET()
                                     .build(),
                             HttpResponse.BodyHandlers.ofString());
@@ -208,6 +210,43 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
             page.navigate(redirectUri);
             flow.completeFirstBrokerLoginIfNeeded("cross-device-second-sse-user");
             flow.assertLoginSucceeded();
+        } finally {
+            Oid4vpTestKeycloakSetup.configureCrossDeviceFlow(adminClient(), Oid4vpE2eEnvironment.REALM, false);
+        }
+    }
+
+    @Test
+    void crossDeviceStatusWithoutBrowserSessionCookieIsRejected() throws Exception {
+        callback().reset();
+        flow.clearBrowserSession();
+        Oid4vpTestKeycloakSetup.configureCrossDeviceFlow(adminClient(), Oid4vpE2eEnvironment.REALM, true);
+
+        try {
+            Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient(), Oid4vpE2eEnvironment.REALM);
+
+            flow.navigateToLoginPage();
+            flow.clickOid4vpIdpButton();
+            String walletUrl = flow.getCrossDeviceWalletUrl();
+            String requestHandle = flow.getRequestHandle();
+
+            flow.waitForSseConnection();
+            page.navigate("about:blank");
+
+            PresentationResponse walletResponse = flow.submitToWallet(walletUrl);
+            assertThat(walletResponse.redirectUri()).isNull();
+
+            String sseStatusUrl = env.keycloakHostUrl() + "/realms/" + Oid4vpE2eEnvironment.REALM
+                    + "/broker/oid4vp/endpoint/cross-device/status?request_handle="
+                    + URLEncoder.encode(requestHandle, StandardCharsets.UTF_8);
+            HttpResponse<String> sseResponse = HttpClient.newHttpClient()
+                    .send(
+                            HttpRequest.newBuilder()
+                                    .uri(URI.create(sseStatusUrl))
+                                    .GET()
+                                    .build(),
+                            HttpResponse.BodyHandlers.ofString());
+
+            assertThat(sseResponse.statusCode()).isEqualTo(403);
         } finally {
             Oid4vpTestKeycloakSetup.configureCrossDeviceFlow(adminClient(), Oid4vpE2eEnvironment.REALM, false);
         }

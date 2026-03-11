@@ -29,6 +29,7 @@ import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpResponseDecryptor;
 import jakarta.enterprise.inject.Vetoed;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.FormParam;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
@@ -170,12 +171,9 @@ public class Oid4vpIdentityProviderEndpoint {
 
         try {
             boolean isCrossDeviceFlow = FLOW_CROSS_DEVICE.equals(flow);
-
-            // Resolve decryption key from KID for direct_post.jwt responses. When the wallet omits
-            // state, recover it from the KID index; when it includes state, require both values
-            // to agree so the encrypted callback cannot be rebound to another transaction.
             Oid4vpRequestObjectStore.RequestContextEntry requestContext = null;
             Oid4vpJwk kidBasedKey = null;
+
             if (StringUtil.isNotBlank(encryptedResponse)) {
                 ResolvedKid resolved = resolveFromKid(encryptedResponse);
                 if (resolved != null) {
@@ -186,10 +184,7 @@ public class Oid4vpIdentityProviderEndpoint {
                     } else if (requestContext != null
                             && StringUtil.isNotBlank(requestContext.state())
                             && !state.equals(requestContext.state())) {
-                        return handleError(
-                                "identity_provider_error",
-                                "Encrypted response state does not match the request state.",
-                                state);
+                        throw new IdentityBrokerException("Encrypted response state does not match the request state.");
                     }
                 }
             }
@@ -198,10 +193,12 @@ public class Oid4vpIdentityProviderEndpoint {
                 requestContext = requestObjectStore.resolveByState(session, state);
             }
 
-            // Resolve auth session from the handle-scoped request context
             AuthenticationSessionModel authSession = authSessionResolver.resolveFromRequestContext(requestContext);
 
             if (authSession == null) {
+                LOG.warnf(
+                        "OID4VP callback session resolution failed: state=%s encrypted=%s requestContextPresent=%s",
+                        state, StringUtil.isNotBlank(encryptedResponse), requestContext != null);
                 event.event(EventType.LOGIN_ERROR).error(Errors.SESSION_EXPIRED);
                 return responseFactory.jsonErrorResponse(Response.Status.BAD_REQUEST, "session_expired", null);
             }
@@ -242,6 +239,8 @@ public class Oid4vpIdentityProviderEndpoint {
 
             return processVpToken(
                     authSession, requestContext, state, vpToken, idToken, mdocGeneratedNonce, isCrossDeviceFlow);
+        } catch (IdentityBrokerException e) {
+            return handleError("identity_provider_error", e.getMessage(), state);
         } catch (Exception e) {
             LOG.errorf(e, "Uncaught exception in handlePost: %s", e.getMessage());
             return responseFactory.jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", null);
@@ -266,8 +265,7 @@ public class Oid4vpIdentityProviderEndpoint {
     @GET
     @Path("/request-object/{request_handle}")
     @Produces(REQUEST_OBJECT_CONTENT_TYPE)
-    public Response getRequestObject(
-            @PathParam(PARAM_REQUEST_HANDLE) String requestHandle, @QueryParam(FLOW_PARAM) String flow) {
+    public Response getRequestObject(@PathParam(PARAM_REQUEST_HANDLE) String requestHandle) {
         return requestObjectService.generateRequestObject(requestHandle, null, null);
     }
 
@@ -277,7 +275,6 @@ public class Oid4vpIdentityProviderEndpoint {
     @Produces(REQUEST_OBJECT_CONTENT_TYPE)
     public Response postRequestObject(
             @PathParam(PARAM_REQUEST_HANDLE) String requestHandle,
-            @QueryParam(FLOW_PARAM) String flow,
             @FormParam(WALLET_NONCE) String walletNonce,
             @FormParam(WALLET_METADATA) String walletMetadata) {
         return requestObjectService.generateRequestObject(requestHandle, walletNonce, walletMetadata);
@@ -290,6 +287,12 @@ public class Oid4vpIdentityProviderEndpoint {
             @QueryParam(PARAM_REQUEST_HANDLE) String requestHandle, @Context SseEventSink eventSink, @Context Sse sse) {
         if (StringUtil.isBlank(requestHandle)) {
             throw new BadRequestException("Missing request handle parameter");
+        }
+        AuthenticationSessionModel expectedAuthSession = directPostService.resolveExpectedAuthSession(requestHandle);
+        AuthenticationSessionModel currentBrowserSession =
+                authSessionResolver.resolveCurrentBrowserSession(expectedAuthSession);
+        if (!authSessionResolver.sameAuthenticationSession(currentBrowserSession, expectedAuthSession)) {
+            throw new ForbiddenException("Current browser session does not match the request handle");
         }
         sseService.subscribe(requestHandle, eventSink, sse);
     }

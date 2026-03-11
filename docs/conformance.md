@@ -45,7 +45,7 @@ mvn -q -Dit.test=KeycloakOid4vpConformanceIT failsafe:integration-test
 - The `x509_hash` scenarios use `enforceHaip=true`, which overrides the effective `clientIdScheme` to `x509_hash`.
 - The `x509_san_dns` scenarios keep `enforceHaip=false` and configure `responseMode=direct_post.jwt` explicitly.
 - Each scenario uses a fresh Keycloak IdP alias so mapper and verifier config changes cannot leak across runs.
-- The Keycloak login page still renders the normal `openid4vp://` same-device deep link. The test reuses the `client_id` and `request_uri` from that link and sends them to the OIDF module's HTTPS `authorization_endpoint`.
+- The Keycloak login page renders the normal `openid4vp://` same-device deep link. The test reuses the `client_id` and `request_uri` from that link and sends them to the OIDF module's HTTPS `authorization_endpoint`.
 - Before calling the OIDF module, the test fetches the local request object and asserts that `client_id` and DCQL match the scenario. This catches stale local config before a suite failure hides the root cause.
 - In multi-node deployments, conformance callbacks and cross-device completion require a shared Keycloak single-use object store; the node-local SSE scheduler only polls and fan-outs events from that shared state.
 - If the OIDF demo suite renames plans or modules again, override `OID4VP_CONFORMANCE_PLAN_NAME` and optionally `OID4VP_CONFORMANCE_TEST_MODULE` instead of changing test code first.
