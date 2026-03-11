@@ -32,8 +32,10 @@ import java.security.cert.X509Certificate;
 import java.security.spec.ECGenParameterSpec;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import javax.security.auth.x500.X500Principal;
 import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
@@ -87,11 +89,10 @@ class TrustListProviderTest {
         String jwt = buildSignedJwt(new JWTClaimsSet.Builder()
                 .claim("TrustedEntitiesList", List.of())
                 .build());
-        Instant before = Instant.now();
 
         TrustListProvider.TrustListParseResult result = TrustListProvider.parseTrustListJwt(jwt);
 
-        assertThat(result.expiresAt()).isBetween(before.minusSeconds(1), before.plusSeconds(1));
+        assertThat(result.expiresAt()).isNull();
     }
 
     @Test
@@ -103,6 +104,19 @@ class TrustListProviderTest {
         TrustListProvider.TrustListParseResult result = TrustListProvider.parseTrustListJwt(jwt);
 
         assertThat(result.certificates()).isEmpty();
+    }
+
+    @Test
+    void parseTrustListJwt_certificatesAreImmutable() throws Exception {
+        X509Certificate cert = generateTestCert(true);
+        String jwt = buildSignedJwt(new JWTClaimsSet.Builder()
+                .expirationTime(Date.from(Instant.now().plusSeconds(600)))
+                .claim("TrustedEntitiesList", trustListClaims(cert))
+                .build());
+
+        TrustListProvider.TrustListParseResult result = TrustListProvider.parseTrustListJwt(jwt);
+
+        assertThatThrownBy(() -> result.certificates().add(cert)).isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test
@@ -236,6 +250,25 @@ class TrustListProviderTest {
     }
 
     @Nested
+    class NoExpCaching {
+
+        private static final String TEST_URL = "https://no-exp.example.com/tl.jwt";
+
+        @Test
+        void trustListWithoutExp_isNotCachedOrReusableAsStale() throws Exception {
+            X509Certificate cert = generateTestCert(true);
+            String jwtWithoutExp = buildSignedJwt(new JWTClaimsSet.Builder()
+                    .claim("TrustedEntitiesList", trustListClaims(cert))
+                    .build());
+            StubTrustListProvider provider =
+                    new StubTrustListProvider(TEST_URL, List.of(jwtWithoutExp, new IllegalStateException("boom")));
+
+            assertThat(provider.getTrustedCertificates()).containsExactly(cert);
+            assertThat(provider.getTrustedCertificates()).isEmpty();
+        }
+    }
+
+    @Nested
     class CacheIsolation {
 
         private static final String TEST_URL = "https://cache-isolation.example.com/tl.jwt";
@@ -269,6 +302,21 @@ class TrustListProviderTest {
 
             assertThat(defaultProvider.getTrustedCertificates()).containsExactly(cachedCert);
             assertThat(shortTtlProvider.getTrustedCertificates()).isEmpty();
+        }
+
+        @Test
+        void returnedCachedCertificates_areImmutable() throws Exception {
+            X509Certificate cert = generateTestCert(true);
+            String jwt = buildSignedJwt(new JWTClaimsSet.Builder()
+                    .expirationTime(Date.from(Instant.now().plusSeconds(600)))
+                    .claim("TrustedEntitiesList", trustListClaims(cert))
+                    .build());
+            StubTrustListProvider provider = new StubTrustListProvider(TEST_URL, List.of(jwt));
+
+            List<X509Certificate> first = provider.getTrustedCertificates();
+
+            assertThatThrownBy(() -> first.add(cert)).isInstanceOf(UnsupportedOperationException.class);
+            assertThat(provider.getTrustedCertificates()).containsExactly(cert);
         }
     }
 
@@ -373,5 +421,40 @@ class TrustListProviderTest {
                     Extension.subjectKeyIdentifier, false, extensionUtils.createSubjectKeyIdentifier(kp.getPublic()));
         }
         return new JcaX509CertificateConverter().getCertificate(certBuilder.build(contentSigner));
+    }
+
+    private static List<Map<String, Object>> trustListClaims(X509Certificate cert) throws Exception {
+        return List.of(Map.of(
+                "TrustedEntityServices",
+                List.of(Map.of(
+                        "ServiceInformation",
+                        Map.of(
+                                "ServiceDigitalIdentity",
+                                Map.of(
+                                        "X509Certificates",
+                                        List.of(Map.of(
+                                                "val",
+                                                Base64.getMimeEncoder().encodeToString(cert.getEncoded())))))))));
+    }
+
+    private static final class StubTrustListProvider extends TrustListProvider {
+        private final java.util.ArrayDeque<Object> responses;
+
+        private StubTrustListProvider(String trustListUrl, List<Object> responses) {
+            super(null, trustListUrl, null, null, null);
+            this.responses = new java.util.ArrayDeque<>(responses);
+        }
+
+        @Override
+        void verifySignature(String jwt) {}
+
+        @Override
+        protected String fetchTrustListJwt() throws Exception {
+            Object next = responses.removeFirst();
+            if (next instanceof Exception exception) {
+                throw exception;
+            }
+            return next.toString();
+        }
     }
 }

@@ -15,18 +15,13 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp;
 
-import com.nimbusds.jose.jwk.Curve;
-import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jose.jwk.JWK;
-import com.nimbusds.jose.jwk.RSAKey;
-import com.nimbusds.jose.util.Base64;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpClientIdScheme;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
+import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpSigningKeyParser;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.cert.X509Certificate;
-import java.security.interfaces.ECPrivateKey;
-import java.security.interfaces.ECPublicKey;
-import java.security.interfaces.RSAPublicKey;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -53,6 +48,8 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProviderFactory.class);
 
     private static final Map<String, String> RESOLVED_KEY_CACHE = new ConcurrentHashMap<>();
+    private static final java.util.Set<String> WARNED_UNCHECKED_TRUST_LISTS = ConcurrentHashMap.newKeySet();
+    private static final java.util.Set<String> WARNED_MISSING_CERTIFICATE_BINDINGS = ConcurrentHashMap.newKeySet();
 
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES;
 
@@ -62,12 +59,22 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .name(Oid4vpIdentityProviderConfig.ENFORCE_HAIP)
                 .label("Enforce HAIP Compliance")
                 .helpText("Enable OpenID4VC High Assurance Interoperability Profile (HAIP) compliance. "
-                        + "When enabled: client_id_scheme forced to x509_hash, response_mode set to direct_post.jwt "
-                        + "(encrypted responses), and x509 certificate must be configured. "
+                        + "When enabled, the effective response_mode is forced to direct_post.jwt and the "
+                        + "effective client_id_scheme is forced to x509_hash. "
                         + "Request objects are signed using the Keycloak realm signing key by default "
                         + "(ensure an ES256 key is active), or the x509 signing key if provided in the PEM.")
                 .type(ProviderConfigProperty.BOOLEAN_TYPE)
                 .defaultValue("true")
+                .add()
+                .property()
+                .name(Oid4vpIdentityProviderConfig.RESPONSE_MODE)
+                .label("Response Mode")
+                .helpText("Response mode for wallet callbacks: direct_post or direct_post.jwt. "
+                        + "HAIP overrides this to direct_post.jwt.")
+                .type(ProviderConfigProperty.LIST_TYPE)
+                .defaultValue(Oid4vpConstants.RESPONSE_MODE_DIRECT_POST)
+                .options(List.of(
+                        Oid4vpConstants.RESPONSE_MODE_DIRECT_POST, Oid4vpConstants.RESPONSE_MODE_DIRECT_POST_JWT))
                 .add()
                 .property()
                 .name(Oid4vpIdentityProviderConfig.CREDENTIAL_SET_MODE)
@@ -91,7 +98,7 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .label("DCQL Query (JSON)")
                 .helpText(
                         "Explicit DCQL query JSON. Priority: (1) this if set, (2) auto-generated from mappers, (3) default. "
-                                + "Leave empty to auto-generate from mappers.")
+                                + "Leave empty to auto-generate from mappers. Missing credential metadata is normalized automatically.")
                 .type(ProviderConfigProperty.TEXT_TYPE)
                 .add()
                 .property()
@@ -132,20 +139,23 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .property()
                 .name(Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME)
                 .label("Client ID Scheme")
-                .helpText("Scheme for client_id in redirect flows: x509_san_dns, x509_hash, or plain.")
+                .helpText("Scheme for client_id in redirect flows: x509_san_dns, x509_hash, or plain. "
+                        + "HAIP overrides this to x509_hash.")
                 .type(ProviderConfigProperty.LIST_TYPE)
-                .defaultValue(Oid4vpConstants.CLIENT_ID_SCHEME_X509_SAN_DNS)
+                .defaultValue(Oid4vpClientIdScheme.X509_SAN_DNS.configValue())
                 .options(List.of(
-                        Oid4vpConstants.CLIENT_ID_SCHEME_X509_SAN_DNS,
-                        Oid4vpConstants.CLIENT_ID_SCHEME_X509_HASH,
-                        Oid4vpConstants.CLIENT_ID_SCHEME_PLAIN))
+                        Oid4vpClientIdScheme.X509_SAN_DNS.configValue(),
+                        Oid4vpClientIdScheme.X509_HASH.configValue(),
+                        Oid4vpClientIdScheme.PLAIN.configValue()))
                 .add()
                 .property()
                 .name(Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM)
                 .label("X.509 Certificate (PEM)")
-                .helpText("PEM-encoded X.509 certificate chain for x509 client ID schemes. "
-                        + "Required when HAIP is enabled (x509_hash). "
-                        + "May include a PRIVATE KEY block to override the realm signing key for request objects.")
+                .helpText(
+                        "PEM-encoded X.509 certificate chain for x509_san_dns or x509_hash client ID schemes. "
+                                + "Required whenever the effective client ID scheme is certificate-bound. "
+                                + "May include a PRIVATE KEY block to override the realm signing key for request objects. "
+                                + "When HAIP is enabled for x509_hash, configure a CA-issued verifier chain, not a self-signed leaf.")
                 .type(ProviderConfigProperty.TEXT_TYPE)
                 .add()
                 .property()
@@ -163,20 +173,24 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
-                .name(Oid4vpIdentityProviderConfig.INCLUDE_TRUSTED_AUTHORITIES)
-                .label("Include Trusted Authorities in DCQL")
-                .helpText("When enabled and a Trust List URL is configured, adds 'trusted_authorities' with type "
-                        + "'etsi_tl' to each credential in the auto-generated DCQL query. "
-                        + "This tells wallets to only present credentials from issuers in the trust list. "
-                        + "Has no effect on manually configured DCQL queries.")
-                .type(ProviderConfigProperty.BOOLEAN_TYPE)
-                .defaultValue("true")
+                .name(Oid4vpIdentityProviderConfig.TRUSTED_AUTHORITIES_MODE)
+                .label("Trusted Authorities Mode")
+                .helpText("Adds one 'trusted_authorities' constraint type to each credential in the DCQL query. "
+                        + "'none' disables the feature, 'etsi_tl' advertises the trust list URL, and 'aki' advertises certificate key identifiers extracted from the trust list. "
+                        + "This is opt-in and independent of HAIP.")
+                .type(ProviderConfigProperty.LIST_TYPE)
+                .defaultValue(Oid4vpTrustedAuthoritiesMode.NONE.configValue())
+                .options(List.of(
+                        Oid4vpTrustedAuthoritiesMode.NONE.configValue(),
+                        Oid4vpTrustedAuthoritiesMode.ETSI_TL.configValue(),
+                        Oid4vpTrustedAuthoritiesMode.AKI.configValue()))
                 .add()
                 .property()
                 .name(Oid4vpIdentityProviderConfig.TRUST_LIST_SIGNING_CERT_PEM)
                 .label("Trust List Signing Certificate (PEM)")
                 .helpText("PEM-encoded X.509 certificate used to verify the trust list JWT signature. "
-                        + "If not configured, the trust list JWT signature is not verified (any JWT is accepted).")
+                        + "If not configured, the trust list JWT signature is not verified and the fetched trust list is trusted as-is. "
+                        + "This is acceptable for local testing only.")
                 .type(ProviderConfigProperty.TEXT_TYPE)
                 .add()
                 .property()
@@ -238,15 +252,42 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
 
         resolveX509SigningKey(config);
         validateHaipConfig(config);
+        warnIfTrustListSignatureIsUnchecked(config);
 
         return new Oid4vpIdentityProvider(session, config);
     }
 
     private static void validateHaipConfig(Oid4vpIdentityProviderConfig config) {
-        if (config.isEnforceHaip() && StringUtil.isBlank(config.getX509CertificatePem())) {
+        if (!config.getResolvedClientIdScheme().isCertificateBound()) {
+            return;
+        }
+
+        if (!config.isEnforceHaip() && StringUtil.isBlank(config.getX509CertificatePem())) {
+            String warningKey =
+                    config.getAlias() + "|" + config.getResolvedClientIdScheme().configValue();
+            if (WARNED_MISSING_CERTIFICATE_BINDINGS.add(warningKey)) {
+                LOG.warnf(
+                        "OID4VP IdP '%s': The effective client_id_scheme requires an X.509 certificate, but none is configured. "
+                                + "Certificate-bound client_id schemes require a certificate.",
+                        config.getAlias());
+            }
+            return;
+        }
+
+        config.getResolvedClientIdScheme()
+                .validateCertificateBinding(config.getX509CertificatePem(), config.isEnforceHaip());
+    }
+
+    private static void warnIfTrustListSignatureIsUnchecked(Oid4vpIdentityProviderConfig config) {
+        if (StringUtil.isBlank(config.getTrustListUrl())
+                || StringUtil.isNotBlank(config.getTrustListSigningCertPem())) {
+            return;
+        }
+        String warningKey = config.getAlias() + "|" + config.getTrustListUrl();
+        if (WARNED_UNCHECKED_TRUST_LISTS.add(warningKey)) {
             LOG.warnf(
-                    "OID4VP IdP '%s': HAIP is enabled but no X.509 certificate is configured. "
-                            + "The x509_hash client ID scheme requires a certificate.",
+                    "OID4VP IdP '%s': trustListUrl is configured but trustListSigningCertPem is empty. "
+                            + "The trust list JWT signature will not be verified and fetched trust anchors will be trusted as-is.",
                     config.getAlias());
         }
     }
@@ -302,18 +343,12 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
             X509Certificate leafCert = certChain.get(0);
             PublicKey publicKey = leafCert.getPublicKey();
 
-            List<Base64> x5c = new ArrayList<>();
-            for (X509Certificate cert : certChain) {
-                x5c.add(Base64.encode(cert.getEncoded()));
-            }
-
-            JWK jwk = buildSigningJwk(publicKey, privateKey, x5c);
-            String jwkJson = jwk.toJSONString();
+            String jwkJson = Oid4vpSigningKeyParser.serialize(publicKey, privateKey, certChain);
             config.setX509SigningKeyJwk(jwkJson);
             RESOLVED_KEY_CACHE.put(pem, jwkJson);
             LOG.debugf(
                     "Resolved x509 signing key from inline PEM (chain size=%d, kid=%s)",
-                    certChain.size(), jwk.getKeyID());
+                    certChain.size(), Oid4vpSigningKeyParser.extractKid(jwkJson));
 
         } catch (Exception e) {
             throw new IllegalStateException(
@@ -321,25 +356,6 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                             + "Fix or remove the private key from the PEM configuration.",
                     e);
         }
-    }
-
-    private static JWK buildSigningJwk(PublicKey publicKey, PrivateKey privateKey, List<Base64> x5c) throws Exception {
-        if (publicKey instanceof ECPublicKey ecPub) {
-            Curve curve = Curve.forECParameterSpec(ecPub.getParams());
-            return new ECKey.Builder(curve, ecPub)
-                    .privateKey((ECPrivateKey) privateKey)
-                    .x509CertChain(x5c)
-                    .keyIDFromThumbprint()
-                    .build();
-        }
-        if (publicKey instanceof RSAPublicKey rsaPub) {
-            return new RSAKey.Builder(rsaPub)
-                    .privateKey(privateKey)
-                    .x509CertChain(x5c)
-                    .keyIDFromThumbprint()
-                    .build();
-        }
-        throw new IllegalArgumentException("Unsupported certificate key type: " + publicKey.getAlgorithm());
     }
 
     private static List<String> extractPemBlocks(String pem, String type) {

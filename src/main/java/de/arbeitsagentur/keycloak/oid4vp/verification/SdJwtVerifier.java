@@ -18,7 +18,6 @@ package de.arbeitsagentur.keycloak.oid4vp.verification;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.nimbusds.jose.jwk.Curve;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SdJwtVerificationResult;
 import java.security.PublicKey;
 import java.security.cert.X509Certificate;
@@ -28,7 +27,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import org.jboss.logging.Logger;
-import org.keycloak.common.VerificationException;
 import org.keycloak.crypto.KeyType;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
@@ -65,7 +63,6 @@ public class SdJwtVerifier {
         return token != null && token.contains("~");
     }
 
-    @SuppressWarnings("unchecked")
     /**
      * Verifies an SD-JWT VP: validates issuer signature, key binding, and extracts disclosed claims.
      *
@@ -74,6 +71,7 @@ public class SdJwtVerifier {
      * @param expectedNonce the expected {@code nonce} claim in the key binding JWT
      * @param trustedCertificates trusted CA certificates for issuer signature verification
      */
+    @SuppressWarnings("unchecked")
     public SdJwtVerificationResult verify(
             String sdJwt, String expectedAudience, String expectedNonce, List<X509Certificate> trustedCertificates) {
 
@@ -113,8 +111,6 @@ public class SdJwtVerifier {
             String vct = vctObj != null ? vctObj.toString() : null;
 
             return new SdJwtVerificationResult(claims, issuer, vct);
-        } catch (VerificationException e) {
-            throw new IllegalStateException("SD-JWT verification failed: " + e.getMessage(), e);
         } catch (IllegalStateException e) {
             throw e;
         } catch (Exception e) {
@@ -161,8 +157,7 @@ public class SdJwtVerifier {
             case "EC" -> {
                 keyWrapper.setType(KeyType.EC);
                 if (publicKey instanceof ECPublicKey ecKey) {
-                    keyWrapper.setCurve(
-                            Curve.forECParameterSpec(ecKey.getParams()).getName());
+                    keyWrapper.setCurve(resolveCurveName(ecKey));
                 }
             }
             case "RSA" -> keyWrapper.setType(KeyType.RSA);
@@ -171,6 +166,16 @@ public class SdJwtVerifier {
         }
 
         return KeyWrapperUtil.createSignatureVerifierContext(keyWrapper);
+    }
+
+    private String resolveCurveName(ECPublicKey publicKey) {
+        int fieldSize = publicKey.getParams().getCurve().getField().getFieldSize();
+        return switch (fieldSize) {
+            case 256 -> "P-256";
+            case 384 -> "P-384";
+            case 521 -> "P-521";
+            default -> throw new IllegalStateException("Unsupported EC curve field size: " + fieldSize);
+        };
     }
 
     @SuppressWarnings("unchecked")

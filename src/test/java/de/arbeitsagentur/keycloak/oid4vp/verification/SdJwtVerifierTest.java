@@ -40,6 +40,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import javax.security.auth.x500.X500Principal;
+import org.bouncycastle.asn1.x509.BasicConstraints;
+import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.operator.ContentSigner;
@@ -488,6 +490,7 @@ class SdJwtVerifierTest {
                 Date.from(now.plus(365, ChronoUnit.DAYS)),
                 subject,
                 publicKey);
+        certBuilder.addExtension(Extension.basicConstraints, true, new BasicConstraints(true));
 
         ContentSigner signer = new JcaContentSignerBuilder("SHA256withECDSA").build(ecKey.toECPrivateKey());
 
@@ -504,6 +507,7 @@ class SdJwtVerifierTest {
                 Date.from(now.plus(365, ChronoUnit.DAYS)),
                 new X500Principal(dn),
                 subjectKey.toECPublicKey());
+        certBuilder.addExtension(Extension.basicConstraints, true, new BasicConstraints(false));
 
         ContentSigner signer = new JcaContentSignerBuilder("SHA256withECDSA").build(caKey.toECPrivateKey());
 
