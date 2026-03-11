@@ -40,6 +40,7 @@
     <keycloak.version>26.5.4</keycloak.version>
     <testcontainers.version>2.0.3</testcontainers.version>
     <playwright.version>1.58.0</playwright.version>
+    <bytebuddy.version>1.17.7</bytebuddy.version>
   </properties>
 
   <dependencyManagement>
@@ -87,22 +88,17 @@
       </exclusions>
     </dependency>
 
-    <!-- Nimbus JOSE+JWT (not available in Keycloak 26.x runtime, must be bundled) -->
+    <!-- CBOR/COSE/mdoc (ISO 18013-5) -->
     <dependency>
-      <groupId>com.nimbusds</groupId>
-      <artifactId>nimbus-jose-jwt</artifactId>
-    </dependency>
-
-    <!-- CBOR/COSE for mDoc credential verification -->
-    <dependency>
-      <groupId>com.upokecenter</groupId>
+      <groupId>com.authlete</groupId>
       <artifactId>cbor</artifactId>
-      <version>4.5.6</version>
-    </dependency>
-    <dependency>
-      <groupId>com.augustcellars.cose</groupId>
-      <artifactId>cose-java</artifactId>
-      <version>1.1.0</version>
+      <version>1.21</version>
+      <exclusions>
+        <exclusion>
+          <groupId>org.bouncycastle</groupId>
+          <artifactId>bcpkix-jdk18on</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
 
     <!-- QR code generation for cross-device flow (provided by Keycloak via keycloak-services) -->
@@ -129,6 +125,12 @@
       <groupId>org.mockito</groupId>
       <artifactId>mockito-core</artifactId>
       <version>5.21.0</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>net.bytebuddy</groupId>
+      <artifactId>byte-buddy-agent</artifactId>
+      <version>${bytebuddy.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -283,6 +285,15 @@
         <version>3.14.0</version>
         <configuration>
           <release>${jdk.version}</release>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.2</version>
+        <configuration>
+          <argLine>-javaagent:${settings.localRepository}/net/bytebuddy/byte-buddy-agent/${bytebuddy.version}/byte-buddy-agent-${bytebuddy.version}.jar</argLine>
         </configuration>
       </plugin>
 
