@@ -205,19 +205,29 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         String effectiveClientId = computeEffectiveClientId(clientId);
 
         var uriInfo = request.getUriInfo();
-        String sessionTabId = uriInfo.getQueryParameters().getFirst(Oid4vpConstants.PARAM_TAB_ID);
+        String requestTabId = uriInfo.getQueryParameters().getFirst(Oid4vpConstants.PARAM_TAB_ID);
         String clientData = uriInfo.getQueryParameters().getFirst(Oid4vpConstants.PARAM_CLIENT_DATA);
         String sessionCode = uriInfo.getQueryParameters().getFirst(Oid4vpConstants.PARAM_SESSION_CODE);
         String rootSessionId = authSession.getParentSession() != null
                 ? authSession.getParentSession().getId()
                 : null;
+        String authSessionTabId = authSession.getTabId();
+        String flowTabId = StringUtil.isNotBlank(authSessionTabId) ? authSessionTabId : requestTabId;
+        String browserTabId = StringUtil.isNotBlank(requestTabId) ? requestTabId : flowTabId;
+        if (StringUtil.isNotBlank(requestTabId)
+                && StringUtil.isNotBlank(authSessionTabId)
+                && !requestTabId.equals(authSessionTabId)) {
+            LOG.debugf(
+                    "OID4VP login tab_id mismatch, using auth session tab for flow binding and request tab for browser form routing: requestTabId=%s authSessionTabId=%s",
+                    requestTabId, authSessionTabId);
+        }
 
         return new LoginContext(
                 rootSessionId,
-                authSession.getTabId(),
+                flowTabId,
                 effectiveClientId,
                 request.getRedirectUri(),
-                sessionTabId,
+                browserTabId,
                 sessionCode,
                 clientData);
     }
@@ -312,7 +322,6 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 .path("endpoint")
                 .path("request-object")
                 .path(requestHandle)
-                .queryParam(Oid4vpConstants.FLOW_PARAM, flow)
                 .build();
         String walletUrl = redirectFlowService
                 .buildWalletAuthorizationUrl(walletScheme, loginContext.effectiveClientId(), requestUri)

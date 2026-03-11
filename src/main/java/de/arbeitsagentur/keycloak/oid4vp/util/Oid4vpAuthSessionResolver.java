@@ -15,8 +15,11 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
+import java.util.Objects;
+import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.services.managers.AuthenticationSessionManager;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.sessions.RootAuthenticationSessionModel;
 
@@ -83,5 +86,50 @@ public class Oid4vpAuthSessionResolver {
         }
 
         return tabId != null ? rootSession.getAuthenticationSessions().get(tabId) : null;
+    }
+
+    /**
+     * Resolves the current browser authentication session for the same client/tab as the expected
+     * session. First trusts an already-populated request context auth session, then falls back to
+     * Keycloak's auth-session cookie handling.
+     */
+    public AuthenticationSessionModel resolveCurrentBrowserSession(AuthenticationSessionModel expectedAuthSession) {
+        if (expectedAuthSession == null) {
+            return null;
+        }
+
+        AuthenticationSessionModel current = session.getContext().getAuthenticationSession();
+        if (sameAuthenticationSession(current, expectedAuthSession)) {
+            return current;
+        }
+
+        ClientModel client = expectedAuthSession.getClient();
+        String tabId = expectedAuthSession.getTabId();
+        if (client == null || tabId == null) {
+            return null;
+        }
+
+        try {
+            return new AuthenticationSessionManager(session).getCurrentAuthenticationSession(realm, client, tabId);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    public boolean sameAuthenticationSession(AuthenticationSessionModel first, AuthenticationSessionModel second) {
+        if (first == null || second == null) {
+            return false;
+        }
+
+        String firstRootSessionId =
+                first.getParentSession() != null ? first.getParentSession().getId() : null;
+        String secondRootSessionId =
+                second.getParentSession() != null ? second.getParentSession().getId() : null;
+        String firstClientId = first.getClient() != null ? first.getClient().getId() : null;
+        String secondClientId = second.getClient() != null ? second.getClient().getId() : null;
+
+        return Objects.equals(firstRootSessionId, secondRootSessionId)
+                && Objects.equals(first.getTabId(), second.getTabId())
+                && Objects.equals(firstClientId, secondClientId);
     }
 }

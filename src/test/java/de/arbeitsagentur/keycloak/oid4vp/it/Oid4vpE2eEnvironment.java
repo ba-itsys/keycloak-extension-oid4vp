@@ -49,6 +49,7 @@ import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.utility.MountableFile;
 
 /**
@@ -61,6 +62,8 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(Oid4vpE2eEnvironment.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final DockerImageName WALLET_IMAGE =
+            DockerImageName.parse("ghcr.io/dominikschlosser/oid4vc-dev:latest");
     private static final String SSE_INIT_SCRIPT = """
             const OrigES = window.EventSource;
             window.EventSource = function(url) {
@@ -118,7 +121,7 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
         keycloak.start();
         keycloakHostUrl = "http://localhost:" + keycloak.getMappedPort(8080);
 
-        wallet = new Oid4vcContainer()
+        wallet = new Oid4vcContainer(WALLET_IMAGE)
                 .withHostAccess()
                 .withNetwork(network)
                 .withNetworkAliases("oid4vc-dev")
@@ -188,6 +191,10 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
 
     public String callbackUrl() {
         return callback.localCallbackUrl();
+    }
+
+    public DockerImageName walletImage() {
+        return WALLET_IMAGE;
     }
 
     @Override

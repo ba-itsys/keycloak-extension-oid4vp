@@ -28,6 +28,7 @@ import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.KeycloakSession;
@@ -192,6 +193,39 @@ class Oid4vpRequestObjectStoreTest {
         assertThat(store.resolveByState(session, requestContext.state())).isNull();
         assertThat(store.resolveByKid(session, "kid-1")).isNull();
         assertThat(entries).doesNotContainKeys("oid4vp_state:state-orphan", "oid4vp_kid:kid-1");
+    }
+
+    @Test
+    void resolveByKid_keepsKidIndexWhenStateEntryAppearsShortlyAfterward() {
+        AtomicInteger stateReads = new AtomicInteger();
+        when(session.singleUseObjects().get("oid4vp_state:state-1")).thenAnswer(invocation -> {
+            if (stateReads.incrementAndGet() == 1) {
+                return null;
+            }
+            return entries.get(invocation.getArgument(0));
+        });
+
+        Oid4vpRequestObjectStore.FlowContextEntry flowContext = new Oid4vpRequestObjectStore.FlowContextEntry(
+                "root-session", "tab-1", "client-1", "https://example.com/endpoint");
+        Oid4vpRequestObjectStore.RequestContextEntry requestContext = new Oid4vpRequestObjectStore.RequestContextEntry(
+                "handle-1",
+                "root-session",
+                "tab-1",
+                "state-1",
+                "client-1",
+                "https://example.com/endpoint",
+                "nonce-1",
+                KEY_JSON_1,
+                "thumbprint-1");
+
+        store.storeFlowHandle(session, "handle-1", flowContext);
+        store.storeRequestContext(session, requestContext);
+        store.storeKidIndex(session, "kid-1", requestContext.state());
+
+        assertThat(store.resolveByKid(session, "kid-1")).isNull();
+        assertThat(entries).containsKey("oid4vp_kid:kid-1");
+        assertThat(store.resolveByKid(session, "kid-1")).isEqualTo(requestContext);
+        assertThat(entries).containsKey("oid4vp_kid:kid-1");
     }
 
     @Test

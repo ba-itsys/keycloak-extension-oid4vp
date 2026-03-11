@@ -165,11 +165,12 @@ public class Oid4vpRequestObjectStore {
         if (StringUtil.isBlank(kid)) return null;
         Map<String, String> entry = session.singleUseObjects().get(KID_INDEX_PREFIX + kid);
         if (entry == null) return null;
-        RequestContextEntry requestContext = resolveByState(session, entry.get(KEY_STATE));
-        if (requestContext == null) {
+        String state = blankToNull(entry.get(KEY_STATE));
+        if (state == null) {
             session.singleUseObjects().remove(KID_INDEX_PREFIX + kid);
+            return null;
         }
-        return requestContext;
+        return resolveByState(session, state);
     }
 
     public void removeRequestContext(KeycloakSession session, String state) {
