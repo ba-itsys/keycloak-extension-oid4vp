@@ -15,8 +15,11 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpClientIdScheme;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpResponseMode;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
 import java.time.Duration;
 import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.utils.StringUtil;
@@ -40,6 +43,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final String WALLET_SCHEME = "walletScheme";
 
     public static final String CLIENT_ID_SCHEME = "clientIdScheme";
+    public static final String RESPONSE_MODE = "responseMode";
     public static final String X509_CERTIFICATE_PEM = "x509CertificatePem";
     public static final String X509_SIGNING_KEY_JWK = "x509SigningKeyJwk";
 
@@ -52,7 +56,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public static final String TRUST_LIST_URL = "trustListUrl";
     public static final String TRUST_LIST_SIGNING_CERT_PEM = "trustListSigningCertPem";
-    public static final String INCLUDE_TRUSTED_AUTHORITIES = "includeTrustedAuthorities";
+    public static final String TRUSTED_AUTHORITIES_MODE = "trustedAuthoritiesMode";
 
     public static final String ALLOWED_ISSUERS = "allowedIssuers";
     public static final String ALLOWED_CREDENTIAL_TYPES = "allowedCredentialTypes";
@@ -82,7 +86,6 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final String USE_ID_TOKEN_SUBJECT = "useIdTokenSubject";
 
     public static final String ENFORCE_HAIP = "enforceHaip";
-    public static final String HAIP_CLIENT_ID_SCHEME = Oid4vpConstants.CLIENT_ID_SCHEME_X509_HASH;
 
     public Oid4vpIdentityProviderConfig() {
         super();
@@ -126,8 +129,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     }
 
     public boolean isSameDeviceEnabled() {
-        String value = getConfig().get(SAME_DEVICE_ENABLED);
-        return value == null || !"false".equalsIgnoreCase(value);
+        return getBoolConfig(SAME_DEVICE_ENABLED, true);
     }
 
     public void setSameDeviceEnabled(boolean enabled) {
@@ -135,8 +137,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     }
 
     public boolean isCrossDeviceEnabled() {
-        String value = getConfig().get(CROSS_DEVICE_ENABLED);
-        return value == null || !"false".equalsIgnoreCase(value);
+        return getBoolConfig(CROSS_DEVICE_ENABLED, true);
     }
 
     public void setCrossDeviceEnabled(boolean enabled) {
@@ -153,23 +154,31 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     }
 
     public String getClientIdScheme() {
-        if (isEnforceHaip()) {
-            return HAIP_CLIENT_ID_SCHEME;
-        }
-        String scheme = getConfig().get(CLIENT_ID_SCHEME);
-        return StringUtil.isNotBlank(scheme) ? scheme : Oid4vpConstants.CLIENT_ID_SCHEME_X509_SAN_DNS;
+        return getResolvedClientIdScheme().configValue();
+    }
+
+    public Oid4vpClientIdScheme getResolvedClientIdScheme() {
+        return Oid4vpClientIdScheme.resolve(getConfig().get(CLIENT_ID_SCHEME), isEnforceHaip());
     }
 
     public void setClientIdScheme(String scheme) {
         getConfig().put(CLIENT_ID_SCHEME, scheme);
     }
 
+    public String getResponseMode() {
+        return getResolvedResponseMode().parameterValue();
+    }
+
+    public Oid4vpResponseMode getResolvedResponseMode() {
+        return Oid4vpResponseMode.resolve(getConfig().get(RESPONSE_MODE), isEnforceHaip());
+    }
+
+    public void setResponseMode(String responseMode) {
+        getConfig().put(RESPONSE_MODE, responseMode);
+    }
+
     public String getX509CertificatePem() {
-        String pem = getConfig().get(X509_CERTIFICATE_PEM);
-        if (pem != null && pem.contains("\\n")) {
-            pem = pem.replace("\\n", "\n");
-        }
-        return pem;
+        return normalizePemConfigValue(getConfig().get(X509_CERTIFICATE_PEM));
     }
 
     public void setX509CertificatePem(String pem) {
@@ -222,35 +231,23 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     }
 
     public String getTrustListSigningCertPem() {
-        String pem = getConfig().get(TRUST_LIST_SIGNING_CERT_PEM);
-        if (pem != null && pem.contains("\\n")) {
-            pem = pem.replace("\\n", "\n");
-        }
-        return pem;
+        return normalizePemConfigValue(getConfig().get(TRUST_LIST_SIGNING_CERT_PEM));
     }
 
     public void setTrustListSigningCertPem(String pem) {
         getConfig().put(TRUST_LIST_SIGNING_CERT_PEM, pem);
     }
 
-    /**
-     * Whether to include {@code trusted_authorities} with type {@code etsi_tl} in auto-generated
-     * DCQL credential queries, using the configured trust list URL. Defaults to {@code true}.
-     *
-     * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1.1">OID4VP 1.0 §6.1.1 — Trusted Authorities Query</a>
-     */
-    public boolean isIncludeTrustedAuthorities() {
-        String value = getConfig().get(INCLUDE_TRUSTED_AUTHORITIES);
-        return value == null || !"false".equalsIgnoreCase(value);
+    public Oid4vpTrustedAuthoritiesMode getTrustedAuthoritiesMode() {
+        return Oid4vpTrustedAuthoritiesMode.resolve(getConfig().get(TRUSTED_AUTHORITIES_MODE));
     }
 
-    public void setIncludeTrustedAuthorities(boolean include) {
-        getConfig().put(INCLUDE_TRUSTED_AUTHORITIES, String.valueOf(include));
+    public void setTrustedAuthoritiesMode(String mode) {
+        getConfig().put(TRUSTED_AUTHORITIES_MODE, mode);
     }
 
     public boolean isEnforceHaip() {
-        String value = getConfig().get(ENFORCE_HAIP);
-        return value == null || !"false".equalsIgnoreCase(value);
+        return getBoolConfig(ENFORCE_HAIP, true);
     }
 
     public void setEnforceHaip(boolean enforce) {
@@ -258,7 +255,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     }
 
     public boolean isUseIdTokenSubject() {
-        return "true".equalsIgnoreCase(getConfig().get(USE_ID_TOKEN_SUBJECT));
+        return getBoolConfig(USE_ID_TOKEN_SUBJECT, false);
     }
 
     public void setUseIdTokenSubject(boolean use) {
@@ -406,6 +403,14 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         }
     }
 
+    private boolean getBoolConfig(String key, boolean defaultValue) {
+        String value = getConfig().get(key);
+        if (StringUtil.isBlank(value)) {
+            return defaultValue;
+        }
+        return defaultValue ? !"false".equalsIgnoreCase(value) : "true".equalsIgnoreCase(value);
+    }
+
     private boolean isValueAllowed(String value, String allowedList) {
         if (StringUtil.isBlank(allowedList) || "*".equals(allowedList.trim())) {
             return true;
@@ -419,5 +424,9 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
             }
         }
         return false;
+    }
+
+    private static String normalizePemConfigValue(String pem) {
+        return pem != null && pem.contains("\\n") ? pem.replace("\\n", "\n") : pem;
     }
 }

@@ -15,11 +15,13 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
+import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.arbeitsagentur.keycloak.oid4vp.domain.ClaimSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -42,14 +44,16 @@ import org.keycloak.utils.StringUtil;
 public class DcqlQueryBuilder {
 
     private static final Logger LOG = Logger.getLogger(DcqlQueryBuilder.class);
-
-    public static final String TYPE_KEY_DELIMITER = "|";
+    private static final String CREDENTIAL_ID_PREFIX = "cred";
+    private static final String CLAIM_ID_PREFIX = "claim";
 
     private final ObjectMapper objectMapper;
     private final List<CredentialTypeSpec> credentialTypes = new ArrayList<>();
     private boolean allCredentialsRequired = false;
     private String purpose;
-    private String trustListUrl;
+    private Oid4vpTrustedAuthoritiesMode trustedAuthoritiesMode = Oid4vpTrustedAuthoritiesMode.NONE;
+    private String trustedAuthoritiesTrustListUrl;
+    private List<String> trustedAuthoritiesAuthorityKeyIdentifiers = List.of();
 
     public DcqlQueryBuilder(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
@@ -78,7 +82,26 @@ public class DcqlQueryBuilder {
      * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1.1">OID4VP 1.0 §6.1.1 — Trusted Authorities Query</a>
      */
     public DcqlQueryBuilder setTrustListUrl(String trustListUrl) {
-        this.trustListUrl = trustListUrl;
+        this.trustedAuthoritiesMode = Oid4vpTrustedAuthoritiesMode.ETSI_TL;
+        this.trustedAuthoritiesTrustListUrl = trustListUrl;
+        this.trustedAuthoritiesAuthorityKeyIdentifiers = List.of();
+        return this;
+    }
+
+    public DcqlQueryBuilder setTrustedAuthorities(String trustListUrl, List<String> authorityKeyIdentifiers) {
+        this.trustedAuthoritiesMode = Oid4vpTrustedAuthoritiesMode.AKI;
+        this.trustedAuthoritiesTrustListUrl = trustListUrl;
+        this.trustedAuthoritiesAuthorityKeyIdentifiers =
+                authorityKeyIdentifiers != null ? List.copyOf(authorityKeyIdentifiers) : List.of();
+        return this;
+    }
+
+    public DcqlQueryBuilder setTrustedAuthoritiesMode(
+            Oid4vpTrustedAuthoritiesMode mode, String trustListUrl, List<String> authorityKeyIdentifiers) {
+        this.trustedAuthoritiesMode = mode != null ? mode : Oid4vpTrustedAuthoritiesMode.NONE;
+        this.trustedAuthoritiesTrustListUrl = trustListUrl;
+        this.trustedAuthoritiesAuthorityKeyIdentifiers =
+                authorityKeyIdentifiers != null ? List.copyOf(authorityKeyIdentifiers) : List.of();
         return this;
     }
 
@@ -95,21 +118,88 @@ public class DcqlQueryBuilder {
             int credIndex = 1;
 
             for (CredentialTypeSpec typeSpec : credentialTypes) {
-                String credId = "cred" + credIndex++;
+                String credId = CREDENTIAL_ID_PREFIX + credIndex++;
                 credentialIds.add(credId);
                 credentials.add(buildCredentialEntry(typeSpec, credId));
             }
 
             Map<String, Object> dcqlQuery = new LinkedHashMap<>();
-            dcqlQuery.put("credentials", credentials);
+            dcqlQuery.put(DCQL_CREDENTIALS, credentials);
 
             if (credentials.size() > 1) {
-                dcqlQuery.put("credential_sets", List.of(buildCredentialSet(credentialIds)));
+                dcqlQuery.put(DCQL_CREDENTIAL_SETS, List.of(buildCredentialSet(credentialIds)));
             }
 
             return objectMapper.writeValueAsString(dcqlQuery);
         } catch (Exception e) {
             throw new RuntimeException("Failed to build DCQL query", e);
+        }
+    }
+
+    /** Normalizes a manually supplied DCQL query to include inferred metadata and trust constraints. */
+    public static String normalizeManualQuery(ObjectMapper objectMapper, String dcqlQuery, String trustListUrl) {
+        return normalizeManualQuery(
+                objectMapper, dcqlQuery, Oid4vpTrustedAuthoritiesMode.ETSI_TL, trustListUrl, List.of());
+    }
+
+    public static String normalizeManualQuery(
+            ObjectMapper objectMapper,
+            String dcqlQuery,
+            Oid4vpTrustedAuthoritiesMode trustedAuthoritiesMode,
+            String trustListUrl,
+            List<String> authorityKeyIdentifiers) {
+        if (StringUtil.isBlank(dcqlQuery)) {
+            return dcqlQuery;
+        }
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> parsed = objectMapper.readValue(dcqlQuery, Map.class);
+            normalizeParsedQuery(parsed, trustedAuthoritiesMode, trustListUrl, authorityKeyIdentifiers);
+            return objectMapper.writeValueAsString(parsed);
+        } catch (Exception e) {
+            LOG.warnf("Failed to normalize manual DCQL query: %s", e.getMessage());
+            return dcqlQuery;
+        }
+    }
+
+    /** Mutates a parsed DCQL query map so manual queries match auto-generated metadata behavior. */
+    @SuppressWarnings("unchecked")
+    public static void normalizeParsedQuery(
+            Map<?, ?> dcqlQuery,
+            Oid4vpTrustedAuthoritiesMode trustedAuthoritiesMode,
+            String trustListUrl,
+            List<String> authorityKeyIdentifiers) {
+        Object credentialsObj = dcqlQuery.get(DCQL_CREDENTIALS);
+        if (!(credentialsObj instanceof List<?> credentials)) {
+            return;
+        }
+        List<Map<String, Object>> trustedAuthorities =
+                trustedAuthoritiesMode.toDcqlEntries(trustListUrl, authorityKeyIdentifiers);
+
+        for (Object credentialObj : credentials) {
+            if (!(credentialObj instanceof Map<?, ?> rawCredential)) {
+                continue;
+            }
+
+            Object formatObj = rawCredential.get(DCQL_FORMAT);
+            Object idObj = rawCredential.get(DCQL_ID);
+            if (!(formatObj instanceof String format)
+                    || !(idObj instanceof String credentialType)
+                    || StringUtil.isBlank(credentialType)) {
+                continue;
+            }
+
+            Map<String, Object> credential = (Map<String, Object>) rawCredential;
+            Map<String, Object> meta = ensureMetaConstraint(credential, format, credentialType);
+            if (meta != null && FORMAT_SD_JWT_VC.equals(format) && !meta.containsKey(DCQL_VCT_VALUES)) {
+                meta.put(DCQL_VCT_VALUES, List.of(credentialType));
+            } else if (meta != null && FORMAT_MSO_MDOC.equals(format) && !meta.containsKey(DCQL_DOCTYPE_VALUE)) {
+                meta.put(DCQL_DOCTYPE_VALUE, credentialType);
+            }
+
+            if (!trustedAuthorities.isEmpty() && !credential.containsKey(DCQL_TRUSTED_AUTHORITIES)) {
+                credential.put(DCQL_TRUSTED_AUTHORITIES, trustedAuthorities);
+            }
         }
     }
 
@@ -120,13 +210,29 @@ public class DcqlQueryBuilder {
             boolean allCredentialsRequired,
             String purpose,
             String trustListUrl) {
+        return fromMapperSpecs(
+                objectMapper,
+                credentialTypes,
+                allCredentialsRequired,
+                purpose,
+                Oid4vpTrustedAuthoritiesMode.ETSI_TL,
+                trustListUrl,
+                List.of());
+    }
+
+    public static DcqlQueryBuilder fromMapperSpecs(
+            ObjectMapper objectMapper,
+            Map<String, CredentialTypeSpec> credentialTypes,
+            boolean allCredentialsRequired,
+            String purpose,
+            Oid4vpTrustedAuthoritiesMode trustedAuthoritiesMode,
+            String trustListUrl,
+            List<String> authorityKeyIdentifiers) {
         DcqlQueryBuilder builder = new DcqlQueryBuilder(objectMapper);
         builder.setAllCredentialsRequired(allCredentialsRequired);
         builder.setPurpose(purpose);
-        builder.setTrustListUrl(trustListUrl);
-        for (CredentialTypeSpec spec : credentialTypes.values()) {
-            builder.credentialTypes.add(spec);
-        }
+        builder.setTrustedAuthoritiesMode(trustedAuthoritiesMode, trustListUrl, authorityKeyIdentifiers);
+        builder.credentialTypes.addAll(credentialTypes.values());
         return builder;
     }
 
@@ -146,26 +252,27 @@ public class DcqlQueryBuilder {
             }
 
             String idpAlias = config.getAlias();
-            Map<String, List<ClaimSpec>> claimsByType = new LinkedHashMap<>();
-            Map<String, String> formatByType = new LinkedHashMap<>();
+            Map<CredentialTypeKey, CredentialTypeKey> credentialTypesByKey = new LinkedHashMap<>();
+            Map<CredentialTypeKey, List<ClaimSpec>> claimsByType = new LinkedHashMap<>();
 
             realm.getIdentityProviderMappersByAliasStream(idpAlias).forEach(mapper -> {
-                String format = mapper.getConfig().get("credential.format");
-                String type = mapper.getConfig().get("credential.type");
-                String claimPath = mapper.getConfig().get("claim");
-                boolean isOptional = "true".equalsIgnoreCase(mapper.getConfig().get("optional"));
+                String format = mapper.getConfig().get(Oid4vpMapperConfigProperties.CREDENTIAL_FORMAT);
+                String type = mapper.getConfig().get(Oid4vpMapperConfigProperties.CREDENTIAL_TYPE);
+                String claimPath = mapper.getConfig().get(Oid4vpMapperConfigProperties.CLAIM_PATH);
+                boolean isOptional =
+                        "true".equalsIgnoreCase(mapper.getConfig().get(Oid4vpMapperConfigProperties.OPTIONAL));
                 boolean isMultivalued =
-                        "true".equalsIgnoreCase(mapper.getConfig().get("multivalued"));
+                        "true".equalsIgnoreCase(mapper.getConfig().get(Oid4vpMapperConfigProperties.MULTIVALUED));
 
                 if (StringUtil.isBlank(format)) {
-                    format = Oid4vpConstants.FORMAT_SD_JWT_VC;
+                    format = FORMAT_SD_JWT_VC;
                 }
                 if (StringUtil.isBlank(type)) {
                     return;
                 }
 
-                String typeKey = format + TYPE_KEY_DELIMITER + type;
-                formatByType.put(typeKey, format);
+                CredentialTypeKey typeKey = new CredentialTypeKey(format, type);
+                credentialTypesByKey.put(typeKey, typeKey);
 
                 if (StringUtil.isNotBlank(claimPath)) {
                     ClaimSpec claimSpec = new ClaimSpec(claimPath, isOptional, isMultivalued);
@@ -179,13 +286,12 @@ public class DcqlQueryBuilder {
                 String sdJwtUserMappingClaim = config.getUserMappingClaim();
                 String mdocUserMappingClaim = config.getUserMappingClaimMdoc();
 
-                for (String typeKey : formatByType.keySet()) {
-                    String format = formatByType.get(typeKey);
+                for (CredentialTypeKey typeKey : credentialTypesByKey.keySet()) {
+                    String format = typeKey.format();
                     List<ClaimSpec> claims = claimsByType.computeIfAbsent(typeKey, k -> new ArrayList<>());
 
-                    String userMappingClaim = Oid4vpConstants.FORMAT_MSO_MDOC.equals(format)
-                            ? mdocUserMappingClaim
-                            : sdJwtUserMappingClaim;
+                    String userMappingClaim =
+                            FORMAT_MSO_MDOC.equals(format) ? mdocUserMappingClaim : sdJwtUserMappingClaim;
 
                     if (StringUtil.isNotBlank(userMappingClaim)) {
                         boolean alreadyPresent =
@@ -197,12 +303,12 @@ public class DcqlQueryBuilder {
                 }
             }
 
-            for (Map.Entry<String, List<ClaimSpec>> entry : claimsByType.entrySet()) {
-                String typeKey = entry.getKey();
-                String[] keyParts = typeKey.split("\\" + TYPE_KEY_DELIMITER, 2);
-                String format = formatByType.get(typeKey);
-                String type = keyParts.length > 1 ? keyParts[1] : keyParts[0];
-                result.put(typeKey, new CredentialTypeSpec(format, type, entry.getValue()));
+            int credentialIndex = 1;
+            for (CredentialTypeKey typeKey : credentialTypesByKey.keySet()) {
+                List<ClaimSpec> claims = claimsByType.getOrDefault(typeKey, List.of());
+                result.put(
+                        CREDENTIAL_ID_PREFIX + credentialIndex++,
+                        new CredentialTypeSpec(typeKey.format(), typeKey.type(), claims));
             }
         } catch (Exception e) {
             LOG.warnf("Failed to aggregate mappers: %s", e.getMessage());
@@ -213,12 +319,14 @@ public class DcqlQueryBuilder {
 
     private Map<String, Object> buildCredentialEntry(CredentialTypeSpec typeSpec, String credId) {
         Map<String, Object> credential = new LinkedHashMap<>();
-        credential.put("id", credId);
-        credential.put("format", typeSpec.format());
-        credential.put("meta", buildMetaConstraint(typeSpec));
+        credential.put(DCQL_ID, credId);
+        credential.put(DCQL_FORMAT, typeSpec.format());
+        credential.put(DCQL_META, buildMetaConstraint(typeSpec));
 
-        if (StringUtil.isNotBlank(trustListUrl)) {
-            credential.put("trusted_authorities", List.of(Map.of("type", "etsi_tl", "values", List.of(trustListUrl))));
+        List<Map<String, Object>> trustedAuthorities = trustedAuthoritiesMode.toDcqlEntries(
+                trustedAuthoritiesTrustListUrl, trustedAuthoritiesAuthorityKeyIdentifiers);
+        if (!trustedAuthorities.isEmpty()) {
+            credential.put(DCQL_TRUSTED_AUTHORITIES, trustedAuthorities);
         }
 
         if (!typeSpec.claimSpecs().isEmpty()) {
@@ -229,12 +337,27 @@ public class DcqlQueryBuilder {
 
     private Map<String, Object> buildMetaConstraint(CredentialTypeSpec typeSpec) {
         Map<String, Object> meta = new LinkedHashMap<>();
-        if (Oid4vpConstants.FORMAT_MSO_MDOC.equals(typeSpec.format())) {
-            meta.put("doctype_value", typeSpec.type());
+        if (FORMAT_MSO_MDOC.equals(typeSpec.format())) {
+            meta.put(DCQL_DOCTYPE_VALUE, typeSpec.type());
         } else {
-            meta.put("vct_values", List.of(typeSpec.type()));
+            meta.put(DCQL_VCT_VALUES, List.of(typeSpec.type()));
         }
         return meta;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> ensureMetaConstraint(
+            Map<String, Object> credential, String format, String credentialType) {
+        Object metaObj = credential.get(DCQL_META);
+        if (metaObj instanceof Map<?, ?> rawMeta) {
+            return (Map<String, Object>) rawMeta;
+        }
+        if (FORMAT_SD_JWT_VC.equals(format) || FORMAT_MSO_MDOC.equals(format)) {
+            Map<String, Object> meta = new LinkedHashMap<>();
+            credential.put(DCQL_META, meta);
+            return meta;
+        }
+        return null;
     }
 
     private void addClaimsWithOptionalSets(
@@ -246,10 +369,10 @@ public class DcqlQueryBuilder {
         int claimIndex = 1;
 
         for (ClaimSpec claimSpec : claimSpecs) {
-            String claimId = "claim" + claimIndex++;
+            String claimId = CLAIM_ID_PREFIX + claimIndex++;
             Map<String, Object> claim = new LinkedHashMap<>();
-            claim.put("id", claimId);
-            claim.put("path", claimSpec.toDcqlPath(format, type));
+            claim.put(DCQL_ID, claimId);
+            claim.put(DCQL_PATH, claimSpec.toDcqlPath(format, type));
             claims.add(claim);
             allClaimIds.add(claimId);
             if (claimSpec.optional()) {
@@ -258,25 +381,27 @@ public class DcqlQueryBuilder {
                 requiredClaimIds.add(claimId);
             }
         }
-        credential.put("claims", claims);
+        credential.put(DCQL_CLAIMS, claims);
 
         if (hasOptionalClaims && !requiredClaimIds.isEmpty()) {
-            credential.put("claim_sets", List.of(allClaimIds, requiredClaimIds));
+            credential.put(DCQL_CLAIM_SETS, List.of(allClaimIds, requiredClaimIds));
         }
     }
 
     private Map<String, Object> buildCredentialSet(List<String> credentialIds) {
         Map<String, Object> credentialSet = new LinkedHashMap<>();
         if (StringUtil.isNotBlank(purpose)) {
-            credentialSet.put("purpose", purpose);
+            credentialSet.put(DCQL_PURPOSE, purpose);
         }
 
         if (allCredentialsRequired) {
-            credentialSet.put("options", List.of(credentialIds));
+            credentialSet.put(DCQL_OPTIONS, List.of(credentialIds));
         } else {
             List<List<String>> options = credentialIds.stream().map(List::of).toList();
-            credentialSet.put("options", options);
+            credentialSet.put(DCQL_OPTIONS, options);
         }
         return credentialSet;
     }
+
+    private record CredentialTypeKey(String format, String type) {}
 }

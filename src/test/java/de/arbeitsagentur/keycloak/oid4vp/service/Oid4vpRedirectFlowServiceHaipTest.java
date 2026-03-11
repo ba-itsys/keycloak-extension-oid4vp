@@ -15,6 +15,9 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.service;
 
+import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.SUPPORTED_MDOC_DEVICEAUTH_ALG_VALUES;
+import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.SUPPORTED_MDOC_ISSUERAUTH_ALG_VALUES;
+import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.SUPPORTED_SD_JWT_ALG_VALUES;
 import static org.assertj.core.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,6 +26,7 @@ import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jose.util.Base64;
 import com.nimbusds.jwt.SignedJWT;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpResponseMode;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestObjectParams;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SignedRequestObject;
 import java.math.BigInteger;
@@ -69,24 +73,24 @@ class Oid4vpRedirectFlowServiceHaipTest {
     }
 
     @Test
-    void haipEnabled_responseMode_isDirectPostJwt() throws Exception {
-        SignedRequestObject result = buildRequestObject(true);
+    void directPostJwt_responseMode_isIncludedInRequestObject() throws Exception {
+        SignedRequestObject result = buildRequestObject(Oid4vpResponseMode.DIRECT_POST_JWT);
 
         Map<String, Object> claims = parseClaims(result.jwt());
         assertThat(claims.get("response_mode")).isEqualTo("direct_post.jwt");
     }
 
     @Test
-    void haipDisabled_responseMode_isDirectPost() throws Exception {
-        SignedRequestObject result = buildRequestObject(false);
+    void directPost_responseMode_isIncludedInRequestObject() throws Exception {
+        SignedRequestObject result = buildRequestObject(Oid4vpResponseMode.DIRECT_POST);
 
         Map<String, Object> claims = parseClaims(result.jwt());
         assertThat(claims.get("response_mode")).isEqualTo("direct_post");
     }
 
     @Test
-    void haipEnabled_encryptionKey_isGenerated() throws Exception {
-        SignedRequestObject result = buildRequestObject(true);
+    void directPostJwt_encryptionKey_isGenerated() throws Exception {
+        SignedRequestObject result = buildRequestObject(Oid4vpResponseMode.DIRECT_POST_JWT);
 
         assertThat(result.encryptionKeyJson()).isNotNull();
         ECKey encKey = ECKey.parse(result.encryptionKeyJson());
@@ -95,15 +99,15 @@ class Oid4vpRedirectFlowServiceHaipTest {
     }
 
     @Test
-    void haipDisabled_encryptionKey_isNull() throws Exception {
-        SignedRequestObject result = buildRequestObject(false);
+    void directPost_encryptionKey_isNull() throws Exception {
+        SignedRequestObject result = buildRequestObject(Oid4vpResponseMode.DIRECT_POST);
 
         assertThat(result.encryptionKeyJson()).isNull();
     }
 
     @Test
-    void haipEnabled_clientMetadata_containsEncryptionParams() throws Exception {
-        SignedRequestObject result = buildRequestObject(true);
+    void directPostJwt_clientMetadata_containsEncryptionParams() throws Exception {
+        SignedRequestObject result = buildRequestObject(Oid4vpResponseMode.DIRECT_POST_JWT);
 
         Map<String, Object> claims = parseClaims(result.jwt());
         assertThat(claims).containsKey("client_metadata");
@@ -111,37 +115,43 @@ class Oid4vpRedirectFlowServiceHaipTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> meta = (Map<String, Object>) claims.get("client_metadata");
         assertThat(meta).containsKey("jwks");
-
-        @SuppressWarnings("unchecked")
-        List<String> algValues = (List<String>) meta.get("encrypted_response_alg_values_supported");
-        assertThat(algValues).containsExactly("ECDH-ES");
+        assertThat(meta).doesNotContainKey("encrypted_response_alg_values_supported");
 
         @SuppressWarnings("unchecked")
         List<String> encValues = (List<String>) meta.get("encrypted_response_enc_values_supported");
         assertThat(encValues).containsExactly("A128GCM", "A256GCM");
 
         assertThat(meta).containsKey("vp_formats_supported");
+        assertThat(meta.keySet())
+                .containsExactly("jwks", "encrypted_response_enc_values_supported", "vp_formats_supported");
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> jwks = (Map<String, Object>) meta.get("jwks");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> jwk = ((List<Map<String, Object>>) jwks.get("keys")).get(0);
+        assertThat(jwk.get("alg")).isEqualTo("ECDH-ES");
+        assertThat(jwk.get("use")).isEqualTo("enc");
     }
 
     @Test
-    void haipDisabled_clientMetadata_notPresent() throws Exception {
-        SignedRequestObject result = buildRequestObject(false);
+    void directPost_clientMetadata_notPresent() throws Exception {
+        SignedRequestObject result = buildRequestObject(Oid4vpResponseMode.DIRECT_POST);
 
         Map<String, Object> claims = parseClaims(result.jwt());
         assertThat(claims).doesNotContainKey("client_metadata");
     }
 
     @Test
-    void haipEnabled_signingAlgorithm_isES256() throws Exception {
-        SignedRequestObject result = buildRequestObject(true);
+    void directPostJwt_signingAlgorithm_isES256() throws Exception {
+        SignedRequestObject result = buildRequestObject(Oid4vpResponseMode.DIRECT_POST_JWT);
 
         SignedJWT jwt = SignedJWT.parse(result.jwt());
         assertThat(jwt.getHeader().getAlgorithm().getName()).isEqualTo("ES256");
     }
 
     @Test
-    void haipDisabled_signingAlgorithm_isStillES256() throws Exception {
-        SignedRequestObject result = buildRequestObject(false);
+    void directPost_signingAlgorithm_isStillES256() throws Exception {
+        SignedRequestObject result = buildRequestObject(Oid4vpResponseMode.DIRECT_POST);
 
         SignedJWT jwt = SignedJWT.parse(result.jwt());
         assertThat(jwt.getHeader().getAlgorithm().getName()).isEqualTo("ES256");
@@ -149,8 +159,9 @@ class Oid4vpRedirectFlowServiceHaipTest {
 
     @Test
     void requestObject_alwaysContainsRequiredClaims() throws Exception {
-        for (boolean haip : new boolean[] {true, false}) {
-            SignedRequestObject result = buildRequestObject(haip);
+        for (Oid4vpResponseMode responseMode :
+                new Oid4vpResponseMode[] {Oid4vpResponseMode.DIRECT_POST_JWT, Oid4vpResponseMode.DIRECT_POST}) {
+            SignedRequestObject result = buildRequestObject(responseMode);
             Map<String, Object> claims = parseClaims(result.jwt());
 
             assertThat(claims).containsKey("jti");
@@ -168,15 +179,15 @@ class Oid4vpRedirectFlowServiceHaipTest {
 
     @Test
     void requestObject_typ_isOauthAuthzReqJwt() throws Exception {
-        SignedRequestObject result = buildRequestObject(true);
+        SignedRequestObject result = buildRequestObject(Oid4vpResponseMode.DIRECT_POST_JWT);
 
         SignedJWT jwt = SignedJWT.parse(result.jwt());
         assertThat(jwt.getHeader().getType().toString()).isEqualTo("oauth-authz-req+jwt");
     }
 
     @Test
-    void haipEnabled_vpFormatsSupported_containsEs256() throws Exception {
-        SignedRequestObject result = buildRequestObject(true);
+    void directPostJwt_vpFormatsSupported_containsEs256() throws Exception {
+        SignedRequestObject result = buildRequestObject(Oid4vpResponseMode.DIRECT_POST_JWT);
 
         Map<String, Object> claims = parseClaims(result.jwt());
         @SuppressWarnings("unchecked")
@@ -191,12 +202,19 @@ class Oid4vpRedirectFlowServiceHaipTest {
         Map<String, Object> sdJwtFormat = (Map<String, Object>) vpFormats.get("dc+sd-jwt");
         @SuppressWarnings("unchecked")
         List<String> sdJwtAlg = (List<String>) sdJwtFormat.get("sd-jwt_alg_values");
-        assertThat(sdJwtAlg).containsExactly("ES256", "ES384", "ES512", "EdDSA");
+        assertThat(sdJwtAlg).containsExactlyElementsOf(SUPPORTED_SD_JWT_ALG_VALUES);
+        assertThat(sdJwtFormat.get("kb-jwt_alg_values")).isEqualTo(SUPPORTED_SD_JWT_ALG_VALUES);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> mdocFormat = (Map<String, Object>) vpFormats.get("mso_mdoc");
+        assertThat(mdocFormat.get("issuerauth_alg_values")).isEqualTo(SUPPORTED_MDOC_ISSUERAUTH_ALG_VALUES);
+        assertThat(mdocFormat.get("deviceauth_alg_values")).isEqualTo(SUPPORTED_MDOC_DEVICEAUTH_ALG_VALUES);
+        assertThat(mdocFormat).doesNotContainKey("alg");
     }
 
     @Test
-    void requestObject_useIdTokenSubject_setsResponseTypeAndScope() throws Exception {
-        SignedRequestObject result = buildRequestObject(false, true);
+    void requestObject_withoutHaip_useIdTokenSubject_setsResponseTypeAndScope() throws Exception {
+        SignedRequestObject result = buildRequestObject(Oid4vpResponseMode.DIRECT_POST, true, false);
         Map<String, Object> claims = parseClaims(result.jwt());
 
         assertThat(claims.get("response_type")).isEqualTo("vp_token id_token");
@@ -204,21 +222,76 @@ class Oid4vpRedirectFlowServiceHaipTest {
     }
 
     @Test
-    void requestObject_noIdTokenSubject_noScope() throws Exception {
-        SignedRequestObject result = buildRequestObject(false, false);
+    void requestObject_withHaip_useIdTokenSubject_keepsVpTokenOnly() throws Exception {
+        SignedRequestObject result = buildRequestObject(Oid4vpResponseMode.DIRECT_POST, true, true);
         Map<String, Object> claims = parseClaims(result.jwt());
 
         assertThat(claims.get("response_type")).isEqualTo("vp_token");
         assertThat(claims).doesNotContainKey("scope");
     }
 
-    private SignedRequestObject buildRequestObject(boolean enforceHaip) {
-        return buildRequestObject(enforceHaip, false);
+    @Test
+    void requestObject_noIdTokenSubject_noScope() throws Exception {
+        SignedRequestObject result = buildRequestObject(Oid4vpResponseMode.DIRECT_POST, false);
+        Map<String, Object> claims = parseClaims(result.jwt());
+
+        assertThat(claims.get("response_type")).isEqualTo("vp_token");
+        assertThat(claims).doesNotContainKey("scope");
     }
 
-    private SignedRequestObject buildRequestObject(boolean enforceHaip, boolean useIdTokenSubject) {
-        return service.buildSignedRequestObject(new RequestObjectParams(
+    @Test
+    void requestObject_manualSdJwtDcqlWithoutMeta_addsVctMetadata() throws Exception {
+        SignedRequestObject result = buildRequestObject("""
+                {"credentials":[{"id":"pid","format":"dc+sd-jwt","claims":[{"path":["given_name"]}]}]}
+                """, Oid4vpResponseMode.DIRECT_POST, false, true);
+
+        Map<String, Object> claims = parseClaims(result.jwt());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> dcql = (Map<String, Object>) claims.get("dcql_query");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> credential = ((List<Map<String, Object>>) dcql.get("credentials")).get(0);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> meta = (Map<String, Object>) credential.get("meta");
+        assertThat(meta.get("vct_values")).isEqualTo(List.of("pid"));
+    }
+
+    @Test
+    void requestObject_manualSdJwtDcqlPreservesExistingMeta() throws Exception {
+        SignedRequestObject result = buildRequestObject("""
+                {"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{"vct_values":["custom-vct"]},"claims":[{"path":["given_name"]}]}]}
+                """, Oid4vpResponseMode.DIRECT_POST, false, true);
+
+        Map<String, Object> claims = parseClaims(result.jwt());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> dcql = (Map<String, Object>) claims.get("dcql_query");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> credential = ((List<Map<String, Object>>) dcql.get("credentials")).get(0);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> meta = (Map<String, Object>) credential.get("meta");
+        assertThat(meta.get("vct_values")).isEqualTo(List.of("custom-vct"));
+    }
+
+    private SignedRequestObject buildRequestObject(Oid4vpResponseMode responseMode) {
+        return buildRequestObject(responseMode, false, true);
+    }
+
+    private SignedRequestObject buildRequestObject(Oid4vpResponseMode responseMode, boolean useIdTokenSubject) {
+        return buildRequestObject(responseMode, useIdTokenSubject, true);
+    }
+
+    private SignedRequestObject buildRequestObject(
+            Oid4vpResponseMode responseMode, boolean useIdTokenSubject, boolean enforceHaip) {
+        return buildRequestObject(
                 "{\"credentials\":[{\"id\":\"test\",\"format\":\"dc+sd-jwt\",\"meta\":{\"vct_values\":[\"IdentityCredential\"]},\"claims\":[{\"path\":[\"sub\"]}]}]}",
+                responseMode,
+                useIdTokenSubject,
+                enforceHaip);
+    }
+
+    private SignedRequestObject buildRequestObject(
+            String dcqlQuery, Oid4vpResponseMode responseMode, boolean useIdTokenSubject, boolean enforceHaip) {
+        return service.buildSignedRequestObject(new RequestObjectParams(
+                dcqlQuery,
                 null,
                 "test-client-id",
                 "x509_hash",
@@ -228,8 +301,10 @@ class Oid4vpRedirectFlowServiceHaipTest {
                 null,
                 signingKeyJwk,
                 null,
-                enforceHaip,
-                useIdTokenSubject));
+                null,
+                responseMode,
+                useIdTokenSubject,
+                enforceHaip));
     }
 
     @SuppressWarnings("unchecked")

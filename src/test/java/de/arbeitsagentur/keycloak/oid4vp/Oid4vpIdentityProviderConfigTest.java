@@ -17,6 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp;
 
 import static org.assertj.core.api.Assertions.*;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
 import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -84,6 +85,7 @@ class Oid4vpIdentityProviderConfigTest {
     void defaultValues() {
         assertThat(config.getUserMappingClaim()).isEqualTo("sub");
         assertThat(config.getClientIdScheme()).isEqualTo("x509_hash");
+        assertThat(config.getResponseMode()).isEqualTo("direct_post.jwt");
         assertThat(config.isSameDeviceEnabled()).isTrue();
         assertThat(config.isCrossDeviceEnabled()).isTrue();
         assertThat(config.isEnforceHaip()).isTrue();
@@ -92,30 +94,57 @@ class Oid4vpIdentityProviderConfigTest {
     }
 
     @Test
-    void haipEnabled_clientIdScheme_forcedToX509Hash() {
+    void haipEnabled_clientIdScheme_overridesToX509Hash() {
         config.setEnforceHaip(true);
         config.setClientIdScheme("x509_san_dns");
         assertThat(config.getClientIdScheme()).isEqualTo("x509_hash");
     }
 
     @Test
-    void haipEnabled_clientIdScheme_ignorePlainSetting() {
+    void haipEnabled_clientIdScheme_keepsX509Hash() {
+        config.setEnforceHaip(true);
+        config.setClientIdScheme("x509_hash");
+        assertThat(config.getClientIdScheme()).isEqualTo("x509_hash");
+    }
+
+    @Test
+    void haipEnabled_clientIdScheme_overridesPlainToX509Hash() {
         config.setEnforceHaip(true);
         config.setClientIdScheme("plain");
         assertThat(config.getClientIdScheme()).isEqualTo("x509_hash");
     }
 
     @Test
-    void haipDisabled_clientIdScheme_respectsConfigured() {
+    void clientIdScheme_respectsConfiguredValueWhenHaipDisabled() {
         config.setEnforceHaip(false);
         config.setClientIdScheme("x509_san_dns");
         assertThat(config.getClientIdScheme()).isEqualTo("x509_san_dns");
     }
 
     @Test
-    void haipDisabled_clientIdScheme_defaultsToX509SanDns() {
+    void clientIdScheme_defaultsToX509SanDnsWhenUnset() {
         config.setEnforceHaip(false);
         assertThat(config.getClientIdScheme()).isEqualTo("x509_san_dns");
+    }
+
+    @Test
+    void haipEnabled_responseMode_overridesToDirectPostJwt() {
+        config.setEnforceHaip(true);
+        config.setResponseMode("direct_post");
+        assertThat(config.getResponseMode()).isEqualTo("direct_post.jwt");
+    }
+
+    @Test
+    void responseMode_respectsConfiguredEncryptedModeWhenHaipDisabled() {
+        config.setEnforceHaip(false);
+        config.setResponseMode("direct_post.jwt");
+        assertThat(config.getResponseMode()).isEqualTo("direct_post.jwt");
+    }
+
+    @Test
+    void responseMode_defaultsToDirectPostWhenHaipDisabled() {
+        config.setEnforceHaip(false);
+        assertThat(config.getResponseMode()).isEqualTo("direct_post");
     }
 
     @Test
@@ -200,20 +229,26 @@ class Oid4vpIdentityProviderConfigTest {
     }
 
     @Test
-    void isIncludeTrustedAuthorities_defaultTrue() {
-        assertThat(config.isIncludeTrustedAuthorities()).isTrue();
+    void trustedAuthoritiesMode_defaultsToNone() {
+        assertThat(config.getTrustedAuthoritiesMode()).isEqualTo(Oid4vpTrustedAuthoritiesMode.NONE);
     }
 
     @Test
-    void isIncludeTrustedAuthorities_explicitlyDisabled() {
-        config.setIncludeTrustedAuthorities(false);
-        assertThat(config.isIncludeTrustedAuthorities()).isFalse();
+    void trustedAuthoritiesMode_readsEtsiTl() {
+        config.setTrustedAuthoritiesMode("etsi_tl");
+        assertThat(config.getTrustedAuthoritiesMode()).isEqualTo(Oid4vpTrustedAuthoritiesMode.ETSI_TL);
     }
 
     @Test
-    void isIncludeTrustedAuthorities_explicitlyEnabled() {
-        config.setIncludeTrustedAuthorities(true);
-        assertThat(config.isIncludeTrustedAuthorities()).isTrue();
+    void trustedAuthoritiesMode_readsAki() {
+        config.setTrustedAuthoritiesMode("aki");
+        assertThat(config.getTrustedAuthoritiesMode()).isEqualTo(Oid4vpTrustedAuthoritiesMode.AKI);
+    }
+
+    @Test
+    void trustedAuthoritiesMode_invalidFallsBackToNone() {
+        config.setTrustedAuthoritiesMode("bogus");
+        assertThat(config.getTrustedAuthoritiesMode()).isEqualTo(Oid4vpTrustedAuthoritiesMode.NONE);
     }
 
     @Test

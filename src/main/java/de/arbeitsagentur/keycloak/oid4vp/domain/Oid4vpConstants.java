@@ -16,12 +16,13 @@
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
 import java.net.URI;
+import java.util.List;
 
 /**
  * Protocol constants for the OID4VP 1.0 identity provider extension.
  *
  * <p>Contains parameter names, response modes, credential format identifiers, client ID scheme
- * values, and session note keys used throughout the OID4VP authorization flow as defined in
+ * values, and endpoint flow constants used throughout the OID4VP authorization flow as defined in
  * <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html">OID4VP 1.0</a>.
  */
 public final class Oid4vpConstants {
@@ -43,6 +44,27 @@ public final class Oid4vpConstants {
     public static final String FORMAT_SD_JWT_VC = "dc+sd-jwt";
     public static final String FORMAT_MSO_MDOC = "mso_mdoc";
 
+    // JOSE signature algorithms
+    public static final String JWS_ALG_ES256 = "ES256";
+    public static final String JWS_ALG_ES384 = "ES384";
+    public static final String JWS_ALG_ES512 = "ES512";
+    public static final String JWS_ALG_RS256 = "RS256";
+
+    // COSE signature algorithms
+    public static final int COSE_ALG_ES256 = -7;
+    public static final int COSE_ALG_ES384 = -35;
+    public static final int COSE_ALG_ES512 = -36;
+
+    public static final List<String> SUPPORTED_SD_JWT_ALG_VALUES =
+            List.of(JWS_ALG_ES256, JWS_ALG_ES384, JWS_ALG_ES512, JWS_ALG_RS256);
+    public static final List<Integer> SUPPORTED_MDOC_ISSUERAUTH_ALG_VALUES =
+            List.of(COSE_ALG_ES256, COSE_ALG_ES384, COSE_ALG_ES512);
+    public static final List<Integer> SUPPORTED_MDOC_DEVICEAUTH_ALG_VALUES = SUPPORTED_MDOC_ISSUERAUTH_ALG_VALUES;
+    public static final List<String> SUPPORTED_VERIFIER_RESPONSE_ENCRYPTION_METHOD_VALUES =
+            List.of("A128GCM", "A256GCM");
+    public static final List<String> SUPPORTED_REQUEST_OBJECT_ENCRYPTION_ALGORITHMS = List.of("ECDH-ES");
+    public static final List<String> SUPPORTED_REQUEST_OBJECT_ENCRYPTION_METHODS = List.of("A128GCM", "A256GCM");
+
     // OID4VP protocol parameters
     public static final String VP_TOKEN = "vp_token";
     public static final String REQUEST_URI = "request_uri";
@@ -53,13 +75,29 @@ public final class Oid4vpConstants {
     public static final String WALLET_METADATA = "wallet_metadata";
     public static final String RESPONSE_URI = "response_uri";
     public static final String RESPONSE = "response";
+    public static final String DCQL_CREDENTIALS = "credentials";
+    public static final String DCQL_CREDENTIAL_SETS = "credential_sets";
+    public static final String DCQL_CLAIMS = "claims";
+    public static final String DCQL_CLAIM_SETS = "claim_sets";
+    public static final String DCQL_OPTIONS = "options";
+    public static final String DCQL_PURPOSE = "purpose";
+    public static final String DCQL_FORMAT = "format";
+    public static final String DCQL_ID = "id";
+    public static final String DCQL_META = "meta";
+    public static final String DCQL_PATH = "path";
+    public static final String DCQL_TRUSTED_AUTHORITIES = "trusted_authorities";
+    public static final String DCQL_TRUSTED_AUTHORITY_TYPE = "type";
+    public static final String DCQL_TRUSTED_AUTHORITY_VALUES = "values";
+    public static final String DCQL_TRUSTED_AUTHORITY_ETSI_TL = "etsi_tl";
+    public static final String DCQL_TRUSTED_AUTHORITY_AKI = "aki";
+    public static final String DCQL_VCT_VALUES = "vct_values";
+    public static final String DCQL_DOCTYPE_VALUE = "doctype_value";
 
     // Response mode values
     public static final String RESPONSE_MODE_DIRECT_POST = "direct_post";
     public static final String RESPONSE_MODE_DIRECT_POST_JWT = "direct_post.jwt";
 
     // Response type values
-    public static final String RESPONSE_TYPE_VP_TOKEN = "vp_token";
     public static final String RESPONSE_TYPE_VP_TOKEN_ID_TOKEN = "vp_token id_token";
 
     // ID Token parameter
@@ -84,21 +122,6 @@ public final class Oid4vpConstants {
     public static final String REQUEST_OBJECT_CONTENT_TYPE = "application/oauth-authz-req+jwt";
     public static final String REQUEST_OBJECT_TYP = "oauth-authz-req+jwt";
 
-    // Client ID scheme values
-    public static final String CLIENT_ID_SCHEME_X509_SAN_DNS = "x509_san_dns";
-    public static final String CLIENT_ID_SCHEME_X509_HASH = "x509_hash";
-    public static final String CLIENT_ID_SCHEME_PLAIN = "plain";
-
     // Default wallet scheme
     public static final String DEFAULT_WALLET_SCHEME = "openid4vp://";
-
-    // Session/auth note keys
-    public static final String SESSION_STATE = "oid4vp_state";
-    public static final String SESSION_NONCE = "oid4vp_nonce";
-    public static final String SESSION_RESPONSE_URI = "oid4vp_response_uri";
-    public static final String SESSION_REDIRECT_FLOW_RESPONSE_URI = "oid4vp_redirect_flow_response_uri";
-    public static final String SESSION_CLIENT_ID = "oid4vp_client_id";
-    public static final String SESSION_EFFECTIVE_CLIENT_ID = "oid4vp_effective_client_id";
-    public static final String SESSION_MDOC_GENERATED_NONCE = "oid4vp_mdoc_generated_nonce";
-    public static final String SESSION_ENCRYPTION_JWK_THUMBPRINT = "oid4vp_encryption_jwk_thumbprint";
 }

@@ -34,12 +34,14 @@ import java.util.Map;
  */
 public class Oid4vpQrCodeService {
 
+    private static final int QR_CODE_MARGIN = 1;
+
     /** Generates a Base64-encoded PNG QR code image for the given content string. */
     public String generateQrCode(String content, int width, int height) {
         try {
             QRCodeWriter writer = new QRCodeWriter();
-            BitMatrix matrix =
-                    writer.encode(content, BarcodeFormat.QR_CODE, width, height, Map.of(EncodeHintType.MARGIN, 1));
+            BitMatrix matrix = writer.encode(
+                    content, BarcodeFormat.QR_CODE, width, height, Map.of(EncodeHintType.MARGIN, QR_CODE_MARGIN));
 
             ByteArrayOutputStream pngOut = new ByteArrayOutputStream();
             MatrixToImageWriter.writeToStream(matrix, "png", pngOut);

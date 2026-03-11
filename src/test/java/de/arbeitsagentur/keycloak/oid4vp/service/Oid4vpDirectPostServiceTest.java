@@ -17,21 +17,27 @@ package de.arbeitsagentur.keycloak.oid4vp.service;
 
 import static de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService.*;
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
-import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import jakarta.ws.rs.core.Response;
 import java.net.URI;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.keycloak.broker.provider.BrokeredIdentityContext;
+import org.keycloak.broker.provider.IdentityProviderDataMarshaller;
+import org.keycloak.broker.provider.UserAuthenticationIdentityProvider;
 import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakUriInfo;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.SingleUseObjectProvider;
+import org.keycloak.sessions.AuthenticationSessionModel;
+import org.keycloak.sessions.RootAuthenticationSessionModel;
 
 class Oid4vpDirectPostServiceTest {
 
@@ -65,35 +71,102 @@ class Oid4vpDirectPostServiceTest {
             return Response.status(status).entity("error-page").build();
         });
 
-        Oid4vpAuthSessionResolver resolver = mock(Oid4vpAuthSessionResolver.class);
         Oid4vpRequestObjectStore store = mock(Oid4vpRequestObjectStore.class);
 
-        service = new Oid4vpDirectPostService(session, realm, config, resolver, store);
+        service = new Oid4vpDirectPostService(session, realm, config, store);
     }
 
     @Test
     void buildCompleteAuthUrl_constructsCorrectUrl() {
-        String url = service.buildCompleteAuthUrl("test-state");
+        String url = service.buildCompleteAuthUrl("handle-1");
 
         assertThat(url)
                 .isEqualTo(
-                        "http://localhost:8080/realms/test-realm/broker/oid4vp/endpoint/complete-auth?state=test-state");
+                        "http://localhost:8080/realms/test-realm/broker/oid4vp/endpoint/complete-auth?request_handle=handle-1");
     }
 
     @Test
     void buildCompleteAuthUrl_encodesSpecialCharacters() {
-        String url = service.buildCompleteAuthUrl("state with spaces&special=chars");
+        String url = service.buildCompleteAuthUrl("handle with spaces&special=chars");
 
-        assertThat(url).contains("state+with+spaces");
+        assertThat(url).contains("handle+with+spaces");
         assertThat(url).doesNotContain("&special=chars");
     }
 
     @Test
     void completeAuth_noSignal_returnsBadRequest() {
-        when(singleUseObjects.remove(DEFERRED_AUTH_PREFIX + "missing-state")).thenReturn(null);
+        when(singleUseObjects.remove(DEFERRED_AUTH_PREFIX + "missing-handle")).thenReturn(null);
 
-        Response response = service.completeAuth("missing-state", null, null);
+        Response response = service.completeAuth("missing-handle", null, null);
 
         assertThat(response.getStatus()).isEqualTo(400);
+        verify(singleUseObjects).remove(CROSS_DEVICE_COMPLETE_PREFIX + "missing-handle");
+    }
+
+    @Test
+    void storeAndSignal_sameDevice_skipsCrossDeviceSseSignal() {
+        AuthenticationSessionModel authSession = mock(AuthenticationSessionModel.class);
+        RootAuthenticationSessionModel rootSession = mock(RootAuthenticationSessionModel.class);
+        Oid4vpIdentityProviderConfig idpConfig = new Oid4vpIdentityProviderConfig();
+        idpConfig.setAlias("oid4vp");
+        BrokeredIdentityContext context = createBrokeredIdentityContext(idpConfig);
+
+        when(authSession.getParentSession()).thenReturn(rootSession);
+        when(authSession.getRealm()).thenReturn(realm);
+        when(rootSession.getId()).thenReturn("root-session");
+        when(authSession.getTabId()).thenReturn("tab-1");
+        when(realm.isRegistrationEmailAsUsername()).thenReturn(false);
+
+        Response response = service.storeAndSignal(authSession, "handle-1", context, false);
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        verify(singleUseObjects).put(eq(DEFERRED_AUTH_PREFIX + "handle-1"), anyLong(), anyMap());
+        verify(singleUseObjects, never()).put(eq(CROSS_DEVICE_COMPLETE_PREFIX + "handle-1"), anyLong(), anyMap());
+    }
+
+    @Test
+    void storeAndSignal_crossDevice_storesSseSignal() {
+        AuthenticationSessionModel authSession = mock(AuthenticationSessionModel.class);
+        RootAuthenticationSessionModel rootSession = mock(RootAuthenticationSessionModel.class);
+        Oid4vpIdentityProviderConfig idpConfig = new Oid4vpIdentityProviderConfig();
+        idpConfig.setAlias("oid4vp");
+        BrokeredIdentityContext context = createBrokeredIdentityContext(idpConfig);
+
+        when(authSession.getParentSession()).thenReturn(rootSession);
+        when(authSession.getRealm()).thenReturn(realm);
+        when(rootSession.getId()).thenReturn("root-session");
+        when(authSession.getTabId()).thenReturn("tab-1");
+        when(realm.isRegistrationEmailAsUsername()).thenReturn(false);
+
+        Response response = service.storeAndSignal(authSession, "handle-2", context, true);
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        String completeAuthUrl = service.buildCompleteAuthUrl("handle-2");
+        verify(singleUseObjects)
+                .put(
+                        eq(CROSS_DEVICE_COMPLETE_PREFIX + "handle-2"),
+                        anyLong(),
+                        eq(Map.of(KEY_COMPLETE_AUTH_URL, completeAuthUrl)));
+    }
+
+    @SuppressWarnings("unchecked")
+    private BrokeredIdentityContext createBrokeredIdentityContext(Oid4vpIdentityProviderConfig idpConfig) {
+        BrokeredIdentityContext context = new BrokeredIdentityContext("broker-user", idpConfig);
+        UserAuthenticationIdentityProvider<Oid4vpIdentityProviderConfig> idp =
+                mock(UserAuthenticationIdentityProvider.class);
+        IdentityProviderDataMarshaller marshaller = new IdentityProviderDataMarshaller() {
+            @Override
+            public String serialize(Object object) {
+                return object != null ? object.toString() : "";
+            }
+
+            @Override
+            public <T> T deserialize(String value, Class<T> clazz) {
+                return null;
+            }
+        };
+        when(idp.getMarshaller()).thenReturn(marshaller);
+        context.setIdp(idp);
+        return context;
     }
 }

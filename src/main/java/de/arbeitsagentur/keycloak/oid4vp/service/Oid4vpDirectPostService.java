@@ -17,7 +17,6 @@ package de.arbeitsagentur.keycloak.oid4vp.service;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
-import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import jakarta.ws.rs.core.MediaType;
@@ -26,7 +25,6 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.jboss.logging.Logger;
-import org.keycloak.OAuth2Constants;
 import org.keycloak.authentication.authenticators.broker.util.SerializedBrokeredIdentityContext;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
@@ -68,19 +66,16 @@ public class Oid4vpDirectPostService {
     private final KeycloakSession session;
     private final RealmModel realm;
     private final Oid4vpConfigProvider config;
-    private final Oid4vpAuthSessionResolver authSessionResolver;
     private final Oid4vpRequestObjectStore requestObjectStore;
 
     public Oid4vpDirectPostService(
             KeycloakSession session,
             RealmModel realm,
             Oid4vpConfigProvider config,
-            Oid4vpAuthSessionResolver authSessionResolver,
             Oid4vpRequestObjectStore requestObjectStore) {
         this.session = session;
         this.realm = realm;
         this.config = config;
-        this.authSessionResolver = authSessionResolver;
         this.requestObjectStore = requestObjectStore;
         this.crossDeviceCompleteTtlSeconds = config.getCrossDeviceCompleteTtlSeconds();
     }
@@ -92,7 +87,7 @@ public class Oid4vpDirectPostService {
      */
     public Response storeAndSignal(
             AuthenticationSessionModel authSession,
-            String state,
+            String requestHandle,
             BrokeredIdentityContext context,
             boolean isCrossDevice) {
 
@@ -117,26 +112,30 @@ public class Oid4vpDirectPostService {
             }
         }
 
-        String completeAuthUrl = buildCompleteAuthUrl(state);
+        String completeAuthUrl = buildCompleteAuthUrl(requestHandle);
         session.singleUseObjects()
                 .put(
-                        DEFERRED_AUTH_PREFIX + state,
+                        DEFERRED_AUTH_PREFIX + requestHandle,
                         crossDeviceCompleteTtlSeconds,
                         Map.of(
                                 KEY_ROOT_SESSION_ID,
                                 rootSessionId != null ? rootSessionId : "",
                                 KEY_TAB_ID,
                                 tabId != null ? tabId : ""));
-        session.singleUseObjects()
-                .put(
-                        CROSS_DEVICE_COMPLETE_PREFIX + state,
-                        crossDeviceCompleteTtlSeconds,
-                        Map.of(KEY_COMPLETE_AUTH_URL, completeAuthUrl));
+        if (isCrossDevice) {
+            session.singleUseObjects()
+                    .put(
+                            CROSS_DEVICE_COMPLETE_PREFIX + requestHandle,
+                            crossDeviceCompleteTtlSeconds,
+                            Map.of(KEY_COMPLETE_AUTH_URL, completeAuthUrl));
+        }
+
+        requestObjectStore.removeFlowHandle(session, requestHandle);
 
         if (isCrossDevice) {
             return Response.ok("{}").type(MediaType.APPLICATION_JSON).build();
         }
-        return jsonRedirectResponse(completeAuthUrl);
+        return Oid4vpEndpointResponseFactory.jsonRedirectResponse(completeAuthUrl);
     }
 
     /**
@@ -145,9 +144,10 @@ public class Oid4vpDirectPostService {
      * has been processed.
      */
     public Response completeAuth(
-            String state, AbstractIdentityProvider.AuthenticationCallback callback, EventBuilder event) {
+            String requestHandle, AbstractIdentityProvider.AuthenticationCallback callback, EventBuilder event) {
 
-        Map<String, String> signal = session.singleUseObjects().remove(DEFERRED_AUTH_PREFIX + state);
+        session.singleUseObjects().remove(CROSS_DEVICE_COMPLETE_PREFIX + requestHandle);
+        Map<String, String> signal = session.singleUseObjects().remove(DEFERRED_AUTH_PREFIX + requestHandle);
         if (signal == null) {
             return ErrorPage.error(
                     session,
@@ -207,32 +207,13 @@ public class Oid4vpDirectPostService {
         authSession.removeAuthNote(DEFERRED_IDENTITY_NOTE);
 
         event.event(EventType.LOGIN);
-        Response response = callback.authenticated(context);
-
-        try {
-            requestObjectStore.removeByState(session, state);
-        } catch (Exception e) {
-            LOG.warnf("Failed to clean up request objects: %s", e.getMessage());
-        }
-
-        return response;
+        return callback.authenticated(context);
     }
 
-    public String buildCompleteAuthUrl(String state) {
+    public String buildCompleteAuthUrl(String requestHandle) {
         return Oid4vpConstants.buildEndpointBaseUrl(
                         session.getContext().getUri().getBaseUri(), realm.getName(), config.getAlias())
                 + "/complete-auth?"
-                + OAuth2Constants.STATE + "=" + URLEncoder.encode(state, StandardCharsets.UTF_8);
-    }
-
-    private Response jsonRedirectResponse(String redirectUri) {
-        try {
-            String json = JsonSerialization.writeValueAsString(Map.of(OAuth2Constants.REDIRECT_URI, redirectUri));
-            return Response.ok(json).type(MediaType.APPLICATION_JSON).build();
-        } catch (Exception e) {
-            return Response.ok("{\"redirect_uri\":\"\"}")
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
-        }
+                + Oid4vpConstants.PARAM_REQUEST_HANDLE + "=" + URLEncoder.encode(requestHandle, StandardCharsets.UTF_8);
     }
 }

@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package de.arbeitsagentur.keycloak.oid4vp;
+package de.arbeitsagentur.keycloak.oid4vp.it;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -30,7 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 
-final class KeycloakAdminClient {
+public final class KeycloakAdminClient {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final String baseUrl;
@@ -53,7 +53,7 @@ final class KeycloakAdminClient {
         this.token = token;
     }
 
-    static KeycloakAdminClient login(ObjectMapper objectMapper, String baseUrl, String username, String password)
+    public static KeycloakAdminClient login(ObjectMapper objectMapper, String baseUrl, String username, String password)
             throws Exception {
         HttpClient client = HttpClient.newHttpClient();
         String token = requestToken(objectMapper, client, baseUrl, username, password);
@@ -84,7 +84,7 @@ final class KeycloakAdminClient {
         return objectMapper.readValue(response.body(), List.class);
     }
 
-    void postJson(String urlOrPath, Object body) throws Exception {
+    public void postJson(String urlOrPath, Object body) throws Exception {
         String json = objectMapper.writeValueAsString(body);
         HttpResponse<String> response = sendAuthenticated(() -> HttpRequest.newBuilder()
                 .uri(URI.create(resolve(urlOrPath)))
@@ -118,7 +118,7 @@ final class KeycloakAdminClient {
                 .isIn(200, 204);
     }
 
-    boolean deleteIfExists(String urlOrPath) throws Exception {
+    public boolean deleteIfExists(String urlOrPath) throws Exception {
         HttpResponse<String> response = sendAuthenticated(() -> HttpRequest.newBuilder()
                 .uri(URI.create(resolve(urlOrPath)))
                 .timeout(Duration.ofSeconds(30))

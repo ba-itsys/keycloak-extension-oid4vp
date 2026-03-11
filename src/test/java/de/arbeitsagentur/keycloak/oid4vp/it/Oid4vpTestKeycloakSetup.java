@@ -13,8 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package de.arbeitsagentur.keycloak.oid4vp;
+package de.arbeitsagentur.keycloak.oid4vp.it;
 
+import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -24,7 +25,41 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-final class Oid4vpTestKeycloakSetup {
+public final class Oid4vpTestKeycloakSetup {
+
+    public record IdpMapperConfig(String name, String mapperType, Map<String, String> config) {}
+
+    public record Oid4vpIdentityProviderSpec(
+            String alias,
+            String x509CertPem,
+            String clientIdScheme,
+            String responseMode,
+            Boolean enforceHaip,
+            String dcqlQuery,
+            String userMappingClaim,
+            String userMappingClaimMdoc,
+            String trustListUrl,
+            List<IdpMapperConfig> mappers) {
+
+        public Oid4vpIdentityProviderSpec {
+            alias = alias != null ? alias : "oid4vp";
+            mappers = mappers != null ? List.copyOf(mappers) : List.of();
+        }
+
+        static Oid4vpIdentityProviderSpec defaultConfig(String x509CertPem, String trustListUrl) {
+            return new Oid4vpIdentityProviderSpec(
+                    "oid4vp",
+                    x509CertPem,
+                    null,
+                    null,
+                    null,
+                    DEFAULT_DCQL_QUERY,
+                    "family_name",
+                    "eu.europa.ec.eudi.pid.1/family_name",
+                    trustListUrl,
+                    List.of());
+        }
+    }
 
     static final String DEFAULT_DCQL_QUERY = """
             {
@@ -83,8 +118,14 @@ final class Oid4vpTestKeycloakSetup {
 
     static void configureOid4vpIdentityProvider(
             KeycloakAdminClient admin, String realm, String trustListUrl, String x509CertPem) throws Exception {
+        replaceOid4vpIdentityProvider(
+                admin, realm, Oid4vpIdentityProviderSpec.defaultConfig(x509CertPem, trustListUrl));
+    }
+
+    public static void replaceOid4vpIdentityProvider(
+            KeycloakAdminClient admin, String realm, Oid4vpIdentityProviderSpec spec) throws Exception {
         Map<String, Object> idpConfig = new LinkedHashMap<>();
-        idpConfig.put("alias", "oid4vp");
+        idpConfig.put("alias", spec.alias());
         idpConfig.put("displayName", "Sign in with Wallet");
         idpConfig.put("providerId", Oid4vpConstants.PROVIDER_ID);
         idpConfig.put("enabled", true);
@@ -98,16 +139,29 @@ final class Oid4vpTestKeycloakSetup {
         Map<String, String> config = new LinkedHashMap<>();
         config.put("clientId", "not-used");
         config.put("clientSecret", "not-used");
-        config.put(Oid4vpIdentityProviderConfig.DCQL_QUERY, DEFAULT_DCQL_QUERY);
-        config.put(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM, "family_name");
-        config.put(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM_MDOC, "eu.europa.ec.eudi.pid.1/family_name");
-        config.put(Oid4vpIdentityProviderConfig.TRUST_LIST_URL, trustListUrl);
+        config.put(Oid4vpIdentityProviderConfig.DCQL_QUERY, spec.dcqlQuery());
+        config.put(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM, spec.userMappingClaim());
+        config.put(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM_MDOC, spec.userMappingClaimMdoc());
+        config.put(Oid4vpIdentityProviderConfig.TRUST_LIST_URL, spec.trustListUrl());
+        config.put(Oid4vpIdentityProviderConfig.TRUSTED_AUTHORITIES_MODE, "none");
         config.put(Oid4vpIdentityProviderConfig.STATUS_LIST_MAX_CACHE_TTL_SECONDS, "0");
-        config.put(Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM, x509CertPem);
+        config.put(Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM, spec.x509CertPem());
+        if (spec.clientIdScheme() != null) {
+            config.put(Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME, spec.clientIdScheme());
+        }
+        if (spec.responseMode() != null) {
+            config.put(Oid4vpIdentityProviderConfig.RESPONSE_MODE, spec.responseMode());
+        }
+        if (spec.enforceHaip() != null) {
+            config.put(Oid4vpIdentityProviderConfig.ENFORCE_HAIP, String.valueOf(spec.enforceHaip()));
+        }
         idpConfig.put("config", config);
 
-        admin.deleteIfExists("/admin/realms/" + realm + "/identity-provider/instances/oid4vp");
+        admin.deleteIfExists("/admin/realms/" + realm + "/identity-provider/instances/" + spec.alias());
         admin.postJson("/admin/realms/" + realm + "/identity-provider/instances", idpConfig);
+        if (!spec.mappers().isEmpty()) {
+            replaceIdentityProviderMappers(admin, realm, spec.alias(), spec.mappers());
+        }
     }
 
     static void configureDcqlQuery(KeycloakAdminClient admin, String realm, String dcqlQuery) throws Exception {
@@ -118,7 +172,8 @@ final class Oid4vpTestKeycloakSetup {
         admin.putJson("/admin/realms/" + realm + "/identity-provider/instances/oid4vp", idp);
     }
 
-    static void configureSameDeviceFlow(KeycloakAdminClient admin, String realm, boolean enabled) throws Exception {
+    public static void configureSameDeviceFlow(KeycloakAdminClient admin, String realm, boolean enabled)
+            throws Exception {
         Map<String, Object> idp = admin.getJson("/admin/realms/" + realm + "/identity-provider/instances/oid4vp");
         @SuppressWarnings("unchecked")
         Map<String, String> config = (Map<String, String>) idp.get("config");
@@ -126,7 +181,8 @@ final class Oid4vpTestKeycloakSetup {
         admin.putJson("/admin/realms/" + realm + "/identity-provider/instances/oid4vp", idp);
     }
 
-    static void configureCrossDeviceFlow(KeycloakAdminClient admin, String realm, boolean enabled) throws Exception {
+    public static void configureCrossDeviceFlow(KeycloakAdminClient admin, String realm, boolean enabled)
+            throws Exception {
         Map<String, Object> idp = admin.getJson("/admin/realms/" + realm + "/identity-provider/instances/oid4vp");
         @SuppressWarnings("unchecked")
         Map<String, String> config = (Map<String, String>) idp.get("config");
@@ -135,28 +191,21 @@ final class Oid4vpTestKeycloakSetup {
     }
 
     static void deleteAllOid4vpUsers(KeycloakAdminClient admin, String realm) throws Exception {
-        List<Map<String, Object>> users = admin.getJsonList("/admin/realms/" + realm + "/users?max=100");
-        for (Map<String, Object> user : users) {
-            String userId = String.valueOf(user.get("id"));
-            String username = String.valueOf(user.get("username"));
-            if ("admin".equals(username) || "test".equals(username)) continue;
-            try {
-                List<Map<String, Object>> identities =
-                        admin.getJsonList("/admin/realms/" + realm + "/users/" + userId + "/federated-identity");
-                boolean hasOid4vp = identities.stream().anyMatch(id -> "oid4vp".equals(id.get("identityProvider")));
-                if (hasOid4vp) {
-                    admin.delete("/admin/realms/" + realm + "/users/" + userId);
-                }
-            } catch (Exception ignored) {
-            }
+        for (Map<String, Object> user : listOid4vpUsers(admin, realm)) {
+            admin.delete("/admin/realms/" + realm + "/users/" + user.get("id"));
         }
+    }
+
+    static int countOid4vpUsers(KeycloakAdminClient admin, String realm) throws Exception {
+        return listOid4vpUsers(admin, realm).size();
     }
 
     static void setIdpConfig(KeycloakAdminClient admin, String realm, String key, String value) throws Exception {
         setIdpConfigs(admin, realm, Map.of(key, value));
     }
 
-    static void setIdpConfigs(KeycloakAdminClient admin, String realm, Map<String, String> entries) throws Exception {
+    public static void setIdpConfigs(KeycloakAdminClient admin, String realm, Map<String, String> entries)
+            throws Exception {
         Map<String, Object> idp = admin.getJson("/admin/realms/" + realm + "/identity-provider/instances/oid4vp");
         @SuppressWarnings("unchecked")
         Map<String, String> config = (Map<String, String>) idp.get("config");
@@ -164,8 +213,60 @@ final class Oid4vpTestKeycloakSetup {
         admin.putJson("/admin/realms/" + realm + "/identity-provider/instances/oid4vp", idp);
     }
 
+    public static void replaceIdentityProviderMappers(
+            KeycloakAdminClient admin, String realm, List<IdpMapperConfig> mappers) throws Exception {
+        replaceIdentityProviderMappers(admin, realm, "oid4vp", mappers);
+    }
+
+    public static void replaceIdentityProviderMappers(
+            KeycloakAdminClient admin, String realm, String alias, List<IdpMapperConfig> mappers) throws Exception {
+        String basePath = "/admin/realms/" + realm + "/identity-provider/instances/" + alias + "/mappers";
+        for (Map<String, Object> mapper : admin.getJsonList(basePath)) {
+            Object id = mapper.get("id");
+            if (id != null) {
+                admin.delete(basePath + "/" + id);
+            }
+        }
+
+        for (IdpMapperConfig mapper : mappers) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("name", mapper.name());
+            body.put("identityProviderAlias", alias);
+            body.put("identityProviderMapper", mapper.mapperType());
+            body.put("config", mapper.config());
+            admin.postJson(basePath, body);
+        }
+    }
+
+    public static void deleteIdentityProviderIfExists(KeycloakAdminClient admin, String realm, String alias)
+            throws Exception {
+        admin.deleteIfExists("/admin/realms/" + realm + "/identity-provider/instances/" + alias);
+    }
+
     private static String urlEncode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private static List<Map<String, Object>> listOid4vpUsers(KeycloakAdminClient admin, String realm) throws Exception {
+        List<Map<String, Object>> users = admin.getJsonList("/admin/realms/" + realm + "/users?max=100");
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> user : users) {
+            String userId = String.valueOf(user.get("id"));
+            String username = String.valueOf(user.get("username"));
+            if ("admin".equals(username) || "test".equals(username)) {
+                continue;
+            }
+            try {
+                List<Map<String, Object>> identities =
+                        admin.getJsonList("/admin/realms/" + realm + "/users/" + userId + "/federated-identity");
+                boolean hasOid4vp = identities.stream().anyMatch(id -> "oid4vp".equals(id.get("identityProvider")));
+                if (hasOid4vp) {
+                    result.add(user);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return result;
     }
 
     private Oid4vpTestKeycloakSetup() {}

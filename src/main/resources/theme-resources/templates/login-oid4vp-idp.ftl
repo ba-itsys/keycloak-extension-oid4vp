@@ -7,6 +7,8 @@
               action="${formActionUrl!''}"
               method="post">
             <input type="hidden" id="state" name="state" value="${state!''}"/>
+            <input type="hidden" id="requestHandle" value="${requestHandle!''}"/>
+            <input type="hidden" id="crossDeviceRequestHandle" value="${crossDeviceRequestHandle!''}"/>
             <input type="hidden" id="vp_token" name="vp_token"/>
             <input type="hidden" id="response" name="response"/>
             <input type="hidden" id="error" name="error"/>
@@ -65,43 +67,13 @@
             </div>
         </#if>
 
-        <#-- SSE: auto-redirect when wallet completes authentication -->
-        <#if (crossDeviceStatusUrl!'')?has_content && ((crossDeviceEnabled!false) || (sameDeviceEnabled!false))>
-            <script nonce="${cspNonce!}">
-                (function() {
-                    var state = document.getElementById('state').value;
-                    if (!state) return;
-
-                    var statusUrl = '${crossDeviceStatusUrl!''}' + '?state=' + encodeURIComponent(state);
-
-                    function connect() {
-                        var es = new EventSource(statusUrl);
-
-                        es.addEventListener('complete', function(e) {
-                            es.close();
-                            try {
-                                var data = JSON.parse(e.data);
-                                if (data.redirect_uri) {
-                                    window.location.href = data.redirect_uri;
-                                }
-                            } catch (err) {
-                                console.error('OID4VP: Failed to parse completion event', err);
-                            }
-                        });
-
-                        es.addEventListener('timeout', function() {
-                            es.close();
-                            connect();
-                        });
-
-                        es.onerror = function() {
-                            console.log('OID4VP: SSE connection error, reconnecting...');
-                        };
-                    }
-
-                    connect();
-                })();
-            </script>
+        <#if (crossDeviceStatusUrl!'')?has_content && (crossDeviceEnabled!false)>
+            <div id="oid4vp-cross-device-sse-config"
+                 data-status-url="${crossDeviceStatusUrl!''}"
+                 data-request-handle="${crossDeviceRequestHandle!''}"
+                 data-poll-interval-ms="${crossDevicePollIntervalMs!'2000'}"
+                 hidden></div>
+            <script nonce="${cspNonce!}" src="${url.resourcesPath}/js/oid4vp-cross-device-sse.js"></script>
         </#if>
     </#if>
 </@layout.registrationLayout>

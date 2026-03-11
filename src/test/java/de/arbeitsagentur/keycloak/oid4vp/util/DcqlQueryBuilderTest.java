@@ -20,6 +20,7 @@ import static org.assertj.core.api.Assertions.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.arbeitsagentur.keycloak.oid4vp.domain.ClaimSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -165,6 +166,24 @@ class DcqlQueryBuilderTest {
     }
 
     @Test
+    void build_withAkiTrustedAuthorities_includesOnlyAki() throws Exception {
+        builder.addCredentialType("dc+sd-jwt", "IdentityCredential", List.of(new ClaimSpec("given_name")));
+        builder.setTrustedAuthorities("https://trust-list.example.com/tl.jwt", List.of("aki-1", "aki-2"));
+
+        String json = builder.build();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> result = objectMapper.readValue(json, Map.class);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> credentials = (List<Map<String, Object>>) result.get("credentials");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> authorities =
+                (List<Map<String, Object>>) credentials.get(0).get("trusted_authorities");
+
+        assertThat(authorities).containsExactly(Map.of("type", "aki", "values", List.of("aki-1", "aki-2")));
+    }
+
+    @Test
     void build_withoutTrustListUrl_noTrustedAuthorities() throws Exception {
         builder.addCredentialType("dc+sd-jwt", "IdentityCredential", List.of(new ClaimSpec("given_name")));
 
@@ -201,7 +220,8 @@ class DcqlQueryBuilderTest {
                 "dc+sd-jwt|IdentityCredential",
                 new CredentialTypeSpec("dc+sd-jwt", "IdentityCredential", List.of(new ClaimSpec("sub"))));
 
-        DcqlQueryBuilder result = DcqlQueryBuilder.fromMapperSpecs(objectMapper, specs, false, "Test purpose", null);
+        DcqlQueryBuilder result = DcqlQueryBuilder.fromMapperSpecs(
+                objectMapper, specs, false, "Test purpose", Oid4vpTrustedAuthoritiesMode.NONE, null, List.of());
         String json = result.build();
 
         @SuppressWarnings("unchecked")
