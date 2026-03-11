@@ -15,11 +15,8 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
-import com.nimbusds.jose.JWSVerifier;
-import com.nimbusds.jose.crypto.factories.DefaultJWSVerifierFactory;
-import com.nimbusds.jwt.JWTClaimsSet;
-import com.nimbusds.jwt.SignedJWT;
 import java.io.ByteArrayInputStream;
+import java.security.MessageDigest;
 import java.security.PublicKey;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
@@ -27,26 +24,30 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Date;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.util.SimpleHttp;
+import org.keycloak.crypto.JavaAlgorithm;
+import org.keycloak.jose.jws.JWSInput;
 import org.keycloak.models.KeycloakSession;
 
 /**
  * Fetches and caches an ETSI TS 119 602 trust list JWT from a configured URL.
  * Extracts X.509 issuer certificates and their public keys for credential verification.
  *
- * <p>When a signing certificate is configured, the trust list JWT signature is verified
- * before extracting certificates. Without a signing certificate, the JWT is accepted
- * without signature verification.
+ * <p>When a signing certificate is configured, the trust list JWT signature is verified before
+ * extracting certificates. Without a signing certificate, the JWT is accepted without signature
+ * verification and a warning should be surfaced by configuration handling.
  */
 public class TrustListProvider {
 
     private static final Logger LOG = Logger.getLogger(TrustListProvider.class);
-    private static final ConcurrentHashMap<String, CachedTrustList> CACHE = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<CacheKey, CachedTrustList> CACHE = new ConcurrentHashMap<>();
+    private static final Set<String> WARNED_UNSIGNED_TRUST_LISTS = ConcurrentHashMap.newKeySet();
     static final Duration DEFAULT_MAX_STALE_AGE = Duration.ofDays(1);
 
     private final KeycloakSession session;
@@ -58,12 +59,12 @@ public class TrustListProvider {
 
     /** Creates a provider that fetches the trust list from the given URL. */
     public TrustListProvider(KeycloakSession session, String trustListUrl) {
-        this(session, trustListUrl, null, null, (List<X509Certificate>) null);
+        this(session, trustListUrl, null, null, null);
     }
 
     /** Creates a provider that fetches the trust list from the given URL with a cache TTL cap. */
     public TrustListProvider(KeycloakSession session, String trustListUrl, Duration maxCacheTtl) {
-        this(session, trustListUrl, maxCacheTtl, null, (List<X509Certificate>) null);
+        this(session, trustListUrl, maxCacheTtl, null, null);
     }
 
     /**
@@ -136,7 +137,8 @@ public class TrustListProvider {
             return List.of();
         }
 
-        CachedTrustList cached = CACHE.get(trustListUrl);
+        CacheKey cacheKey = cacheKey();
+        CachedTrustList cached = CACHE.get(cacheKey);
         if (cached != null && cached.isValid()) {
             LOG.debugf("Using cached trust list for %s (expires %s)", trustListUrl, cached.expiresAt);
             return cached.certificates;
@@ -148,7 +150,7 @@ public class TrustListProvider {
             TrustListParseResult result = parseTrustListJwt(jwt);
 
             Instant effectiveExpiry = capExpiry(result.expiresAt);
-            CACHE.put(trustListUrl, new CachedTrustList(result.certificates, effectiveExpiry, Instant.now()));
+            CACHE.put(cacheKey, new CachedTrustList(result.certificates, effectiveExpiry, Instant.now()));
 
             LOG.infof(
                     "Trust list loaded from %s: %d keys (expires %s)",
@@ -169,50 +171,36 @@ public class TrustListProvider {
         }
     }
 
+    /**
+     * Returns trusted authority key identifiers for DCQL {@code trusted_authorities} entries.
+     *
+     * <p>The preferred identifier is the authority certificate's Subject Key Identifier because
+     * credential-chain AKI values normally point to that identifier. If SKI is absent, fall back
+     * to an explicit AKI extension. No synthetic identifier is derived because OID4VP/HAIP
+     * `aki` values are meant to represent certificate extension values.
+     */
+    public List<String> getTrustedAuthorityKeyIdentifiers() {
+        LinkedHashSet<String> authorityKeyIdentifiers = new LinkedHashSet<>();
+        for (X509Certificate certificate : getTrustedCertificates()) {
+            String authorityKeyIdentifier = extractAuthorityKeyIdentifier(certificate);
+            if (authorityKeyIdentifier != null) {
+                authorityKeyIdentifiers.add(authorityKeyIdentifier);
+            }
+        }
+        return List.copyOf(authorityKeyIdentifiers);
+    }
+
     void verifySignature(String jwt) throws Exception {
         if (signingCertificates == null || signingCertificates.isEmpty()) {
-            LOG.debugf("Trust list JWT signature not verified: no signing certificate configured");
+            if (WARNED_UNSIGNED_TRUST_LISTS.add(trustListUrl)) {
+                LOG.warnf(
+                        "Trust list JWT signature not verified for %s: no signing certificate configured",
+                        trustListUrl);
+            }
             return;
         }
 
-        SignedJWT signedJWT = SignedJWT.parse(jwt);
-
-        // Try x5c chain validation first
-        List<String> x5c = signedJWT.getHeader().getX509CertChain() != null
-                ? signedJWT.getHeader().getX509CertChain().stream()
-                        .map(c -> c.toString())
-                        .toList()
-                : null;
-        if (x5c != null && !x5c.isEmpty()) {
-            try {
-                PublicKey leafKey = X5cChainValidator.validateChain(x5c, signingCertificates);
-                DefaultJWSVerifierFactory factory = new DefaultJWSVerifierFactory();
-                JWSVerifier verifier = factory.createJWSVerifier(signedJWT.getHeader(), leafKey);
-                if (signedJWT.verify(verifier)) {
-                    LOG.debugf("Trust list JWT signature verified via x5c chain");
-                    return;
-                }
-            } catch (Exception e) {
-                LOG.debugf("Trust list JWT x5c chain validation failed: %s", e.getMessage());
-            }
-        }
-
-        // Fallback: try each configured certificate's public key directly
-        DefaultJWSVerifierFactory factory = new DefaultJWSVerifierFactory();
-        for (X509Certificate cert : signingCertificates) {
-            try {
-                JWSVerifier verifier = factory.createJWSVerifier(signedJWT.getHeader(), cert.getPublicKey());
-                if (signedJWT.verify(verifier)) {
-                    LOG.debugf("Trust list JWT signature verified against configured signing certificate");
-                    return;
-                }
-            } catch (Exception e) {
-                // Key type doesn't match algorithm — try next
-            }
-        }
-
-        throw new IllegalStateException(
-                "Trust list JWT signature verification failed: signature does not match any configured signing certificate");
+        X5cChainValidator.verifyJwtSignature(jwt, signingCertificates);
     }
 
     private Instant capExpiry(Instant expiry) {
@@ -232,17 +220,142 @@ public class TrustListProvider {
         throw new IllegalStateException("No KeycloakSession available for HTTP requests");
     }
 
+    CacheKey cacheKey() {
+        return new CacheKey(trustListUrl, fingerprintCertificates(signingCertificates), maxCacheTtl, maxStaleAge);
+    }
+
+    private static List<String> fingerprintCertificates(List<X509Certificate> certificates) {
+        if (certificates == null || certificates.isEmpty()) {
+            return List.of();
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance(JavaAlgorithm.SHA256);
+            return certificates.stream()
+                    .map(cert -> fingerprintCertificate(cert, digest))
+                    .sorted()
+                    .toList();
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to fingerprint trust list signing certificates", e);
+        }
+    }
+
+    private static String fingerprintCertificate(X509Certificate certificate, MessageDigest digest) {
+        try {
+            byte[] encoded = digest.digest(certificate.getEncoded());
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(encoded);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to fingerprint trust list signing certificate", e);
+        }
+    }
+
+    static String extractAuthorityKeyIdentifier(X509Certificate certificate) {
+        try {
+            byte[] subjectKeyIdentifier = extractSubjectKeyIdentifier(certificate);
+            if (subjectKeyIdentifier != null && subjectKeyIdentifier.length > 0) {
+                return Base64.getUrlEncoder().withoutPadding().encodeToString(subjectKeyIdentifier);
+            }
+
+            byte[] authorityKeyIdentifier = extractAuthorityKeyIdentifierBytes(certificate);
+            if (authorityKeyIdentifier != null && authorityKeyIdentifier.length > 0) {
+                return Base64.getUrlEncoder().withoutPadding().encodeToString(authorityKeyIdentifier);
+            }
+
+            return null;
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to extract authority key identifier from certificate", e);
+        }
+    }
+
+    private static byte[] extractSubjectKeyIdentifier(X509Certificate certificate) throws Exception {
+        byte[] extension = certificate.getExtensionValue("2.5.29.14");
+        if (extension == null) {
+            return null;
+        }
+        return unwrapDerOctetString(unwrapDerOctetString(extension));
+    }
+
+    private static byte[] extractAuthorityKeyIdentifierBytes(X509Certificate certificate) throws Exception {
+        byte[] extension = certificate.getExtensionValue("2.5.29.35");
+        if (extension == null) {
+            return null;
+        }
+        byte[] authorityKeyIdentifier = unwrapDerOctetString(extension);
+        DerValue sequence = readDerValue(authorityKeyIdentifier, 0);
+        if (sequence.tag() != 0x30) {
+            throw new IllegalStateException("AuthorityKeyIdentifier extension is not a DER sequence");
+        }
+
+        int offset = 0;
+        while (offset < sequence.value().length) {
+            DerValue value = readDerValue(sequence.value(), offset);
+            if (value.tag() == 0x80) {
+                return value.value();
+            }
+            offset += value.totalLength();
+        }
+        return null;
+    }
+
+    private static byte[] unwrapDerOctetString(byte[] der) {
+        DerValue octetString = readDerValue(der, 0);
+        if (octetString.tag() != 0x04) {
+            throw new IllegalStateException("Expected DER OCTET STRING");
+        }
+        return octetString.value();
+    }
+
+    private static DerValue readDerValue(byte[] der, int offset) {
+        if (offset >= der.length) {
+            throw new IllegalStateException("Invalid DER input");
+        }
+
+        int tag = der[offset] & 0xFF;
+        if (offset + 1 >= der.length) {
+            throw new IllegalStateException("Invalid DER length");
+        }
+
+        int lengthByte = der[offset + 1] & 0xFF;
+        int length;
+        int lengthBytes = 1;
+        if ((lengthByte & 0x80) == 0) {
+            length = lengthByte;
+        } else {
+            int lengthOctets = lengthByte & 0x7F;
+            if (lengthOctets == 0 || lengthOctets > 4 || offset + 2 + lengthOctets > der.length) {
+                throw new IllegalStateException("Unsupported DER length encoding");
+            }
+            length = 0;
+            for (int i = 0; i < lengthOctets; i++) {
+                length = (length << 8) | (der[offset + 2 + i] & 0xFF);
+            }
+            lengthBytes += lengthOctets;
+        }
+
+        int valueOffset = offset + 1 + lengthBytes;
+        int end = valueOffset + length;
+        if (end > der.length) {
+            throw new IllegalStateException("Invalid DER value length");
+        }
+
+        byte[] value = new byte[length];
+        System.arraycopy(der, valueOffset, value, 0, length);
+        return new DerValue(tag, value, 1 + lengthBytes + length);
+    }
+
+    private record DerValue(int tag, byte[] value, int totalLength) {}
+
     @SuppressWarnings("unchecked")
     static TrustListParseResult parseTrustListJwt(String jwt) throws Exception {
-        SignedJWT signedJWT = SignedJWT.parse(jwt);
-        JWTClaimsSet claimsSet = signedJWT.getJWTClaimsSet();
-
-        Date exp = claimsSet.getExpirationTime();
-        Instant expiresAt = exp != null ? exp.toInstant() : Instant.now();
+        JWSInput parsedJwt = X5cChainValidator.parseJwt(jwt);
+        Map<String, Object> claims = X5cChainValidator.parseClaims(parsedJwt);
+        Instant expiresAt = instantClaim(claims.get("exp"));
+        if (expiresAt == null) {
+            expiresAt = Instant.now();
+        }
 
         List<X509Certificate> certificates = new ArrayList<>();
 
-        List<Map<String, Object>> entitiesList = (List<Map<String, Object>>) claimsSet.getClaim("TrustedEntitiesList");
+        List<Map<String, Object>> entitiesList = (List<Map<String, Object>>) claims.get("TrustedEntitiesList");
         if (entitiesList != null) {
             for (Map<String, Object> entity : entitiesList) {
                 List<Map<String, Object>> services = (List<Map<String, Object>>) entity.get("TrustedEntityServices");
@@ -265,10 +378,9 @@ public class TrustListProvider {
                         if (val == null) continue;
 
                         try {
-                            byte[] certDer = Base64.getDecoder().decode(val.toString());
-                            CertificateFactory cf = CertificateFactory.getInstance("X.509");
-                            X509Certificate cert =
-                                    (X509Certificate) cf.generateCertificate(new ByteArrayInputStream(certDer));
+                            byte[] certDer = Base64.getMimeDecoder().decode(val.toString());
+                            X509Certificate cert = (X509Certificate) CertificateFactory.getInstance("X.509")
+                                    .generateCertificate(new ByteArrayInputStream(certDer));
                             certificates.add(cert);
                             LOG.debugf(
                                     "Loaded trusted certificate: %s",
@@ -284,17 +396,34 @@ public class TrustListProvider {
         return new TrustListParseResult(certificates, expiresAt);
     }
 
+    private static Instant instantClaim(Object value) {
+        if (value instanceof Number number) {
+            return Instant.ofEpochSecond(number.longValue());
+        }
+        if (value != null) {
+            return Instant.ofEpochSecond(Long.parseLong(value.toString()));
+        }
+        return null;
+    }
+
     /** Clears the static cache. Intended for testing only. */
     static void clearCache() {
         CACHE.clear();
     }
 
     /** Seeds the cache with an already-expired entry. Intended for testing stale cache fallback. */
-    static void seedExpiredCache(String url, List<X509Certificate> certificates, Instant expiredAt, Instant fetchedAt) {
-        CACHE.put(url, new CachedTrustList(certificates, expiredAt, fetchedAt));
+    static void seedExpiredCache(
+            TrustListProvider provider, List<X509Certificate> certificates, Instant expiredAt, Instant fetchedAt) {
+        CACHE.put(provider.cacheKey(), new CachedTrustList(certificates, expiredAt, fetchedAt));
     }
 
     record TrustListParseResult(List<X509Certificate> certificates, Instant expiresAt) {}
+
+    record CacheKey(
+            String trustListUrl,
+            List<String> signingCertificateFingerprints,
+            Duration maxCacheTtl,
+            Duration maxStaleAge) {}
 
     private record CachedTrustList(List<X509Certificate> certificates, Instant expiresAt, Instant fetchedAt) {
         boolean isValid() {

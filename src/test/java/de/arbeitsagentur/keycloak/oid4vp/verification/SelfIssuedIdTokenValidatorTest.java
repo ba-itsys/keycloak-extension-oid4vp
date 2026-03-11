@@ -27,14 +27,21 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import java.time.Instant;
 import java.util.Date;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.keycloak.common.crypto.CryptoIntegration;
 
 class SelfIssuedIdTokenValidatorTest {
 
     private SelfIssuedIdTokenValidator validator;
     private ECKey walletKey;
     private String thumbprint;
+
+    @BeforeAll
+    static void initCrypto() {
+        CryptoIntegration.init(SelfIssuedIdTokenValidatorTest.class.getClassLoader());
+    }
 
     @BeforeEach
     void setUp() throws Exception {

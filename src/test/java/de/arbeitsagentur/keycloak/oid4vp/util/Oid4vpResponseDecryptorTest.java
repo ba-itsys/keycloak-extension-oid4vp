@@ -15,7 +15,8 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.nimbusds.jose.EncryptionMethod;
 import com.nimbusds.jose.JWEAlgorithm;
@@ -28,20 +29,30 @@ import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jose.util.Base64URL;
 import de.arbeitsagentur.keycloak.oid4vp.domain.DecryptedResponse;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.keycloak.common.crypto.CryptoIntegration;
+import org.keycloak.common.util.Base64Url;
 import org.keycloak.util.JsonSerialization;
 
 class Oid4vpResponseDecryptorTest {
 
     private Oid4vpResponseDecryptor decryptor;
-    private ECKey encryptionKey;
+    private Oid4vpJwk encryptionKey;
+
+    @BeforeAll
+    static void initCrypto() {
+        CryptoIntegration.init(Oid4vpResponseDecryptorTest.class.getClassLoader());
+    }
 
     @BeforeEach
-    void setUp() throws Exception {
+    void setUp() {
         decryptor = new Oid4vpResponseDecryptor();
-        encryptionKey = new ECKeyGenerator(Curve.P_256).keyID("test-kid").generate();
+        encryptionKey = Oid4vpJwk.generate("P-256", "ECDH-ES", "enc");
     }
 
     @Test
@@ -66,6 +77,49 @@ class Oid4vpResponseDecryptorTest {
         assertThat(result.error()).isEqualTo("invalid_scope");
         assertThat(result.errorDescription()).isEqualTo("Bad scope");
         assertThat(result.vpToken()).isNull();
+    }
+
+    @Test
+    void decrypt_nimbusProducedJwe_returnsVpToken() throws Exception {
+        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("test-kid").generate();
+        encryptionKey = Oid4vpJwk.parse(key.toJSONString());
+        String vpToken = "eyJhbGciOiJFUzI1NiJ9.test.sig~";
+        JWEObject jwe = new JWEObject(
+                new JWEHeader.Builder(JWEAlgorithm.ECDH_ES, EncryptionMethod.A256GCM)
+                        .keyID("test-kid")
+                        .build(),
+                new Payload(JsonSerialization.writeValueAsString(Map.of("vp_token", vpToken))));
+        jwe.encrypt(new ECDHEncrypter(key.toPublicJWK()));
+
+        DecryptedResponse result = decryptor.decrypt(jwe.serialize(), encryptionKey);
+
+        assertThat(result.vpToken()).isEqualTo(vpToken);
+    }
+
+    @Test
+    void decrypt_nimbusProducedJweWithBinaryApu_returnsVpToken() throws Exception {
+        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("test-kid").generate();
+        encryptionKey = Oid4vpJwk.parse(key.toJSONString());
+        byte[] apu = new byte[] {(byte) 0x80, 0x00, 0x01, 0x02, (byte) 0xff};
+        byte[] apv = new byte[] {0x10, 0x11, 0x12, 0x13};
+        String vpToken = "eyJhbGciOiJFUzI1NiJ9.test.sig~";
+        JWEObject jwe = new JWEObject(
+                new JWEHeader.Builder(JWEAlgorithm.ECDH_ES, EncryptionMethod.A256GCM)
+                        .keyID("test-kid")
+                        .agreementPartyUInfo(new Base64URL(Base64URL.encode(apu).toString()))
+                        .agreementPartyVInfo(new Base64URL(Base64URL.encode(apv).toString()))
+                        .build(),
+                new Payload(JsonSerialization.writeValueAsString(Map.of("vp_token", vpToken))));
+        jwe.encrypt(new ECDHEncrypter(key.toPublicJWK()));
+
+        DecryptedResponse result = decryptor.decrypt(jwe.serialize(), encryptionKey);
+
+        org.keycloak.jose.jwe.JWEHeader header = Oid4vpResponseDecryptor.extractHeader(jwe.serialize());
+        assertThat(result.vpToken()).isEqualTo(vpToken);
+        assertThat(new String(Base64Url.decode(header.getAgreementPartyUInfo()), StandardCharsets.ISO_8859_1))
+                .isEqualTo(new String(apu, StandardCharsets.ISO_8859_1));
+        assertThat(new String(Base64Url.decode(header.getAgreementPartyVInfo()), StandardCharsets.ISO_8859_1))
+                .isEqualTo(new String(apv, StandardCharsets.ISO_8859_1));
     }
 
     @Test
@@ -108,12 +162,19 @@ class Oid4vpResponseDecryptorTest {
 
     @Test
     void extractKid_noKid_returnsNull() throws Exception {
-        ECKey noKidKey = new ECKeyGenerator(Curve.P_256).generate();
-        JWEHeader header = new JWEHeader.Builder(JWEAlgorithm.ECDH_ES, EncryptionMethod.A256GCM).build();
-        JWEObject jwe = new JWEObject(header, new Payload("{\"vp_token\":\"test\"}"));
-        jwe.encrypt(new ECDHEncrypter(noKidKey));
+        Oid4vpJwk noKidKey = new Oid4vpJwk(
+                encryptionKey.curve(),
+                encryptionKey.x(),
+                encryptionKey.y(),
+                encryptionKey.privateKey(),
+                null,
+                encryptionKey.algorithm(),
+                encryptionKey.use());
+        String payloadJson = JsonSerialization.writeValueAsString(Map.of("vp_token", "test"));
+        String jwe =
+                Oid4vpRequestObjectEncryptor.encrypt(payloadJson.getBytes(), noKidKey.toPublicJwk(), "A256GCM", null);
 
-        String kid = decryptor.extractKid(jwe.serialize());
+        String kid = decryptor.extractKid(jwe);
 
         assertThat(kid).isNull();
     }
@@ -127,13 +188,31 @@ class Oid4vpResponseDecryptorTest {
 
     private String encryptPayload(Map<String, Object> payload, String apuNonce) throws Exception {
         String payloadJson = JsonSerialization.writeValueAsString(payload);
-        JWEHeader.Builder headerBuilder =
-                new JWEHeader.Builder(JWEAlgorithm.ECDH_ES, EncryptionMethod.A256GCM).keyID("test-kid");
-        if (apuNonce != null) {
-            headerBuilder.agreementPartyUInfo(Base64URL.encode(apuNonce));
+        Oid4vpJwk recipientKey = new Oid4vpJwk(
+                encryptionKey.curve(),
+                encryptionKey.x(),
+                encryptionKey.y(),
+                null,
+                "test-kid",
+                encryptionKey.algorithm(),
+                encryptionKey.use());
+        return encryptPayload(payloadJson, recipientKey, apuNonce);
+    }
+
+    private static String encryptPayload(String payloadJson, Oid4vpJwk recipientKey, String apuNonce) {
+        try {
+            JWEHeader.Builder header =
+                    new JWEHeader.Builder(JWEAlgorithm.ECDH_ES, EncryptionMethod.A256GCM).keyID(recipientKey.keyId());
+            if (apuNonce != null) {
+                header.agreementPartyUInfo(
+                        new Base64URL(Base64URL.encode(apuNonce).toString()));
+            }
+            JWEObject jwe = new JWEObject(header.build(), new Payload(payloadJson));
+            ECKey publicKey = ECKey.parse(recipientKey.toPublicJwk().toJson());
+            jwe.encrypt(new ECDHEncrypter(publicKey));
+            return jwe.serialize();
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to encrypt test payload", e);
         }
-        JWEObject jwe = new JWEObject(headerBuilder.build(), new Payload(payloadJson));
-        jwe.encrypt(new ECDHEncrypter(encryptionKey.toPublicJWK()));
-        return jwe.serialize();
     }
 }

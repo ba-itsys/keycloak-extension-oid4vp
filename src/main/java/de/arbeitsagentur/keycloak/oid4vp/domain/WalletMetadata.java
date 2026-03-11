@@ -15,15 +15,8 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
-import com.nimbusds.jose.EncryptionMethod;
-import com.nimbusds.jose.JWEAlgorithm;
-import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jose.jwk.JWK;
-import com.nimbusds.jose.jwk.JWKSet;
-import java.text.ParseException;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.keycloak.util.JsonSerialization;
 
 /**
@@ -41,11 +34,7 @@ import org.keycloak.util.JsonSerialization;
  *
  * @see de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectEncryptor
  */
-public record WalletMetadata(ECKey encryptionKey, JWEAlgorithm algorithm, EncryptionMethod encryptionMethod) {
-
-    private static final Set<JWEAlgorithm> SUPPORTED_ALGORITHMS = Set.of(JWEAlgorithm.ECDH_ES);
-    private static final Set<EncryptionMethod> SUPPORTED_ENCRYPTION_METHODS =
-            Set.of(EncryptionMethod.A128GCM, EncryptionMethod.A256GCM);
+public record WalletMetadata(Oid4vpJwk encryptionKey, String algorithm, String encryptionMethod) {
 
     /**
      * Parses the raw {@code wallet_metadata} JSON string from the form parameter.
@@ -67,31 +56,32 @@ public record WalletMetadata(ECKey encryptionKey, JWEAlgorithm algorithm, Encryp
             throw new IllegalArgumentException("Invalid wallet_metadata JSON: " + e.getMessage(), e);
         }
 
-        ECKey encryptionKey = extractEncryptionKey(metadata);
-        JWEAlgorithm algorithm = selectAlgorithm(metadata);
-        EncryptionMethod encryptionMethod = selectEncryptionMethod(metadata);
+        Oid4vpJwk encryptionKey = extractEncryptionKey(metadata);
+        String algorithm = selectAlgorithm(metadata);
+        String encryptionMethod = selectEncryptionMethod(metadata);
 
         return new WalletMetadata(encryptionKey, algorithm, encryptionMethod);
     }
 
     @SuppressWarnings("unchecked")
-    private static ECKey extractEncryptionKey(Map<String, Object> metadata) {
+    private static Oid4vpJwk extractEncryptionKey(Map<String, Object> metadata) {
         Object jwksObj = metadata.get("jwks");
         if (jwksObj == null) {
             throw new IllegalArgumentException("wallet_metadata missing 'jwks'");
         }
 
         try {
-            String jwksJson = JsonSerialization.writeValueAsString(jwksObj);
-            JWKSet jwkSet = JWKSet.parse(jwksJson);
-            for (JWK jwk : jwkSet.getKeys()) {
-                if (jwk instanceof ECKey ecKey) {
-                    return ecKey;
+            Map<String, Object> jwks = JsonSerialization.mapper.convertValue(jwksObj, Map.class);
+            Object keysObj = jwks.get("keys");
+            if (!(keysObj instanceof List<?> keys)) {
+                throw new IllegalArgumentException("wallet_metadata jwks missing keys");
+            }
+            for (Object key : keys) {
+                if (key instanceof Map<?, ?> map) {
+                    return Oid4vpJwk.parse((Map<String, Object>) map);
                 }
             }
             throw new IllegalArgumentException("No EC key found in wallet_metadata jwks");
-        } catch (ParseException e) {
-            throw new IllegalArgumentException("Failed to parse wallet_metadata jwks: " + e.getMessage(), e);
         } catch (Exception e) {
             if (e instanceof IllegalArgumentException) throw (IllegalArgumentException) e;
             throw new IllegalArgumentException("Failed to process wallet_metadata jwks: " + e.getMessage(), e);
@@ -99,38 +89,38 @@ public record WalletMetadata(ECKey encryptionKey, JWEAlgorithm algorithm, Encryp
     }
 
     @SuppressWarnings("unchecked")
-    private static JWEAlgorithm selectAlgorithm(Map<String, Object> metadata) {
+    private static String selectAlgorithm(Map<String, Object> metadata) {
         Object algValues = metadata.get("authorization_encryption_alg_values_supported");
         if (algValues instanceof List<?> algList) {
             for (Object alg : algList) {
-                JWEAlgorithm candidate = JWEAlgorithm.parse(alg.toString());
-                if (SUPPORTED_ALGORITHMS.contains(candidate)) {
+                String candidate = alg.toString();
+                if (Oid4vpConstants.SUPPORTED_REQUEST_OBJECT_ENCRYPTION_ALGORITHMS.contains(candidate)) {
                     return candidate;
                 }
             }
             throw new IllegalArgumentException(
                     "No supported algorithm in authorization_encryption_alg_values_supported: " + algList
-                            + ". Supported: " + SUPPORTED_ALGORITHMS);
+                            + ". Supported: " + Oid4vpConstants.SUPPORTED_REQUEST_OBJECT_ENCRYPTION_ALGORITHMS);
         }
         // Default to ECDH-ES if not specified
-        return JWEAlgorithm.ECDH_ES;
+        return "ECDH-ES";
     }
 
     @SuppressWarnings("unchecked")
-    private static EncryptionMethod selectEncryptionMethod(Map<String, Object> metadata) {
+    private static String selectEncryptionMethod(Map<String, Object> metadata) {
         Object encValues = metadata.get("authorization_encryption_enc_values_supported");
         if (encValues instanceof List<?> encList) {
             for (Object enc : encList) {
-                EncryptionMethod candidate = EncryptionMethod.parse(enc.toString());
-                if (SUPPORTED_ENCRYPTION_METHODS.contains(candidate)) {
+                String candidate = enc.toString();
+                if (Oid4vpConstants.SUPPORTED_REQUEST_OBJECT_ENCRYPTION_METHODS.contains(candidate)) {
                     return candidate;
                 }
             }
             throw new IllegalArgumentException(
                     "No supported encryption method in authorization_encryption_enc_values_supported: " + encList
-                            + ". Supported: " + SUPPORTED_ENCRYPTION_METHODS);
+                            + ". Supported: " + Oid4vpConstants.SUPPORTED_REQUEST_OBJECT_ENCRYPTION_METHODS);
         }
         // Default to A128GCM if not specified
-        return EncryptionMethod.A128GCM;
+        return "A128GCM";
     }
 }

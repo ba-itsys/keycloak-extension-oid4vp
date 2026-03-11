@@ -15,56 +15,53 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.nimbusds.jose.EncryptionMethod;
-import com.nimbusds.jose.JWEAlgorithm;
-import com.nimbusds.jose.jwk.Curve;
-import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import org.junit.jupiter.api.Test;
 
 class WalletMetadataTest {
 
     @Test
-    void parse_validMetadata_extractsKeyAndAlgorithms() throws Exception {
-        ECKey walletKey =
-                new ECKeyGenerator(Curve.P_256).keyID("wallet-enc-key").generate();
-        String json = buildWalletMetadataJson(walletKey.toPublicJWK(), "ECDH-ES", "A128GCM");
+    void parse_validMetadata_extractsKeyAndAlgorithms() {
+        Oid4vpJwk generated = Oid4vpJwk.generate("P-256", "ECDH-ES", "enc");
+        Oid4vpJwk walletKey = new Oid4vpJwk(
+                generated.curve(), generated.x(), generated.y(), null, "wallet-enc-key", "ECDH-ES", "enc");
+        String json = buildWalletMetadataJson(walletKey.toPublicJwk(), "ECDH-ES", "A128GCM");
 
         WalletMetadata result = WalletMetadata.parse(json);
 
-        assertThat(result.encryptionKey().getKeyID()).isEqualTo("wallet-enc-key");
-        assertThat(result.algorithm()).isEqualTo(JWEAlgorithm.ECDH_ES);
-        assertThat(result.encryptionMethod()).isEqualTo(EncryptionMethod.A128GCM);
+        assertThat(result.encryptionKey().keyId()).isEqualTo("wallet-enc-key");
+        assertThat(result.algorithm()).isEqualTo("ECDH-ES");
+        assertThat(result.encryptionMethod()).isEqualTo("A128GCM");
     }
 
     @Test
-    void parse_a256gcm_selectsA256gcm() throws Exception {
-        ECKey walletKey = new ECKeyGenerator(Curve.P_256).keyID("k1").generate();
-        String json = buildWalletMetadataJson(walletKey.toPublicJWK(), "ECDH-ES", "A256GCM");
+    void parse_a256gcm_selectsA256gcm() {
+        Oid4vpJwk walletKey = withKid(Oid4vpJwk.generate("P-256", "ECDH-ES", "enc"), "k1");
+        String json = buildWalletMetadataJson(walletKey.toPublicJwk(), "ECDH-ES", "A256GCM");
 
         WalletMetadata result = WalletMetadata.parse(json);
 
-        assertThat(result.encryptionMethod()).isEqualTo(EncryptionMethod.A256GCM);
+        assertThat(result.encryptionMethod()).isEqualTo("A256GCM");
     }
 
     @Test
-    void parse_noAlgOrEncSpecified_defaultsToEcdhEsA128gcm() throws Exception {
-        ECKey walletKey = new ECKeyGenerator(Curve.P_256).keyID("k1").generate();
+    void parse_noAlgOrEncSpecified_defaultsToEcdhEsA128gcm() {
+        Oid4vpJwk walletKey = withKid(Oid4vpJwk.generate("P-256", "ECDH-ES", "enc"), "k1");
         String json = """
-                {"jwks":{"keys":[%s]}}""".formatted(walletKey.toPublicJWK().toJSONString());
+                {"jwks":{"keys":[%s]}}""".formatted(walletKey.toPublicJwk().toJson());
 
         WalletMetadata result = WalletMetadata.parse(json);
 
-        assertThat(result.algorithm()).isEqualTo(JWEAlgorithm.ECDH_ES);
-        assertThat(result.encryptionMethod()).isEqualTo(EncryptionMethod.A128GCM);
+        assertThat(result.algorithm()).isEqualTo("ECDH-ES");
+        assertThat(result.encryptionMethod()).isEqualTo("A128GCM");
     }
 
     @Test
-    void parse_unsupportedAlgorithm_throws() throws Exception {
-        ECKey walletKey = new ECKeyGenerator(Curve.P_256).generate();
-        String json = buildWalletMetadataJson(walletKey.toPublicJWK(), "RSA-OAEP-256", "A128GCM");
+    void parse_unsupportedAlgorithm_throws() {
+        Oid4vpJwk walletKey = Oid4vpJwk.generate("P-256", "ECDH-ES", "enc");
+        String json = buildWalletMetadataJson(walletKey.toPublicJwk(), "RSA-OAEP-256", "A128GCM");
 
         assertThatThrownBy(() -> WalletMetadata.parse(json))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -72,9 +69,9 @@ class WalletMetadataTest {
     }
 
     @Test
-    void parse_unsupportedEncryptionMethod_throws() throws Exception {
-        ECKey walletKey = new ECKeyGenerator(Curve.P_256).generate();
-        String json = buildWalletMetadataJson(walletKey.toPublicJWK(), "ECDH-ES", "A192GCM");
+    void parse_unsupportedEncryptionMethod_throws() {
+        Oid4vpJwk walletKey = Oid4vpJwk.generate("P-256", "ECDH-ES", "enc");
+        String json = buildWalletMetadataJson(walletKey.toPublicJwk(), "ECDH-ES", "A192GCM");
 
         assertThatThrownBy(() -> WalletMetadata.parse(json))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -99,7 +96,7 @@ class WalletMetadataTest {
     }
 
     @Test
-    void parse_emptyJwks_throws() throws Exception {
+    void parse_emptyJwks_throws() {
         String json = """
                 {"jwks":{"keys":[]}}""";
 
@@ -108,12 +105,16 @@ class WalletMetadataTest {
                 .hasMessageContaining("No EC key found");
     }
 
-    private static String buildWalletMetadataJson(ECKey publicKey, String alg, String enc) {
+    private static String buildWalletMetadataJson(Oid4vpJwk publicKey, String alg, String enc) {
         return """
                 {
                   "authorization_encryption_alg_values_supported":["%s"],
                   "authorization_encryption_enc_values_supported":["%s"],
                   "jwks":{"keys":[%s]}
-                }""".formatted(alg, enc, publicKey.toJSONString());
+                }""".formatted(alg, enc, publicKey.toJson());
+    }
+
+    private static Oid4vpJwk withKid(Oid4vpJwk jwk, String kid) {
+        return new Oid4vpJwk(jwk.curve(), jwk.x(), jwk.y(), jwk.privateKey(), kid, jwk.algorithm(), jwk.use());
     }
 }

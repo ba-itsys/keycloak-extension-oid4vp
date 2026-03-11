@@ -15,22 +15,23 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
-import com.nimbusds.jose.JOSEException;
-import com.nimbusds.jose.JWEHeader;
-import com.nimbusds.jose.JWEObject;
-import com.nimbusds.jose.Payload;
-import com.nimbusds.jose.crypto.ECDHEncrypter;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import de.arbeitsagentur.keycloak.oid4vp.domain.WalletMetadata;
+import java.nio.charset.StandardCharsets;
+import org.keycloak.jose.jwe.JWE;
+import org.keycloak.jose.jwe.JWEConstants;
+import org.keycloak.jose.jwe.JWEHeader;
 
 /**
  * Encrypts a signed request object JWT into a JWE using the wallet's encryption key from
  * {@code wallet_metadata}. This is the counterpart to {@link Oid4vpResponseDecryptor} — while
  * that class decrypts wallet responses, this class encrypts verifier request objects.
  *
- * <p>Called from {@code Oid4vpIdentityProviderEndpoint.generateRequestObject} when the wallet
- * includes {@code wallet_metadata} in its POST to the request-object endpoint. The result is a
- * nested JWT: the signed request object (JWS) wrapped in a JWE, with {@code cty: oauth-authz-req+jwt}
+ * <p>Called from {@code Oid4vpRequestObjectService} after
+ * {@code Oid4vpRedirectFlowService} has assembled the request claims and
+ * {@code Oid4vpRequestObjectSigner} has produced the compact JWS. The result is a nested JWT:
+ * the signed request object wrapped in a JWE, with {@code cty: oauth-authz-req+jwt}
  * per RFC 7516 §4.1.12 to indicate the inner content type.
  */
 public final class Oid4vpRequestObjectEncryptor {
@@ -47,19 +48,31 @@ public final class Oid4vpRequestObjectEncryptor {
      */
     public static String encrypt(String signedJwt, WalletMetadata walletMetadata) {
         try {
-            JWEHeader.Builder headerBuilder = new JWEHeader.Builder(
-                            walletMetadata.algorithm(), walletMetadata.encryptionMethod())
-                    .contentType(Oid4vpConstants.REQUEST_OBJECT_TYP);
+            return encrypt(
+                    signedJwt.getBytes(StandardCharsets.UTF_8),
+                    walletMetadata.encryptionKey(),
+                    walletMetadata.encryptionMethod(),
+                    Oid4vpConstants.REQUEST_OBJECT_TYP);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to encrypt request object: " + e.getMessage(), e);
+        }
+    }
 
-            if (walletMetadata.encryptionKey().getKeyID() != null) {
-                headerBuilder.keyID(walletMetadata.encryptionKey().getKeyID());
+    static String encrypt(byte[] plaintext, Oid4vpJwk recipientKey, String encryptionMethod, String contentType) {
+        try {
+            JWEHeader.JWEHeaderBuilder header = JWEHeader.builder()
+                    .algorithm(JWEConstants.ECDH_ES)
+                    .encryptionAlgorithm(encryptionMethod)
+                    .contentType(contentType);
+            if (recipientKey.keyId() != null) {
+                header.keyId(recipientKey.keyId());
             }
 
-            JWEObject jwe = new JWEObject(headerBuilder.build(), new Payload(signedJwt));
-            jwe.encrypt(new ECDHEncrypter(walletMetadata.encryptionKey()));
-            return jwe.serialize();
-        } catch (JOSEException e) {
-            throw new IllegalStateException("Failed to encrypt request object: " + e.getMessage(), e);
+            JWE jwe = new JWE().header(header.build()).content(plaintext);
+            jwe.getKeyStorage().setEncryptionKey(recipientKey.toPublicKey());
+            return jwe.encodeJwe();
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to encrypt JWE", e);
         }
     }
 }

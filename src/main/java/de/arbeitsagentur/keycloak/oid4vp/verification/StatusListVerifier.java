@@ -15,17 +15,11 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
-import com.nimbusds.jose.JWSVerifier;
-import com.nimbusds.jose.crypto.factories.DefaultJWSVerifierFactory;
-import com.nimbusds.jwt.JWTClaimsSet;
-import com.nimbusds.jwt.SignedJWT;
 import java.io.ByteArrayInputStream;
-import java.security.PublicKey;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -33,6 +27,7 @@ import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.util.SimpleHttp;
+import org.keycloak.jose.jws.JWSInput;
 import org.keycloak.models.KeycloakSession;
 
 /**
@@ -52,7 +47,8 @@ public class StatusListVerifier {
     private final TrustListProvider trustListProvider;
     private final Duration maxCacheTtl;
 
-    public StatusListVerifier() {
+    /** Test-only constructor that creates a verifier without session or trust provider. */
+    StatusListVerifier() {
         this(null, null);
     }
 
@@ -144,12 +140,13 @@ public class StatusListVerifier {
         }
 
         String jwt = fetchStatusListJwt(uri);
-        SignedJWT signedJWT = SignedJWT.parse(jwt);
+        JWSInput signedJwt = X5cChainValidator.parseJwt(jwt);
+        Map<String, Object> claims = X5cChainValidator.parseClaims(signedJwt);
 
-        verifyStatusListJwtSignature(signedJWT);
+        verifyStatusListJwtSignature(jwt, claims);
 
-        JWTClaimsSet claimsSet = signedJWT.getJWTClaimsSet();
-        Map<String, Object> statusListClaim = claimsSet.getJSONObjectClaim("status_list");
+        validateStatusListToken(headerType(signedJwt), stringClaim(claims, "sub"), instantClaim(claims, "exp"), uri);
+        Map<String, Object> statusListClaim = jsonObjectClaim(claims, "status_list");
         if (statusListClaim == null) {
             throw new IllegalStateException("Status list JWT missing status_list claim");
         }
@@ -164,74 +161,72 @@ public class StatusListVerifier {
         if (bitsObj instanceof Number num) {
             bitsPerStatus = num.intValue();
         }
+        validateBitsPerStatus(bitsPerStatus);
 
         byte[] compressed = Base64.getUrlDecoder().decode(lst);
         byte[] statusBits = inflate(compressed);
 
-        Instant expiresAt = resolveExpiry(claimsSet);
+        Instant expiresAt = resolveExpiry(instantClaim(claims, "exp"), claims.get("ttl"));
 
         var decoded = new DecodedStatusList(statusBits, bitsPerStatus);
         CACHE.put(uri, new CachedStatusList(decoded, expiresAt));
         return decoded;
     }
 
-    private void verifyStatusListJwtSignature(SignedJWT signedJWT) throws Exception {
+    private void verifyStatusListJwtSignature(String compactJwt, Map<String, Object> claims) throws Exception {
         List<X509Certificate> trustedCerts =
                 trustListProvider != null ? trustListProvider.getTrustedCertificates() : List.of();
         if (trustedCerts.isEmpty()) {
             LOG.debugf(
                     "Status list JWT signature not verified: no trusted keys configured (issuer=%s)",
-                    signedJWT.getJWTClaimsSet().getIssuer());
+                    stringClaim(claims, "iss"));
             return;
         }
 
-        // Try x5c chain validation first (status list JWT may be signed by a leaf cert
-        // chaining up to a trusted CA, same as SD-JWT credentials)
-        List<String> x5c = signedJWT.getHeader().getX509CertChain() != null
-                ? signedJWT.getHeader().getX509CertChain().stream()
-                        .map(c -> c.toString())
-                        .toList()
-                : null;
-        if (x5c != null && !x5c.isEmpty()) {
-            try {
-                PublicKey leafKey = X5cChainValidator.validateChain(x5c, trustedCerts);
-                DefaultJWSVerifierFactory factory = new DefaultJWSVerifierFactory();
-                JWSVerifier verifier = factory.createJWSVerifier(signedJWT.getHeader(), leafKey);
-                if (signedJWT.verify(verifier)) {
-                    LOG.debugf(
-                            "Status list JWT signature verified via x5c chain (issuer: %s)",
-                            signedJWT.getJWTClaimsSet().getIssuer());
-                    return;
-                }
-            } catch (Exception e) {
-                LOG.debugf("Status list JWT x5c chain validation failed: %s", e.getMessage());
-            }
-        }
-
-        // Fallback: try all trusted certificate keys directly
-        DefaultJWSVerifierFactory factory = new DefaultJWSVerifierFactory();
-        for (X509Certificate cert : trustedCerts) {
-            try {
-                JWSVerifier verifier = factory.createJWSVerifier(signedJWT.getHeader(), cert.getPublicKey());
-                if (signedJWT.verify(verifier)) {
-                    LOG.debugf(
-                            "Status list JWT signature verified (issuer: %s)",
-                            signedJWT.getJWTClaimsSet().getIssuer());
-                    return;
-                }
-            } catch (Exception e) {
-                // Key type doesn't match algorithm — try next key
-            }
-        }
-
-        throw new IllegalStateException("Status list JWT signature verification failed: no trusted key matched");
+        X5cChainValidator.verifyJwtSignature(compactJwt, trustedCerts);
     }
 
-    private Instant resolveExpiry(JWTClaimsSet claimsSet) {
-        Date exp = claimsSet.getExpirationTime();
-        Instant expiry = exp != null ? exp.toInstant() : Instant.now();
+    /**
+     * Validates the Status List Token header and claims per draft-ietf-oauth-status-list Section 5.1
+     * and Section 8.3.
+     */
+    void validateStatusListToken(String typ, String sub, Instant exp, String expectedUri) {
+        if (!"statuslist+jwt".equals(typ)) {
+            throw new IllegalStateException(
+                    "Status list JWT has invalid typ header: expected 'statuslist+jwt', got '" + typ + "'");
+        }
+
+        if (!expectedUri.equals(sub)) {
+            throw new IllegalStateException(
+                    "Status list JWT sub claim '" + sub + "' does not match expected URI '" + expectedUri + "'");
+        }
+
+        if (exp != null && exp.isBefore(Instant.now())) {
+            throw new IllegalStateException("Status list JWT has expired");
+        }
+    }
+
+    /**
+     * Resolves the cache expiry for a Status List Token. Uses {@code ttl} (seconds from fetch time)
+     * if present, falls back to {@code exp}, and caps at {@code maxCacheTtl} if configured.
+     *
+     * @see <a href="https://datatracker.ietf.org/doc/html/draft-ietf-oauth-status-list">Section 13.7</a>
+     */
+    Instant resolveExpiry(Instant exp, Object ttlObj) {
+        Instant now = Instant.now();
+        Instant expiry;
+
+        if (ttlObj instanceof Number ttlNum && ttlNum.longValue() > 0) {
+            Instant ttlExpiry = now.plusSeconds(ttlNum.longValue());
+            expiry = (exp != null && exp.isBefore(ttlExpiry)) ? exp : ttlExpiry;
+        } else if (exp != null) {
+            expiry = exp;
+        } else {
+            expiry = now;
+        }
+
         if (maxCacheTtl != null) {
-            Instant maxExpiry = Instant.now().plus(maxCacheTtl);
+            Instant maxExpiry = now.plus(maxCacheTtl);
             return expiry.isBefore(maxExpiry) ? expiry : maxExpiry;
         }
         return expiry;
@@ -265,9 +260,7 @@ public class StatusListVerifier {
         if (statusBits == null || statusBits.length == 0) {
             throw new IllegalStateException("Empty status list");
         }
-        if (bitsPerStatus < 1 || bitsPerStatus > 8) {
-            throw new IllegalArgumentException("bitsPerStatus must be 1-8, got " + bitsPerStatus);
-        }
+        validateBitsPerStatus(bitsPerStatus);
         int bitOffset = idx * bitsPerStatus;
         int byteIndex = bitOffset / 8;
         int bitIndex = bitOffset % 8;
@@ -278,7 +271,14 @@ public class StatusListVerifier {
         }
 
         int mask = ((1 << bitsPerStatus) - 1);
-        return (statusBits[byteIndex] >> bitIndex) & mask;
+        int byteValue = Byte.toUnsignedInt(statusBits[byteIndex]);
+        return (byteValue >>> bitIndex) & mask;
+    }
+
+    private static void validateBitsPerStatus(int bitsPerStatus) {
+        if (bitsPerStatus != 1 && bitsPerStatus != 2 && bitsPerStatus != 4 && bitsPerStatus != 8) {
+            throw new IllegalArgumentException("bitsPerStatus must be one of 1, 2, 4, or 8, got " + bitsPerStatus);
+        }
     }
 
     /** Clears the static cache. Intended for testing only. */
@@ -294,5 +294,31 @@ public class StatusListVerifier {
         boolean isValid() {
             return Instant.now().isBefore(expiresAt);
         }
+    }
+
+    private String headerType(JWSInput jwt) {
+        return jwt.getHeader().getType();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> jsonObjectClaim(Map<String, Object> claims, String name) {
+        Object value = claims.get(name);
+        return value instanceof Map<?, ?> map ? (Map<String, Object>) map : null;
+    }
+
+    private String stringClaim(Map<String, Object> claims, String name) {
+        Object value = claims.get(name);
+        return value != null ? value.toString() : null;
+    }
+
+    private Instant instantClaim(Map<String, Object> claims, String name) {
+        Object value = claims.get(name);
+        if (value instanceof Number number) {
+            return Instant.ofEpochSecond(number.longValue());
+        }
+        if (value != null) {
+            return Instant.ofEpochSecond(Long.parseLong(value.toString()));
+        }
+        return null;
     }
 }
