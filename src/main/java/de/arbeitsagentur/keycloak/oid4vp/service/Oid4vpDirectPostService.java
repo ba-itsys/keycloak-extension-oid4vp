@@ -61,6 +61,7 @@ public class Oid4vpDirectPostService {
     static final String KEY_TAB_ID = "tab_id";
     static final String KEY_COMPLETE_AUTH_URL = "complete_auth_url";
 
+    private final long deferredAuthTtlSeconds;
     private final long crossDeviceCompleteTtlSeconds;
 
     private final KeycloakSession session;
@@ -77,6 +78,8 @@ public class Oid4vpDirectPostService {
         this.realm = realm;
         this.config = config;
         this.requestObjectStore = requestObjectStore;
+        this.deferredAuthTtlSeconds =
+                realm != null ? realm.getAccessCodeLifespanLogin() : config.getCrossDeviceCompleteTtlSeconds();
         this.crossDeviceCompleteTtlSeconds = config.getCrossDeviceCompleteTtlSeconds();
     }
 
@@ -116,7 +119,7 @@ public class Oid4vpDirectPostService {
         session.singleUseObjects()
                 .put(
                         DEFERRED_AUTH_PREFIX + requestHandle,
-                        crossDeviceCompleteTtlSeconds,
+                        deferredAuthTtlSeconds,
                         Map.of(
                                 KEY_ROOT_SESSION_ID,
                                 rootSessionId != null ? rootSessionId : "",

@@ -55,6 +55,7 @@ class Oid4vpDirectPostServiceTest {
 
         when(session.singleUseObjects()).thenReturn(singleUseObjects);
         when(realm.getName()).thenReturn("test-realm");
+        when(realm.getAccessCodeLifespanLogin()).thenReturn(600);
         when(config.getAlias()).thenReturn("oid4vp");
         when(config.getCrossDeviceCompleteTtlSeconds()).thenReturn(300);
 
@@ -120,7 +121,7 @@ class Oid4vpDirectPostServiceTest {
         Response response = service.storeAndSignal(authSession, "handle-1", context, false);
 
         assertThat(response.getStatus()).isEqualTo(200);
-        verify(singleUseObjects).put(eq(DEFERRED_AUTH_PREFIX + "handle-1"), anyLong(), anyMap());
+        verify(singleUseObjects).put(eq(DEFERRED_AUTH_PREFIX + "handle-1"), eq(600L), anyMap());
         verify(singleUseObjects, never()).put(eq(CROSS_DEVICE_COMPLETE_PREFIX + "handle-1"), anyLong(), anyMap());
     }
 
@@ -142,10 +143,11 @@ class Oid4vpDirectPostServiceTest {
 
         assertThat(response.getStatus()).isEqualTo(200);
         String completeAuthUrl = service.buildCompleteAuthUrl("handle-2");
+        verify(singleUseObjects).put(eq(DEFERRED_AUTH_PREFIX + "handle-2"), eq(600L), anyMap());
         verify(singleUseObjects)
                 .put(
                         eq(CROSS_DEVICE_COMPLETE_PREFIX + "handle-2"),
-                        anyLong(),
+                        eq(300L),
                         eq(Map.of(KEY_COMPLETE_AUTH_URL, completeAuthUrl)));
     }
 

@@ -16,15 +16,15 @@
 package de.arbeitsagentur.keycloak.oid4vp.service;
 
 import static de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService.CROSS_DEVICE_COMPLETE_PREFIX;
-import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
-import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.StreamingOutput;
-import java.io.ByteArrayOutputStream;
-import java.nio.charset.StandardCharsets;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.sse.OutboundSseEvent;
+import jakarta.ws.rs.sse.Sse;
+import jakarta.ws.rs.sse.SseEventSink;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.KeycloakSession;
@@ -39,10 +39,13 @@ class Oid4vpCrossDeviceSseServiceTest {
     private KeycloakSession session;
     private KeycloakSessionFactory sessionFactory;
     private SingleUseObjectProvider singleUseObjects;
+    private RealmProvider realmProvider;
     private Oid4vpIdentityProviderConfig config;
 
     @BeforeEach
     void setUp() {
+        Oid4vpCrossDeviceSseService.resetCoordinatorsForTests();
+
         session = mock(KeycloakSession.class);
         sessionFactory = mock(KeycloakSessionFactory.class);
         RealmModel realm = mock(RealmModel.class);
@@ -51,24 +54,134 @@ class Oid4vpCrossDeviceSseServiceTest {
         when(realm.getName()).thenReturn("test-realm");
 
         config = new Oid4vpIdentityProviderConfig();
-        // Use short intervals for fast tests
-        config.setSsePollIntervalMs(10);
+        config.setSsePollIntervalMs(100000);
         config.setSseTimeoutSeconds(1);
         config.setSsePingIntervalSeconds(1);
 
         singleUseObjects = mock(SingleUseObjectProvider.class);
+        realmProvider = mock(RealmProvider.class);
+    }
+
+    @AfterEach
+    void tearDown() {
+        Oid4vpCrossDeviceSseService.resetCoordinatorsForTests();
+    }
+
+    @Test
+    void subscribe_sendsCompleteWhenSharedSignalExists() throws Exception {
+        Oid4vpCrossDeviceSseService service = createService();
+        SseEventSink sink = mock(SseEventSink.class);
+        Sse sse = mockSse("complete");
+
+        when(singleUseObjects.get(CROSS_DEVICE_COMPLETE_PREFIX + "test-handle"))
+                .thenReturn(
+                        Map.of("complete_auth_url", "http://localhost:8080/complete-auth?request_handle=test-handle"));
+
+        service.subscribe("test-handle", sink, sse, false);
+        service.pollOnce();
+
+        verify(sink).send(any(OutboundSseEvent.class));
+        verify(sink).close();
+    }
+
+    @Test
+    void subscribe_keepsConnectionOpenAndSendsPingBeforeTimeout() throws Exception {
+        config.setSseTimeoutSeconds(5);
+        Oid4vpCrossDeviceSseService service = createService();
+        SseEventSink sink = mock(SseEventSink.class);
+        Sse sse = mockSse("ping");
+
+        when(singleUseObjects.get(anyString())).thenReturn(null);
+
+        service.subscribe("test-handle", sink, sse, false);
+        Thread.sleep(1100);
+        service.pollOnce();
+
+        verify(sink).send(any(OutboundSseEvent.class));
+        verify(sink, never()).close();
+    }
+
+    @Test
+    void subscribe_sendsTimeoutAndClosesExpiredConnection() throws Exception {
+        config.setSseTimeoutSeconds(0);
+        Oid4vpCrossDeviceSseService service = createService();
+        SseEventSink sink = mock(SseEventSink.class);
+        Sse sse = mockSse("timeout");
+
+        when(singleUseObjects.get(anyString())).thenReturn(null);
+
+        service.subscribe("test-handle", sink, sse, false);
+        service.pollOnce();
+
+        verify(sink).send(any(OutboundSseEvent.class));
+        verify(sink).close();
+    }
+
+    @Test
+    void subscribe_sendsErrorAndClosesWhenRealmIsMissing() throws Exception {
+        KeycloakSession pollingSession = mock(KeycloakSession.class);
+        KeycloakTransactionManager tx = mock(KeycloakTransactionManager.class);
+        when(sessionFactory.create()).thenReturn(pollingSession);
+        when(pollingSession.getTransactionManager()).thenReturn(tx);
+        when(pollingSession.realms()).thenReturn(realmProvider);
+        when(realmProvider.getRealmByName("test-realm")).thenReturn(null);
+
+        RealmModel realm = mock(RealmModel.class);
+        when(realm.getName()).thenReturn("test-realm");
+        Oid4vpCrossDeviceSseService service = new Oid4vpCrossDeviceSseService(session, realm, config);
+        SseEventSink sink = mock(SseEventSink.class);
+        Sse sse = mockSse("error");
+
+        service.subscribe("test-handle", sink, sse, false);
+        service.pollOnce();
+
+        verify(sink).send(any(OutboundSseEvent.class));
+        verify(sink).close();
+    }
+
+    @Test
+    void subscribe_supportsMultipleLocalListenersForSameHandle() throws Exception {
+        Oid4vpCrossDeviceSseService service = createService();
+        SseEventSink firstSink = mock(SseEventSink.class);
+        SseEventSink secondSink = mock(SseEventSink.class);
+        Sse sse = mockSse("complete");
+
+        when(singleUseObjects.get(CROSS_DEVICE_COMPLETE_PREFIX + "test-handle"))
+                .thenReturn(
+                        Map.of("complete_auth_url", "http://localhost:8080/complete-auth?request_handle=test-handle"));
+
+        service.subscribe("test-handle", firstSink, sse, false);
+        service.subscribe("test-handle", secondSink, sse, false);
+        service.pollOnce();
+
+        verify(firstSink).send(any(OutboundSseEvent.class));
+        verify(firstSink).close();
+        verify(secondSink).send(any(OutboundSseEvent.class));
+        verify(secondSink).close();
+    }
+
+    @Test
+    void subscribe_sendsErrorImmediatelyWhenSessionFactoryIsMissing() {
+        KeycloakSession sessionWithoutFactory = mock(KeycloakSession.class);
+        RealmModel realm = mock(RealmModel.class);
+        when(realm.getName()).thenReturn("test-realm");
+
+        Oid4vpCrossDeviceSseService service = new Oid4vpCrossDeviceSseService(sessionWithoutFactory, realm, config);
+        SseEventSink sink = mock(SseEventSink.class);
+        Sse sse = mockSse("error");
+
+        service.subscribe("test-handle", sink, sse, false);
+
+        verify(sink).send(any(OutboundSseEvent.class));
+        verify(sink).close();
     }
 
     private Oid4vpCrossDeviceSseService createService() {
         RealmModel realm = mock(RealmModel.class);
         when(realm.getName()).thenReturn("test-realm");
-        return new Oid4vpCrossDeviceSseService(session, realm, config);
-    }
 
-    private KeycloakSession mockPollingSession() {
         KeycloakSession pollingSession = mock(KeycloakSession.class);
         KeycloakTransactionManager tx = mock(KeycloakTransactionManager.class);
-        RealmProvider realmProvider = mock(RealmProvider.class);
         RealmModel pollingRealm = mock(RealmModel.class);
 
         when(sessionFactory.create()).thenReturn(pollingSession);
@@ -77,110 +190,20 @@ class Oid4vpCrossDeviceSseServiceTest {
         when(realmProvider.getRealmByName("test-realm")).thenReturn(pollingRealm);
         when(pollingSession.singleUseObjects()).thenReturn(singleUseObjects);
 
-        return pollingSession;
+        return new Oid4vpCrossDeviceSseService(session, realm, config);
     }
 
-    @Test
-    void buildSseResponse_returnsEventStreamContentType() {
-        Oid4vpCrossDeviceSseService service = createService();
+    private Sse mockSse(String eventName) {
+        Sse sse = mock(Sse.class);
+        OutboundSseEvent.Builder builder = mock(OutboundSseEvent.Builder.class);
+        OutboundSseEvent event = mock(OutboundSseEvent.class);
 
-        Response response = service.buildSseResponse("test-state");
-
-        assertThat(response.getStatus()).isEqualTo(200);
-        assertThat(response.getMediaType().toString()).isEqualTo("text/event-stream");
-        assertThat(response.getHeaderString("Cache-Control")).isEqualTo("no-cache");
-        assertThat(response.getHeaderString("X-Accel-Buffering")).isEqualTo("no");
-    }
-
-    @Test
-    void buildSseResponse_sendsCompleteOnSignal() throws Exception {
-        mockPollingSession();
-        String completeUrl = "http://localhost:8080/complete-auth?state=abc";
-        when(singleUseObjects.remove(CROSS_DEVICE_COMPLETE_PREFIX + "test-state"))
-                .thenReturn(Map.of("complete_auth_url", completeUrl));
-
-        Oid4vpCrossDeviceSseService service = createService();
-        Response response = service.buildSseResponse("test-state");
-
-        String output = streamToString(response);
-        assertThat(output).contains("event: complete");
-        assertThat(output).contains(completeUrl);
-        assertThat(output).doesNotContain("event: timeout");
-    }
-
-    @Test
-    void buildSseResponse_sendsTimeoutWhenNoSignal() throws Exception {
-        mockPollingSession();
-        when(singleUseObjects.remove(anyString())).thenReturn(null);
-
-        config.setSseTimeoutSeconds(1);
-        config.setSsePollIntervalMs(50);
-
-        Oid4vpCrossDeviceSseService service = createService();
-        Response response = service.buildSseResponse("test-state");
-
-        String output = streamToString(response);
-        assertThat(output).contains("event: timeout");
-        assertThat(output).contains("\"error\":\"timeout\"");
-    }
-
-    @Test
-    void buildSseResponse_sendsPingEvents() throws Exception {
-        mockPollingSession();
-        when(singleUseObjects.remove(anyString())).thenReturn(null);
-
-        config.setSseTimeoutSeconds(1);
-        config.setSsePollIntervalMs(50);
-        config.setSsePingIntervalSeconds(1);
-
-        Oid4vpCrossDeviceSseService service = createService();
-        Response response = service.buildSseResponse("test-state");
-
-        String output = streamToString(response);
-        assertThat(output).contains("event: ping");
-    }
-
-    @Test
-    void buildSseResponse_sendsErrorWhenRealmNotFound() throws Exception {
-        KeycloakSession pollingSession = mock(KeycloakSession.class);
-        KeycloakTransactionManager tx = mock(KeycloakTransactionManager.class);
-        RealmProvider realmProvider = mock(RealmProvider.class);
-
-        when(sessionFactory.create()).thenReturn(pollingSession);
-        when(pollingSession.getTransactionManager()).thenReturn(tx);
-        when(pollingSession.realms()).thenReturn(realmProvider);
-        when(realmProvider.getRealmByName("test-realm")).thenReturn(null);
-
-        Oid4vpCrossDeviceSseService service = createService();
-        Response response = service.buildSseResponse("test-state");
-
-        String output = streamToString(response);
-        assertThat(output).contains("event: error");
-        assertThat(output).contains("realm_not_found");
-    }
-
-    @Test
-    void buildSseResponse_configAffectsIterationCount() throws Exception {
-        mockPollingSession();
-        when(singleUseObjects.remove(anyString())).thenReturn(null);
-
-        // 200ms timeout with 100ms interval = 2 iterations
-        config.setSseTimeoutSeconds(1);
-        config.setSsePollIntervalMs(500);
-
-        Oid4vpCrossDeviceSseService service = createService();
-        Response response = service.buildSseResponse("test-state");
-
-        String output = streamToString(response);
-        assertThat(output).contains("event: timeout");
-        // Should have polled singleUseObjects only a few times (timeout/interval)
-        verify(singleUseObjects, atMost(3)).get(anyString());
-    }
-
-    private String streamToString(Response response) throws Exception {
-        StreamingOutput stream = (StreamingOutput) response.getEntity();
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        stream.write(baos);
-        return baos.toString(StandardCharsets.UTF_8);
+        when(sse.newEventBuilder()).thenReturn(builder);
+        when(builder.name(anyString())).thenReturn(builder);
+        when(builder.mediaType(MediaType.APPLICATION_JSON_TYPE)).thenReturn(builder);
+        when(builder.data(eq(String.class), any())).thenReturn(builder);
+        when(builder.build()).thenReturn(event);
+        when(event.getName()).thenReturn(eventName);
+        return sse;
     }
 }

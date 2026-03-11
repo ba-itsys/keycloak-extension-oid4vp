@@ -19,18 +19,25 @@ import static de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService.
 import static de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService.KEY_COMPLETE_AUTH_URL;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
-import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.StreamingOutput;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.sse.OutboundSseEvent;
+import jakarta.ws.rs.sse.Sse;
+import jakarta.ws.rs.sse.SseEventSink;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.jboss.logging.Logger;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.SingleUseObjectProvider;
+import org.keycloak.timer.TimerProvider;
 import org.keycloak.util.JsonSerialization;
 
 /**
@@ -45,84 +52,357 @@ import org.keycloak.util.JsonSerialization;
 public class Oid4vpCrossDeviceSseService {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpCrossDeviceSseService.class);
+    private static final ConcurrentHashMap<KeycloakSessionFactory, PollCoordinator> COORDINATORS =
+            new ConcurrentHashMap<>();
 
-    private final KeycloakSessionFactory sessionFactory;
     private final String realmName;
+    private final int timeoutSeconds;
+    private final int pingIntervalSeconds;
     private final int pollIntervalMs;
-    private final int maxIterations;
-    private final int pingEveryIterations;
+    private final PollCoordinator coordinator;
 
     public Oid4vpCrossDeviceSseService(KeycloakSession session, RealmModel realm, Oid4vpConfigProvider config) {
-        this.sessionFactory = session.getKeycloakSessionFactory();
         this.realmName = realm.getName();
+        this.timeoutSeconds = config.getSseTimeoutSeconds();
+        this.pingIntervalSeconds = config.getSsePingIntervalSeconds();
         this.pollIntervalMs = config.getSsePollIntervalMs();
-
-        int timeoutSeconds = config.getSseTimeoutSeconds();
-        this.maxIterations = Math.max(1, (timeoutSeconds * 1000) / pollIntervalMs);
-
-        int pingIntervalSeconds = config.getSsePingIntervalSeconds();
-        this.pingEveryIterations = Math.max(1, (pingIntervalSeconds * 1000) / pollIntervalMs);
+        KeycloakSessionFactory sessionFactory = session.getKeycloakSessionFactory();
+        if (sessionFactory == null) {
+            LOG.warn("Cross-device SSE disabled because no KeycloakSessionFactory is available");
+            this.coordinator = PollCoordinator.unavailable();
+        } else {
+            this.coordinator = COORDINATORS.computeIfAbsent(sessionFactory, PollCoordinator::new);
+        }
     }
 
-    public Response buildSseResponse(String state) {
-        StreamingOutput stream = output -> {
+    public void subscribe(String requestHandle, SseEventSink eventSink, Sse sse) {
+        subscribe(requestHandle, eventSink, sse, true);
+    }
+
+    void subscribe(String requestHandle, SseEventSink eventSink, Sse sse, boolean startScheduler) {
+        coordinator.register(
+                new PendingConnection(
+                        new HandleKey(realmName, requestHandle),
+                        eventSink,
+                        sse,
+                        Instant.now().plusSeconds(timeoutSeconds),
+                        pingIntervalSeconds,
+                        pollIntervalMs,
+                        Instant.now().plusSeconds(pingIntervalSeconds)),
+                startScheduler);
+    }
+
+    void pollOnce() {
+        coordinator.pollOnce();
+    }
+
+    static void resetCoordinatorsForTests() {
+        for (PollCoordinator coordinator : COORDINATORS.values()) {
+            coordinator.shutdown();
+        }
+        COORDINATORS.clear();
+    }
+
+    private static final class PollCoordinator {
+
+        private static final PollCoordinator UNAVAILABLE = new PollCoordinator(null);
+        private static final String TASK_NAME = "oid4vp-cross-device-sse";
+
+        private final KeycloakSessionFactory sessionFactory;
+        private final ConcurrentHashMap<HandleKey, CopyOnWriteArrayList<PendingConnection>> pendingConnections =
+                new ConcurrentHashMap<>();
+        private final AtomicBoolean started = new AtomicBoolean(false);
+        private final AtomicBoolean shutdown = new AtomicBoolean(false);
+        private final AtomicInteger scheduledIntervalMs = new AtomicInteger(Integer.MAX_VALUE);
+
+        private PollCoordinator(KeycloakSessionFactory sessionFactory) {
+            this.sessionFactory = sessionFactory;
+        }
+
+        private static PollCoordinator unavailable() {
+            return UNAVAILABLE;
+        }
+
+        private void register(PendingConnection connection, boolean startScheduler) {
+            if (sessionFactory == null) {
+                sendAndClose(connection, "error", "{\"error\":\"sse_unavailable\"}");
+                return;
+            }
+            pendingConnections
+                    .computeIfAbsent(connection.handleKey(), key -> new CopyOnWriteArrayList<>())
+                    .add(connection);
+            if (startScheduler) {
+                reconcileSchedule();
+            }
+        }
+
+        private synchronized void reconcileSchedule() {
+            if (shutdown.get() || sessionFactory == null) {
+                return;
+            }
+
+            int desiredIntervalMs = desiredPollIntervalMs();
+            if (desiredIntervalMs == Integer.MAX_VALUE) {
+                cancelScheduledTask();
+                started.set(false);
+                return;
+            }
+
+            if (started.compareAndSet(false, true)) {
+                schedule(desiredIntervalMs);
+                return;
+            }
+
+            if (desiredIntervalMs != scheduledIntervalMs.get()) {
+                reschedule(desiredIntervalMs);
+            }
+        }
+
+        private int desiredPollIntervalMs() {
+            int desired = Integer.MAX_VALUE;
+            for (CopyOnWriteArrayList<PendingConnection> listeners : pendingConnections.values()) {
+                for (PendingConnection listener : listeners) {
+                    desired = Math.min(desired, listener.pollIntervalMs());
+                }
+            }
+            return desired;
+        }
+
+        private synchronized void reschedule(int intervalMs) {
+            if (shutdown.get() || sessionFactory == null) {
+                return;
+            }
+            cancelScheduledTask();
+            schedule(intervalMs);
+        }
+
+        private void schedule(int intervalMs) {
+            try (KeycloakSession schedulerSession = sessionFactory.create()) {
+                TimerProvider timer = schedulerSession.getProvider(TimerProvider.class);
+                if (timer == null) {
+                    throw new IllegalStateException("No TimerProvider available");
+                }
+                int effectiveIntervalMs = Math.max(50, intervalMs);
+                timer.schedule(this::runScheduledPoll, effectiveIntervalMs, TASK_NAME);
+                scheduledIntervalMs.set(effectiveIntervalMs);
+            }
+        }
+
+        private void runScheduledPoll() {
+            if (shutdown.get()) {
+                return;
+            }
             try {
-                for (int i = 0; i < maxIterations; i++) {
-                    try (KeycloakSession pollingSession = sessionFactory.create()) {
-                        pollingSession.getTransactionManager().begin();
-                        try {
-                            RealmModel pollingRealm = pollingSession.realms().getRealmByName(realmName);
-                            if (pollingRealm == null) {
-                                writeSseEvent(output, "error", "{\"error\":\"realm_not_found\"}");
-                                return;
+                pollOnce();
+            } catch (Exception e) {
+                LOG.warnf(e, "Cross-device SSE poll loop failed: %s", e.getMessage());
+            }
+        }
+
+        private void cancelScheduledTask() {
+            if (sessionFactory == null) {
+                return;
+            }
+            try (KeycloakSession schedulerSession = sessionFactory.create()) {
+                TimerProvider timer = schedulerSession.getProvider(TimerProvider.class);
+                if (timer == null) {
+                    return;
+                }
+                timer.cancelTask(TASK_NAME);
+            } catch (Exception e) {
+                LOG.debugf("Failed to cancel cross-device SSE timer task: %s", e.getMessage());
+            }
+            scheduledIntervalMs.set(Integer.MAX_VALUE);
+        }
+
+        private void pollOnce() {
+            if (pendingConnections.isEmpty()) {
+                return;
+            }
+
+            Instant now = Instant.now();
+            try (KeycloakSession pollingSession = sessionFactory.create()) {
+                pollingSession.getTransactionManager().begin();
+                try {
+                    SingleUseObjectProvider store = pollingSession.singleUseObjects();
+                    Map<String, RealmModel> realmsByName = new ConcurrentHashMap<>();
+                    for (Map.Entry<HandleKey, CopyOnWriteArrayList<PendingConnection>> entry :
+                            pendingConnections.entrySet()) {
+                        HandleKey handleKey = entry.getKey();
+                        CopyOnWriteArrayList<PendingConnection> listeners = entry.getValue();
+                        if (listeners == null || listeners.isEmpty()) {
+                            pendingConnections.remove(handleKey, listeners);
+                            continue;
+                        }
+
+                        RealmModel realm = realmsByName.computeIfAbsent(
+                                handleKey.realmName(), pollingSession.realms()::getRealmByName);
+                        if (realm == null) {
+                            closeAll(handleKey, listeners, "error", "{\"error\":\"realm_not_found\"}");
+                            continue;
+                        }
+
+                        Map<String, String> signal =
+                                store.get(CROSS_DEVICE_COMPLETE_PREFIX + handleKey.requestHandle());
+                        String completeAuthUrl = signal != null ? signal.get(KEY_COMPLETE_AUTH_URL) : null;
+                        if (completeAuthUrl != null) {
+                            String payload = toJson(Map.of(OAuth2Constants.REDIRECT_URI, completeAuthUrl));
+                            closeAll(handleKey, listeners, "complete", payload);
+                            continue;
+                        }
+
+                        List<PendingConnection> expired = new ArrayList<>();
+                        for (PendingConnection listener : listeners) {
+                            if (listener.eventSink().isClosed()) {
+                                expired.add(listener);
+                                continue;
                             }
-                            SingleUseObjectProvider store = pollingSession.singleUseObjects();
-                            Map<String, String> entry = store.remove(CROSS_DEVICE_COMPLETE_PREFIX + state);
-                            if (entry != null) {
-                                String completeAuthUrl = entry.get(KEY_COMPLETE_AUTH_URL);
-                                if (completeAuthUrl != null) {
-                                    writeSseEvent(
-                                            output,
-                                            "complete",
-                                            JsonSerialization.writeValueAsString(
-                                                    Map.of(OAuth2Constants.REDIRECT_URI, completeAuthUrl)));
-                                    pollingSession.getTransactionManager().commit();
-                                    return;
+                            if (!now.isBefore(listener.deadline())) {
+                                sendAndClose(listener, "timeout", "{\"error\":\"timeout\"}");
+                                expired.add(listener);
+                                continue;
+                            }
+                            if (!now.isBefore(listener.nextPingAt())) {
+                                if (send(listener, "ping", "{}")) {
+                                    listener.setNextPingAt(now.plusSeconds(listener.pingIntervalSeconds()));
+                                } else {
+                                    expired.add(listener);
                                 }
                             }
-                            pollingSession.getTransactionManager().commit();
-                        } catch (Exception e) {
-                            LOG.warnf("Error during SSE poll iteration: %s", e.getMessage());
-                            pollingSession.getTransactionManager().rollback();
+                        }
+                        listeners.removeAll(expired);
+                        if (listeners.isEmpty()) {
+                            pendingConnections.remove(handleKey, listeners);
                         }
                     }
-
-                    if (i % pingEveryIterations == 0) {
-                        writeSseEvent(output, "ping", "{}");
-                    }
-
-                    Thread.sleep(pollIntervalMs);
+                    pollingSession.getTransactionManager().commit();
+                } catch (Exception e) {
+                    pollingSession.getTransactionManager().rollback();
+                    throw e;
                 }
-
-                writeSseEvent(output, "timeout", "{\"error\":\"timeout\"}");
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            } catch (IOException e) {
-                // Client disconnected
             }
-        };
+            if (started.get()) {
+                reconcileSchedule();
+            }
+        }
 
-        return Response.ok(stream)
-                .type("text/event-stream")
-                .header("Cache-Control", "no-cache")
-                .header("Connection", "keep-alive")
-                .header("X-Accel-Buffering", "no")
-                .build();
+        private void closeAll(
+                HandleKey handleKey, CopyOnWriteArrayList<PendingConnection> listeners, String eventType, String data) {
+            for (PendingConnection listener : listeners) {
+                sendAndClose(listener, eventType, data);
+            }
+            pendingConnections.remove(handleKey, listeners);
+        }
+
+        private void sendAndClose(PendingConnection listener, String eventType, String data) {
+            send(listener, eventType, data);
+            try {
+                listener.eventSink().close();
+            } catch (Exception ignored) {
+            }
+        }
+
+        private boolean send(PendingConnection listener, String eventType, String data) {
+            try {
+                OutboundSseEvent event = listener.sse()
+                        .newEventBuilder()
+                        .name(eventType)
+                        .mediaType(MediaType.APPLICATION_JSON_TYPE)
+                        .data(String.class, data)
+                        .build();
+                listener.eventSink().send(event);
+                return true;
+            } catch (Exception e) {
+                LOG.debugf("Failed to send SSE event '%s': %s", eventType, e.getMessage());
+                try {
+                    listener.eventSink().close();
+                } catch (Exception ignored) {
+                }
+                return false;
+            }
+        }
+
+        private void shutdown() {
+            shutdown.set(true);
+            cancelScheduledTask();
+            for (CopyOnWriteArrayList<PendingConnection> listeners : pendingConnections.values()) {
+                for (PendingConnection listener : listeners) {
+                    try {
+                        listener.eventSink().close();
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+            pendingConnections.clear();
+        }
+
+        private String toJson(Map<String, String> payload) {
+            try {
+                return JsonSerialization.writeValueAsString(payload);
+            } catch (Exception e) {
+                throw new IllegalStateException("Failed to serialize SSE payload", e);
+            }
+        }
     }
 
-    private void writeSseEvent(OutputStream output, String eventType, String data) throws IOException {
-        output.write(("event: " + eventType + "\n").getBytes(StandardCharsets.UTF_8));
-        output.write(("data: " + data + "\n\n").getBytes(StandardCharsets.UTF_8));
-        output.flush();
+    private record HandleKey(String realmName, String requestHandle) {}
+
+    private static final class PendingConnection {
+        private final HandleKey handleKey;
+        private final SseEventSink eventSink;
+        private final Sse sse;
+        private final Instant deadline;
+        private final int pingIntervalSeconds;
+        private final int pollIntervalMs;
+        private volatile Instant nextPingAt;
+
+        private PendingConnection(
+                HandleKey handleKey,
+                SseEventSink eventSink,
+                Sse sse,
+                Instant deadline,
+                int pingIntervalSeconds,
+                int pollIntervalMs,
+                Instant nextPingAt) {
+            this.handleKey = handleKey;
+            this.eventSink = eventSink;
+            this.sse = sse;
+            this.deadline = deadline;
+            this.nextPingAt = nextPingAt;
+            this.pingIntervalSeconds = pingIntervalSeconds;
+            this.pollIntervalMs = pollIntervalMs;
+        }
+
+        private HandleKey handleKey() {
+            return handleKey;
+        }
+
+        private SseEventSink eventSink() {
+            return eventSink;
+        }
+
+        private Sse sse() {
+            return sse;
+        }
+
+        private Instant deadline() {
+            return deadline;
+        }
+
+        private Instant nextPingAt() {
+            return nextPingAt;
+        }
+
+        private int pingIntervalSeconds() {
+            return pingIntervalSeconds;
+        }
+
+        private int pollIntervalMs() {
+            return pollIntervalMs;
+        }
+
+        private void setNextPingAt(Instant nextPingAt) {
+            this.nextPingAt = nextPingAt;
+        }
     }
 }

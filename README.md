@@ -215,7 +215,7 @@ Alternatively, add it via realm import JSON:
 
 #### Caching
 
-Both the trust list and the token status list are cached based on the JWT `exp` claim. If no `exp` is present, the response is not cached. You can optionally cap the maximum cache duration.
+Both the trust list and the token status list are cached based on the JWT `exp` claim. If no `exp` is present, the response is not cached and cannot be reused as stale fallback. You can optionally cap the maximum cache duration.
 
 When a trust list refresh fails (e.g., network timeout), the extension can fall back to a stale (expired) cache entry within a configurable time window. This prevents transient network issues from blocking all credential verifications.
 
@@ -234,7 +234,7 @@ These settings control the SSE connection that keeps the browser informed during
 | `ssePollIntervalMs` | How often the node-local SSE scheduler polls the shared completion state (milliseconds). Lower values mean faster response but more load. | `2000` |
 | `sseTimeoutSeconds` | Maximum time the SSE connection stays open before sending a timeout event. | `120` |
 | `ssePingIntervalSeconds` | Interval between keep-alive ping events sent to the browser. | `10` |
-| `crossDeviceCompleteTtlSeconds` | How long the cross-device completion signal is stored in Keycloak's single-use object store. Must be greater than `sseTimeoutSeconds`. | `300` |
+| `crossDeviceCompleteTtlSeconds` | How long the cross-device completion signal is stored in Keycloak's single-use object store. The deferred auth record itself uses the realm login timeout. Must be greater than `sseTimeoutSeconds`. | `300` |
 
 ### IdP Mappers
 

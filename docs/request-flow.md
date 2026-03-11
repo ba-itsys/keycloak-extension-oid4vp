@@ -6,15 +6,14 @@ This document traces the OID4VP authorization request through the code for both 
 
 ### The `state` Parameter
 
-The `state` parameter is a unique, unguessable token generated per login attempt. It serves three purposes:
+The `state` parameter is a unique, unguessable token generated per created request object. It serves two purposes:
 
 1. **CSRF protection** — the verifier checks that the `state` returned by the wallet matches the one stored in the auth session, preventing cross-site request forgery.
-2. **Session binding** — maps the wallet's direct_post response back to the correct Keycloak auth session, especially important for cross-device flows where the wallet POST arrives without a session cookie.
-3. **Single-use object key** — used as a suffix for transient storage keys (`oid4vp_state:{state}`, `oid4vp_deferred:{state}`, `oid4vp_complete:{state}`) that coordinate the deferred authentication flow.
+2. **Request binding** — maps the wallet's direct_post response back to the exact created request instance, especially important when the same `request_uri` is fetched multiple times before one callback arrives.
 
-**Format:** `{tabId}.{random}` where `tabId` is Keycloak's auth session tab identifier and `random` is 32 cryptographically random bytes encoded as base64url (no padding). Generated in `Oid4vpIdentityProvider.initializeSessionState()`.
+**Format:** `{tabId}.{random}` where `tabId` is Keycloak's auth session tab identifier and `random` is a fresh UUID-like random value. Generated when `/request-object/{requestHandle}` is fetched.
 
-**Lifecycle:** Generated at login page render → included in the signed request object JWT → returned by the wallet in the direct_post `state` form parameter → validated by `Oid4vpCallbackProcessor` against the auth session note → used as key for deferred auth storage → consumed by `/complete-auth` to finalize login.
+**Lifecycle:** Generated when the wallet fetches a request object → included in the signed request object JWT → returned by the wallet in the direct_post `state` form parameter → resolved back to a stored request context → discarded after TTL or after the flow is consumed.
 
 **Security note:** The `state` value itself is not a secret — it is transmitted in URLs and form parameters. The flow's security does not rely on `state` being confidential. Instead, integrity is ensured by other layers: the request object is **signed** (preventing tampering with `state`, `nonce`, `response_uri`, and other claims), and when HAIP is enabled the wallet response is **encrypted** (protecting `vp_token` and `state` in transit). The `nonce` in the request object provides replay protection, and the KB-JWT (SD-JWT) / device authentication (mDoc) binds the presentation to the specific transaction.
 
@@ -28,17 +27,17 @@ Oid4vpIdentityProvider.performLogin(AuthenticationRequest)
 
 This method:
 
-1. **Initializes session state** (`initializeSessionState`) — generates `state`, `clientId`, stores them as auth notes
-2. **Builds redirect flow data** (`buildRedirectFlowData`) — creates a `requestHandle`, stores it in `Oid4vpRequestObjectStore`, builds `request_uri` URLs for same-device and cross-device
+1. **Initializes login context** (`initializeLoginContext`) — computes `clientId` / `effectiveClientId` and captures the redirect parameters needed to build the fallback form action
+2. **Builds redirect flow data** (`buildRedirectFlowData`) — creates a separate stable `requestHandle` for each enabled flow (same-device and cross-device), stores the per-flow context in `Oid4vpRequestObjectStore`, builds the corresponding `request_uri` URLs
 3. **Renders the login page** (`buildLoginFormResponse`) — passes wallet URLs, QR code, and SSE status URL to `login-oid4vp-idp.ftl`
 
 The login page contains:
 - A hidden form that posts `vp_token`/`response` back to the Keycloak endpoint
 - A same-device deep link (`openid4vp://...?request_uri=...&flow=same_device`)
 - A cross-device QR code encoding a similar URL (`openid4vp://...?request_uri=...&flow=cross_device`)
-- JavaScript that opens an SSE connection to `/cross-device/status?state=...`
+- JavaScript that opens an SSE connection to `/cross-device/status?request_handle=...` using the cross-device flow's stable request handle when that flow is enabled, while the hidden form fields remain bound to the same-device flow when it exists
 
-**Key detail:** The `request_uri` points to `/endpoint/request-object/{requestHandle}`. The request object JWT is NOT pre-built — it's generated on demand when the wallet fetches the URI.
+**Key detail:** The `request_uri` points to `/endpoint/request-object/{requestHandle}`. The request handle is stable for the browser flow, but each request-object fetch creates a fresh request context with its own `state`, `nonce`, and response-encryption key when the effective `response_mode` is `direct_post.jwt`. The request object JWT itself expires quickly (default 10 seconds) to limit fetch/replay windows, but once a wallet has fetched it, the later callback is accepted as long as the stored request context and authentication session still exist.
 
 ## Phase 1: Wallet Fetches Request Object
 
@@ -47,19 +46,15 @@ Oid4vpIdentityProviderEndpoint.getRequestObject(requestHandle, flow)
     or
 Oid4vpIdentityProviderEndpoint.postRequestObject(requestHandle, flow, walletNonce)
     both call →
-Oid4vpIdentityProviderEndpoint.generateRequestObject(requestHandle, flow, walletNonce)
+Oid4vpRequestObjectService.generateRequestObject(requestHandle, walletNonce, walletMetadata)
 ```
 
 `generateRequestObject`:
 
-1. Resolves the `requestHandle` → looks up `{rootSessionId, tabId}` from `Oid4vpRequestObjectStore`
-2. Resolves the auth session from `rootSessionId` + `tabId`
-3. Reads `state`, `effectiveClientId` from auth notes
-4. **Generates a fresh `nonce`** and stores it in the auth session — this prevents replay of VP tokens captured from earlier failed attempts
-5. Computes `responseUri` — the URL where the wallet will POST the VP token:
-   - Same-device: `/endpoint` (bare endpoint)
-   - Cross-device: `/endpoint?flow=cross_device`
-6. Delegates to `Oid4vpRedirectFlowService.buildSignedRequestObject(params)`:
+1. Resolves the `requestHandle` → looks up the stored flow context `{rootSessionId, tabId, effectiveClientId, responseUri}` from `Oid4vpRequestObjectStore`
+2. Resolves the auth session from `rootSessionId` + `tabId` to ensure the login attempt is still active
+3. Creates a fresh request context `{requestHandle, state, nonce, encryptionKeyJson, encryptionJwkThumbprint}` and stores it under the new `state` (and `kid` when the effective `response_mode` is `direct_post.jwt`)
+4. Delegates to `Oid4vpRedirectFlowService.buildSignedRequestObject(params)` using that fresh request context:
 
 ```
 Oid4vpRedirectFlowService.buildSignedRequestObject(RequestObjectParams)
@@ -67,15 +62,19 @@ Oid4vpRedirectFlowService.buildSignedRequestObject(RequestObjectParams)
 
 This method:
 
-1. **Builds base claims** (`buildBaseClaims`) — `jti`, `iat`, `exp`, `iss`, `aud`, `client_id`, `response_type=vp_token`, `response_mode` (`direct_post` or `direct_post.jwt`), `response_uri`, `nonce`, `state`
-2. **Adds client_metadata** (`addClientMetadataClaim`) — only when HAIP is enabled: generates ephemeral ECDH-ES key pair, includes public key as JWKS in `client_metadata`
-3. **Adds DCQL query + verifier_info** (`addDcqlAndVerifierInfo`)
-4. **Resolves signing key** (`resolveSigningMaterial`) — uses x509 key from PEM config if available, otherwise the realm's default signing key
-5. **Signs the JWT** — includes `x5c` certificate chain in the JWS header if configured
+1. **Resolves signing and response-encryption keys** — uses the configured x509 signing JWK when present, otherwise the realm signing key; when the effective `response_mode` is `direct_post.jwt`, it also generates or reuses the fresh per-request ECDH-ES response-encryption key
+2. **Builds request claims** — `jti`, `iat`, `exp`, `iss`, `aud`, `client_id`, `response_type`, `response_mode`, `response_uri`, `nonce`, `state`, optional `wallet_nonce`, DCQL query, verifier info, and `client_metadata`
+3. **Builds `client_metadata`** — only for encrypted wallet responses: includes the public response-encryption JWK in `jwks`, the verifier's supported wallet-response encryption methods, and `vp_formats_supported`
+4. **Normalizes DCQL trusted-authorities constraints** — if `trustedAuthoritiesMode` is enabled, the generated/manual DCQL query gets exactly one `trusted_authorities` type:
+   - `etsi_tl` advertises the configured trust-list URL
+   - `aki` advertises certificate key identifiers extracted from the configured trust list
+   - `none` leaves `trusted_authorities` absent
+   HAIP does not force this feature on; it remains explicit verifier configuration.
+5. **Delegates compact JWS creation to `Oid4vpRequestObjectSigner`** — attaches `x5c` or public `jwk` headers as required by the chosen client-id scheme and signs through Keycloak key abstractions
 
-Returns `SignedRequestObject(jwt, encryptionKeyJson)`. Back in the endpoint, if encryption was used, the KID is stored for later lookup, and the JWK thumbprint (RFC 7638, SHA-256) of the encryption key's public part is stored in the auth session as `SESSION_ENCRYPTION_JWK_THUMBPRINT`. This thumbprint is later included in the OID4VP 1.0 SessionTranscript hash for mDoc device authentication verification.
+Returns `SignedRequestObject(jwt, encryptionKeyJson)`. The returned `encryptionKeyJson` matches the freshly stored request context entry for that specific created request object.
 
-7. **Encrypts if wallet_metadata present** (POST only) — if the wallet included a `wallet_metadata` form parameter with encryption keys (`jwks`), the signed JWT is wrapped in a JWE using ECDH-ES with the wallet's public key (`Oid4vpRequestObjectEncryptor.encrypt`). The `cty` header is set to `oauth-authz-req+jwt` to indicate a nested JWT. The HTTP content type remains `application/oauth-authz-req+jwt`.
+6. **Encrypts if `wallet_metadata` is present** (POST only) — `Oid4vpRequestObjectService` parses the wallet metadata after signing and, when the wallet supplied a request-object encryption key, wraps the signed JWT in a JWE via `Oid4vpRequestObjectEncryptor.encrypt`. The `cty` header is set to `oauth-authz-req+jwt` to indicate a nested JWT. The HTTP content type remains `application/oauth-authz-req+jwt`.
 
 ## Phase 2: Wallet Posts VP Token
 
@@ -90,26 +89,26 @@ Oid4vpIdentityProviderEndpoint.handlePost(flow, state, vpToken, encryptedRespons
 `handlePost`:
 
 1. **Reads state** from the form body (OID4VP `direct_post` form parameter)
-2. **KID-based resolution** (HAIP only) — if state is missing but `encryptedResponse` is present, extracts the KID from the JWE header, looks up the encryption key + state from `Oid4vpRequestObjectStore`
-3. **Resolves auth session** from the state→session index in `Oid4vpRequestObjectStore`
-4. **Decrypts** (HAIP only) — decrypts the JWE using the ephemeral private key, extracts `vp_token`, `error`, `mdocGeneratedNonce`
+2. **KID-based resolution** (encrypted responses only) — whenever `encryptedResponse` is present, extracts the KID from the JWE header, resolves the full request context from `Oid4vpRequestObjectStore`, fills in the state if the wallet omitted it, and rejects the callback if the posted `state` disagrees with that request context
+3. **Resolves auth session** from the request context's `{rootSessionId, tabId}`
+4. **Decrypts** (when `response_mode=direct_post.jwt`) — decrypts the JWE using the request context's stored private key, extracts `vp_token`, `error`, `mdocGeneratedNonce`
 5. **Error handling** — if the wallet sent an error, returns a JSON response with `redirect_uri` pointing to the error page (GET endpoint)
 6. **Calls `processVpToken`** →
 
 ```
-processVpToken(authSession, state, vpToken, isCrossDeviceFlow)
+processVpToken(authSession, requestContext, state, vpToken, isCrossDeviceFlow)
 ```
 
-7. **Verifies the credential** via `Oid4vpCallbackProcessor.process(authSession, state, vpToken)`:
+7. **Verifies the credential** via `Oid4vpCallbackProcessor.process(requestContext, vpToken, idToken, mdocGeneratedNonce)`:
 
 ```
-Oid4vpCallbackProcessor.process(authSession, state, vpToken)
-    → processInternal(authSession, state, vpToken)
+Oid4vpCallbackProcessor.process(requestContext, vpToken, idToken, mdocGeneratedNonce)
 ```
 
 This:
-- Validates state matches auth note
-- Reads `mdocGeneratedNonce` and `encryptionJwkThumbprint` from auth session (stored during JWE decryption / request object generation in Phase 1–2)
+- Validates that a request context was resolved for the callback
+- Reads `clientId`, `nonce`, `responseUri`, and `encryptionJwkThumbprint` from that request context
+- Passes `mdocGeneratedNonce` from the decrypted callback payload when present
 - Calls `VpTokenProcessor.process(vpToken, clientId, nonce, responseUri, mdocGeneratedNonce, encryptionJwkThumbprint)`:
   - SD-JWT: `SdJwtVerifier.verify()` — delegates to Keycloak's `SdJwtVP.verify()` which performs:
     1. **Issuer signature verification** — validates the SD-JWT's JWS signature using the issuer's public key, resolved via x5c certificate chain validation (`X5cChainValidator`) or direct trust list lookup
@@ -119,7 +118,7 @@ This:
     5. **KB-JWT claim validation** — `aud` must match `clientId` (falls back to `response_uri` if primary check fails), `nonce` must match the expected nonce from the request object, `iat` must be fresh (default max age 300s + 60s clock skew), `exp`/`nbf` if present
     6. **KB-JWT `sd_hash` validation** — must equal SHA-256 of the unbound SD-JWT presentation (issuer JWT + disclosures, without the KB-JWT itself)
   - mDoc: `MdocVerifier.verifyWithTrustedCerts()` — validates MSO COSE_Sign1 issuer signature, MSO validity period (`validFrom`/`validUntil`), value digest integrity (SHA-256 of IssuerSignedItems vs MSO digests), device authentication signature via SessionTranscript binding, and extracts namespace-prefixed claims. The device authentication supports two SessionTranscript formats:
-    - **OID4VP 1.0** (Appendix B.3.2.2): `[null, null, ["OpenID4VPHandover", SHA-256(CBOR([client_id, nonce, jwk_thumbprint, response_uri]))]]` — the `jwk_thumbprint` is the RFC 7638 SHA-256 thumbprint of the HAIP encryption key from `client_metadata.jwks` (stored as `SESSION_ENCRYPTION_JWK_THUMBPRINT` during request object generation)
+    - **OID4VP 1.0** (Appendix B.3.2.2): `[null, null, ["OpenID4VPHandover", SHA-256(CBOR([client_id, nonce, jwk_thumbprint, response_uri]))]]` — the `jwk_thumbprint` is the RFC 7638 SHA-256 thumbprint of the HAIP encryption key from `client_metadata.jwks`, stored in the request context when the request object is created
     - **ISO 18013-7** (Annex B.4.4): `[null, null, [SHA-256(CBOR([client_id, mdoc_generated_nonce])), SHA-256(CBOR([response_uri, mdoc_generated_nonce])), nonce]]` — used when `mdocGeneratedNonce` is present (extracted from JWE `apu` header). Tried first with OID4VP 1.0 as fallback.
   - Checks revocation via `StatusListVerifier`
 - Validates issuer is allowed, credential type is allowed
@@ -128,7 +127,7 @@ This:
 8. **Stores deferred auth and returns redirect** — calls:
 
 ```
-directPostService.storeAndSignal(authSession, state, context, isCrossDeviceFlow)
+directPostService.storeAndSignal(authSession, requestHandle, context, isCrossDeviceFlow)
 ```
 
 ### Same-Device vs Cross-Device Differences
@@ -137,13 +136,14 @@ Both flows go through `Oid4vpDirectPostService.storeAndSignal`, which:
 
 1. Serializes the `BrokeredIdentityContext` into the auth session (`DEFERRED_IDENTITY_NOTE`)
 2. Also stores claims JSON separately (`DEFERRED_CLAIMS_NOTE`) because Keycloak's serializer loses nested Map types
-3. Stores two single-use objects:
-   - `oid4vp_deferred:{state}` → `{rootSessionId, tabId}` — used by `/complete-auth`
-   - `oid4vp_complete:{state}` → `{completeAuthUrl}` — consumed by SSE polling
+3. Stores the deferred auth single-use object for both flows using the realm login timeout and, for cross-device only, stores a separate completion marker using `crossDeviceCompleteTtlSeconds`:
+   - `oid4vp_deferred:{requestHandle}` → `{rootSessionId, tabId}` — used by `/complete-auth`
+   - `oid4vp_complete:{requestHandle}` → `{completeAuthUrl}` — read by SSE polling until `/complete-auth` removes it
+4. Removes the stable `requestHandle` entry. That flow-handle entry is the authoritative liveness check for all later `state` / `kid` lookups, so any leftover request-specific entries are rejected and lazily removed on access, which invalidates every outstanding request context for that flow and blocks replay after the first successful callback
 
 The difference is in the response:
 
-- **Same-device:** Returns `{"redirect_uri": "/complete-auth?state=..."}`. The wallet opens this URL in the browser, which triggers `completeAuth`.
+- **Same-device:** Returns `{"redirect_uri": "/complete-auth?request_handle=..."}`. The wallet opens this URL in the browser, which triggers `completeAuth`.
 - **Cross-device:** Returns `200 OK` with `{}` body. The browser's SSE connection picks up the completion signal and navigates to `/complete-auth`.
 
 ### Completion: `/complete-auth`
@@ -151,13 +151,13 @@ The difference is in the response:
 Both flows converge at:
 
 ```
-Oid4vpIdentityProviderEndpoint.completeAuth(state)
-    → Oid4vpDirectPostService.completeAuth(state, callback, event)
+Oid4vpIdentityProviderEndpoint.completeAuth(requestHandle)
+    → Oid4vpDirectPostService.completeAuth(requestHandle, callback, event)
 ```
 
 `completeAuth`:
 
-1. Removes the `oid4vp_deferred:{state}` single-use object → gets `{rootSessionId, tabId}`
+1. Removes the `oid4vp_deferred:{requestHandle}` single-use object → gets `{rootSessionId, tabId}`
 2. Resolves the auth session from `rootSessionId` + `tabId`
 3. Deserializes the `BrokeredIdentityContext` from `DEFERRED_IDENTITY_NOTE`
 4. Restores claims from `DEFERRED_CLAIMS_NOTE`
@@ -168,14 +168,17 @@ Oid4vpIdentityProviderEndpoint.completeAuth(state)
 Meanwhile, the browser has an open SSE connection:
 
 ```
-Oid4vpIdentityProviderEndpoint.crossDeviceStatus(state)
-    → Oid4vpCrossDeviceSseService.buildSseResponse(state)
+Oid4vpIdentityProviderEndpoint.crossDeviceStatus(requestHandle)
+    → Oid4vpCrossDeviceSseService.subscribe(requestHandle, eventSink, sse)
 ```
 
-The SSE service polls `singleUseObjects` for `oid4vp_complete:{state}`. When found:
-- Sends `event: complete` with `{"redirect_uri": "/complete-auth?state=..."}` to the browser
+The SSE service polls `singleUseObjects` for `oid4vp_complete:{requestHandle}`. When found:
+- Sends `event: complete` with `{"redirect_uri": "/complete-auth?request_handle=..."}` to the browser
+- Leaves the completion marker in place so a reconnecting SSE client can observe the same completion event until `/complete-auth` consumes it
 
-The browser JavaScript receives this and navigates to `/complete-auth?state=...`, triggering the completion flow above.
+The browser JavaScript receives this and navigates to `/complete-auth?request_handle=...`, triggering the completion flow above.
+
+The SSE implementation is node-local but state-shared: each node keeps one scheduler thread that polls Keycloak's shared single-use object store and fans out events to all SSE listeners currently connected to that node. This avoids a polling thread per browser connection and does not depend on cluster notifications, but it still requires the single-use store itself to be shared across nodes.
 
 ## Error Handling
 
@@ -189,8 +192,12 @@ Errors can occur at multiple points:
 | Class | Role |
 |-------|------|
 | `Oid4vpIdentityProvider` | Login page rendering, session state init, DCQL query building |
-| `Oid4vpIdentityProviderEndpoint` | JAX-RS endpoints: request-object, direct_post, SSE, complete-auth |
-| `Oid4vpRedirectFlowService` | Request object JWT signing, client_metadata/encryption key generation |
+| `Oid4vpIdentityProviderEndpoint` | Thin JAX-RS adapter for request-object, direct_post, SSE, and complete-auth routes |
+| `Oid4vpRequestObjectService` | Request-object creation, wallet-metadata encryption, and request-context persistence |
+| `Oid4vpEndpointResponseFactory` | JSON error payloads and wallet redirect responses |
+| `Oid4vpRedirectFlowService` | Request claim assembly, client_metadata/encryption key generation, wallet authorization URL creation |
+| `Oid4vpRequestObjectSigner` | Compact JWS creation for request objects using Keycloak key abstractions |
+| `Oid4vpRequestObjectEncryptor` | Optional request-object JWE wrapping based on wallet metadata |
 | `Oid4vpCallbackProcessor` | VP token verification orchestration, claim mapping to BrokeredIdentityContext |
 | `VpTokenProcessor` | Credential format detection, SD-JWT/mDoc verification, revocation checks |
 | `SdJwtVerifier` | SD-JWT signature + KB-JWT verification, disclosure resolution |
@@ -200,9 +207,15 @@ Errors can occur at multiple points:
 | `TrustListProvider` | ETSI trust list fetching, certificate extraction, caching, optional JWT signature verification |
 | `X5cChainValidator` | x5c certificate chain validation (shared by SD-JWT, mDoc, status list, trust list) |
 | `Oid4vpDirectPostService` | Deferred auth storage for both flows, session restoration at `/complete-auth` |
-| `Oid4vpCrossDeviceSseService` | SSE long-polling for cross-device completion |
-| `Oid4vpRequestObjectStore` | Transient storage for request handles, state→session mappings, KID→key mappings |
-| `Oid4vpAuthSessionResolver` | Auth session lookup from request object store (state→session, rootSessionId→tabId) |
+| `Oid4vpCrossDeviceSseService` | Node-local SSE subscription and fan-out for cross-device completion |
+| `Oid4vpRequestObjectStore` | Transient storage for stable flow handles, per-request contexts, state→request mappings, and KID→state mappings. Flow-handle removal invalidates all sibling request contexts without needing explicit per-flow state tracking |
+| `Oid4vpAuthSessionResolver` | Auth session lookup from request object store (state→handle→session, rootSessionId→tabId) |
 | `Oid4vpResponseDecryptor` | JWE decryption for direct_post.jwt responses |
 | `Oid4vpRequestObjectEncryptor` | JWE encryption for request objects when wallet sends wallet_metadata |
 | `DcqlQueryBuilder` | Builds DCQL queries from IdP mapper configurations |
+
+## Configuration Notes
+
+- `trustedAuthoritiesMode` is explicit verifier policy. `none` is the default, `etsi_tl` adds the trust-list URL to DCQL, and `aki` adds extension-derived certificate key identifiers from the trust list.
+- If `trustListSigningCertPem` is not configured, the trust-list JWT signature is not verified and the fetched trust list is trusted as-is. The code warns about that configuration but does not fail startup.
+- When HAIP is enabled with `x509_hash`, the configured verifier certificate PEM must contain a CA-issued chain. The code validates the configured chain structure before use instead of only rejecting self-signed leaves.

@@ -16,6 +16,7 @@
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
 import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.security.PublicKey;
 import java.security.cert.CertificateExpiredException;
 import java.security.cert.CertificateFactory;
@@ -24,7 +25,15 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import org.jboss.logging.Logger;
+import org.keycloak.crypto.KeyType;
+import org.keycloak.crypto.KeyUse;
+import org.keycloak.crypto.KeyWrapper;
+import org.keycloak.crypto.SignatureVerifierContext;
+import org.keycloak.jose.jws.JWSInput;
+import org.keycloak.util.JsonSerialization;
+import org.keycloak.util.KeyWrapperUtil;
 
 /**
  * Validates x5c certificate chains against a set of trusted CA certificates.
@@ -33,37 +42,52 @@ import org.jboss.logging.Logger;
  * <p>Performs both signature chain validation and certificate validity period checks
  * ({@link X509Certificate#checkValidity()}) on all certificates in the presented chain.
  */
-final class X5cChainValidator {
+public final class X5cChainValidator {
 
     private static final Logger LOG = Logger.getLogger(X5cChainValidator.class);
 
     private X5cChainValidator() {}
 
-    /**
-     * Parses Base64-encoded x5c certificates, walks the chain verifying signatures,
-     * and checks that the top of the chain is signed by one of the trusted certificates.
-     *
-     * @return the leaf certificate's public key
-     * @throws Exception if the chain is invalid or not anchored by a trusted certificate
-     */
+    static JWSInput parseJwt(String compactJwt) {
+        try {
+            return new JWSInput(compactJwt);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Failed to parse compact JWS/JWT", e);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> parseClaims(JWSInput jwt) {
+        try {
+            return JsonSerialization.readValue(jwt.getContent(), Map.class);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Failed to parse JWT claims", e);
+        }
+    }
+
+    static void verifyJwtSignature(JWSInput jwt, PublicKey publicKey) throws Exception {
+        KeyWrapper keyWrapper = new KeyWrapper();
+        keyWrapper.setPublicKey(publicKey);
+        keyWrapper.setUse(KeyUse.SIG);
+        keyWrapper.setAlgorithm(jwt.getHeader().getRawAlgorithm());
+        keyWrapper.setType(resolveKeyType(publicKey));
+
+        SignatureVerifierContext verifier = KeyWrapperUtil.createSignatureVerifierContext(keyWrapper);
+        if (!verifier.verify(jwt.getEncodedSignatureInput().getBytes(StandardCharsets.US_ASCII), jwt.getSignature())) {
+            throw new IllegalArgumentException("JWT signature verification failed");
+        }
+    }
+
     static PublicKey validateChain(List<String> x5c, List<X509Certificate> trustedCertificates) throws Exception {
         CertificateFactory cf = CertificateFactory.getInstance("X.509");
-
         List<X509Certificate> chain = new ArrayList<>();
         for (String certB64 : x5c) {
-            byte[] certDer = Base64.getDecoder().decode(certB64);
+            byte[] certDer = Base64.getMimeDecoder().decode(certB64);
             chain.add((X509Certificate) cf.generateCertificate(new ByteArrayInputStream(certDer)));
         }
-
         return validateCertChain(chain, trustedCertificates);
     }
 
-    /**
-     * Validates a pre-parsed certificate chain against trusted certificates.
-     *
-     * @return the leaf certificate's public key
-     * @throws Exception if the chain is invalid or not anchored by a trusted certificate
-     */
     static PublicKey validateCertChain(List<X509Certificate> chain, List<X509Certificate> trustedCertificates)
             throws Exception {
         if (chain.isEmpty()) {
@@ -73,7 +97,6 @@ final class X5cChainValidator {
         X509Certificate leaf = chain.get(0);
         LOG.debugf("x5c leaf certificate: %s", leaf.getSubjectX500Principal().getName());
 
-        // Check validity period of all certificates in the presented chain
         for (int i = 0; i < chain.size(); i++) {
             try {
                 chain.get(i).checkValidity();
@@ -90,13 +113,24 @@ final class X5cChainValidator {
             }
         }
 
-        // Walk up the chain: each cert should be signed by the next one
-        for (int i = 0; i < chain.size() - 1; i++) {
-            chain.get(i).verify(chain.get(i + 1).getPublicKey());
+        if (chain.size() > 1 && leaf.getBasicConstraints() >= 0) {
+            throw new IllegalStateException("x5c leaf certificate must not be a CA certificate");
         }
 
-        // The top of the chain must be signed by one of the trusted certificates
+        for (int i = 0; i < chain.size() - 1; i++) {
+            X509Certificate certificate = chain.get(i);
+            X509Certificate issuer = chain.get(i + 1);
+            if (issuer.getBasicConstraints() < 0) {
+                throw new IllegalStateException(
+                        "x5c issuer certificate at position " + (i + 1) + " is not a CA certificate");
+            }
+            certificate.verify(issuer.getPublicKey());
+        }
+
         X509Certificate topOfChain = chain.get(chain.size() - 1);
+        if (chain.size() > 1 && topOfChain.getBasicConstraints() < 0) {
+            throw new IllegalStateException("x5c top certificate must be a CA certificate");
+        }
         for (X509Certificate trusted : trustedCertificates) {
             try {
                 topOfChain.verify(trusted.getPublicKey());
@@ -105,10 +139,95 @@ final class X5cChainValidator {
                         trusted.getSubjectX500Principal().getName());
                 return leaf.getPublicKey();
             } catch (Exception ignored) {
-                // Try next trusted certificate
             }
         }
 
         throw new IllegalStateException("x5c chain not anchored by any trusted certificate");
+    }
+
+    public static void validateConfiguredVerifierChain(List<X509Certificate> chain) throws Exception {
+        if (chain.isEmpty()) {
+            throw new IllegalStateException("Verifier x5c chain is empty");
+        }
+
+        for (int i = 0; i < chain.size(); i++) {
+            X509Certificate certificate = chain.get(i);
+            try {
+                certificate.checkValidity();
+            } catch (CertificateExpiredException e) {
+                throw new IllegalStateException(
+                        "Verifier certificate at position " + i + " has expired: "
+                                + certificate.getSubjectX500Principal().getName(),
+                        e);
+            } catch (CertificateNotYetValidException e) {
+                throw new IllegalStateException(
+                        "Verifier certificate at position " + i + " is not yet valid: "
+                                + certificate.getSubjectX500Principal().getName(),
+                        e);
+            }
+        }
+
+        X509Certificate leaf = chain.get(0);
+        if (leaf.getBasicConstraints() >= 0) {
+            throw new IllegalStateException("HAIP verifier leaf certificate must not be a CA certificate");
+        }
+
+        for (int i = 0; i < chain.size() - 1; i++) {
+            X509Certificate certificate = chain.get(i);
+            X509Certificate issuer = chain.get(i + 1);
+            if (issuer.getBasicConstraints() < 0) {
+                throw new IllegalStateException(
+                        "Verifier certificate issuer at position " + (i + 1) + " is not a CA certificate");
+            }
+            certificate.verify(issuer.getPublicKey());
+        }
+
+        X509Certificate top = chain.get(chain.size() - 1);
+        if (top.getBasicConstraints() < 0) {
+            throw new IllegalStateException("Verifier x5c top certificate must be a CA certificate");
+        }
+        if (chain.size() == 1) {
+            throw new IllegalStateException("HAIP requires x509_hash verifier certificates to be CA-issued");
+        }
+    }
+
+    static void verifyJwtSignature(String compactJwt, List<X509Certificate> trustedCerts) throws Exception {
+        JWSInput jwt = parseJwt(compactJwt);
+
+        List<String> x5c = jwt.getHeader().getX5c();
+        if (x5c == null) {
+            x5c = List.of();
+        }
+        if (!x5c.isEmpty()) {
+            try {
+                PublicKey leafKey = validateChain(x5c, trustedCerts);
+                verifyJwtSignature(jwt, leafKey);
+                LOG.debug("JWT signature verified via x5c chain");
+                return;
+            } catch (Exception e) {
+                LOG.debugf("JWT x5c chain validation failed: %s", e.getMessage());
+            }
+        }
+
+        for (X509Certificate cert : trustedCerts) {
+            try {
+                verifyJwtSignature(jwt, cert.getPublicKey());
+                LOG.debug("JWT signature verified with trusted key");
+                return;
+            } catch (Exception e) {
+            }
+        }
+
+        throw new IllegalStateException("JWT signature verification failed: no trusted key matched");
+    }
+
+    private static String resolveKeyType(PublicKey publicKey) {
+        return switch (publicKey.getAlgorithm()) {
+            case "EC", "ECDSA" -> KeyType.EC;
+            case "RSA" -> KeyType.RSA;
+            case "EdDSA", "Ed25519", "Ed448" -> KeyType.OKP;
+            default ->
+                throw new IllegalArgumentException("Unsupported signature key type: " + publicKey.getAlgorithm());
+        };
     }
 }

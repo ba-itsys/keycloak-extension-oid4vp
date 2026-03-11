@@ -28,17 +28,26 @@ import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.List;
 import javax.security.auth.x500.X500Principal;
+import org.bouncycastle.asn1.x509.BasicConstraints;
+import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.keycloak.common.crypto.CryptoIntegration;
 
 class X5cChainValidatorTest {
 
     private KeyPair caKeyPair;
     private X509Certificate caCert;
+
+    @BeforeAll
+    static void initCrypto() {
+        CryptoIntegration.init(X5cChainValidatorTest.class.getClassLoader());
+    }
 
     @BeforeEach
     void setUp() throws Exception {
@@ -49,7 +58,8 @@ class X5cChainValidatorTest {
                 "CN=Test CA",
                 "CN=Test CA",
                 Instant.now().minus(1, ChronoUnit.HOURS),
-                Instant.now().plus(365, ChronoUnit.DAYS));
+                Instant.now().plus(365, ChronoUnit.DAYS),
+                true);
     }
 
     @Test
@@ -61,7 +71,8 @@ class X5cChainValidatorTest {
                 "CN=Leaf",
                 "CN=Test CA",
                 Instant.now().minus(1, ChronoUnit.HOURS),
-                Instant.now().plus(1, ChronoUnit.DAYS));
+                Instant.now().plus(1, ChronoUnit.DAYS),
+                false);
 
         PublicKey result = X5cChainValidator.validateCertChain(List.of(leafCert, caCert), List.of(caCert));
         assertThat(result).isEqualTo(leafCert.getPublicKey());
@@ -76,7 +87,8 @@ class X5cChainValidatorTest {
                 "CN=Expired Leaf",
                 "CN=Test CA",
                 Instant.now().minus(2, ChronoUnit.DAYS),
-                Instant.now().minus(1, ChronoUnit.HOURS));
+                Instant.now().minus(1, ChronoUnit.HOURS),
+                false);
 
         assertThatThrownBy(() -> X5cChainValidator.validateCertChain(List.of(expiredLeaf, caCert), List.of(caCert)))
                 .isInstanceOf(IllegalStateException.class)
@@ -93,7 +105,8 @@ class X5cChainValidatorTest {
                 "CN=Future Leaf",
                 "CN=Test CA",
                 Instant.now().plus(1, ChronoUnit.DAYS),
-                Instant.now().plus(2, ChronoUnit.DAYS));
+                Instant.now().plus(2, ChronoUnit.DAYS),
+                false);
 
         assertThatThrownBy(() -> X5cChainValidator.validateCertChain(List.of(futureLeaf, caCert), List.of(caCert)))
                 .isInstanceOf(IllegalStateException.class)
@@ -110,7 +123,8 @@ class X5cChainValidatorTest {
                 "CN=Expired Intermediate",
                 "CN=Test CA",
                 Instant.now().minus(2, ChronoUnit.DAYS),
-                Instant.now().minus(1, ChronoUnit.HOURS));
+                Instant.now().minus(1, ChronoUnit.HOURS),
+                true);
 
         KeyPair leafKp = generateKeyPair();
         X509Certificate leafCert = generateCert(
@@ -119,7 +133,8 @@ class X5cChainValidatorTest {
                 "CN=Leaf",
                 "CN=Expired Intermediate",
                 Instant.now().minus(1, ChronoUnit.HOURS),
-                Instant.now().plus(1, ChronoUnit.DAYS));
+                Instant.now().plus(1, ChronoUnit.DAYS),
+                false);
 
         assertThatThrownBy(() ->
                         X5cChainValidator.validateCertChain(List.of(leafCert, expiredIntermediate), List.of(caCert)))
@@ -144,7 +159,8 @@ class X5cChainValidatorTest {
                 "CN=Untrusted",
                 "CN=Untrusted",
                 Instant.now().minus(1, ChronoUnit.HOURS),
-                Instant.now().plus(1, ChronoUnit.DAYS));
+                Instant.now().plus(1, ChronoUnit.DAYS),
+                false);
 
         assertThatThrownBy(() -> X5cChainValidator.validateCertChain(List.of(untrustedCert), List.of(caCert)))
                 .isInstanceOf(IllegalStateException.class)
@@ -157,6 +173,34 @@ class X5cChainValidatorTest {
         assertThat(result).isEqualTo(caCert.getPublicKey());
     }
 
+    @Test
+    void validateCertChain_nonCaIntermediate_throws() throws Exception {
+        KeyPair intermediateKp = generateKeyPair();
+        X509Certificate nonCaIntermediate = generateCert(
+                intermediateKp,
+                caKeyPair,
+                "CN=Intermediate",
+                "CN=Test CA",
+                Instant.now().minus(1, ChronoUnit.HOURS),
+                Instant.now().plus(1, ChronoUnit.DAYS),
+                false);
+
+        KeyPair leafKp = generateKeyPair();
+        X509Certificate leafCert = generateCert(
+                leafKp,
+                intermediateKp,
+                "CN=Leaf",
+                "CN=Intermediate",
+                Instant.now().minus(1, ChronoUnit.HOURS),
+                Instant.now().plus(1, ChronoUnit.DAYS),
+                false);
+
+        assertThatThrownBy(() ->
+                        X5cChainValidator.validateCertChain(List.of(leafCert, nonCaIntermediate), List.of(caCert)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("not a CA certificate");
+    }
+
     private static KeyPair generateKeyPair() throws Exception {
         KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC");
         kpg.initialize(new ECGenParameterSpec("secp256r1"));
@@ -164,7 +208,13 @@ class X5cChainValidatorTest {
     }
 
     private static X509Certificate generateCert(
-            KeyPair subjectKp, KeyPair issuerKp, String subjectDn, String issuerDn, Instant notBefore, Instant notAfter)
+            KeyPair subjectKp,
+            KeyPair issuerKp,
+            String subjectDn,
+            String issuerDn,
+            Instant notBefore,
+            Instant notAfter,
+            boolean isCa)
             throws Exception {
         ContentSigner signer = new JcaContentSignerBuilder("SHA256withECDSA").build(issuerKp.getPrivate());
         var builder = new JcaX509v3CertificateBuilder(
@@ -174,6 +224,7 @@ class X5cChainValidatorTest {
                 Date.from(notAfter),
                 new X500Principal(subjectDn),
                 subjectKp.getPublic());
+        builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(isCa));
         return new JcaX509CertificateConverter().getCertificate(builder.build(signer));
     }
 }

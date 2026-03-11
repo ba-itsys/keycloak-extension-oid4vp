@@ -108,7 +108,7 @@ public class TrustListProvider {
     public TrustListProvider(List<X509Certificate> staticCertificates) {
         this.session = null;
         this.trustListUrl = null;
-        this.staticCertificates = staticCertificates;
+        this.staticCertificates = staticCertificates != null ? List.copyOf(staticCertificates) : null;
         this.maxCacheTtl = null;
         this.maxStaleAge = DEFAULT_MAX_STALE_AGE;
         this.signingCertificates = null;
@@ -148,14 +148,16 @@ public class TrustListProvider {
             String jwt = fetchTrustListJwt();
             verifySignature(jwt);
             TrustListParseResult result = parseTrustListJwt(jwt);
-
+            List<X509Certificate> certificates = List.copyOf(result.certificates);
             Instant effectiveExpiry = capExpiry(result.expiresAt);
-            CACHE.put(cacheKey, new CachedTrustList(result.certificates, effectiveExpiry, Instant.now()));
+            if (effectiveExpiry != null) {
+                CACHE.put(cacheKey, new CachedTrustList(certificates, effectiveExpiry, Instant.now()));
+            }
 
             LOG.infof(
                     "Trust list loaded from %s: %d keys (expires %s)",
-                    trustListUrl, result.certificates.size(), result.expiresAt);
-            return result.certificates;
+                    trustListUrl, certificates.size(), result.expiresAt);
+            return certificates;
         } catch (Exception e) {
             if (cached != null
                     && !cached.certificates.isEmpty()
@@ -204,6 +206,9 @@ public class TrustListProvider {
     }
 
     private Instant capExpiry(Instant expiry) {
+        if (expiry == null) {
+            return null;
+        }
         if (maxCacheTtl != null) {
             Instant maxExpiry = Instant.now().plus(maxCacheTtl);
             return expiry.isBefore(maxExpiry) ? expiry : maxExpiry;
@@ -211,7 +216,7 @@ public class TrustListProvider {
         return expiry;
     }
 
-    private String fetchTrustListJwt() throws Exception {
+    protected String fetchTrustListJwt() throws Exception {
         if (session != null) {
             return SimpleHttp.doGet(trustListUrl, session)
                     .header("Accept", "application/jwt")
@@ -349,9 +354,6 @@ public class TrustListProvider {
         JWSInput parsedJwt = X5cChainValidator.parseJwt(jwt);
         Map<String, Object> claims = X5cChainValidator.parseClaims(parsedJwt);
         Instant expiresAt = instantClaim(claims.get("exp"));
-        if (expiresAt == null) {
-            expiresAt = Instant.now();
-        }
 
         List<X509Certificate> certificates = new ArrayList<>();
 
@@ -393,7 +395,7 @@ public class TrustListProvider {
             }
         }
 
-        return new TrustListParseResult(certificates, expiresAt);
+        return new TrustListParseResult(List.copyOf(certificates), expiresAt);
     }
 
     private static Instant instantClaim(Object value) {
