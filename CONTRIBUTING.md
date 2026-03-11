@@ -1,109 +1,103 @@
-# Contributing to Keycloak Push MFA Extension
+# Contributing to keycloak-extension-oid4vp
 
-Thanks for your interest in contributing! This document explains how to set up your environment, make changes, run tests, and submit a great pull request.
-
-## Code of Conduct
-
-Be respectful and constructive. By participating, you agree to uphold a professional and inclusive environment.
+This repository contains a Keycloak identity provider extension for OID4VP wallet login. This guide covers the local setup that actually exists in this repo, the checks to run, and the documentation to update when behavior changes.
 
 ## Getting Started
 
-1. Fork the repository and create your feature branch:
-   - `git checkout -b feat/short-topic`
-2. Make your changes (see Development below).
-3. Run formatting and tests locally (see Checks below).
-4. Commit using Conventional Commits (see below) and push your branch.
-5. Open a Pull Request against `main`.
+1. Create a feature branch.
+2. Make the code and test changes.
+3. Run formatting and verification locally.
+4. Update docs when configuration, scripts, or behavior changed.
+5. Commit with a conventional commit message and `Signed-off-by`.
 
-## Development
+## Prerequisites
 
-This project is a Maven-built Keycloak extension (Java). A demo realm and local Keycloak setup are provided for convenience.
+- Java 21
+- Maven 3.9+
+- Docker
+- `ngrok` for public-wallet or conformance flows
+- `oid4vc-dev` if you want the local wallet/proxy workflow from `scripts/dev.sh --local-wallet`
 
-- Build the provider JAR:
-  - `mvn -DskipTests package`
-- Run the demo Keycloak locally (imports demo realm and loads the built provider):
-  - `docker compose up`
-  - Admin UI: http://localhost:8080 (admin / admin)
-  - Test realm: `demo`, test user: `test / test`
+## Local Development
 
-### JDK and Tooling
+For the fastest local setup, use:
 
-- JDK: Use a modern LTS JDK. CI runs with Java 21; Java 17+ works for development.
-- Maven: Apache Maven 3.9+ recommended.
+```bash
+scripts/dev.sh --local-wallet
+```
 
-### Project Layout
+That script builds the provider, regenerates the local realm import, starts the optional local wallet, and launches Keycloak with the provider mounted.
 
-- Source: `src/main/java/...`
+If you prefer the manual path:
+
+```bash
+mvn -DskipTests package
+scripts/setup-local-realm.sh sandbox/sandbox-ngrok-combined.pem sandbox/sandbox-verifier-info.json
+docker compose up
+```
+
+Important local files:
+
+- Provider code: `src/main/java/...`
 - Tests: `src/test/java/...`
-- Demo config: `config/demo-realm.json`
-- Scripts: `scripts/*.sh`
+- Demo realm import used by Docker: `src/test/resources/realm-wallet-demo-local.json`
+- Local helper scripts: `scripts/dev.sh`, `scripts/setup-local-realm.sh`, `scripts/run-keycloak-ngrok.sh`
 
-## Checks (formatting, lint, tests)
+## Checks
 
-We use the Spotless Maven plugin and JUnit/Testcontainers for tests.
+Run the same checks expected for a normal change:
 
-- Format and verify in one go (what CI does):
-  - `mvn -B spotless:check verify`
-- If formatting fails locally, apply formatting fixes and re-run:
-  - `mvn -B spotless:apply verify`
-
-Please ensure all tests pass locally before opening a PR.
-
-## Commit Messages and Releases
-
-This repository uses Conventional Commits (https://www.conventionalcommits.org/).
-
-Please format your commit messages like:
-
-```
-<type>(optional scope): short description
-
-[optional body]
-[optional footer(s)]
-
-Signed-off-by: Max Mustermann <max-mustermann@example.org>
+```bash
+mvn spotless:apply
+mvn verify
 ```
 
-Common types: `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `chore`.
+Useful narrower commands while iterating:
 
-Examples:
-- `feat(auth): add DPoP validation to login challenge`
-- `fix(spi): prevent NPE when no push provider configured`
-
-Releases and changelogs are managed by release-please via GitHub Actions. Do not bump versions or edit CHANGELOG manually; use proper Conventional Commits and the bot will propose release PRs.
-
-## Developer Certificate of Origin
-
-We have adopted a Developers Certificate of Origin (DCO).
-A DCO is a lightweight way for a developer to certify that they wrote or otherwise have the right to submit code or documentation to a project.
-To certify the code you submit to the repository, you'll need to add a Signed-off-by line to your commits.
-
-```shell
-$ git commit -s -m 'Awesome commit message'
+```bash
+mvn test
+mvn -Dit.test='*E2eIT,*ConformanceIT' failsafe:integration-test
 ```
 
-Which will look something like the following in the repo:
+The live conformance test is opt-in and requires credentials. See `docs/conformance.md` for the environment variables and ngrok/public URL requirements.
 
-```
-Awesome commit message
+## Code Expectations
+
+- Keep changes focused and avoid broad refactors without a concrete payoff.
+- Add or update tests for behavior changes.
+- Prefer simplifying test harnesses and helper APIs when they start accumulating special cases.
+- Do not commit local sandbox material, `.env`, or generated secrets.
+
+## Documentation Expectations
+
+Update the relevant docs when you change:
+
+- user-facing configuration in `README.md`
+- request/verification behavior in `docs/request-flow.md`
+- conformance setup or assumptions in `docs/conformance.md`
+- local scripts or development workflow in `README.md` or this file
+
+## Commit Messages
+
+Use Conventional Commits and include a DCO signoff:
+
+```text
+fix(conformance): isolate idp config per scenario
 
 Signed-off-by: Jane Smith <jane.smith@example.com>
 ```
 
-## Pull Request Guidelines
+Common types: `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `chore`.
 
-Before you submit:
-- Ensure the change is focused; split into multiple PRs if it spans unrelated concerns.
-- Add/adjust unit tests and integration tests when applicable.
-- Run `mvn spotless:apply verify` locally and ensure it passes.
-- Update `README.md` when user-facing behavior or setup changes.
+## Pull Requests
 
-PR checklist:
-- [ ] Tests pass locally
-- [ ] Code formatted (Spotless)
-- [ ] Conventional Commit(s)
-- [ ] Docs updated (if needed)
+Before opening a PR, make sure:
+
+- `mvn verify` passes locally
+- formatting is applied
+- docs are updated where needed
+- the change description explains any spec or Keycloak behavior impact
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the Apache License, Version 2.0. See `LICENSE` for details.
+By contributing, you agree that your contributions are licensed under the Apache License 2.0.

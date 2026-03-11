@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package de.arbeitsagentur.keycloak.oid4vp;
+package de.arbeitsagentur.keycloak.oid4vp.it;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -47,6 +47,7 @@ class Oid4vpLoginFlowHelper {
     private final String kcHostUrl;
     private final String callbackUrl;
     private final String realm;
+    private String lastCrossDeviceRequestHandle;
 
     Oid4vpLoginFlowHelper(
             Page page,
@@ -93,6 +94,7 @@ class Oid4vpLoginFlowHelper {
                 page.evaluate(
                         "() => document.querySelector('img[alt=\"QR Code for wallet login\"]').getAttribute('data-wallet-url')");
         assertThat(walletUrl).as("Cross-device wallet URL should be present").isNotEmpty();
+        lastCrossDeviceRequestHandle = extractRequestHandleFromRequestUri(extractRequestUri(walletUrl));
         return walletUrl;
     }
 
@@ -104,13 +106,20 @@ class Oid4vpLoginFlowHelper {
     }
 
     void waitForSseConnection() {
-        page.waitForCondition(
-                () -> {
-                    Object ready = page.evaluate("() => window.__oid4vpSseReady === true");
-                    return Boolean.TRUE.equals(ready);
-                },
-                new Page.WaitForConditionOptions().setTimeout(10000));
-        LOG.info("[Test] SSE connection established (first ping received)");
+        LOG.info("[Test] Cross-device flow uses durable completion state; skipping pre-wallet SSE readiness wait");
+    }
+
+    String getRequestHandle() {
+        String crossDeviceRequestHandle =
+                (String) page.evaluate("() => document.querySelector('#crossDeviceRequestHandle')?.value ?? ''");
+        if (crossDeviceRequestHandle != null && !crossDeviceRequestHandle.isBlank()) {
+            return crossDeviceRequestHandle;
+        }
+        String requestHandle = (String) page.evaluate("() => document.querySelector('#requestHandle')?.value ?? ''");
+        if (requestHandle != null && !requestHandle.isBlank()) {
+            return requestHandle;
+        }
+        return lastCrossDeviceRequestHandle;
     }
 
     void waitForLoginCompletion(PresentationResponse walletResponse) {
@@ -223,6 +232,15 @@ class Oid4vpLoginFlowHelper {
         throw new IllegalArgumentException("No request_uri found in wallet URL: " + walletUrl);
     }
 
+    static String extractRequestHandleFromRequestUri(String requestUri) {
+        String path = URI.create(requestUri).getPath();
+        int slash = path.lastIndexOf('/');
+        if (slash < 0 || slash + 1 >= path.length()) {
+            throw new IllegalArgumentException("No request handle found in request_uri: " + requestUri);
+        }
+        return path.substring(slash + 1);
+    }
+
     @SuppressWarnings("unchecked")
     static String extractEncryptionKid(String jwt) throws Exception {
         SignedJWT signedJwt = SignedJWT.parse(jwt);
@@ -234,6 +252,12 @@ class Oid4vpLoginFlowHelper {
         List<Map<String, Object>> keys = (List<Map<String, Object>>) jwks.get("keys");
         if (keys == null || keys.isEmpty()) return null;
         return (String) keys.get(0).get("kid");
+    }
+
+    static String extractRequestClaim(String jwt, String claimName) throws Exception {
+        SignedJWT signedJwt = SignedJWT.parse(jwt);
+        Object value = signedJwt.getJWTClaimsSet().getClaim(claimName);
+        return value != null ? String.valueOf(value) : null;
     }
 
     boolean isCallbackUrl(String url) {

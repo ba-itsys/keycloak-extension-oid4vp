@@ -22,6 +22,7 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
+import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import de.arbeitsagentur.keycloak.oid4vp.verification.SelfIssuedIdTokenValidator;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor;
 import java.util.Map;
@@ -30,7 +31,6 @@ import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.broker.provider.IdentityBrokerException;
 import org.keycloak.broker.provider.UserAuthenticationIdentityProvider;
 import org.keycloak.models.IdentityProviderModel;
-import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.utils.StringUtil;
 
 /**
@@ -64,29 +64,15 @@ public class Oid4vpCallbackProcessor {
         this.vpTokenProcessor = vpTokenProcessor;
     }
 
-    /**
-     * Validates the VP token (and optionally a Self-Issued ID Token) and builds a brokered
-     * identity context for Keycloak's identity broker.
-     * Clears session notes on both success and failure to prevent stale state on retry.
-     */
+    /** Validates the VP token (and optionally a Self-Issued ID Token) and builds a brokered identity context. */
     public BrokeredIdentityContext process(
-            AuthenticationSessionModel authSession, String state, String vpToken, String idToken) {
+            Oid4vpRequestObjectStore.RequestContextEntry requestContext,
+            String vpToken,
+            String idToken,
+            String mdocGeneratedNonce) {
 
-        try {
-            return processInternal(authSession, state, vpToken, idToken);
-        } catch (Exception e) {
-            // Always clean up session notes to prevent stale state on retry
-            clearSessionNotes(authSession);
-            throw e;
-        }
-    }
-
-    private BrokeredIdentityContext processInternal(
-            AuthenticationSessionModel authSession, String state, String vpToken, String idToken) {
-
-        String expectedState = authSession.getAuthNote(SESSION_STATE);
-        if (expectedState == null || !expectedState.equals(state)) {
-            throw new IdentityBrokerException("Invalid state parameter");
+        if (requestContext == null || StringUtil.isBlank(requestContext.state())) {
+            throw new IdentityBrokerException("Missing request context");
         }
 
         if (StringUtil.isBlank(vpToken)) {
@@ -95,15 +81,13 @@ public class Oid4vpCallbackProcessor {
 
         LOG.debugf("VP token received (length=%d)", vpToken.length());
 
-        String expectedNonce = authSession.getAuthNote(SESSION_NONCE);
-        String effectiveClientId = authSession.getAuthNote(SESSION_EFFECTIVE_CLIENT_ID);
-        String clientId = effectiveClientId != null ? effectiveClientId : authSession.getAuthNote(SESSION_CLIENT_ID);
-        String redirectFlowResponseUri = authSession.getAuthNote(SESSION_REDIRECT_FLOW_RESPONSE_URI);
-        String mdocGeneratedNonce = authSession.getAuthNote(SESSION_MDOC_GENERATED_NONCE);
-        String encryptionJwkThumbprint = authSession.getAuthNote(SESSION_ENCRYPTION_JWK_THUMBPRINT);
-
         VpTokenResult vpResult = vpTokenProcessor.process(
-                vpToken, clientId, expectedNonce, redirectFlowResponseUri, mdocGeneratedNonce, encryptionJwkThumbprint);
+                vpToken,
+                requestContext.effectiveClientId(),
+                requestContext.nonce(),
+                requestContext.responseUri(),
+                mdocGeneratedNonce,
+                requestContext.encryptionJwkThumbprint());
 
         VerifiedCredential primary = vpResult.getPrimaryCredential();
         if (primary == null) {
@@ -130,13 +114,15 @@ public class Oid4vpCallbackProcessor {
                 vpResult.isMultiCredential() ? vpResult.mergedClaims() : primary.claims());
 
         String subject;
+        String identityKey;
         if (configProvider.isUseIdTokenSubject()) {
-            subject = validateIdTokenAndExtractSubject(idToken, clientId, expectedNonce);
+            subject = validateIdTokenAndExtractSubject(
+                    idToken, requestContext.effectiveClientId(), requestContext.nonce());
+            identityKey = primary.generateIdentityKey(subject);
         } else {
             subject = extractSubjectFromCredential(claims, primary);
+            identityKey = primary.generateCaseInsensitiveIdentityKey(subject);
         }
-
-        String identityKey = primary.generateIdentityKey(subject);
 
         BrokeredIdentityContext context = new BrokeredIdentityContext(identityKey, idpModel);
         context.setIdp(provider);
@@ -151,8 +137,6 @@ public class Oid4vpCallbackProcessor {
                 .put(
                         Oid4vpMapperUtils.CONTEXT_PRESENTATION_TYPE_KEY,
                         primary.presentationType().name());
-
-        clearSessionNotes(authSession);
         return context;
     }
 
@@ -181,16 +165,5 @@ public class Oid4vpCallbackProcessor {
             throw new IdentityBrokerException("Missing subject claim '" + userMappingClaimName + "' in credential");
         }
         return subject;
-    }
-
-    private void clearSessionNotes(AuthenticationSessionModel authSession) {
-        authSession.removeAuthNote(SESSION_STATE);
-        authSession.removeAuthNote(SESSION_NONCE);
-        authSession.removeAuthNote(SESSION_RESPONSE_URI);
-        authSession.removeAuthNote(SESSION_REDIRECT_FLOW_RESPONSE_URI);
-        authSession.removeAuthNote(SESSION_CLIENT_ID);
-        authSession.removeAuthNote(SESSION_EFFECTIVE_CLIENT_ID);
-        authSession.removeAuthNote(SESSION_MDOC_GENERATED_NONCE);
-        authSession.removeAuthNote(SESSION_ENCRYPTION_JWK_THUMBPRINT);
     }
 }

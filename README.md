@@ -46,7 +46,7 @@ sequenceDiagram
     else Cross-device
         K->>W: 8b. 200 OK
         K->>B: 9b. SSE "complete" event with redirect_uri
-        B->>K: 10b. GET /complete-auth?state=...
+        B->>K: 10b. GET /complete-auth?request_handle=...
     end
     K->>B: Login complete
 ```
@@ -54,14 +54,14 @@ sequenceDiagram
 **Steps in detail:**
 
 1. The user clicks the OID4VP identity provider on the Keycloak login page.
-2. Keycloak generates a request token, stores a lightweight `{rootSessionId, tabId}` mapping, and renders the login page. In **same-device** mode, the page contains an `openid4vp://` deep link; in **cross-device** mode, a QR code encoding the same URL.
+2. Keycloak creates one stable `request_handle` per enabled flow, stores the flow context in Keycloak's single-use object store, and renders the login page. In **same-device** mode, the page contains an `openid4vp://` deep link; in **cross-device** mode, a QR code encoding the same URL.
 3. The user taps the deep link (same-device) or scans the QR code with a wallet on another device (cross-device).
 4. The wallet fetches the request object from the `request_uri` (a Keycloak endpoint). The URL includes `?flow=same_device` or `?flow=cross_device`.
 5. Keycloak generates and signs the request object JWT on demand, including the DCQL query, nonce, state, and (if HAIP) an ephemeral encryption key.
 6. The wallet prompts the user to consent and builds the verifiable presentation token (`vp_token`).
 7. The wallet POSTs the `vp_token` (or encrypted `response` if HAIP) to the `response_uri` specified in the request object. Keycloak verifies the credential and maps claims to user attributes.
 8. **Same-device:** Keycloak returns a redirect URL; the wallet opens it in the browser and the login completes. **Cross-device:** Keycloak responds with `200 OK` and stores a completion signal in its single-use object store.
-9. **Cross-device only:** The browser has an open SSE connection (`/cross-device/status?state=...`). It receives a `complete` event, navigates to `/complete-auth?state=...`, which restores the authentication session and finalizes the login.
+9. **Cross-device only:** The browser has an open SSE connection (`/cross-device/status?request_handle=...`). It receives a `complete` event, navigates to `/complete-auth?request_handle=...`, which restores the authentication session and finalizes the login.
 
 ### HAIP Mode (Encrypted Responses)
 
@@ -69,8 +69,10 @@ When `enforceHaip` is enabled, the flow includes response encryption:
 
 - The request object includes a `client_metadata` claim with an ephemeral ECDH-ES public key.
 - The wallet encrypts its response as a JWE (`direct_post.jwt` response mode) using that key.
-- Keycloak decrypts the JWE using the matching private key (stored in the authentication session).
+- Keycloak decrypts the JWE using the matching private key stored in the request-context entry for that specific fetched request object.
 - A new encryption key pair is generated for each request object fetch, so retries get fresh keys.
+
+When `enforceHaip` is disabled, the same encrypted response flow can still be used by setting `responseMode=direct_post.jwt` explicitly.
 
 ### Wallet Nonce Binding
 
@@ -101,6 +103,7 @@ cp target/providers/* /opt/keycloak/providers/
 ```
 
 When using the provided `docker-compose.yml`, the `target/providers/` directory is mounted automatically.
+For the local demo realm, regenerate `src/test/resources/realm-wallet-demo-local.json` with `scripts/setup-local-realm.sh` if you want to use your own sandbox certificate or verifier attestation.
 
 ## Configuration
 
@@ -124,9 +127,10 @@ Alternatively, add it via realm import JSON:
       "enabled": true,
       "config": {
         "clientIdScheme": "x509_san_dns",
+        "responseMode": "direct_post.jwt",
         "x509CertificatePem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
         "walletScheme": "openid4vp://",
-        "enforceHaip": "true",
+        "enforceHaip": "false",
         "dcqlQuery": "{...}"
       }
     }
@@ -140,10 +144,10 @@ Alternatively, add it via realm import JSON:
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `dcqlQuery` | DCQL query JSON defining which credentials to request. Auto-generated from IdP mappers if not set. | *(auto-generated)* |
+| `dcqlQuery` | DCQL query JSON defining which credentials to request. Auto-generated from IdP mappers if not set. When set manually, Keycloak still normalizes each credential entry by backfilling missing format metadata (`meta.vct_values` for `dc+sd-jwt`, `meta.doctype_value` for `mso_mdoc`) and, if enabled, `trusted_authorities`. Request-object `client_metadata` for `direct_post.jwt` remains independent of DCQL and is added separately. | *(auto-generated)* |
 | `credentialSetMode` | How credential sets are combined: `optional` (any one suffices) or `all` (all required). | `optional` |
 | `credentialSetPurpose` | Human-readable purpose string included in the DCQL credential set. | *(none)* |
-| `requestObjectLifespanSeconds` | How long the signed request object JWT is valid (seconds). The wallet fetches and processes it immediately, so this should be short. | `10` |
+| `requestObjectLifespanSeconds` | How long the signed request object JWT is valid for wallet fetch/validation (seconds). This is not the user-consent timeout after the wallet has already accepted the request, so it should stay short. | `10` |
 
 #### User Mapping
 
@@ -161,12 +165,13 @@ Alternatively, add it via realm import JSON:
 | `sameDeviceEnabled` | Enable same-device flow (wallet on the same device as the browser). | `true` |
 | `crossDeviceEnabled` | Enable cross-device flow (QR code scanned by wallet on another device). | `true` |
 | `walletScheme` | URI scheme used to invoke the wallet app. | `openid4vp://` |
+| `responseMode` | Wallet callback response mode: `direct_post` or `direct_post.jwt`. HAIP overrides this to `direct_post.jwt`. | `direct_post` |
 
 #### Client Authentication (X.509)
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `clientIdScheme` | Client ID scheme for wallet authentication: `x509_san_dns` or `x509_hash`. Ignored when `enforceHaip` is `true` (forced to `x509_hash`). | `x509_san_dns` |
+| `clientIdScheme` | Client ID scheme for wallet authentication: `x509_san_dns` or `x509_hash` (also `plain` for non-certificate flows). HAIP overrides the effective value to `x509_hash`. | `x509_san_dns` |
 | `x509CertificatePem` | PEM-encoded X.509 certificate (see modes below). Used for client ID derivation and included in the request object's `x5c` header. | *(required for x509 schemes)* |
 | `x509SigningKeyJwk` | JWK for request object signing. Normally auto-derived; only set this to override. | *(auto-derived)* |
 | `verifierInfo` | JSON string containing verifier attestation data (EUDI registration certificate). | *(none)* |
@@ -199,9 +204,9 @@ Alternatively, add it via realm import JSON:
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `enforceHaip` | Enforce HAIP compliance (ES256 signatures, encrypted responses via `direct_post.jwt`). | `true` |
+| `enforceHaip` | Enforce HAIP compliance. This is a shortcut that overrides the effective `responseMode` to `direct_post.jwt` and the effective `clientIdScheme` to `x509_hash`. | `true` |
 | `trustListUrl` | URL of an ETSI TS 119 602 trust list JWT. Used to obtain trusted issuer certificates for SD-JWT and mDoc signature verification. | *(none)* |
-| `includeTrustedAuthorities` | When enabled and `trustListUrl` is set, adds `trusted_authorities` with type `etsi_tl` to each credential in the auto-generated DCQL query. This tells wallets to only present credentials from issuers in the trust list. Has no effect on manually configured `dcqlQuery`. | `true` |
+| `trustedAuthoritiesMode` | Controls whether `trusted_authorities` is injected into DCQL credentials: `none`, `etsi_tl`, or `aki`. `etsi_tl` advertises the trust-list URL; `aki` advertises certificate key identifiers extracted from the trust list. | `none` |
 | `trustListSigningCertPem` | PEM-encoded X.509 certificate chain used to verify the trust list JWT signature. If the JWT contains an `x5c` header, the chain is validated against these certificates. If not configured, the trust list JWT signature is **not verified**. | *(none — signature not checked)* |
 | `allowedIssuers` | Comma-separated list of allowed credential issuer identifiers, or `*` for any. | `*` |
 | `allowedCredentialTypes` | Comma-separated list of allowed credential types (VCT/doctype), or `*` for any. | `*` |
@@ -226,7 +231,7 @@ These settings control the SSE connection that keeps the browser informed during
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `ssePollIntervalMs` | How often the server polls for wallet completion (milliseconds). Lower values mean faster response but more load. | `2000` |
+| `ssePollIntervalMs` | How often the node-local SSE scheduler polls the shared completion state (milliseconds). Lower values mean faster response but more load. | `2000` |
 | `sseTimeoutSeconds` | Maximum time the SSE connection stays open before sending a timeout event. | `120` |
 | `ssePingIntervalSeconds` | Interval between keep-alive ping events sent to the browser. | `10` |
 | `crossDeviceCompleteTtlSeconds` | How long the cross-device completion signal is stored in Keycloak's single-use object store. Must be greater than `sseTimeoutSeconds`. | `300` |
@@ -240,6 +245,18 @@ The extension provides two mapper types that can be added to the OID4VP identity
 
 Each mapper specifies a credential format (`dc+sd-jwt` or `mso_mdoc`), a claim path, and a credential type (VCT or doctype). When mappers are configured, the DCQL query is auto-generated from them unless `dcqlQuery` is explicitly set.
 
+If `dcqlQuery` is set manually, Keycloak still applies the same inferred credential metadata that mapper-generated queries would have:
+
+- `dc+sd-jwt`: adds `meta.vct_values` from the credential `id` when missing
+- `mso_mdoc`: adds `meta.doctype_value` from the credential `id` when missing
+- `trusted_authorities`: normalized according to `trustedAuthoritiesMode` when `trustListUrl` is configured, unless already present on the credential
+
+This normalization only affects credential-level DCQL fields. Request-object encryption metadata such as `client_metadata.jwks` and `encrypted_response_enc_values_supported` is not derived from DCQL and is still added separately when `response_mode=direct_post.jwt`.
+
+### Multi-Node Note
+
+Cross-device completion relies on Keycloak's shared `SingleUseObjectProvider` state. The browser keeps one SSE connection open to its current node, and a single scheduler thread per node polls the shared completion entries and fan-outs `ping` / `complete` / `timeout` events to all local listeners. This does not require cluster notifications, but it does require the single-use object store itself to be shared across nodes.
+
 ## Local Development
 
 ### Prerequisites
@@ -252,6 +269,8 @@ Each mapper specifies a credential format (`dc+sd-jwt` or `mso_mdoc`), a claim p
 ### Quick Start
 
 The `scripts/dev.sh` script handles everything in one command. There are two main modes:
+
+For OIDF verifier conformance testing against the preview / current demo module, see [docs/conformance.md](docs/conformance.md).
 
 #### Local Wallet Mode (recommended for development)
 
@@ -335,8 +354,9 @@ SANDBOX_DIR=/opt/certs scripts/dev.sh          # Custom cert location
 ```bash
 mvn package -DskipTests
 scripts/setup-local-realm.sh sandbox/sandbox-ngrok-combined.pem sandbox/sandbox-verifier-info.json
-scripts/run-keycloak-ngrok.sh --domain wallet-test.ngrok.dev
 ```
+
+Then either run `docker compose up` for localhost-only testing or `scripts/run-keycloak-ngrok.sh --domain wallet-test.ngrok.dev` for a public HTTPS URL.
 
 ### Running Tests
 

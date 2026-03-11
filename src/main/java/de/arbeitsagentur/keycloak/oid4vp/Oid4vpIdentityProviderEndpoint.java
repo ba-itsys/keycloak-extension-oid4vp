@@ -17,19 +17,17 @@ package de.arbeitsagentur.keycloak.oid4vp;
 
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
 
-import com.nimbusds.jose.jwk.ECKey;
 import de.arbeitsagentur.keycloak.oid4vp.domain.DecryptedResponse;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
-import de.arbeitsagentur.keycloak.oid4vp.domain.RequestObjectParams;
-import de.arbeitsagentur.keycloak.oid4vp.domain.SignedRequestObject;
-import de.arbeitsagentur.keycloak.oid4vp.domain.WalletMetadata;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpCrossDeviceSseService;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService;
+import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpEndpointResponseFactory;
+import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpRequestObjectService;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
-import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectEncryptor;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpResponseDecryptor;
 import jakarta.enterprise.inject.Vetoed;
+import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.FormParam;
 import jakarta.ws.rs.GET;
@@ -38,11 +36,11 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.UriBuilder;
-import java.util.Map;
-import java.util.UUID;
+import jakarta.ws.rs.sse.Sse;
+import jakarta.ws.rs.sse.SseEventSink;
 import org.jboss.logging.Logger;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
@@ -54,7 +52,6 @@ import org.keycloak.events.EventType;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
-import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 
 /**
@@ -88,6 +85,8 @@ public class Oid4vpIdentityProviderEndpoint {
     private final Oid4vpResponseDecryptor responseDecryptor;
     private final Oid4vpDirectPostService directPostService;
     private final Oid4vpCrossDeviceSseService sseService;
+    private final Oid4vpRequestObjectService requestObjectService;
+    private final Oid4vpEndpointResponseFactory responseFactory;
 
     public Oid4vpIdentityProviderEndpoint(
             KeycloakSession session,
@@ -104,9 +103,11 @@ public class Oid4vpIdentityProviderEndpoint {
         this.requestObjectStore = requestObjectStore;
         this.authSessionResolver = new Oid4vpAuthSessionResolver(session, realm, requestObjectStore);
         this.responseDecryptor = new Oid4vpResponseDecryptor();
-        this.directPostService = new Oid4vpDirectPostService(
-                session, realm, provider.getConfig(), authSessionResolver, requestObjectStore);
+        this.responseFactory = new Oid4vpEndpointResponseFactory(session, realm, provider.getConfig());
+        this.directPostService = new Oid4vpDirectPostService(session, realm, provider.getConfig(), requestObjectStore);
         this.sseService = new Oid4vpCrossDeviceSseService(session, realm, provider.getConfig());
+        this.requestObjectService = new Oid4vpRequestObjectService(
+                session, provider, requestObjectStore, authSessionResolver, responseFactory);
     }
 
     /**
@@ -170,52 +171,68 @@ public class Oid4vpIdentityProviderEndpoint {
         try {
             boolean isCrossDeviceFlow = FLOW_CROSS_DEVICE.equals(flow);
 
-            // Resolve state + decryption key from KID when state is absent (direct_post.jwt flow)
-            ECKey kidBasedKey = null;
-            if (StringUtil.isBlank(state) && StringUtil.isNotBlank(encryptedResponse)) {
+            // Resolve decryption key from KID for direct_post.jwt responses. When the wallet omits
+            // state, recover it from the KID index; when it includes state, require both values
+            // to agree so the encrypted callback cannot be rebound to another transaction.
+            Oid4vpRequestObjectStore.RequestContextEntry requestContext = null;
+            Oid4vpJwk kidBasedKey = null;
+            if (StringUtil.isNotBlank(encryptedResponse)) {
                 ResolvedKid resolved = resolveFromKid(encryptedResponse);
                 if (resolved != null) {
                     kidBasedKey = resolved.key();
-                    state = resolved.state();
-                }
-            }
-
-            // Resolve auth session from the state→session index
-            AuthenticationSessionModel authSession = authSessionResolver.resolveFromStore(state, null);
-
-            if (authSession == null) {
-                event.event(EventType.LOGIN_ERROR).error(Errors.SESSION_EXPIRED);
-                return jsonErrorResponse(Response.Status.BAD_REQUEST, "session_expired", null);
-            }
-
-            // Decrypt if encrypted
-            boolean wasEncrypted = false;
-            if (StringUtil.isNotBlank(encryptedResponse)) {
-                if (kidBasedKey != null) {
-                    DecryptedResponse decrypted = responseDecryptor.decrypt(encryptedResponse, kidBasedKey);
-                    wasEncrypted = true;
-                    vpToken = decrypted.vpToken() != null ? decrypted.vpToken() : vpToken;
-                    idToken = decrypted.idToken() != null ? decrypted.idToken() : idToken;
-                    error = decrypted.error() != null ? decrypted.error() : error;
-                    errorDescription = decrypted.error() != null ? decrypted.errorDescription() : errorDescription;
-                    if (decrypted.mdocGeneratedNonce() != null) {
-                        authSession.setAuthNote(SESSION_MDOC_GENERATED_NONCE, decrypted.mdocGeneratedNonce());
+                    requestContext = resolved.requestContext();
+                    if (StringUtil.isBlank(state)) {
+                        state = requestContext != null ? requestContext.state() : null;
+                    } else if (requestContext != null
+                            && StringUtil.isNotBlank(requestContext.state())
+                            && !state.equals(requestContext.state())) {
+                        return handleError(
+                                "identity_provider_error",
+                                "Encrypted response state does not match the request state.",
+                                state);
                     }
                 }
             }
 
-            String actualResponseUri = UriBuilder.fromUri(
-                            session.getContext().getUri().getRequestUri())
-                    .replaceQueryParam(OAuth2Constants.STATE)
-                    .build()
-                    .toString();
-            authSession.setAuthNote(SESSION_RESPONSE_URI, actualResponseUri);
+            if (requestContext == null) {
+                requestContext = requestObjectStore.resolveByState(session, state);
+            }
+
+            // Resolve auth session from the handle-scoped request context
+            AuthenticationSessionModel authSession = authSessionResolver.resolveFromRequestContext(requestContext);
+
+            if (authSession == null) {
+                event.event(EventType.LOGIN_ERROR).error(Errors.SESSION_EXPIRED);
+                return responseFactory.jsonErrorResponse(Response.Status.BAD_REQUEST, "session_expired", null);
+            }
+
+            // Decrypt if encrypted
+            boolean wasEncrypted = false;
+            String mdocGeneratedNonce = null;
+            if (StringUtil.isNotBlank(encryptedResponse)) {
+                if (kidBasedKey == null) {
+                    return handleError(
+                            "identity_provider_error",
+                            "Encrypted response could not be matched to a stored decryption key.",
+                            state);
+                }
+                DecryptedResponse decrypted = responseDecryptor.decrypt(encryptedResponse, kidBasedKey);
+                wasEncrypted = true;
+                vpToken = decrypted.vpToken() != null ? decrypted.vpToken() : vpToken;
+                idToken = decrypted.idToken() != null ? decrypted.idToken() : idToken;
+                error = decrypted.error() != null ? decrypted.error() : error;
+                errorDescription = decrypted.error() != null ? decrypted.errorDescription() : errorDescription;
+                if (decrypted.mdocGeneratedNonce() != null) {
+                    mdocGeneratedNonce = decrypted.mdocGeneratedNonce();
+                }
+            }
 
             if (StringUtil.isNotBlank(error)) {
                 return handleError(error, errorDescription, state);
             }
 
-            boolean encryptionExpected = provider.getConfig().isEnforceHaip();
+            boolean encryptionExpected =
+                    provider.getConfig().getResolvedResponseMode().requiresEncryption();
             if (encryptionExpected && !wasEncrypted) {
                 return handleError(
                         "identity_provider_error",
@@ -223,22 +240,23 @@ public class Oid4vpIdentityProviderEndpoint {
                         state);
             }
 
-            return processVpToken(authSession, state, vpToken, idToken, isCrossDeviceFlow);
+            return processVpToken(
+                    authSession, requestContext, state, vpToken, idToken, mdocGeneratedNonce, isCrossDeviceFlow);
         } catch (Exception e) {
             LOG.errorf(e, "Uncaught exception in handlePost: %s", e.getMessage());
-            return jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", null);
+            return responseFactory.jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", null);
         }
     }
 
-    private record ResolvedKid(ECKey key, String state) {}
+    private record ResolvedKid(Oid4vpJwk key, Oid4vpRequestObjectStore.RequestContextEntry requestContext) {}
 
     private ResolvedKid resolveFromKid(String encryptedResponse) {
         String kid = responseDecryptor.extractKid(encryptedResponse);
         if (kid == null) return null;
-        Oid4vpRequestObjectStore.KidEntry kidEntry = requestObjectStore.resolveByKid(session, kid);
-        if (kidEntry == null || kidEntry.encryptionKeyJson() == null) return null;
+        Oid4vpRequestObjectStore.RequestContextEntry requestContext = requestObjectStore.resolveByKid(session, kid);
+        if (requestContext == null || requestContext.encryptionKeyJson() == null) return null;
         try {
-            return new ResolvedKid(ECKey.parse(kidEntry.encryptionKeyJson()), kidEntry.state());
+            return new ResolvedKid(Oid4vpJwk.parse(requestContext.encryptionKeyJson()), requestContext);
         } catch (Exception e) {
             LOG.warnf("Failed to parse encryption key from KID entry: %s", e.getMessage());
             return null;
@@ -250,7 +268,7 @@ public class Oid4vpIdentityProviderEndpoint {
     @Produces(REQUEST_OBJECT_CONTENT_TYPE)
     public Response getRequestObject(
             @PathParam(PARAM_REQUEST_HANDLE) String requestHandle, @QueryParam(FLOW_PARAM) String flow) {
-        return generateRequestObject(requestHandle, flow, null, null);
+        return requestObjectService.generateRequestObject(requestHandle, null, null);
     }
 
     @POST
@@ -262,154 +280,50 @@ public class Oid4vpIdentityProviderEndpoint {
             @QueryParam(FLOW_PARAM) String flow,
             @FormParam(WALLET_NONCE) String walletNonce,
             @FormParam(WALLET_METADATA) String walletMetadata) {
-        return generateRequestObject(requestHandle, flow, walletNonce, walletMetadata);
-    }
-
-    private Response generateRequestObject(
-            String requestHandle, String flow, String walletNonce, String walletMetadataJson) {
-        if (StringUtil.isBlank(requestHandle)) {
-            return jsonErrorResponse(Response.Status.BAD_REQUEST, "invalid_request", "Missing request handle");
-        }
-
-        Oid4vpRequestObjectStore.RequestHandleEntry handleEntry =
-                requestObjectStore.resolveRequestHandle(session, requestHandle);
-        if (handleEntry == null) {
-            return jsonErrorResponse(Response.Status.NOT_FOUND, "not_found", "Request handle not found or expired");
-        }
-
-        AuthenticationSessionModel authSession =
-                authSessionResolver.resolveFromTokenEntry(handleEntry.rootSessionId(), handleEntry.tabId());
-        if (authSession == null) {
-            return jsonErrorResponse(
-                    Response.Status.BAD_REQUEST,
-                    "session_expired",
-                    "Authentication session expired. Please restart the login flow.");
-        }
-
-        try {
-            String state = authSession.getAuthNote(SESSION_STATE);
-            String effectiveClientId = authSession.getAuthNote(SESSION_EFFECTIVE_CLIENT_ID);
-
-            // Generate a fresh nonce for each request-object fetch to prevent replay attacks.
-            // A captured VP token from a failed attempt must not be valid for subsequent requests.
-            String nonce = UUID.randomUUID().toString();
-            authSession.setAuthNote(SESSION_NONCE, nonce);
-
-            String responseUri = computeResponseUri(flow);
-            authSession.setAuthNote(SESSION_RESPONSE_URI, responseUri);
-            authSession.setAuthNote(SESSION_REDIRECT_FLOW_RESPONSE_URI, responseUri);
-
-            Oid4vpIdentityProviderConfig config = provider.getConfig();
-            String dcqlQuery = provider.buildDcqlQueryFromConfig();
-
-            SignedRequestObject signedRequest = provider.getRedirectFlowService()
-                    .buildSignedRequestObject(new RequestObjectParams(
-                            dcqlQuery,
-                            config.getVerifierInfo(),
-                            effectiveClientId,
-                            config.getClientIdScheme(),
-                            responseUri,
-                            state,
-                            nonce,
-                            config.getX509CertificatePem(),
-                            config.getX509SigningKeyJwk(),
-                            walletNonce,
-                            config.isEnforceHaip(),
-                            config.isUseIdTokenSubject()));
-
-            if (signedRequest.encryptionKeyJson() != null) {
-                String kid = Oid4vpRequestObjectStore.extractKidFromJwk(signedRequest.encryptionKeyJson());
-                if (kid != null) {
-                    requestObjectStore.storeKidIndex(session, kid, signedRequest.encryptionKeyJson(), state);
-                }
-                storeEncryptionJwkThumbprint(authSession, signedRequest.encryptionKeyJson());
-            }
-
-            String responseJwt = signedRequest.jwt();
-
-            if (StringUtil.isNotBlank(walletMetadataJson)) {
-                try {
-                    WalletMetadata walletMeta = WalletMetadata.parse(walletMetadataJson);
-                    responseJwt = Oid4vpRequestObjectEncryptor.encrypt(responseJwt, walletMeta);
-                } catch (Exception e) {
-                    LOG.warnf("Failed to encrypt request object per wallet_metadata: %s", e.getMessage());
-                    return jsonErrorResponse(
-                            Response.Status.BAD_REQUEST,
-                            "invalid_request",
-                            "Failed to encrypt request object with provided wallet_metadata");
-                }
-            }
-
-            return Response.ok(responseJwt).type(REQUEST_OBJECT_CONTENT_TYPE).build();
-        } catch (Exception e) {
-            LOG.errorf(e, "Failed to generate request object: %s", e.getMessage());
-            return jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", null);
-        }
-    }
-
-    private void storeEncryptionJwkThumbprint(AuthenticationSessionModel authSession, String encryptionKeyJson) {
-        try {
-            ECKey ecKey = ECKey.parse(encryptionKeyJson);
-            byte[] thumbprint = ecKey.toPublicJWK().computeThumbprint("SHA-256").decode();
-            String encoded = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(thumbprint);
-            authSession.setAuthNote(SESSION_ENCRYPTION_JWK_THUMBPRINT, encoded);
-        } catch (Exception e) {
-            LOG.warnf("Failed to compute JWK thumbprint for encryption key: %s", e.getMessage());
-        }
-    }
-
-    private String computeResponseUri(String flow) {
-        String base = Oid4vpConstants.buildEndpointBaseUrl(
-                session.getContext().getUri().getBaseUri(),
-                realm.getName(),
-                provider.getConfig().getAlias());
-        if (FLOW_CROSS_DEVICE.equals(flow)) {
-            return base + "?" + FLOW_PARAM + "=" + FLOW_CROSS_DEVICE;
-        }
-        return base;
+        return requestObjectService.generateRequestObject(requestHandle, walletNonce, walletMetadata);
     }
 
     @GET
     @Path("/cross-device/status")
     @Produces("text/event-stream")
-    public Response crossDeviceStatus(@QueryParam(OAuth2Constants.STATE) String state) {
-        if (StringUtil.isBlank(state)) {
-            return jsonErrorResponse(Response.Status.BAD_REQUEST, "invalid_request", "Missing state parameter");
+    public void crossDeviceStatus(
+            @QueryParam(PARAM_REQUEST_HANDLE) String requestHandle, @Context SseEventSink eventSink, @Context Sse sse) {
+        if (StringUtil.isBlank(requestHandle)) {
+            throw new BadRequestException("Missing request handle parameter");
         }
-
-        return sseService.buildSseResponse(state);
+        sseService.subscribe(requestHandle, eventSink, sse);
     }
 
     @GET
     @Path("/complete-auth")
-    public Response completeAuth(@QueryParam(OAuth2Constants.STATE) String state) {
-        if (StringUtil.isBlank(state)) {
-            return jsonErrorResponse(Response.Status.BAD_REQUEST, "invalid_request", "Missing state parameter");
+    public Response completeAuth(@QueryParam(PARAM_REQUEST_HANDLE) String requestHandle) {
+        if (StringUtil.isBlank(requestHandle)) {
+            return responseFactory.jsonErrorResponse(
+                    Response.Status.BAD_REQUEST, "invalid_request", "Missing request handle parameter");
         }
-        return directPostService.completeAuth(state, callback, event);
+        return directPostService.completeAuth(requestHandle, callback, event);
     }
 
     private Response processVpToken(
             AuthenticationSessionModel authSession,
+            Oid4vpRequestObjectStore.RequestContextEntry requestContext,
             String state,
             String vpToken,
             String idToken,
+            String mdocGeneratedNonce,
             boolean isCrossDeviceFlow) {
 
         try {
             BrokeredIdentityContext context =
-                    provider.getCallbackProcessor().process(authSession, state, vpToken, idToken);
-            return directPostService.storeAndSignal(authSession, state, context, isCrossDeviceFlow);
+                    provider.getCallbackProcessor().process(requestContext, vpToken, idToken, mdocGeneratedNonce);
+            return directPostService.storeAndSignal(
+                    authSession, requestContext.requestHandle(), context, isCrossDeviceFlow);
         } catch (IdentityBrokerException e) {
             return handleError("identity_provider_error", e.getMessage(), state);
         } catch (Exception e) {
             LOG.errorf(e, "Failed to process VP token: %s", e.getMessage());
-            return jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", null);
+            return responseFactory.jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", null);
         }
-    }
-
-    private Response handleError(String error, String errorDescription) {
-        return handleError(error, errorDescription, null);
     }
 
     private Response handleError(String error, String errorDescription, String state) {
@@ -422,51 +336,7 @@ public class Oid4vpIdentityProviderEndpoint {
         // Return a redirect_uri so the wallet can redirect the browser to the error page.
         // The GET handler renders the error via callback.error().
         // Include the state so the GET handler can resolve the auth session for Keycloak's error template.
-        String errorRedirectUri = buildErrorRedirectUri(error, errorDescription, state);
-        return jsonRedirectResponse(errorRedirectUri);
-    }
-
-    private String buildErrorRedirectUri(String error, String errorDescription, String state) {
-        String base = Oid4vpConstants.buildEndpointBaseUrl(
-                session.getContext().getUri().getBaseUri(),
-                realm.getName(),
-                provider.getConfig().getAlias());
-        UriBuilder builder = UriBuilder.fromUri(base);
-        if (state != null) {
-            builder.queryParam(OAuth2Constants.STATE, state);
-        }
-        builder.queryParam(OAuth2Constants.ERROR, error);
-        if (errorDescription != null) {
-            builder.queryParam(OAuth2Constants.ERROR_DESCRIPTION, errorDescription);
-        }
-        return builder.build().toString();
-    }
-
-    private Response jsonRedirectResponse(String redirectUri) {
-        try {
-            String json = JsonSerialization.writeValueAsString(Map.of(OAuth2Constants.REDIRECT_URI, redirectUri));
-            return Response.ok(json).type(MediaType.APPLICATION_JSON).build();
-        } catch (Exception e) {
-            return Response.ok("{\"redirect_uri\":\"\"}")
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
-        }
-    }
-
-    private Response jsonErrorResponse(Response.Status status, String error, String description) {
-        try {
-            Object body = description != null
-                    ? Map.of(OAuth2Constants.ERROR, error, OAuth2Constants.ERROR_DESCRIPTION, description)
-                    : Map.of(OAuth2Constants.ERROR, error);
-            return Response.status(status)
-                    .entity(JsonSerialization.writeValueAsString(body))
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
-        } catch (Exception e) {
-            return Response.status(status)
-                    .entity("{\"error\":\"server_error\"}")
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
-        }
+        return responseFactory.jsonRedirectResponse(
+                responseFactory.buildErrorRedirectUri(error, errorDescription, state));
     }
 }

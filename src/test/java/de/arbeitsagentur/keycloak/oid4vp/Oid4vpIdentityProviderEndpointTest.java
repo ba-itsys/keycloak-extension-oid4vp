@@ -18,37 +18,63 @@ package de.arbeitsagentur.keycloak.oid4vp;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import com.nimbusds.jose.EncryptionMethod;
+import com.nimbusds.jose.JWEAlgorithm;
+import com.nimbusds.jose.JWEHeader;
+import com.nimbusds.jose.JWEObject;
+import com.nimbusds.jose.Payload;
+import com.nimbusds.jose.crypto.ECDHEncrypter;
+import com.nimbusds.jose.jwk.Curve;
+import com.nimbusds.jose.jwk.ECKey;
+import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpResponseMode;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import jakarta.ws.rs.core.Response;
-import java.lang.reflect.Method;
 import java.net.URI;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
+import org.keycloak.common.crypto.CryptoIntegration;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakUriInfo;
 import org.keycloak.models.RealmModel;
+import org.keycloak.sessions.AuthenticationSessionModel;
+import org.keycloak.sessions.AuthenticationSessionProvider;
+import org.keycloak.sessions.RootAuthenticationSessionModel;
+import org.keycloak.util.JsonSerialization;
 
 class Oid4vpIdentityProviderEndpointTest {
 
     private Oid4vpIdentityProviderEndpoint endpoint;
+    private KeycloakSession session;
+    private Oid4vpIdentityProvider provider;
+    private Oid4vpIdentityProviderConfig config;
+    private Oid4vpRequestObjectStore store;
+    private AuthenticationSessionModel authSession;
 
     @BeforeEach
     void setUp() {
-        KeycloakSession session = mock(KeycloakSession.class);
+        CryptoIntegration.init(Oid4vpIdentityProviderEndpointTest.class.getClassLoader());
+
+        session = mock(KeycloakSession.class);
         RealmModel realm = mock(RealmModel.class);
         when(realm.getName()).thenReturn("test-realm");
 
-        Oid4vpIdentityProvider provider = mock(Oid4vpIdentityProvider.class);
-        Oid4vpIdentityProviderConfig config = mock(Oid4vpIdentityProviderConfig.class);
+        provider = mock(Oid4vpIdentityProvider.class);
+        config = mock(Oid4vpIdentityProviderConfig.class);
         when(config.getAlias()).thenReturn("oid4vp");
         when(config.getSsePollIntervalMs()).thenReturn(2000);
         when(config.getSseTimeoutSeconds()).thenReturn(120);
         when(config.getSsePingIntervalSeconds()).thenReturn(10);
         when(config.getCrossDeviceCompleteTtlSeconds()).thenReturn(300);
+        when(config.isEnforceHaip()).thenReturn(true);
+        when(config.getResolvedResponseMode()).thenReturn(Oid4vpResponseMode.DIRECT_POST_JWT);
         when(provider.getConfig()).thenReturn(config);
+        when(config.getClientIdScheme()).thenReturn("x509_hash");
+        when(config.isUseIdTokenSubject()).thenReturn(false);
 
         KeycloakContext context = mock(KeycloakContext.class);
         KeycloakUriInfo uriInfo = mock(KeycloakUriInfo.class);
@@ -62,7 +88,14 @@ class Oid4vpIdentityProviderEndpointTest {
                 mock(AbstractIdentityProvider.AuthenticationCallback.class);
         EventBuilder event = mock(EventBuilder.class, RETURNS_SELF);
 
-        Oid4vpRequestObjectStore store = mock(Oid4vpRequestObjectStore.class);
+        store = mock(Oid4vpRequestObjectStore.class);
+
+        AuthenticationSessionProvider authSessions = mock(AuthenticationSessionProvider.class);
+        RootAuthenticationSessionModel rootAuthSession = mock(RootAuthenticationSessionModel.class);
+        authSession = mock(AuthenticationSessionModel.class);
+        when(session.authenticationSessions()).thenReturn(authSessions);
+        when(authSessions.getRootAuthenticationSession(realm, "root-session")).thenReturn(rootAuthSession);
+        when(rootAuthSession.getAuthenticationSessions()).thenReturn(Map.of("tab-1", authSession));
 
         endpoint = new Oid4vpIdentityProviderEndpoint(session, realm, provider, callback, event, store);
     }
@@ -76,38 +109,59 @@ class Oid4vpIdentityProviderEndpointTest {
     }
 
     @Test
-    void jsonErrorResponse_doesNotLeakDescription_whenNull() {
-        Response response = invokeJsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", null);
-        String body = (String) response.getEntity();
-        assertThat(body).contains("server_error");
-        assertThat(body).doesNotContain("error_description");
+    void handlePost_withEncryptedResponseAndPostedState_decryptsErrorPayload() throws Exception {
+        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("kid-1").generate();
+        String encryptedResponse =
+                encryptPayload(key, Map.of("error", "access_denied", "error_description", "Wallet rejected"));
+
+        when(store.resolveByKid(session, "kid-1"))
+                .thenReturn(requestContext("handle-1", "state-1", "nonce-1", key.toJSONString()));
+
+        Response response = endpoint.handlePost(null, "state-1", null, null, encryptedResponse, null, null);
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat((String) response.getEntity())
+                .contains("redirect_uri")
+                .contains("access_denied")
+                .contains("Wallet+rejected");
     }
 
     @Test
-    void jsonErrorResponse_includesDescription_whenProvided() {
-        Response response = invokeJsonErrorResponse(Response.Status.BAD_REQUEST, "invalid_request", "Missing state");
-        String body = (String) response.getEntity();
-        assertThat(body).contains("Missing state");
+    void handlePost_withEncryptedResponseAndMismatchedPostedState_returnsError() throws Exception {
+        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("kid-2").generate();
+        String encryptedResponse = encryptPayload(key, Map.of("error", "access_denied"));
+
+        when(store.resolveByKid(session, "kid-2"))
+                .thenReturn(requestContext("handle-1", "state-expected", "nonce-2", key.toJSONString()));
+
+        Response response = endpoint.handlePost(null, "state-actual", null, null, encryptedResponse, null, null);
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat((String) response.getEntity()).contains("redirect_uri").contains("state+does+not+match");
     }
 
-    @Test
-    void jsonErrorResponse_serverError_doesNotIncludeInternalDetails() {
-        // Simulate what would happen if e.getMessage() were passed — it shouldn't be
-        Response response = invokeJsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", null);
-        String body = (String) response.getEntity();
-        assertThat(body).doesNotContain("NullPointerException");
-        assertThat(body).doesNotContain("stacktrace");
-        assertThat(body).doesNotContain("java.");
+    private String encryptPayload(ECKey key, Map<String, Object> payload) throws Exception {
+        String payloadJson = JsonSerialization.writeValueAsString(payload);
+        JWEObject jwe = new JWEObject(
+                new JWEHeader.Builder(JWEAlgorithm.ECDH_ES, EncryptionMethod.A256GCM)
+                        .keyID(key.getKeyID())
+                        .build(),
+                new Payload(payloadJson));
+        jwe.encrypt(new ECDHEncrypter(key.toPublicJWK()));
+        return jwe.serialize();
     }
 
-    private Response invokeJsonErrorResponse(Response.Status status, String error, String description) {
-        try {
-            Method method = Oid4vpIdentityProviderEndpoint.class.getDeclaredMethod(
-                    "jsonErrorResponse", Response.Status.class, String.class, String.class);
-            method.setAccessible(true);
-            return (Response) method.invoke(endpoint, status, error, description);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+    private Oid4vpRequestObjectStore.RequestContextEntry requestContext(
+            String requestHandle, String state, String nonce, String encryptionKeyJson) {
+        return new Oid4vpRequestObjectStore.RequestContextEntry(
+                requestHandle,
+                "root-session",
+                "tab-1",
+                state,
+                "effective-client",
+                "https://example.com/endpoint",
+                nonce,
+                encryptionKeyJson,
+                "thumbprint");
     }
 }

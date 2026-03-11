@@ -47,20 +47,29 @@ public class Oid4vpAuthSessionResolver {
     public AuthenticationSessionModel resolveFromStore(String state, String tabIdHint) {
         if (state == null) return null;
 
-        Oid4vpRequestObjectStore.StateEntry stateEntry = requestObjectStore.resolveByState(session, state);
-        if (stateEntry == null || stateEntry.rootSessionId() == null) {
+        Oid4vpRequestObjectStore.RequestContextEntry requestContext = requestObjectStore.resolveByState(session, state);
+        if (requestContext == null || requestContext.rootSessionId() == null) {
             return null;
         }
 
         String tabId = tabIdHint;
         if (tabId == null) {
-            tabId = stateEntry.tabId();
+            tabId = requestContext.tabId();
         }
         if (tabId == null && state.contains(".")) {
             tabId = state.substring(0, state.indexOf('.'));
         }
 
-        return resolveFromTokenEntry(stateEntry.rootSessionId(), tabId);
+        return resolveFromTokenEntry(requestContext.rootSessionId(), tabId);
+    }
+
+    /** Resolves an authentication session directly from a stored request context. */
+    public AuthenticationSessionModel resolveFromRequestContext(
+            Oid4vpRequestObjectStore.RequestContextEntry requestContext) {
+        if (requestContext == null) {
+            return null;
+        }
+        return resolveFromTokenEntry(requestContext.rootSessionId(), requestContext.tabId());
     }
 
     /** Resolves an authentication session directly from root session and tab IDs. */

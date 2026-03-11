@@ -96,9 +96,16 @@ ngrok $NGROK_ARGS >"$tmp_log" 2>&1 &
 NGROK_PID="$!"
 
 get_public_url() {
-  curl -fsS "http://127.0.0.1:4040/api/tunnels" 2>/dev/null \
-    | jq -r '.tunnels[] | select(.proto=="https") | .public_url' 2>/dev/null \
-    | head -n 1
+  for api_port in 4040 4041 4042 4043 4044 4045; do
+    public_url="$(curl -fsS "http://127.0.0.1:${api_port}/api/tunnels" 2>/dev/null \
+      | jq -r --arg addr "localhost:${KC_PORT}" '.tunnels[] | select(.proto=="https" and (.config.addr | endswith($addr) or contains($addr))) | .public_url' 2>/dev/null \
+      | head -n 1)"
+    if [ -n "$public_url" ]; then
+      printf '%s\n' "$public_url"
+      return 0
+    fi
+  done
+  return 1
 }
 
 # Wait for ngrok to be ready
@@ -128,7 +135,7 @@ Keycloak admin console:
   $public_url/admin
 
 ngrok dashboard:
-  http://127.0.0.1:4040
+  http://127.0.0.1:4040 (or the next free port if 4040 is busy)
 
 Env vars:
   KC_HOSTNAME=$public_url
