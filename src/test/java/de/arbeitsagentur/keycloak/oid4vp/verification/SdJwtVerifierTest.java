@@ -25,6 +25,8 @@ import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
+import com.nimbusds.jose.util.Base64;
+import com.nimbusds.jose.util.Base64URL;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SdJwtVerificationResult;
@@ -35,7 +37,6 @@ import java.security.cert.X509Certificate;
 import java.security.interfaces.ECPublicKey;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -127,8 +128,8 @@ class SdJwtVerifierTest {
     void verify_withDisclosures_mergesClaims() throws Exception {
         // Build a disclosure: [salt, claimName, claimValue]
         String disclosureJson = "[\"salt123\",\"given_name\",\"John\"]";
-        String disclosureB64 =
-                Base64.getUrlEncoder().withoutPadding().encodeToString(disclosureJson.getBytes(StandardCharsets.UTF_8));
+        String disclosureB64 = Base64URL.encode(disclosureJson.getBytes(StandardCharsets.UTF_8))
+                .toString();
 
         // Compute disclosure digest
         String digest = computeDigest(disclosureB64);
@@ -150,8 +151,8 @@ class SdJwtVerifierTest {
     @Test
     void verify_disclosureNotInSdArray_throws() throws Exception {
         String disclosureJson = "[\"salt123\",\"given_name\",\"John\"]";
-        String disclosureB64 =
-                Base64.getUrlEncoder().withoutPadding().encodeToString(disclosureJson.getBytes(StandardCharsets.UTF_8));
+        String disclosureB64 = Base64URL.encode(disclosureJson.getBytes(StandardCharsets.UTF_8))
+                .toString();
 
         // Use a _sd array that does NOT contain this disclosure's digest
         String jwt = buildSignedJwt(Map.of(
@@ -171,29 +172,25 @@ class SdJwtVerifierTest {
 
         // Build nested disclosures like the EUDI PID: address has its own _sd array
         String localityDisclosure = "[\"salt1\",\"locality\",\"BERLIN\"]";
-        String localityB64 = Base64.getUrlEncoder()
-                .withoutPadding()
-                .encodeToString(localityDisclosure.getBytes(StandardCharsets.UTF_8));
+        String localityB64 = Base64URL.encode(localityDisclosure.getBytes(StandardCharsets.UTF_8))
+                .toString();
         String localityDigest = computeDigest(localityB64);
 
         String streetDisclosure = "[\"salt2\",\"street_address\",\"HAUPTSTR 1\"]";
-        String streetB64 = Base64.getUrlEncoder()
-                .withoutPadding()
-                .encodeToString(streetDisclosure.getBytes(StandardCharsets.UTF_8));
+        String streetB64 = Base64URL.encode(streetDisclosure.getBytes(StandardCharsets.UTF_8))
+                .toString();
         String streetDigest = computeDigest(streetB64);
 
         // address disclosure reveals an object with its own _sd array
         String addressObj = objectMapper.writeValueAsString(Map.of("_sd", List.of(localityDigest, streetDigest)));
         String addressDisclosure = "[\"salt3\",\"address\"," + addressObj + "]";
-        String addressB64 = Base64.getUrlEncoder()
-                .withoutPadding()
-                .encodeToString(addressDisclosure.getBytes(StandardCharsets.UTF_8));
+        String addressB64 = Base64URL.encode(addressDisclosure.getBytes(StandardCharsets.UTF_8))
+                .toString();
         String addressDigest = computeDigest(addressB64);
 
         String givenNameDisclosure = "[\"salt4\",\"given_name\",\"ERIKA\"]";
-        String givenNameB64 = Base64.getUrlEncoder()
-                .withoutPadding()
-                .encodeToString(givenNameDisclosure.getBytes(StandardCharsets.UTF_8));
+        String givenNameB64 = Base64URL.encode(givenNameDisclosure.getBytes(StandardCharsets.UTF_8))
+                .toString();
         String givenNameDigest = computeDigest(givenNameB64);
 
         String jwt = buildSignedJwt(Map.of(
@@ -394,12 +391,12 @@ class SdJwtVerifierTest {
     private String computeDigest(String disclosureB64) throws Exception {
         MessageDigest md = MessageDigest.getInstance("SHA256");
         byte[] hash = md.digest(disclosureB64.getBytes(StandardCharsets.US_ASCII));
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+        return Base64URL.encode(hash).toString();
     }
 
     private JWSHeader buildHeaderWithX5c() throws Exception {
         return new JWSHeader.Builder(JWSAlgorithm.ES256)
-                .x509CertChain(List.of(com.nimbusds.jose.util.Base64.encode(signingCert.getEncoded())))
+                .x509CertChain(List.of(Base64.encode(signingCert.getEncoded())))
                 .build();
     }
 
@@ -429,7 +426,7 @@ class SdJwtVerifierTest {
         // sd_hash = base64url(SHA-256(unbound_presentation))
         MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
         byte[] hash = sha256.digest(unboundPresentation.getBytes(StandardCharsets.US_ASCII));
-        String sdHash = Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+        String sdHash = Base64URL.encode(hash).toString();
 
         JWTClaimsSet kbClaims = new JWTClaimsSet.Builder()
                 .audience(audience)
@@ -458,10 +455,10 @@ class SdJwtVerifierTest {
         builder.notBeforeTime(Date.from(now));
         builder.expirationTime(Date.from(now.plusSeconds(86400)));
 
-        List<com.nimbusds.jose.util.Base64> x5cB64 = x5cCerts.stream()
+        List<Base64> x5cB64 = x5cCerts.stream()
                 .map(c -> {
                     try {
-                        return com.nimbusds.jose.util.Base64.encode(c.getEncoded());
+                        return Base64.encode(c.getEncoded());
                     } catch (Exception e) {
                         throw new RuntimeException(e);
                     }

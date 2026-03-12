@@ -32,6 +32,7 @@ import java.security.spec.RSAPrivateKeySpec;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import org.keycloak.common.util.Base64Url;
 import org.keycloak.crypto.KeyType;
 import org.keycloak.crypto.KeyUse;
@@ -123,7 +124,7 @@ public final class Oid4vpSigningKeyParser {
         keyWrapper.setUse(KeyUse.SIG);
         keyWrapper.setCurve(jwk.getCrv());
         keyWrapper.setAlgorithm(keyWrapper.getAlgorithmOrDefault());
-        keyWrapper.setPrivateKey(Oid4vpJwk.parse(JsonSerialization.mapper.convertValue(jwk, java.util.Map.class))
+        keyWrapper.setPrivateKey(Oid4vpJwk.parse(JsonSerialization.mapper.convertValue(jwk, Map.class))
                 .toPrivateKey());
         attachCertificateChain(keyWrapper, jwk);
         return keyWrapper;

@@ -151,6 +151,7 @@ public class Oid4vpRequestObjectService {
                 state,
                 flowContext.effectiveClientId(),
                 flowContext.responseUri(),
+                flowContext.flow(),
                 nonce,
                 encryptionKeyJson,
                 encryptionJwkThumbprint);

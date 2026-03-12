@@ -114,7 +114,7 @@ class Oid4vpResponseDecryptorTest {
 
         DecryptedResponse result = decryptor.decrypt(jwe.serialize(), encryptionKey);
 
-        org.keycloak.jose.jwe.JWEHeader header = Oid4vpResponseDecryptor.extractHeader(jwe.serialize());
+        var header = Oid4vpResponseDecryptor.extractHeader(jwe.serialize());
         assertThat(result.vpToken()).isEqualTo(vpToken);
         assertThat(new String(Base64Url.decode(header.getAgreementPartyUInfo()), StandardCharsets.ISO_8859_1))
                 .isEqualTo(new String(apu, StandardCharsets.ISO_8859_1));

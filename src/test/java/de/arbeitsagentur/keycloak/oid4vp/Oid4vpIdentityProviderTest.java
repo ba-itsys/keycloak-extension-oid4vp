@@ -19,6 +19,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -204,8 +207,8 @@ class Oid4vpIdentityProviderTest {
 
         provider.performLogin(request);
 
-        verify(forms, times(1)).setAttribute(org.mockito.ArgumentMatchers.eq("requestHandle"), any());
-        verify(forms, times(1)).setAttribute(org.mockito.ArgumentMatchers.eq("crossDeviceRequestHandle"), any());
+        verify(forms, times(1)).setAttribute(eq("requestHandle"), any());
+        verify(forms, times(1)).setAttribute(eq("crossDeviceRequestHandle"), any());
     }
 
     @Test
@@ -234,22 +237,46 @@ class Oid4vpIdentityProviderTest {
 
         provider.performLogin(request);
 
+        verify(singleUseObjects).put(startsWith("oid4vp_request_handle:"), anyLong(), argThat(values -> "auth-tab"
+                .equals(values.get("tabId"))));
+        verify(forms)
+                .setAttribute(
+                        eq("state"),
+                        argThat(value -> value instanceof String && ((String) value).startsWith("auth-tab.")));
+        verify(forms)
+                .setAttribute(
+                        eq("formActionUrl"),
+                        argThat(value -> value instanceof String && ((String) value).contains("tab_id=request-tab")));
+    }
+
+    @Test
+    void performLogin_storesFlowTypeInFlowHandleAndKeepsResponseUriStable() {
+        config.setCrossDeviceEnabled(true);
+
+        AuthenticationRequest request = mock(AuthenticationRequest.class);
+        RealmModel realm = mock(RealmModel.class);
+        when(realm.getName()).thenReturn("test-realm");
+        when(request.getRealm()).thenReturn(realm);
+        when(request.getAuthenticationSession()).thenReturn(authSession);
+        when(request.getRedirectUri()).thenReturn("http://localhost:8080/callback");
+        when(authSession.getTabId()).thenReturn("auth-tab");
+
+        KeycloakUriInfo uriInfo = mock(KeycloakUriInfo.class);
+        when(uriInfo.getBaseUri()).thenReturn(URI.create("http://localhost:8080/"));
+        when(uriInfo.getBaseUriBuilder()).thenReturn(UriBuilder.fromUri("http://localhost:8080/"));
+        when(uriInfo.getQueryParameters()).thenReturn(new MultivaluedHashMap<>());
+        when(request.getUriInfo()).thenReturn(uriInfo);
+        when(context.getUri()).thenReturn(uriInfo);
+
+        provider.performLogin(request);
+
         verify(singleUseObjects)
                 .put(
-                        org.mockito.ArgumentMatchers.startsWith("oid4vp_request_handle:"),
+                        startsWith("oid4vp_request_handle:"),
                         anyLong(),
-                        org.mockito.ArgumentMatchers.<Map<String, String>>argThat(
-                                values -> "auth-tab".equals(values.get("tabId"))));
-        verify(forms)
-                .setAttribute(
-                        org.mockito.ArgumentMatchers.eq("state"),
-                        org.mockito.ArgumentMatchers.argThat(
-                                value -> value instanceof String && ((String) value).startsWith("auth-tab.")));
-        verify(forms)
-                .setAttribute(
-                        org.mockito.ArgumentMatchers.eq("formActionUrl"),
-                        org.mockito.ArgumentMatchers.argThat(
-                                value -> value instanceof String && ((String) value).contains("tab_id=request-tab")));
+                        argThat(values -> "cross_device".equals(values.get("flow"))
+                                && "http://localhost:8080/realms/test-realm/broker/oid4vp/endpoint"
+                                        .equals(values.get("responseUri"))));
     }
 
     @SuppressWarnings("unchecked")

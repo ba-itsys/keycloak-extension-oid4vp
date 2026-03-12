@@ -30,7 +30,7 @@ import org.keycloak.utils.StringUtil;
  * <ul>
  *   <li><b>Request handle → flow context</b>: Maps a random UUID (used in the request_uri path)
  *       to the stable per-flow values (`rootSessionId`, `tabId`, `effectiveClientId`,
- *       `response_uri`). The handle identifies the browser-side flow and remains stable across
+ *       `response_uri`, `flow`). The handle identifies the browser-side flow and remains stable across
  *       multiple request-object fetches.
  *   <li><b>State → request context</b>: Maps the OAuth state parameter from a single created
  *       request object to its request-scoped values (`nonce`, optional HAIP response-encryption
@@ -56,6 +56,7 @@ public class Oid4vpRequestObjectStore {
     private static final String KEY_TAB_ID = "tabId";
     private static final String KEY_EFFECTIVE_CLIENT_ID = "effectiveClientId";
     private static final String KEY_RESPONSE_URI = "responseUri";
+    private static final String KEY_FLOW = "flow";
     private static final String KEY_REQUEST_HANDLE = "requestHandle";
     private static final String KEY_NONCE = "nonce";
     private static final String KEY_ENCRYPTION_KEY_JSON = "encryptionKeyJson";
@@ -68,7 +69,8 @@ public class Oid4vpRequestObjectStore {
         this.ttl = ttl;
     }
 
-    public record FlowContextEntry(String rootSessionId, String tabId, String effectiveClientId, String responseUri) {}
+    public record FlowContextEntry(
+            String rootSessionId, String tabId, String effectiveClientId, String responseUri, String flow) {}
 
     public record RequestContextEntry(
             String requestHandle,
@@ -77,6 +79,7 @@ public class Oid4vpRequestObjectStore {
             String state,
             String effectiveClientId,
             String responseUri,
+            String flow,
             String nonce,
             String encryptionKeyJson,
             String encryptionJwkThumbprint) {}
@@ -96,7 +99,9 @@ public class Oid4vpRequestObjectStore {
                                 KEY_EFFECTIVE_CLIENT_ID,
                                 emptyIfNull(entry.effectiveClientId()),
                                 KEY_RESPONSE_URI,
-                                emptyIfNull(entry.responseUri())));
+                                emptyIfNull(entry.responseUri()),
+                                KEY_FLOW,
+                                emptyIfNull(entry.flow())));
         LOG.debugf("Stored flow handle: handle=%s", requestHandle);
     }
 
@@ -136,7 +141,8 @@ public class Oid4vpRequestObjectStore {
                 blankToNull(entry.get(KEY_ROOT_SESSION_ID)),
                 blankToNull(entry.get(KEY_TAB_ID)),
                 blankToNull(entry.get(KEY_EFFECTIVE_CLIENT_ID)),
-                blankToNull(entry.get(KEY_RESPONSE_URI)));
+                blankToNull(entry.get(KEY_RESPONSE_URI)),
+                blankToNull(entry.get(KEY_FLOW)));
     }
 
     public RequestContextEntry resolveByState(KeycloakSession session, String state) {
@@ -156,6 +162,7 @@ public class Oid4vpRequestObjectStore {
                 state,
                 flowContext.effectiveClientId(),
                 flowContext.responseUri(),
+                flowContext.flow(),
                 blankToNull(entry.get(KEY_NONCE)),
                 blankToNull(entry.get(KEY_ENCRYPTION_KEY_JSON)),
                 blankToNull(entry.get(KEY_ENCRYPTION_JWK_THUMBPRINT)));

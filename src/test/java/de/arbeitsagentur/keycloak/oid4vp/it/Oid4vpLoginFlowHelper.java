@@ -17,6 +17,8 @@ package de.arbeitsagentur.keycloak.oid4vp.it;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
@@ -40,6 +42,7 @@ import org.slf4j.LoggerFactory;
 class Oid4vpLoginFlowHelper {
 
     private static final Logger LOG = LoggerFactory.getLogger(Oid4vpLoginFlowHelper.class);
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final Page page;
     private final BrowserContext context;
@@ -101,7 +104,7 @@ class Oid4vpLoginFlowHelper {
     PresentationResponse submitToWallet(String walletUrl) {
         String presentationUri = convertToOpenid4vpUri(walletUrl);
         PresentationResponse response = wallet.acceptPresentationRequest(presentationUri);
-        if (response.rawBody() != null && response.rawBody().contains("\"error\":\"session_expired\"")) {
+        if (isSessionExpiredResponse(response.rawBody())) {
             LOG.info("[Test] Wallet callback raced request-context visibility; retrying same presentation once");
             try {
                 Thread.sleep(200);
@@ -112,6 +115,27 @@ class Oid4vpLoginFlowHelper {
         }
         LOG.info("[Test] Wallet response: {}", response.rawBody());
         return response;
+    }
+
+    private boolean isSessionExpiredResponse(String rawBody) {
+        if (rawBody == null || rawBody.isBlank()) {
+            return false;
+        }
+        try {
+            JsonNode root = OBJECT_MAPPER.readTree(rawBody);
+            JsonNode responseNode = root.path("response");
+            if (responseNode.path("status_code").asInt(-1) != 400) {
+                return false;
+            }
+            String nestedBody = responseNode.path("body").asText(null);
+            if (nestedBody == null || nestedBody.isBlank()) {
+                return false;
+            }
+            JsonNode nestedJson = OBJECT_MAPPER.readTree(nestedBody);
+            return "session_expired".equals(nestedJson.path("error").asText());
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     void waitForSseConnection() {

@@ -16,6 +16,7 @@
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
@@ -55,7 +56,7 @@ class Oid4vpRequestObjectStoreTest {
                     return null;
                 })
                 .when(singleUseObjects)
-                .put(anyString(), anyLong(), org.mockito.ArgumentMatchers.<Map<String, String>>any());
+                .put(anyString(), anyLong(), any());
         when(singleUseObjects.get(anyString())).thenAnswer(invocation -> entries.get(invocation.getArgument(0)));
         when(singleUseObjects.remove(anyString())).thenAnswer(invocation -> entries.remove(invocation.getArgument(0)));
 
@@ -65,7 +66,7 @@ class Oid4vpRequestObjectStoreTest {
     @Test
     void resolveByStateAndKid_returnsRequestContextBoundToFlowHandle() {
         Oid4vpRequestObjectStore.FlowContextEntry flowContext = new Oid4vpRequestObjectStore.FlowContextEntry(
-                "root-session", "tab-1", "client-1", "https://example.com/endpoint");
+                "root-session", "tab-1", "client-1", "https://example.com/endpoint", "same_device");
         Oid4vpRequestObjectStore.RequestContextEntry requestContext = new Oid4vpRequestObjectStore.RequestContextEntry(
                 "handle-1",
                 "root-session",
@@ -73,6 +74,7 @@ class Oid4vpRequestObjectStoreTest {
                 "state-1",
                 "client-1",
                 "https://example.com/endpoint",
+                "same_device",
                 "nonce-1",
                 KEY_JSON_1,
                 "thumbprint-1");
@@ -89,7 +91,7 @@ class Oid4vpRequestObjectStoreTest {
     @Test
     void removeFlowHandle_invalidatesAllOutstandingRequestContextsForThatFlow() {
         Oid4vpRequestObjectStore.FlowContextEntry flowContext = new Oid4vpRequestObjectStore.FlowContextEntry(
-                "root-session", "tab-1", "client-1", "https://example.com/endpoint");
+                "root-session", "tab-1", "client-1", "https://example.com/endpoint", "same_device");
         Oid4vpRequestObjectStore.RequestContextEntry firstRequest = new Oid4vpRequestObjectStore.RequestContextEntry(
                 "handle-1",
                 "root-session",
@@ -97,6 +99,7 @@ class Oid4vpRequestObjectStoreTest {
                 "state-1",
                 "client-1",
                 "https://example.com/endpoint",
+                "same_device",
                 "nonce-1",
                 KEY_JSON_1,
                 "thumbprint-1");
@@ -107,6 +110,7 @@ class Oid4vpRequestObjectStoreTest {
                 "state-2",
                 "client-1",
                 "https://example.com/endpoint",
+                "same_device",
                 "nonce-2",
                 KEY_JSON_2,
                 "thumbprint-2");
@@ -136,7 +140,7 @@ class Oid4vpRequestObjectStoreTest {
     @Test
     void removeRequestContext_cleansOnlyTargetedStateAndKid() {
         Oid4vpRequestObjectStore.FlowContextEntry flowContext = new Oid4vpRequestObjectStore.FlowContextEntry(
-                "root-session", "tab-1", "client-1", "https://example.com/endpoint");
+                "root-session", "tab-1", "client-1", "https://example.com/endpoint", "same_device");
         Oid4vpRequestObjectStore.RequestContextEntry firstRequest = new Oid4vpRequestObjectStore.RequestContextEntry(
                 "handle-1",
                 "root-session",
@@ -144,6 +148,7 @@ class Oid4vpRequestObjectStoreTest {
                 "state-1",
                 "client-1",
                 "https://example.com/endpoint",
+                "same_device",
                 "nonce-1",
                 KEY_JSON_1,
                 "thumbprint-1");
@@ -154,6 +159,7 @@ class Oid4vpRequestObjectStoreTest {
                 "state-2",
                 "client-1",
                 "https://example.com/endpoint",
+                "same_device",
                 "nonce-2",
                 KEY_JSON_2,
                 "thumbprint-2");
@@ -183,6 +189,7 @@ class Oid4vpRequestObjectStoreTest {
                 "state-orphan",
                 "client-1",
                 "https://example.com/endpoint",
+                "same_device",
                 "nonce-1",
                 KEY_JSON_1,
                 "thumbprint-1");
@@ -206,7 +213,7 @@ class Oid4vpRequestObjectStoreTest {
         });
 
         Oid4vpRequestObjectStore.FlowContextEntry flowContext = new Oid4vpRequestObjectStore.FlowContextEntry(
-                "root-session", "tab-1", "client-1", "https://example.com/endpoint");
+                "root-session", "tab-1", "client-1", "https://example.com/endpoint", "same_device");
         Oid4vpRequestObjectStore.RequestContextEntry requestContext = new Oid4vpRequestObjectStore.RequestContextEntry(
                 "handle-1",
                 "root-session",
@@ -214,6 +221,7 @@ class Oid4vpRequestObjectStoreTest {
                 "state-1",
                 "client-1",
                 "https://example.com/endpoint",
+                "same_device",
                 "nonce-1",
                 KEY_JSON_1,
                 "thumbprint-1");
@@ -231,7 +239,7 @@ class Oid4vpRequestObjectStoreTest {
     @Test
     void removeFlowHandle_leavesNoValidSiblingStatesEvenIfTheyWereNotExplicitlyTracked() {
         Oid4vpRequestObjectStore.FlowContextEntry flowContext = new Oid4vpRequestObjectStore.FlowContextEntry(
-                "root-session", "tab-1", "client-1", "https://example.com/endpoint");
+                "root-session", "tab-1", "client-1", "https://example.com/endpoint", "same_device");
         Oid4vpRequestObjectStore.RequestContextEntry firstRequest = new Oid4vpRequestObjectStore.RequestContextEntry(
                 "handle-1",
                 "root-session",
@@ -239,6 +247,7 @@ class Oid4vpRequestObjectStoreTest {
                 "state-1",
                 "client-1",
                 "https://example.com/endpoint",
+                "same_device",
                 "nonce-1",
                 KEY_JSON_1,
                 "thumbprint-1");
@@ -249,6 +258,7 @@ class Oid4vpRequestObjectStoreTest {
                 "state-2",
                 "client-1",
                 "https://example.com/endpoint",
+                "same_device",
                 "nonce-2",
                 KEY_JSON_2,
                 "thumbprint-2");

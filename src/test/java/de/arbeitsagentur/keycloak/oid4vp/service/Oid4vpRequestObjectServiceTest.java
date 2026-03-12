@@ -88,7 +88,7 @@ class Oid4vpRequestObjectServiceTest {
     @Test
     void generateRequestObject_issuesFreshRequestContextForRepeatedFetches() throws Exception {
         Oid4vpRequestObjectStore.FlowContextEntry flowContext = new Oid4vpRequestObjectStore.FlowContextEntry(
-                "root-session", "tab-1", "effective-client", "https://example.com/endpoint");
+                "root-session", "tab-1", "effective-client", "https://example.com/endpoint", "same_device");
         when(store.resolveFlowHandle(session, "handle-1")).thenReturn(flowContext);
         when(redirectFlowService.createResponseEncryptionKey())
                 .thenReturn(Oid4vpJwk.generate("P-256", "ECDH-ES", "enc"))

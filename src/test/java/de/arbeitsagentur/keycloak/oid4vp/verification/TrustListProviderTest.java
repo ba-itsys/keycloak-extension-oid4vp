@@ -32,6 +32,7 @@ import java.security.cert.X509Certificate;
 import java.security.spec.ECGenParameterSpec;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
@@ -438,11 +439,11 @@ class TrustListProviderTest {
     }
 
     private static final class StubTrustListProvider extends TrustListProvider {
-        private final java.util.ArrayDeque<Object> responses;
+        private final ArrayDeque<Object> responses;
 
         private StubTrustListProvider(String trustListUrl, List<Object> responses) {
             super(null, trustListUrl, null, null, null);
-            this.responses = new java.util.ArrayDeque<>(responses);
+            this.responses = new ArrayDeque<>(responses);
         }
 
         @Override

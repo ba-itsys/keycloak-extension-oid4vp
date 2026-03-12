@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.AbstractIdentityProviderFactory;
@@ -48,8 +49,8 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProviderFactory.class);
 
     private static final Map<String, String> RESOLVED_KEY_CACHE = new ConcurrentHashMap<>();
-    private static final java.util.Set<String> WARNED_UNCHECKED_TRUST_LISTS = ConcurrentHashMap.newKeySet();
-    private static final java.util.Set<String> WARNED_MISSING_CERTIFICATE_BINDINGS = ConcurrentHashMap.newKeySet();
+    private static final Set<String> WARNED_UNCHECKED_TRUST_LISTS = ConcurrentHashMap.newKeySet();
+    private static final Set<String> WARNED_MISSING_CERTIFICATE_BINDINGS = ConcurrentHashMap.newKeySet();
 
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES;
 

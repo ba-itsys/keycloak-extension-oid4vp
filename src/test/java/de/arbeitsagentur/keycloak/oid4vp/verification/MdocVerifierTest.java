@@ -18,6 +18,7 @@ package de.arbeitsagentur.keycloak.oid4vp.verification;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.COSE_ALG_ES256;
 import static org.assertj.core.api.Assertions.*;
 
+import com.authlete.cbor.CBORBoolean;
 import com.authlete.cbor.CBORByteArray;
 import com.authlete.cbor.CBORInteger;
 import com.authlete.cbor.CBORItemList;
@@ -165,7 +166,7 @@ class MdocVerifierTest {
 
         CBORPairList item2 = new CBORPairList(List.of(
                 new CBORPair(new CBORString("elementIdentifier"), new CBORString("age_over_18")),
-                new CBORPair(new CBORString("elementValue"), com.authlete.cbor.CBORBoolean.TRUE)));
+                new CBORPair(new CBORString("elementValue"), CBORBoolean.TRUE)));
 
         CBORPairList nameSpaces = new CBORPairList(List.of(
                 new CBORPair(new CBORString("org.iso.18013.5.1"), new CBORItemList(item1)),
@@ -330,8 +331,12 @@ class MdocVerifierTest {
     @Nested
     class DeviceAuthVerification {
 
+        private static Stream<MdocDeviceResponseTestHelper.MdocAlgorithmSpec> supportedIssuerAlgorithms() {
+            return MdocVerifierTest.supportedIssuerAlgorithms();
+        }
+
         @ParameterizedTest(name = "{0}")
-        @MethodSource("de.arbeitsagentur.keycloak.oid4vp.verification.MdocVerifierTest#supportedIssuerAlgorithms")
+        @MethodSource("supportedIssuerAlgorithms")
         void verifyWithSessionTranscript_oid4vpFormat_passes(MdocDeviceResponseTestHelper.MdocAlgorithmSpec algorithm)
                 throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper(algorithm);
@@ -346,7 +351,7 @@ class MdocVerifierTest {
         }
 
         @ParameterizedTest(name = "{0}")
-        @MethodSource("de.arbeitsagentur.keycloak.oid4vp.verification.MdocVerifierTest#supportedIssuerAlgorithms")
+        @MethodSource("supportedIssuerAlgorithms")
         void verifyWithSessionTranscript_iso18013_7Format_passes(
                 MdocDeviceResponseTestHelper.MdocAlgorithmSpec algorithm) throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper(algorithm);
