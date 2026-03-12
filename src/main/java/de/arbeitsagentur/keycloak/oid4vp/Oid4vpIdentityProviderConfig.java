@@ -37,6 +37,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final String DCQL_QUERY = "dcqlQuery";
     public static final String USER_MAPPING_CLAIM = "userMappingClaim";
     public static final String USER_MAPPING_CLAIM_MDOC = "userMappingClaimMdoc";
+    public static final String TRANSIENT_USERS = IdentityProviderModel.DO_NOT_STORE_USERS;
 
     public static final String SAME_DEVICE_ENABLED = "sameDeviceEnabled";
     public static final String CROSS_DEVICE_ENABLED = "crossDeviceEnabled";
@@ -256,6 +257,15 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public boolean isUseIdTokenSubject() {
         return getBoolConfig(USE_ID_TOKEN_SUBJECT, false);
+    }
+
+    @Override
+    public boolean isTransientUsersEnabled() {
+        return getBoolConfig(TRANSIENT_USERS, false);
+    }
+
+    public void setTransientUsersEnabled(boolean enabled) {
+        setTransientUsers(Boolean.valueOf(enabled));
     }
 
     public void setUseIdTokenSubject(boolean use) {

@@ -17,6 +17,7 @@ Supported capabilities:
 - HAIP-oriented verifier configuration, including encrypted wallet responses
 - X.509-based verifier identification (`x509_san_dns`, `x509_hash`)
 - claim mappers for user attributes and session notes
+- transient wallet logins through Keycloak transient users (`doNotStoreUsers`)
 
 ## Documentation
 

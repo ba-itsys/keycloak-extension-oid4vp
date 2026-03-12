@@ -124,7 +124,7 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
                 .withEnv("KEYCLOAK_ADMIN_PASSWORD", "admin")
                 .withEnv("KC_PROXY_HEADERS", "xforwarded")
                 .withExposedPorts(8080)
-                .withCommand("start-dev", "--import-realm")
+                .withCommand("start-dev", "--features=transient-users", "--import-realm")
                 .withLogConsumer(
                         frame -> LOG.info("[KC] {}", frame.getUtf8String().stripTrailing()))
                 .waitingFor(

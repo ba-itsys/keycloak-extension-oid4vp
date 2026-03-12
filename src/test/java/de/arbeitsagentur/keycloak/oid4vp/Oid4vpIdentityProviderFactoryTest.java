@@ -142,6 +142,20 @@ class Oid4vpIdentityProviderFactoryTest {
                 .isEqualTo("plain");
     }
 
+    @Test
+    void create_doNotStoreUsers_requiresKeycloakFeature() {
+        KeycloakSession session = mockSession();
+        IdentityProviderModel model = new IdentityProviderModel();
+        model.setAlias("wallet");
+        model.getConfig().put(IdentityProviderModel.DO_NOT_STORE_USERS, "true");
+        model.getConfig().put(Oid4vpIdentityProviderConfig.ENFORCE_HAIP, "false");
+        model.getConfig().put(Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME, "plain");
+
+        assertThatThrownBy(() -> new Oid4vpIdentityProviderFactory().create(session, model))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("transient-users");
+    }
+
     private static KeycloakSession mockSession() {
         KeycloakSession session = mock(KeycloakSession.class);
         KeycloakContext context = mock(KeycloakContext.class);
