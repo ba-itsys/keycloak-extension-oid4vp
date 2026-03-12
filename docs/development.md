@@ -81,8 +81,12 @@ Then either:
 ```bash
 mvn test
 mvn verify
+mvn -Pcoverage verify
 mvn spotless:apply verify
 ```
+
+- `mvn verify` runs the full suite, including conformance tests.
+- `mvn -Pcoverage verify` generates JaCoCo coverage for unit tests and E2E tests, but excludes the conformance suite from the coverage run.
 
 ## Conformance
 

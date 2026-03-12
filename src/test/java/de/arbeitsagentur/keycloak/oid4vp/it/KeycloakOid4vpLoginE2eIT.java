@@ -169,6 +169,34 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
+    void sameDeviceCompleteAuthIsRejectedFromDifferentBrowserSession() throws Exception {
+        callback().reset();
+        flow.clearBrowserSession();
+        Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient(), Oid4vpE2eEnvironment.REALM);
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        String walletUrl = flow.getSameDeviceWalletUrl();
+        PresentationResponse response = flow.submitToWallet(walletUrl);
+        String redirectUri = response.redirectUri();
+
+        assertThat(redirectUri).contains("complete-auth");
+
+        var otherContext = env.newBrowserContext();
+        var otherPage = otherContext.newPage();
+        try {
+            otherPage.navigate(redirectUri);
+            otherPage.waitForLoadState();
+            assertThat(otherPage.url()).contains("/broker/oid4vp/endpoint/complete-auth");
+            assertThat(otherPage.locator("body").textContent().toLowerCase())
+                    .contains("authentication session does not match");
+        } finally {
+            otherPage.close();
+            otherContext.close();
+        }
+    }
+
+    @Test
     void loginWithIdTokenSubject() throws Exception {
         callback().reset();
         flow.clearBrowserSession();

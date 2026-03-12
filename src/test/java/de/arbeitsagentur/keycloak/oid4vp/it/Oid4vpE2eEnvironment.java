@@ -26,6 +26,7 @@ import java.io.IOException;
 import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.cert.X509Certificate;
@@ -36,6 +37,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.EnumSet;
 import java.util.stream.Stream;
 import javax.security.auth.x500.X500Principal;
 import org.bouncycastle.asn1.x509.BasicConstraints;
@@ -47,6 +49,7 @@ import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.testcontainers.containers.BindMode;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.containers.wait.strategy.Wait;
@@ -65,6 +68,15 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final DockerImageName WALLET_IMAGE =
             DockerImageName.parse("ghcr.io/dominikschlosser/oid4vc-dev:latest");
+    private static final String JACOCO_AGENT_VERSION = "0.8.13";
+    private static final Path JACOCO_AGENT_JAR = Path.of(System.getProperty("user.home"))
+            .resolve(".m2/repository/org/jacoco/org.jacoco.agent")
+            .resolve(JACOCO_AGENT_VERSION)
+            .resolve("org.jacoco.agent-" + JACOCO_AGENT_VERSION + "-runtime.jar");
+    private static final Path JACOCO_OUTPUT_DIR =
+            Path.of("target/jacoco-container").toAbsolutePath();
+    private static final String JACOCO_CONTAINER_FILE = "/coverage/keycloak.exec";
+    private static final Duration KEYCLOAK_STARTUP_TIMEOUT = Duration.ofSeconds(180);
     private static final String SSE_INIT_SCRIPT = """
             const OrigES = window.EventSource;
             window.EventSource = function(url) {
@@ -115,10 +127,12 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
                 .withCommand("start-dev", "--import-realm")
                 .withLogConsumer(
                         frame -> LOG.info("[KC] {}", frame.getUtf8String().stripTrailing()))
-                .waitingFor(Wait.forHttp("/realms/" + REALM).forPort(8080).withStartupTimeout(Duration.ofSeconds(180)));
+                .waitingFor(
+                        Wait.forHttp("/realms/" + REALM).forPort(8080).withStartupTimeout(KEYCLOAK_STARTUP_TIMEOUT));
 
         copyRealmImport(keycloak);
         copyProviderJars(keycloak);
+        configureCoverage(keycloak);
         keycloak.start();
         keycloakHostUrl = "http://localhost:" + keycloak.getMappedPort(8080);
 
@@ -255,6 +269,39 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
                 keycloak.withCopyFileToContainer(
                         MountableFile.forHostPath(jar), "/opt/keycloak/providers/" + jar.getFileName());
             }
+        }
+    }
+
+    private static void configureCoverage(GenericContainer<?> keycloak) throws IOException {
+        Files.createDirectories(JACOCO_OUTPUT_DIR);
+        ensureWritableCoverageDirectory(JACOCO_OUTPUT_DIR);
+        Files.deleteIfExists(JACOCO_OUTPUT_DIR.resolve("keycloak.exec"));
+        keycloak.withCopyFileToContainer(
+                MountableFile.forHostPath(JACOCO_AGENT_JAR), "/opt/keycloak/providers/jacoco-agent.jar");
+        keycloak.withFileSystemBind(JACOCO_OUTPUT_DIR.toString(), "/coverage", BindMode.READ_WRITE);
+        keycloak.withEnv(
+                "JAVA_OPTS_APPEND",
+                "-javaagent:/opt/keycloak/providers/jacoco-agent.jar=destfile="
+                        + JACOCO_CONTAINER_FILE
+                        + ",append=true,output=file,includes=de.arbeitsagentur.keycloak.oid4vp.*");
+    }
+
+    private static void ensureWritableCoverageDirectory(Path directory) throws IOException {
+        try {
+            Files.setPosixFilePermissions(
+                    directory,
+                    EnumSet.of(
+                            PosixFilePermission.OWNER_READ,
+                            PosixFilePermission.OWNER_WRITE,
+                            PosixFilePermission.OWNER_EXECUTE,
+                            PosixFilePermission.GROUP_READ,
+                            PosixFilePermission.GROUP_WRITE,
+                            PosixFilePermission.GROUP_EXECUTE,
+                            PosixFilePermission.OTHERS_READ,
+                            PosixFilePermission.OTHERS_WRITE,
+                            PosixFilePermission.OTHERS_EXECUTE));
+        } catch (UnsupportedOperationException ignored) {
+            // Non-POSIX filesystems (for example Docker Desktop mounts on macOS) do not support chmod here.
         }
     }
 
