@@ -29,12 +29,14 @@ import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpResponseMode;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
+import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.core.Response;
 import java.net.URI;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.keycloak.OAuth2Constants;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.common.crypto.CryptoIntegration;
 import org.keycloak.events.EventBuilder;
@@ -58,6 +60,7 @@ class Oid4vpIdentityProviderEndpointTest {
     private Oid4vpRequestObjectStore store;
     private AuthenticationSessionModel authSession;
     private KeycloakContext context;
+    private AbstractIdentityProvider.AuthenticationCallback callback;
 
     @BeforeEach
     void setUp() {
@@ -89,8 +92,7 @@ class Oid4vpIdentityProviderEndpointTest {
         when(session.getContext()).thenReturn(context);
         when(session.singleUseObjects()).thenReturn(mock(SingleUseObjectProvider.class));
 
-        AbstractIdentityProvider.AuthenticationCallback callback =
-                mock(AbstractIdentityProvider.AuthenticationCallback.class);
+        callback = mock(AbstractIdentityProvider.AuthenticationCallback.class);
         EventBuilder event = mock(EventBuilder.class, RETURNS_SELF);
 
         store = mock(Oid4vpRequestObjectStore.class);
@@ -109,6 +111,40 @@ class Oid4vpIdentityProviderEndpointTest {
         when(rootAuthSession.getId()).thenReturn("root-session");
 
         endpoint = new Oid4vpIdentityProviderEndpoint(session, realm, provider, callback, event, store);
+    }
+
+    @Test
+    void handleGet_withResolvedStateRendersCallbackErrorPage() {
+        when(store.resolveByState(session, "state-1"))
+                .thenReturn(requestContext("handle-1", "state-1", "nonce-1", null, "same_device"));
+        Response expected = Response.status(400).entity("rendered").build();
+        when(callback.error(config, "access_denied: denied")).thenReturn(expected);
+
+        Response response = endpoint.handleGet("state-1", "access_denied", "denied");
+
+        assertThat(response).isSameAs(expected);
+        verify(context).setAuthenticationSession(authSession);
+    }
+
+    @Test
+    void handleGet_withoutErrorRendersDefaultMessage() {
+        Response expected = Response.status(400).entity("rendered").build();
+        when(callback.error(config, "No credential response received")).thenReturn(expected);
+
+        Response response = endpoint.handleGet(null, null, null);
+
+        assertThat(response).isSameAs(expected);
+    }
+
+    @Test
+    void handleGet_whenCallbackFailsFallsBackToPlainTextResponse() {
+        when(callback.error(config, "access_denied"))
+                .thenThrow(new RuntimeException("simulated callback rendering failure"));
+
+        Response response = endpoint.handleGet(null, "access_denied", null);
+
+        assertThat(response.getStatus()).isEqualTo(400);
+        assertThat(response.getEntity()).isEqualTo("Authentication failed: access_denied");
     }
 
     @Test
@@ -168,6 +204,26 @@ class Oid4vpIdentityProviderEndpointTest {
     }
 
     @Test
+    void handlePost_withPlaintextVpTokenWhenEncryptionIsRequired_returnsErrorRedirect() {
+        when(store.resolveByState(session, "state-plain"))
+                .thenReturn(requestContext("handle-1", "state-plain", "nonce-1", null, "same_device"));
+
+        Response response = endpoint.handlePost("state-plain", "vp-token", null, null, null, null);
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat((String) response.getEntity())
+                .contains("redirect_uri")
+                .contains(OAuth2Constants.ERROR + "=identity_provider_error");
+    }
+
+    @Test
+    void crossDeviceStatus_withoutRequestHandle_throwsBadRequest() {
+        assertThatThrownBy(() -> endpoint.crossDeviceStatus(null, null, null))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Missing request handle");
+    }
+
+    @Test
     void crossDeviceStatus_withMismatchedBrowserSession_throwsForbidden() {
         when(store.resolveFlowHandle(session, "handle-1"))
                 .thenReturn(new Oid4vpRequestObjectStore.FlowContextEntry(
@@ -177,6 +233,14 @@ class Oid4vpIdentityProviderEndpointTest {
         assertThatThrownBy(() -> endpoint.crossDeviceStatus("handle-1", null, null))
                 .isInstanceOf(ForbiddenException.class)
                 .hasMessageContaining("Current browser session does not match");
+    }
+
+    @Test
+    void completeAuth_withoutRequestHandle_returnsInvalidRequest() {
+        Response response = endpoint.completeAuth(null);
+
+        assertThat(response.getStatus()).isEqualTo(400);
+        assertThat((String) response.getEntity()).contains("invalid_request");
     }
 
     private String encryptPayload(ECKey key, Map<String, Object> payload) throws Exception {
