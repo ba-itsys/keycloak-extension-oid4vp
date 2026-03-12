@@ -73,6 +73,22 @@ class StatusListVerifierTest {
     }
 
     @Test
+    void returnsNullForNonNumericStatusIndex() {
+        Map<String, Object> payload =
+                Map.of("status", Map.of("status_list", Map.of("uri", "https://example.com", "idx", "abc")));
+        assertThat(verifier.extractStatusReference(payload)).isNull();
+    }
+
+    @Test
+    void extractsStatusReferenceFromStringIndex() {
+        Map<String, Object> payload =
+                Map.of("status", Map.of("status_list", Map.of("uri", "https://example.com", "idx", "17")));
+        StatusListVerifier.StatusReference ref = verifier.extractStatusReference(payload);
+        assertThat(ref).isNotNull();
+        assertThat(ref.idx()).isEqualTo(17);
+    }
+
+    @Test
     void returnsNullWhenStatusListIsMissing() {
         Map<String, Object> payload = Map.of("status", Map.of("other_field", "value"));
         assertThat(verifier.extractStatusReference(payload)).isNull();
@@ -126,6 +142,20 @@ class StatusListVerifierTest {
     }
 
     @Test
+    void getStatusAtIndexSupportsFourBitStatuses() {
+        byte[] bits = new byte[] {(byte) 0xAB};
+        assertThat(StatusListVerifier.getStatusAtIndex(bits, 0, 4)).isEqualTo(11);
+        assertThat(StatusListVerifier.getStatusAtIndex(bits, 1, 4)).isEqualTo(10);
+    }
+
+    @Test
+    void getStatusAtIndexRejectsEmptyStatusList() {
+        assertThatThrownBy(() -> StatusListVerifier.getStatusAtIndex(new byte[0], 0, 1))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Empty status list");
+    }
+
+    @Test
     void inflateRoundTripRawDeflate() throws Exception {
         byte[] original = new byte[] {0x00, 0x01, 0x02, (byte) 0xFF, 0x00, 0x55};
 
@@ -165,6 +195,36 @@ class StatusListVerifierTest {
     void checkRevocationStatusPassesWhenNoStatusClaim() {
         verifier.checkRevocationStatus(Map.of("given_name", "Alice"));
         verifier.checkRevocationStatus(Map.of());
+    }
+
+    @Test
+    void checkRevocationStatusThrowsWhenCredentialIsRevoked() {
+        StatusListVerifier revokedVerifier = new StatusListVerifier() {
+            @Override
+            DecodedStatusList fetchAndDecodeStatusList(String uri) {
+                return new DecodedStatusList(new byte[] {0x01}, 1);
+            }
+        };
+
+        assertThatThrownBy(() -> revokedVerifier.checkRevocationStatus(Map.of(
+                        "status", Map.of("status_list", Map.of("uri", "https://issuer.example/status", "idx", 0)))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("revoked");
+    }
+
+    @Test
+    void checkRevocationStatusWrapsUnexpectedVerifierFailures() {
+        StatusListVerifier failingVerifier = new StatusListVerifier() {
+            @Override
+            DecodedStatusList fetchAndDecodeStatusList(String uri) throws Exception {
+                throw new RuntimeException("simulated status list fetch failure");
+            }
+        };
+
+        assertThatThrownBy(() -> failingVerifier.checkRevocationStatus(Map.of(
+                        "status", Map.of("status_list", Map.of("uri", "https://issuer.example/status", "idx", 0)))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Unable to verify credential revocation status");
     }
 
     @Test
@@ -292,5 +352,13 @@ class StatusListVerifierTest {
     void resolveExpiryIgnoresNonPositiveTtl() {
         Instant expiry = verifier.resolveExpiry(Instant.now().plusSeconds(600), 0);
         assertThat(expiry).isAfter(Instant.now().plusSeconds(595));
+    }
+
+    @Test
+    void resolveExpiryFallsBackToNowForNegativeTtlWithoutExp() {
+        Instant before = Instant.now();
+        Instant expiry = verifier.resolveExpiry(null, -60);
+        assertThat(expiry).isAfterOrEqualTo(before);
+        assertThat(expiry).isBefore(Instant.now().plusSeconds(2));
     }
 }

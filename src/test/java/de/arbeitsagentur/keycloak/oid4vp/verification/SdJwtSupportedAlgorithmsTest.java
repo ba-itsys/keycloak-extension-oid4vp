@@ -34,6 +34,8 @@ import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
+import com.nimbusds.jose.util.Base64;
+import com.nimbusds.jose.util.Base64URL;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SdJwtVerificationResult;
@@ -45,7 +47,6 @@ import java.security.PublicKey;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -135,7 +136,7 @@ class SdJwtSupportedAlgorithmsTest {
 
         SignedJWT signedJwt = new SignedJWT(
                 new JWSHeader.Builder(material.algorithm())
-                        .x509CertChain(List.of(com.nimbusds.jose.util.Base64.encode(cert.getEncoded())))
+                        .x509CertChain(List.of(Base64.encode(cert.getEncoded())))
                         .build(),
                 builder.build());
         signedJwt.sign(material.signer());
@@ -148,7 +149,7 @@ class SdJwtSupportedAlgorithmsTest {
         String unboundPresentation = credentialJwt + "~";
         byte[] hash =
                 MessageDigest.getInstance("SHA-256").digest(unboundPresentation.getBytes(StandardCharsets.US_ASCII));
-        String sdHash = Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+        String sdHash = Base64URL.encode(hash).toString();
 
         SignedJWT kbJwt = new SignedJWT(
                 new JWSHeader.Builder(algorithm)

@@ -86,11 +86,19 @@ class Oid4vpIdentityProviderConfigTest {
         assertThat(config.getUserMappingClaim()).isEqualTo("sub");
         assertThat(config.getClientIdScheme()).isEqualTo("x509_hash");
         assertThat(config.getResponseMode()).isEqualTo("direct_post.jwt");
+        assertThat(config.isTransientUsersEnabled()).isFalse();
         assertThat(config.isSameDeviceEnabled()).isTrue();
         assertThat(config.isCrossDeviceEnabled()).isTrue();
         assertThat(config.isEnforceHaip()).isTrue();
         assertThat(config.getCredentialSetMode()).isEqualTo("optional");
         assertThat(config.isAllCredentialsRequired()).isFalse();
+    }
+
+    @Test
+    void transientUsersEnabled_readsDoNotStoreUsersFlag() {
+        config.setTransientUsersEnabled(true);
+
+        assertThat(config.isTransientUsersEnabled()).isTrue();
     }
 
     @Test

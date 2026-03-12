@@ -251,4 +251,42 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
             Oid4vpTestKeycloakSetup.configureCrossDeviceFlow(adminClient(), Oid4vpE2eEnvironment.REALM, false);
         }
     }
+
+    @Test
+    void crossDeviceCompleteAuthWithoutBrowserSessionCookieIsRejected() throws Exception {
+        callback().reset();
+        flow.clearBrowserSession();
+        Oid4vpTestKeycloakSetup.configureCrossDeviceFlow(adminClient(), Oid4vpE2eEnvironment.REALM, true);
+
+        try {
+            Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient(), Oid4vpE2eEnvironment.REALM);
+
+            flow.navigateToLoginPage();
+            flow.clickOid4vpIdpButton();
+            String walletUrl = flow.getCrossDeviceWalletUrl();
+            String requestHandle = flow.getRequestHandle();
+
+            flow.waitForSseConnection();
+            PresentationResponse walletResponse = flow.submitToWallet(walletUrl);
+            assertThat(walletResponse.redirectUri()).isNull();
+
+            String completeAuthUrl = env.keycloakHostUrl() + "/realms/" + Oid4vpE2eEnvironment.REALM
+                    + "/broker/oid4vp/endpoint/complete-auth?request_handle="
+                    + URLEncoder.encode(requestHandle, StandardCharsets.UTF_8);
+
+            var otherContext = env.newBrowserContext();
+            var otherPage = otherContext.newPage();
+            try {
+                otherPage.navigate(completeAuthUrl);
+                otherPage.waitForLoadState();
+                assertThat(otherPage.locator("body").textContent().toLowerCase())
+                        .contains("authentication session does not match");
+            } finally {
+                otherPage.close();
+                otherContext.close();
+            }
+        } finally {
+            Oid4vpTestKeycloakSetup.configureCrossDeviceFlow(adminClient(), Oid4vpE2eEnvironment.REALM, false);
+        }
+    }
 }

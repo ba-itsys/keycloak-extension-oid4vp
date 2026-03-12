@@ -296,12 +296,12 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     private FlowEntry createFlowEntry(
             AuthenticationRequest request, LoginContext loginContext, String flow, String walletScheme) {
         String requestHandle = UUID.randomUUID().toString();
-        String formState = loginContext.tabId() + "." + randomState();
-        String responseUri = computeVerifierResponseUri(flow);
+        String formState = loginContext.flowTabId() + "." + randomState();
+        String responseUri = computeVerifierResponseUri();
         String formActionUrl = buildFormActionUrl(
                 loginContext.redirectUri(),
                 formState,
-                loginContext.sessionTabId(),
+                loginContext.browserRouteTabId(),
                 loginContext.sessionCode(),
                 loginContext.clientData());
         requestObjectStore.storeFlowHandle(
@@ -309,9 +309,10 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 requestHandle,
                 new Oid4vpRequestObjectStore.FlowContextEntry(
                         loginContext.rootSessionId(),
-                        loginContext.tabId(),
+                        loginContext.flowTabId(),
                         loginContext.effectiveClientId(),
-                        responseUri));
+                        responseUri,
+                        flow));
 
         URI requestUri = request.getUriInfo()
                 .getBaseUriBuilder()
@@ -378,15 +379,11 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 .createForm("login-oid4vp-idp.ftl");
     }
 
-    private String computeVerifierResponseUri(String flow) {
-        String base = Oid4vpConstants.buildEndpointBaseUrl(
+    private String computeVerifierResponseUri() {
+        return Oid4vpConstants.buildEndpointBaseUrl(
                 session.getContext().getUri().getBaseUri(),
                 session.getContext().getRealm().getName(),
                 getConfig().getAlias());
-        if (Oid4vpConstants.FLOW_CROSS_DEVICE.equals(flow)) {
-            return base + "?" + Oid4vpConstants.FLOW_PARAM + "=" + Oid4vpConstants.FLOW_CROSS_DEVICE;
-        }
-        return base;
     }
 
     private String computeBaseClientId(AuthenticationRequest request) {
@@ -422,10 +419,10 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
     record LoginContext(
             String rootSessionId,
-            String tabId,
+            String flowTabId,
             String effectiveClientId,
             String redirectUri,
-            String sessionTabId,
+            String browserRouteTabId,
             String sessionCode,
             String clientData) {}
 

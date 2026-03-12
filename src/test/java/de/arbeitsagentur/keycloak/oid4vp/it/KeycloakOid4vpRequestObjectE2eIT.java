@@ -24,6 +24,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -155,7 +156,7 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> jwks = (Map<String, Object>) clientMetadata.get("jwks");
         @SuppressWarnings("unchecked")
-        Map<String, Object> publicJwk = ((java.util.List<Map<String, Object>>) jwks.get("keys")).get(0);
+        Map<String, Object> publicJwk = ((List<Map<String, Object>>) jwks.get("keys")).get(0);
         assertThat(publicJwk.get("alg")).isEqualTo("ECDH-ES");
         ECKey encryptionKey = ECKey.parse(publicJwk);
 

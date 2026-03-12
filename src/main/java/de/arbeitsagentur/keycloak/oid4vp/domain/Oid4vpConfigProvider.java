@@ -46,5 +46,7 @@ public interface Oid4vpConfigProvider {
 
     boolean isUseIdTokenSubject();
 
+    boolean isTransientUsersEnabled();
+
     int getClockSkewSeconds();
 }

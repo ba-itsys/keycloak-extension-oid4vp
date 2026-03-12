@@ -26,9 +26,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.AbstractIdentityProviderFactory;
+import org.keycloak.common.Profile;
 import org.keycloak.common.util.PemUtils;
 import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.models.KeycloakSession;
@@ -48,8 +50,8 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProviderFactory.class);
 
     private static final Map<String, String> RESOLVED_KEY_CACHE = new ConcurrentHashMap<>();
-    private static final java.util.Set<String> WARNED_UNCHECKED_TRUST_LISTS = ConcurrentHashMap.newKeySet();
-    private static final java.util.Set<String> WARNED_MISSING_CERTIFICATE_BINDINGS = ConcurrentHashMap.newKeySet();
+    private static final Set<String> WARNED_UNCHECKED_TRUST_LISTS = ConcurrentHashMap.newKeySet();
+    private static final Set<String> WARNED_MISSING_CERTIFICATE_BINDINGS = ConcurrentHashMap.newKeySet();
 
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES;
 
@@ -104,7 +106,8 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .property()
                 .name(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM)
                 .label("User Identifier Claim (SD-JWT)")
-                .helpText("Claim name used to identify the user from SD-JWT credentials (e.g., 'sub').")
+                .helpText("Claim name used to identify the user from SD-JWT credentials (e.g., 'sub'). "
+                        + "Ignored when OID4VP transient users are enabled.")
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .defaultValue("sub")
                 .add()
@@ -112,7 +115,8 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .name(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM_MDOC)
                 .label("User Identifier Claim (mDoc)")
                 .helpText(
-                        "Claim name used to identify the user from mDoc credentials. Falls back to SD-JWT claim if not set.")
+                        "Claim name used to identify the user from mDoc credentials. Falls back to SD-JWT claim if not set. "
+                                + "Ignored when OID4VP transient users are enabled.")
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
@@ -249,12 +253,24 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
     @Override
     public Oid4vpIdentityProvider create(KeycloakSession session, IdentityProviderModel model) {
         Oid4vpIdentityProviderConfig config = new Oid4vpIdentityProviderConfig(model);
+        validateTransientUserMode(config);
 
         resolveX509SigningKey(config);
         validateHaipConfig(config);
         warnIfTrustListSignatureIsUnchecked(config);
 
         return new Oid4vpIdentityProvider(session, config);
+    }
+
+    private void validateTransientUserMode(Oid4vpIdentityProviderConfig config) {
+        if (config.isTransientUsersEnabled() && !isTransientUsersFeatureEnabled()) {
+            throw new IllegalStateException(
+                    "OID4VP transient users require the Keycloak feature 'transient-users' to be enabled.");
+        }
+    }
+
+    private boolean isTransientUsersFeatureEnabled() {
+        return Profile.getInstance() != null && Profile.isFeatureEnabled(Profile.Feature.TRANSIENT_USERS);
     }
 
     private static void validateHaipConfig(Oid4vpIdentityProviderConfig config) {

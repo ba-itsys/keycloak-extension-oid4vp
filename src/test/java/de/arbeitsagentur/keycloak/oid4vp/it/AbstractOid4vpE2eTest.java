@@ -31,6 +31,7 @@ import io.github.dominikschlosser.oid4vc.Oid4vcContainer;
 import io.github.dominikschlosser.oid4vc.PresentationResponse;
 import java.io.IOException;
 import java.math.BigInteger;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
@@ -247,7 +248,7 @@ abstract class AbstractOid4vpE2eTest {
         String query = uri.contains("?") ? uri.substring(uri.indexOf('?') + 1) : uri;
         for (String param : query.split("&")) {
             if (param.startsWith(name + "=")) {
-                return java.net.URLDecoder.decode(param.substring(name.length() + 1), StandardCharsets.UTF_8);
+                return URLDecoder.decode(param.substring(name.length() + 1), StandardCharsets.UTF_8);
             }
         }
         throw new IllegalArgumentException("No query parameter named " + name + " found in " + uri);
