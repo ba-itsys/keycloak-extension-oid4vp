@@ -56,6 +56,7 @@ class Oid4vpCallbackProcessorTest {
                     "test-state",
                     "test-client",
                     "https://example.com/callback",
+                    "same_device",
                     "test-nonce",
                     null,
                     null);
@@ -311,6 +312,7 @@ class Oid4vpCallbackProcessorTest {
                 state,
                 "test-client",
                 "https://example.com/callback",
+                "same_device",
                 nonce,
                 null,
                 null);

@@ -34,6 +34,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.stream.Stream;
 import javax.security.auth.x500.X500Principal;
@@ -249,6 +250,7 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
         }
         try (Stream<Path> stream = Files.list(deps)) {
             for (Path jar : stream.filter(path -> path.getFileName().toString().endsWith(".jar"))
+                    .filter(path -> !path.getFileName().toString().startsWith("keycloak-extension-oid4vp-"))
                     .toList()) {
                 keycloak.withCopyFileToContainer(
                         MountableFile.forHostPath(jar), "/opt/keycloak/providers/" + jar.getFileName());
@@ -263,7 +265,7 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
                     .filter(path -> path.getFileName().toString().endsWith(".jar"))
                     .filter(path -> !path.getFileName().toString().endsWith("-sources.jar"))
                     .filter(path -> !path.getFileName().toString().endsWith("-javadoc.jar"))
-                    .findFirst()
+                    .max(Comparator.comparingLong(path -> path.toFile().lastModified()))
                     .orElseThrow(() -> new IllegalStateException("Provider jar not found in target/"));
         }
     }

@@ -8,7 +8,7 @@ This document traces the OID4VP authorization request through the code for both 
 
 The `request_handle` is a unique, unguessable token generated once per rendered browser flow. It is the stable handle for the browser-side login attempt.
 
-1. **Flow lookup** — maps the browser flow back to the stored flow context `{rootSessionId, tabId, effectiveClientId, responseUri}`.
+1. **Flow lookup** — maps the browser flow back to the stored flow context `{rootSessionId, tabId, effectiveClientId, responseUri, flow}`.
 2. **Completion handle** — identifies which deferred authentication result `/complete-auth` should consume after a successful wallet callback.
 
 **Format:** Random UUID. Generated when the login page is rendered, before any wallet fetches the request object.
@@ -21,7 +21,7 @@ The `request_handle` is a unique, unguessable token generated once per rendered 
 
 The `state` parameter is a unique, unguessable token generated per created request object. It serves two purposes:
 
-1. **CSRF protection** — the verifier checks that the `state` returned by the wallet matches the one stored in the auth session, preventing cross-site request forgery.
+1. **Callback integrity** — the verifier checks that the `state` returned by the wallet matches the stored request context for that request object, preventing the callback from being rebound to a different request instance.
 2. **Request binding** — maps the wallet's direct_post response back to the exact created request instance, especially important when the same `request_uri` is fetched multiple times before one callback arrives.
 
 **Format:** `{tabId}.{random}` where `tabId` is Keycloak's auth session tab identifier and `random` is a fresh UUID-like random value. Generated when `/request-object/{requestHandle}` is fetched.
@@ -42,7 +42,7 @@ Oid4vpIdentityProvider.performLogin(AuthenticationRequest)
 
 This method:
 
-1. **Initializes login context** (`initializeLoginContext`) — computes `clientId` / `effectiveClientId` and captures the redirect parameters needed to build the fallback form action
+1. **Initializes login context** (`initializeLoginContext`) — computes `clientId` / `effectiveClientId`, chooses the auth-session tab ID used for flow binding, and captures the browser routing parameters needed to build the fallback form action
 2. **Builds redirect flow data** (`buildRedirectFlowData`) — creates a separate stable `requestHandle` for each enabled flow (same-device and cross-device), stores the per-flow context in `Oid4vpRequestObjectStore`, builds the corresponding `request_uri` URLs
 3. **Renders the login page** (`buildLoginFormResponse`) — passes wallet URLs, QR code, and SSE status URL to `login-oid4vp-idp.ftl`
 
@@ -57,18 +57,18 @@ The login page contains:
 ## Phase 1: Wallet Fetches Request Object
 
 ```
-Oid4vpIdentityProviderEndpoint.getRequestObject(requestHandle, flow)
+Oid4vpIdentityProviderEndpoint.getRequestObject(requestHandle)
     or
-Oid4vpIdentityProviderEndpoint.postRequestObject(requestHandle, flow, walletNonce)
+Oid4vpIdentityProviderEndpoint.postRequestObject(requestHandle, walletNonce, walletMetadata)
     both call →
 Oid4vpRequestObjectService.generateRequestObject(requestHandle, walletNonce, walletMetadata)
 ```
 
 `generateRequestObject`:
 
-1. Resolves the `requestHandle` → looks up the stored flow context `{rootSessionId, tabId, effectiveClientId, responseUri}` from `Oid4vpRequestObjectStore`
+1. Resolves the `requestHandle` → looks up the stored flow context `{rootSessionId, tabId, effectiveClientId, responseUri, flow}` from `Oid4vpRequestObjectStore`
 2. Resolves the auth session from `rootSessionId` + `tabId` to ensure the login attempt is still active
-3. Creates a fresh request context `{requestHandle, state, nonce, encryptionKeyJson, encryptionJwkThumbprint}` and stores it under the new `state` (and `kid` when the effective `response_mode` is `direct_post.jwt`)
+3. Creates a fresh request context `{requestHandle, state, nonce, encryptionKeyJson, encryptionJwkThumbprint, flow}` and stores it under the new `state` (and `kid` when the effective `response_mode` is `direct_post.jwt`)
 4. Delegates to `Oid4vpRedirectFlowService.buildSignedRequestObject(params)` using that fresh request context:
 
 ```
@@ -98,7 +98,7 @@ The wallet verifies the request, prompts the user, and POSTs the VP token.
 Both same-device and cross-device wallets POST to the `response_uri` (direct_post). The endpoint handles both in the same method:
 
 ```
-Oid4vpIdentityProviderEndpoint.handlePost(flow, state, vpToken, encryptedResponse, error, errorDescription)
+Oid4vpIdentityProviderEndpoint.handlePost(state, vpToken, encryptedResponse, error, errorDescription)
 ```
 
 `handlePost`:
@@ -108,13 +108,14 @@ Oid4vpIdentityProviderEndpoint.handlePost(flow, state, vpToken, encryptedRespons
 3. **Resolves auth session** from the request context's `{rootSessionId, tabId}`
 4. **Decrypts** (when `response_mode=direct_post.jwt`) — decrypts the JWE using the request context's stored private key, extracts `vp_token`, `error`, `mdocGeneratedNonce`
 5. **Error handling** — if the wallet sent an error, returns a JSON response with `redirect_uri` pointing to the error page (GET endpoint)
-6. **Calls `processVpToken`** →
+6. **Derives same-device vs cross-device behavior from the stored request context** — the callback does not trust a `flow` query parameter; it uses the `flow` value anchored behind the resolved request context
+7. **Calls `processVpToken`** →
 
 ```
-processVpToken(authSession, requestContext, state, vpToken, isCrossDeviceFlow)
+processVpToken(authSession, requestContext, state, vpToken, idToken, mdocGeneratedNonce, isCrossDeviceFlow)
 ```
 
-7. **Verifies the credential** via `Oid4vpCallbackProcessor.process(requestContext, vpToken, idToken, mdocGeneratedNonce)`:
+8. **Verifies the credential** via `Oid4vpCallbackProcessor.process(requestContext, vpToken, idToken, mdocGeneratedNonce)`:
 
 ```
 Oid4vpCallbackProcessor.process(requestContext, vpToken, idToken, mdocGeneratedNonce)
@@ -139,7 +140,7 @@ This:
 - Validates issuer is allowed, credential type is allowed
 - Maps claims to `BrokeredIdentityContext`
 
-8. **Stores deferred auth and returns redirect** — calls:
+9. **Stores deferred auth and returns redirect** — calls:
 
 ```
 directPostService.storeAndSignal(authSession, requestHandle, context, isCrossDeviceFlow)

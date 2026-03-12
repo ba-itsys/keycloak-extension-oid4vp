@@ -161,7 +161,6 @@ public class Oid4vpIdentityProviderEndpoint {
     @POST
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     public Response handlePost(
-            @QueryParam(FLOW_PARAM) String flow,
             @FormParam(OAuth2Constants.STATE) String state,
             @FormParam(VP_TOKEN) String vpToken,
             @FormParam(ID_TOKEN) String idToken,
@@ -170,7 +169,6 @@ public class Oid4vpIdentityProviderEndpoint {
             @FormParam(OAuth2Constants.ERROR_DESCRIPTION) String errorDescription) {
 
         try {
-            boolean isCrossDeviceFlow = FLOW_CROSS_DEVICE.equals(flow);
             Oid4vpRequestObjectStore.RequestContextEntry requestContext = null;
             Oid4vpJwk kidBasedKey = null;
 
@@ -238,7 +236,13 @@ public class Oid4vpIdentityProviderEndpoint {
             }
 
             return processVpToken(
-                    authSession, requestContext, state, vpToken, idToken, mdocGeneratedNonce, isCrossDeviceFlow);
+                    authSession,
+                    requestContext,
+                    state,
+                    vpToken,
+                    idToken,
+                    mdocGeneratedNonce,
+                    FLOW_CROSS_DEVICE.equals(requestContext.flow()));
         } catch (IdentityBrokerException e) {
             return handleError("identity_provider_error", e.getMessage(), state);
         } catch (Exception e) {

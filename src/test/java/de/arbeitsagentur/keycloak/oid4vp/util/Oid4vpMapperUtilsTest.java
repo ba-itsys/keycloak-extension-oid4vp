@@ -17,6 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp.util;
 
 import static org.assertj.core.api.Assertions.*;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -177,11 +178,11 @@ class Oid4vpMapperUtilsTest {
         assertThat(mutable.get("nationalities")).isEqualTo(List.of("DE", "FR"));
 
         // But collections are mutable (ArrayList/HashMap, not immutable)
-        assertThat(mutable.get("nationalities")).isInstanceOf(java.util.ArrayList.class);
+        assertThat(mutable.get("nationalities")).isInstanceOf(ArrayList.class);
         @SuppressWarnings("unchecked")
         Map<String, Object> addr = (Map<String, Object>) mutable.get("address");
-        assertThat(addr).isInstanceOf(java.util.HashMap.class);
-        assertThat(addr.get("tags")).isInstanceOf(java.util.ArrayList.class);
+        assertThat(addr).isInstanceOf(HashMap.class);
+        assertThat(addr.get("tags")).isInstanceOf(ArrayList.class);
     }
 
     @Test

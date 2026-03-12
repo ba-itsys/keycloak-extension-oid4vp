@@ -110,7 +110,6 @@ public final class Oid4vpConstants {
     // Flow types
     public static final String FLOW_SAME_DEVICE = "same_device";
     public static final String FLOW_CROSS_DEVICE = "cross_device";
-    public static final String FLOW_PARAM = "flow";
 
     // Query/form parameter names
     public static final String PARAM_TAB_ID = "tab_id";

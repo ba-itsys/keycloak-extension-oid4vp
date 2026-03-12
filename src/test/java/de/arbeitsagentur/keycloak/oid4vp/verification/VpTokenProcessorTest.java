@@ -26,6 +26,7 @@ import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jose.util.Base64;
+import com.nimbusds.jose.util.Base64URL;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
@@ -188,7 +189,7 @@ class VpTokenProcessorTest {
 
         MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
         byte[] hash = sha256.digest(unboundPresentation.getBytes(StandardCharsets.US_ASCII));
-        String sdHash = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+        String sdHash = Base64URL.encode(hash).toString();
 
         JWTClaimsSet kbClaims = new JWTClaimsSet.Builder()
                 .audience(audience)

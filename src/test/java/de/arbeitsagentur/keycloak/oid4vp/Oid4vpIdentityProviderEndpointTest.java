@@ -113,7 +113,7 @@ class Oid4vpIdentityProviderEndpointTest {
 
     @Test
     void handlePost_withNoSessionMatch_returnsSessionExpiredError() {
-        Response response = endpoint.handlePost(null, null, null, null, null, null, null);
+        Response response = endpoint.handlePost(null, null, null, null, null, null);
         assertThat(response.getStatus()).isEqualTo(400);
         String body = (String) response.getEntity();
         assertThat(body).contains("session_expired");
@@ -126,9 +126,9 @@ class Oid4vpIdentityProviderEndpointTest {
                 encryptPayload(key, Map.of("error", "access_denied", "error_description", "Wallet rejected"));
 
         when(store.resolveByKid(session, "kid-1"))
-                .thenReturn(requestContext("handle-1", "state-1", "nonce-1", key.toJSONString()));
+                .thenReturn(requestContext("handle-1", "state-1", "nonce-1", key.toJSONString(), "same_device"));
 
-        Response response = endpoint.handlePost(null, "state-1", null, null, encryptedResponse, null, null);
+        Response response = endpoint.handlePost("state-1", null, null, encryptedResponse, null, null);
 
         assertThat(response.getStatus()).isEqualTo(200);
         assertThat((String) response.getEntity())
@@ -143,9 +143,9 @@ class Oid4vpIdentityProviderEndpointTest {
         String encryptedResponse = encryptPayload(key, Map.of("error", "access_denied"));
 
         when(store.resolveByKid(session, "kid-2"))
-                .thenReturn(requestContext("handle-1", "state-expected", "nonce-2", key.toJSONString()));
+                .thenReturn(requestContext("handle-1", "state-expected", "nonce-2", key.toJSONString(), "same_device"));
 
-        Response response = endpoint.handlePost(null, "state-actual", null, null, encryptedResponse, null, null);
+        Response response = endpoint.handlePost("state-actual", null, null, encryptedResponse, null, null);
 
         assertThat(response.getStatus()).isEqualTo(200);
         assertThat((String) response.getEntity()).contains("redirect_uri").contains("state+does+not+match");
@@ -158,9 +158,9 @@ class Oid4vpIdentityProviderEndpointTest {
                 encryptPayload(key, Map.of("error", "access_denied", "error_description", "Wallet rejected"));
 
         when(store.resolveByKid(session, "kid-retry"))
-                .thenReturn(requestContext("handle-1", "state-1", "nonce-1", key.toJSONString()));
+                .thenReturn(requestContext("handle-1", "state-1", "nonce-1", key.toJSONString(), "same_device"));
 
-        Response response = endpoint.handlePost(null, null, null, null, encryptedResponse, null, null);
+        Response response = endpoint.handlePost(null, null, null, encryptedResponse, null, null);
 
         assertThat(response.getStatus()).isEqualTo(200);
         assertThat((String) response.getEntity()).contains("redirect_uri").contains("access_denied");
@@ -171,7 +171,7 @@ class Oid4vpIdentityProviderEndpointTest {
     void crossDeviceStatus_withMismatchedBrowserSession_throwsForbidden() {
         when(store.resolveFlowHandle(session, "handle-1"))
                 .thenReturn(new Oid4vpRequestObjectStore.FlowContextEntry(
-                        "root-session", "tab-1", "effective-client", "https://example.com/endpoint"));
+                        "root-session", "tab-1", "effective-client", "https://example.com/endpoint", "cross_device"));
         when(context.getAuthenticationSession()).thenReturn(null);
 
         assertThatThrownBy(() -> endpoint.crossDeviceStatus("handle-1", null, null))
@@ -191,7 +191,7 @@ class Oid4vpIdentityProviderEndpointTest {
     }
 
     private Oid4vpRequestObjectStore.RequestContextEntry requestContext(
-            String requestHandle, String state, String nonce, String encryptionKeyJson) {
+            String requestHandle, String state, String nonce, String encryptionKeyJson, String flow) {
         return new Oid4vpRequestObjectStore.RequestContextEntry(
                 requestHandle,
                 "root-session",
@@ -199,6 +199,7 @@ class Oid4vpIdentityProviderEndpointTest {
                 state,
                 "effective-client",
                 "https://example.com/endpoint",
+                flow,
                 nonce,
                 encryptionKeyJson,
                 "thumbprint");

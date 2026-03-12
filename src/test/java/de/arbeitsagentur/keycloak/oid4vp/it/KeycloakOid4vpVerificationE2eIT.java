@@ -16,6 +16,7 @@
 package de.arbeitsagentur.keycloak.oid4vp.it;
 
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
+import io.github.dominikschlosser.oid4vc.CredentialFormat;
 import java.security.KeyPair;
 import java.security.cert.X509Certificate;
 import org.junit.jupiter.api.Test;
@@ -46,7 +47,7 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
                 }
                 """;
         Oid4vpTestKeycloakSetup.configureDcqlQuery(adminClient(), Oid4vpE2eEnvironment.REALM, mdocDcqlQuery);
-        wallet().client().setPreferredFormat(io.github.dominikschlosser.oid4vc.CredentialFormat.MSO_MDOC);
+        wallet().client().setPreferredFormat(CredentialFormat.MSO_MDOC);
 
         try {
             assertRevokedCredentialIsRejected("mDoc", "eu.europa.ec.eudi.pid.1");
