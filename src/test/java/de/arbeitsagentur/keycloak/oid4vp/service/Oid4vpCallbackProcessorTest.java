@@ -171,6 +171,47 @@ class Oid4vpCallbackProcessorTest {
     }
 
     @Test
+    void process_missingSubjectClaim_withTransientUsers_generatesTransientIdentity() throws Exception {
+        when(config.isTransientUsersEnabled()).thenReturn(true);
+
+        String vpToken = "vp-token";
+        VerifiedCredential credential = new VerifiedCredential(
+                "cred-1", "https://issuer.example", "IdentityCredential", Map.of(), PresentationType.SD_JWT);
+        when(vpTokenProcessor.process(vpToken, "test-client", "nonce", "https://example.com/callback", null, null))
+                .thenReturn(new VpTokenResult(Map.of("cred-1", credential), Map.of()));
+
+        BrokeredIdentityContext result = processor.process(requestContext("state", "nonce"), vpToken, null, null);
+
+        assertThat(result.getUsername()).startsWith("transient-handle-1-");
+        assertThat(result.getId()).isNotBlank();
+        assertThat(result.getId()).isNotEqualTo(result.getUsername());
+        assertThat(result.getContextData().get(Oid4vpMapperUtils.CONTEXT_SUBJECT_KEY))
+                .isEqualTo(result.getUsername());
+    }
+
+    @Test
+    void process_transientUsersEnabled_ignoresIdTokenSubjectMode() throws Exception {
+        when(config.isTransientUsersEnabled()).thenReturn(true);
+        when(config.isUseIdTokenSubject()).thenReturn(true);
+
+        String vpToken = "vp-token";
+        VerifiedCredential credential = new VerifiedCredential(
+                "cred-1",
+                "https://issuer.example",
+                "IdentityCredential",
+                Map.of("sub", "user1"),
+                PresentationType.SD_JWT);
+        when(vpTokenProcessor.process(vpToken, "test-client", "nonce", "https://example.com/callback", null, null))
+                .thenReturn(new VpTokenResult(Map.of("cred-1", credential), Map.of()));
+
+        BrokeredIdentityContext result = processor.process(requestContext("state", "nonce"), vpToken, null, null);
+
+        assertThat(result.getUsername()).startsWith("transient-handle-1-");
+        assertThat(result.getContextData().get(Oid4vpMapperUtils.CONTEXT_SUBJECT_KEY))
+                .isEqualTo(result.getUsername());
+    }
+
+    @Test
     void process_usesOnlyRequestContextState() throws Exception {
         String vpToken = "vp-token";
         VerifiedCredential credential = new VerifiedCredential(

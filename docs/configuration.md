@@ -9,6 +9,8 @@ The extension is configured as a Keycloak identity provider. All settings are st
 3. Select **OID4VP**.
 4. Configure the provider settings.
 
+If you want transient wallet logins, Keycloak must be started with the `transient-users` feature enabled. Then enable the IdP's built-in **Do not store users** option in Keycloak.
+
 Example realm import fragment:
 
 ```json
@@ -47,10 +49,28 @@ Example realm import fragment:
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `userMappingClaim` | Claim from an SD-JWT credential used as the unique user identifier. Not required when `useIdTokenSubject` is enabled. | `sub` |
-| `userMappingClaimMdoc` | Claim from an mDoc credential used as the unique user identifier. Falls back to `userMappingClaim`. | *(falls back)* |
+| `userMappingClaim` | Claim from an SD-JWT credential used as the unique user identifier. Not required when `useIdTokenSubject` is enabled. Ignored when OID4VP transient users are enabled. | `sub` |
+| `userMappingClaimMdoc` | Claim from an mDoc credential used as the unique user identifier. Falls back to `userMappingClaim`. Ignored when OID4VP transient users are enabled. | *(falls back)* |
 | `useIdTokenSubject` | Requests an additional self-issued `id_token` and uses its subject as the user identifier. The VP token remains required for credential attributes. | `false` |
+| `doNotStoreUsers` | Native Keycloak IdP setting. When enabled, OID4VP switches to transient per-login identities, ignores configured identifying claims, and relies on Keycloak transient users. Requires the Keycloak `transient-users` feature to be enabled. | `false` |
 | `clockSkewSeconds` | Allowed clock skew for ID token time checks. | `30` |
+
+### Transient Login Mode
+
+To use this extension as a wallet connector without creating persisted Keycloak users:
+
+1. Start Keycloak with the `transient-users` feature enabled.
+2. Enable the IdP's built-in **Do not store users** setting.
+3. Keep using the normal first broker login flow. Keycloak will create a `LightweightUserAdapter` and a transient user session instead of a stored user.
+
+Behavior in this mode:
+
+- The extension always generates a random per-login transient identifier.
+- `userMappingClaim`, `userMappingClaimMdoc`, and `useIdTokenSubject` are ignored for subject resolution.
+- OID4VP user-attribute mappers still apply, but the target user is transient and is not persisted after the session ends.
+- Session-note mappers are often the best fit when relying parties only need token-time claim propagation.
+
+This mode is intended for credentials that do not carry a stable account identifier, such as German PID variants.
 
 ### Flow Control
 

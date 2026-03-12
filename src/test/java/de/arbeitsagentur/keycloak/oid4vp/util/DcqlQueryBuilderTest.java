@@ -501,6 +501,11 @@ class DcqlQueryBuilderTest {
             }
 
             @Override
+            public boolean isTransientUsersEnabled() {
+                return false;
+            }
+
+            @Override
             public int getClockSkewSeconds() {
                 return 0;
             }

@@ -26,6 +26,7 @@ import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import de.arbeitsagentur.keycloak.oid4vp.verification.SelfIssuedIdTokenValidator;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor;
 import java.util.Map;
+import java.util.UUID;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.broker.provider.IdentityBrokerException;
@@ -115,7 +116,10 @@ public class Oid4vpCallbackProcessor {
 
         String subject;
         String identityKey;
-        if (configProvider.isUseIdTokenSubject()) {
+        if (configProvider.isTransientUsersEnabled()) {
+            subject = buildTransientSubject(requestContext);
+            identityKey = primary.generateIdentityKey(subject);
+        } else if (configProvider.isUseIdTokenSubject()) {
             subject = validateIdTokenAndExtractSubject(
                     idToken, requestContext.effectiveClientId(), requestContext.nonce());
             identityKey = primary.generateIdentityKey(subject);
@@ -165,5 +169,15 @@ public class Oid4vpCallbackProcessor {
             throw new IdentityBrokerException("Missing subject claim '" + userMappingClaimName + "' in credential");
         }
         return subject;
+    }
+
+    private String buildTransientSubject(Oid4vpRequestObjectStore.RequestContextEntry requestContext) {
+        String requestHandle = requestContext != null && StringUtil.isNotBlank(requestContext.requestHandle())
+                ? requestContext.requestHandle()
+                : "unknown";
+        LOG.debugf(
+                "OID4VP IdP '%s': generating transient subject for request handle '%s'",
+                idpModel.getAlias(), requestHandle);
+        return "transient-" + requestHandle + "-" + UUID.randomUUID();
     }
 }

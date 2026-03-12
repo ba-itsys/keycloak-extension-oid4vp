@@ -23,6 +23,7 @@ import io.github.dominikschlosser.oid4vc.CredentialFormat;
 import io.github.dominikschlosser.oid4vc.Oid4vcContainer;
 import io.github.dominikschlosser.oid4vc.PresentationResponse;
 import org.junit.jupiter.api.Test;
+import org.keycloak.models.IdentityProviderModel;
 
 class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
 
@@ -46,6 +47,42 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
 
         performSameDeviceLogin("wallet-user");
         flow.assertLoginSucceeded();
+    }
+
+    @Test
+    void transientWalletLoginSucceedsWithoutPersistingUser() throws Exception {
+        callback().reset();
+        flow.clearBrowserSession();
+        Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient(), Oid4vpE2eEnvironment.REALM);
+
+        String germanPidOnlyDcqlQuery = """
+                {
+                  "credentials": [
+                    {
+                      "id": "pid_sd_jwt",
+                      "format": "dc+sd-jwt",
+                      "meta": { "vct_values": ["urn:eudi:pid:de:1"] },
+                      "claims": [
+                        { "path": ["given_name"] },
+                        { "path": ["family_name"] },
+                        { "path": ["birthdate"] }
+                      ]
+                    }
+                  ]
+                }
+                """;
+
+        idpConfig
+                .set(IdentityProviderModel.DO_NOT_STORE_USERS, "true")
+                .set(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM, "missing_identifier")
+                .set(Oid4vpIdentityProviderConfig.DCQL_QUERY, germanPidOnlyDcqlQuery)
+                .apply();
+
+        performSameDeviceLogin("transient-wallet-user");
+        flow.assertLoginSucceeded();
+
+        assertThat(Oid4vpTestKeycloakSetup.countOid4vpUsers(adminClient(), Oid4vpE2eEnvironment.REALM))
+                .isZero();
     }
 
     @Test
