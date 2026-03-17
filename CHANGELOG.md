@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.3.0...v0.4.0) (2026-03-17)
+
+
+### Features
+
+* enable transient wallet logins ([671c29a](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/671c29afc6681c36fdcf8a4a940de6278df82948))
+
+
+### Dependencies
+
+* **deps-dev:** bump net.bytebuddy:byte-buddy-agent ([098bb84](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/098bb844681b0f54dddef18014989c981dfbdce6))
+* **deps-dev:** bump org.apache.maven.plugins:maven-surefire-plugin ([ab4e197](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/ab4e197e6874c78295fa75c212e05c79f8dcf886))
+* **deps-dev:** bump org.mockito:mockito-core from 5.22.0 to 5.23.0 ([44368f6](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/44368f6d21156297237cb0e7f178a24dfc8ccd66))
+* **deps:** bump org.sonatype.central:central-publishing-maven-plugin ([0adb663](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/0adb663cd5374d9d1a1e348b7d23fafecb1e7d63))
+
 ## [0.3.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.2.0...v0.3.0) (2026-03-11)
 
 
