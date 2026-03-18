@@ -79,6 +79,36 @@ class Oid4vpClaimToUserAttributeMapperTest {
     }
 
     @Test
+    void preprocessFederatedIdentity_mapsNestedLeafClaimValue() {
+        BrokeredIdentityContext context = contextWithClaims(Map.of("place_of_birth", Map.of("locality", "Berlin")));
+
+        mapper.preprocessFederatedIdentity(
+                null, null, mapperModel("place_of_birth/locality", "place_of_birth", false), context);
+
+        assertThat(context.getAttributes().get("place_of_birth")).containsExactly("Berlin");
+    }
+
+    @Test
+    void preprocessFederatedIdentity_skipsMissingNestedLeafClaimValue() {
+        BrokeredIdentityContext context = contextWithClaims(Map.of("place_of_birth", Map.of()));
+
+        mapper.preprocessFederatedIdentity(
+                null, null, mapperModel("place_of_birth/locality", "place_of_birth", false), context);
+
+        assertThat(context.getAttributes()).doesNotContainKey("place_of_birth");
+    }
+
+    @Test
+    void preprocessFederatedIdentity_skipsEmptyObjectClaimValue() {
+        BrokeredIdentityContext context = contextWithClaims(Map.of("unresolved_claim", Map.of()));
+
+        mapper.preprocessFederatedIdentity(
+                null, null, mapperModel("unresolved_claim", "unresolved_claim", false), context);
+
+        assertThat(context.getAttributes()).doesNotContainKey("unresolved_claim");
+    }
+
+    @Test
     void preprocessFederatedIdentity_skipsMismatchedCredentialFilter() {
         BrokeredIdentityContext context = contextWithClaims(Map.of("email", "alice@example.org"));
         context.getContextData().put(Oid4vpMapperUtils.CONTEXT_PRESENTATION_TYPE_KEY, "MDOC");

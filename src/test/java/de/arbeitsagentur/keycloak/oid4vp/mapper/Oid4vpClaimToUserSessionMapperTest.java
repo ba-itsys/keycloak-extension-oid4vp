@@ -67,10 +67,7 @@ class Oid4vpClaimToUserSessionMapperTest {
 
         mapper.preprocessFederatedIdentity(null, null, mapperModel("issuer", "issuer_note", false), context);
 
-        UserSessionModel userSession = mock(UserSessionModel.class);
-        context.addSessionNotesToUserSession(userSession);
         verify(authenticationSession).setUserSessionNote("issuer_note", "https://issuer.example");
-        verify(userSession).setNote("issuer_note", "https://issuer.example");
     }
 
     @Test
@@ -97,12 +94,20 @@ class Oid4vpClaimToUserSessionMapperTest {
 
         mapper.updateBrokeredUser(null, null, user, mapperModel("issuer", "issuer_note", false), context);
 
+        verify(authenticationSession).setUserSessionNote("issuer_note", "https://issuer.example");
+        verifyNoInteractions(user);
+    }
+
+    @Test
+    void importNewUser_storesSessionNoteInContextWhenNoAuthenticationSessionExists() {
+        BrokeredIdentityContext context = contextWithClaims(Map.of("issuer", "https://issuer.example"));
+
+        mapper.importNewUser(null, null, mock(UserModel.class), mapperModel("issuer", "issuer_note", false), context);
+
         UserSessionModel userSession = mock(UserSessionModel.class);
         context.addSessionNotesToUserSession(userSession);
 
-        verify(authenticationSession).setUserSessionNote("issuer_note", "https://issuer.example");
         verify(userSession).setNote("issuer_note", "https://issuer.example");
-        verifyNoInteractions(user);
     }
 
     private static BrokeredIdentityContext contextWithClaims(Map<String, Object> claims) {

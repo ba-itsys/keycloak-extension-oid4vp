@@ -150,6 +150,11 @@ class Oid4vpMapperUtilsTest {
     }
 
     @Test
+    void toStringValue_emptyMap_returnsNull() {
+        assertThat(Oid4vpMapperUtils.toStringValue(Map.of())).isNull();
+    }
+
+    @Test
     void toStringList_list_returnsAllElements() {
         assertThat(Oid4vpMapperUtils.toStringList(List.of("DE", "FR"))).containsExactly("DE", "FR");
     }
@@ -162,6 +167,11 @@ class Oid4vpMapperUtilsTest {
     @Test
     void toStringList_null_returnsEmptyList() {
         assertThat(Oid4vpMapperUtils.toStringList(null)).isEmpty();
+    }
+
+    @Test
+    void toStringList_emptyMap_returnsEmptyList() {
+        assertThat(Oid4vpMapperUtils.toStringList(Map.of())).isEmpty();
     }
 
     @Test
