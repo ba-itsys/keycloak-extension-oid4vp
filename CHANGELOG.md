@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.4.1...v0.4.2) (2026-03-18)
+
+
+### Bug Fixes
+
+* update to keycloak 26.5.5 ([475f8a8](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/475f8a8599f2b9f20af8d9365f9dfe9a0cbef83d))
+
 ## [0.4.1](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.4.0...v0.4.1) (2026-03-18)
 
 
