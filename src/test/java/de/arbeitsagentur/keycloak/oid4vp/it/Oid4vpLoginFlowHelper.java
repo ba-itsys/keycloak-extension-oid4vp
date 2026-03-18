@@ -51,6 +51,7 @@ class Oid4vpLoginFlowHelper {
     private final String callbackUrl;
     private final String realm;
     private String lastCrossDeviceRequestHandle;
+    private String lastCodeVerifier;
 
     Oid4vpLoginFlowHelper(
             Page page,
@@ -232,11 +233,16 @@ class Oid4vpLoginFlowHelper {
         context.clearCookies();
     }
 
+    String getCodeVerifier() {
+        return lastCodeVerifier;
+    }
+
     URI buildAuthRequestUri() {
         String state = "s-" + System.nanoTime();
         byte[] bytes = new byte[32];
         new SecureRandom().nextBytes(bytes);
         String codeVerifier = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        lastCodeVerifier = codeVerifier;
         String codeChallenge;
         try {
             byte[] hash = MessageDigest.getInstance("SHA-256").digest(codeVerifier.getBytes(StandardCharsets.US_ASCII));

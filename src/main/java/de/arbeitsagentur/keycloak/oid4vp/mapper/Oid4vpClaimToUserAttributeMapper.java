@@ -109,27 +109,21 @@ public class Oid4vpClaimToUserAttributeMapper extends AbstractIdentityProviderMa
             RealmModel realm,
             IdentityProviderMapperModel mapperModel,
             BrokeredIdentityContext context) {
-        if (!Oid4vpMapperUtils.matchesCredential(mapperModel, context)) {
-            return;
-        }
+        Mapping mapping = resolveMapping(mapperModel, context, "in credential");
+        if (mapping == null) return;
+        applyToContext(context, mapping.userAttribute(), mapping.claimValue());
+    }
 
-        String claimPath = mapperModel.getConfig().get(CLAIM_PATH);
-        String userAttribute = mapperModel.getConfig().get(USER_ATTRIBUTE);
-        boolean isOptional = Boolean.parseBoolean(mapperModel.getConfig().getOrDefault(OPTIONAL, "false"));
-
-        if (StringUtil.isBlank(claimPath) || StringUtil.isBlank(userAttribute)) {
-            return;
-        }
-
-        Object claimValue = Oid4vpMapperUtils.getClaimValue(context, claimPath);
-        if (claimValue == null) {
-            if (!isOptional) {
-                LOG.warnf("Required claim '%s' not found in credential", claimPath);
-            }
-            return;
-        }
-
-        applyToContext(context, userAttribute, claimValue);
+    @Override
+    public void importNewUser(
+            KeycloakSession session,
+            RealmModel realm,
+            UserModel user,
+            IdentityProviderMapperModel mapperModel,
+            BrokeredIdentityContext context) {
+        Mapping mapping = resolveMapping(mapperModel, context, "during user import");
+        if (mapping == null) return;
+        applyToUser(user, mapping.userAttribute(), mapping.claimValue());
     }
 
     @Override
@@ -139,8 +133,17 @@ public class Oid4vpClaimToUserAttributeMapper extends AbstractIdentityProviderMa
             UserModel user,
             IdentityProviderMapperModel mapperModel,
             BrokeredIdentityContext context) {
+        Mapping mapping = resolveMapping(mapperModel, context, "during user update");
+        if (mapping == null) return;
+        applyToUser(user, mapping.userAttribute(), mapping.claimValue());
+    }
+
+    private Mapping resolveMapping(
+            IdentityProviderMapperModel mapperModel,
+            BrokeredIdentityContext context,
+            String missingClaimMessageSuffix) {
         if (!Oid4vpMapperUtils.matchesCredential(mapperModel, context)) {
-            return;
+            return null;
         }
 
         String claimPath = mapperModel.getConfig().get(CLAIM_PATH);
@@ -148,18 +151,17 @@ public class Oid4vpClaimToUserAttributeMapper extends AbstractIdentityProviderMa
         boolean isOptional = Boolean.parseBoolean(mapperModel.getConfig().getOrDefault(OPTIONAL, "false"));
 
         if (StringUtil.isBlank(claimPath) || StringUtil.isBlank(userAttribute)) {
-            return;
+            return null;
         }
 
         Object claimValue = Oid4vpMapperUtils.getClaimValue(context, claimPath);
         if (claimValue == null) {
             if (!isOptional) {
-                LOG.warnf("Required claim '%s' not found during user update", claimPath);
+                LOG.warnf("Required claim '%s' not found %s", claimPath, missingClaimMessageSuffix);
             }
-            return;
+            return null;
         }
-
-        applyToUser(user, userAttribute, claimValue);
+        return new Mapping(userAttribute, claimValue);
     }
 
     private void applyToContext(BrokeredIdentityContext context, String attribute, Object claimValue) {
@@ -187,4 +189,6 @@ public class Oid4vpClaimToUserAttributeMapper extends AbstractIdentityProviderMa
             default -> user.setAttribute(attribute, Oid4vpMapperUtils.toStringList(claimValue));
         }
     }
+
+    private record Mapping(String userAttribute, Object claimValue) {}
 }
