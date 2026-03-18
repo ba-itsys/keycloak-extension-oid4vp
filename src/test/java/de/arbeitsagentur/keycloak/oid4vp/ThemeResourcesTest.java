@@ -35,6 +35,17 @@ class ThemeResourcesTest {
     }
 
     @Test
+    void oid4vpLayoutAvoidsInlineJavaScript() throws Exception {
+        String layoutTemplate = loadResource("/theme-resources/templates/oid4vp-template.ftl");
+
+        assertThat(layoutTemplate).doesNotContain("<script type=\"importmap\">");
+        assertThat(layoutTemplate).doesNotContain("<script type=\"module\">");
+        assertThat(layoutTemplate).doesNotContain("onclick=");
+        assertThat(layoutTemplate).doesNotContain("onchange=");
+        assertThat(layoutTemplate).doesNotContain("javascript:");
+    }
+
+    @Test
     void oid4vpLoginTemplateFiltersCurrentBrokerFromAlternativeMethods() throws Exception {
         String loginTemplate = loadResource("/theme-resources/templates/login-oid4vp-idp.ftl");
 
