@@ -105,6 +105,19 @@ class Oid4vpClaimToUserAttributeMapperTest {
     }
 
     @Test
+    void importNewUser_mapsStandardAndCustomAttributes() {
+        BrokeredIdentityContext context =
+                contextWithClaims(Map.of("given_name", "Alice", "groups", List.of("blue", "green")));
+        UserModel user = mock(UserModel.class);
+
+        mapper.importNewUser(null, null, user, mapperModel("given_name", "firstName", false), context);
+        mapper.importNewUser(null, null, user, mapperModel("groups", "teamNames", false), context);
+
+        verify(user).setFirstName("Alice");
+        verify(user).setAttribute("teamNames", List.of("blue", "green"));
+    }
+
+    @Test
     void updateBrokeredUser_skipsWhenClaimOrAttributeIsMissing() {
         BrokeredIdentityContext context = contextWithClaims(Map.of("given_name", "Alice"));
         UserModel user = mock(UserModel.class);

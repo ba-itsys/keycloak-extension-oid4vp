@@ -17,6 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp.it;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.options.Cookie;
@@ -31,8 +32,12 @@ import io.github.dominikschlosser.oid4vc.Oid4vcContainer;
 import io.github.dominikschlosser.oid4vc.PresentationResponse;
 import java.io.IOException;
 import java.math.BigInteger;
+import java.net.URI;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -270,6 +275,40 @@ abstract class AbstractOid4vpE2eTest {
                   ]
                 }
                 """;
+    }
+
+    protected JsonNode exchangeAuthorizationCode(Oid4vpLoginFlowHelper loginFlow) throws Exception {
+        assertThat(callback().lastRequestUri())
+                .as("Expected login callback with authorization code")
+                .isNotNull();
+        assertThat(loginFlow.getCodeVerifier())
+                .as("Expected PKCE code verifier for token exchange")
+                .isNotBlank();
+
+        String callbackRequestUri = callback().lastRequestUri().toString();
+        String code = extractQueryParam(callbackRequestUri, "code");
+
+        String form = "grant_type=authorization_code"
+                + "&client_id=" + urlEncode("wallet-mock")
+                + "&code=" + urlEncode(code)
+                + "&redirect_uri=" + urlEncode(env.callbackUrl())
+                + "&code_verifier=" + urlEncode(loginFlow.getCodeVerifier());
+
+        HttpResponse<String> response = HttpClient.newHttpClient()
+                .send(
+                        HttpRequest.newBuilder()
+                                .uri(URI.create(env.keycloakHostUrl() + "/realms/" + Oid4vpE2eEnvironment.REALM
+                                        + "/protocol/openid-connect/token"))
+                                .header("Content-Type", "application/x-www-form-urlencoded")
+                                .header("X-Forwarded-Proto", "https")
+                                .POST(HttpRequest.BodyPublishers.ofString(form))
+                                .build(),
+                        HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode())
+                .withFailMessage("Token exchange failed: status=%d body=%s", response.statusCode(), response.body())
+                .isEqualTo(200);
+        return env.objectMapper().readTree(response.body());
     }
 
     protected static KeyPair generateEcKeyPair() throws Exception {

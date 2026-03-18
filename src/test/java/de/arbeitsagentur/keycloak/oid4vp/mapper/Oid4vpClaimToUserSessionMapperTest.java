@@ -32,6 +32,7 @@ import org.keycloak.models.IdentityProviderSyncMode;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.UserSessionModel;
 import org.keycloak.provider.ProviderConfigProperty;
+import org.keycloak.sessions.AuthenticationSessionModel;
 
 class Oid4vpClaimToUserSessionMapperTest {
 
@@ -61,11 +62,14 @@ class Oid4vpClaimToUserSessionMapperTest {
     @Test
     void preprocessFederatedIdentity_setsSessionNoteFromClaim() {
         BrokeredIdentityContext context = contextWithClaims(Map.of("issuer", "https://issuer.example"));
+        AuthenticationSessionModel authenticationSession = mock(AuthenticationSessionModel.class);
+        context.setAuthenticationSession(authenticationSession);
 
         mapper.preprocessFederatedIdentity(null, null, mapperModel("issuer", "issuer_note", false), context);
 
         UserSessionModel userSession = mock(UserSessionModel.class);
         context.addSessionNotesToUserSession(userSession);
+        verify(authenticationSession).setUserSessionNote("issuer_note", "https://issuer.example");
         verify(userSession).setNote("issuer_note", "https://issuer.example");
     }
 
@@ -85,12 +89,19 @@ class Oid4vpClaimToUserSessionMapperTest {
     }
 
     @Test
-    void updateBrokeredUser_isNoOp() {
+    void updateBrokeredUser_setsSessionNoteWithoutTouchingUser() {
         UserModel user = mock(UserModel.class);
+        AuthenticationSessionModel authenticationSession = mock(AuthenticationSessionModel.class);
+        BrokeredIdentityContext context = contextWithClaims(Map.of("issuer", "https://issuer.example"));
+        context.setAuthenticationSession(authenticationSession);
 
-        mapper.updateBrokeredUser(
-                null, null, user, mapperModel("issuer", "issuer_note", false), contextWithClaims(Map.of()));
+        mapper.updateBrokeredUser(null, null, user, mapperModel("issuer", "issuer_note", false), context);
 
+        UserSessionModel userSession = mock(UserSessionModel.class);
+        context.addSessionNotesToUserSession(userSession);
+
+        verify(authenticationSession).setUserSessionNote("issuer_note", "https://issuer.example");
+        verify(userSession).setNote("issuer_note", "https://issuer.example");
         verifyNoInteractions(user);
     }
 

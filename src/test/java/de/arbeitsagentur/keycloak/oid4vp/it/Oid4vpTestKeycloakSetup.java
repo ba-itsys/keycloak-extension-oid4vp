@@ -57,7 +57,16 @@ public final class Oid4vpTestKeycloakSetup {
                     "family_name",
                     "eu.europa.ec.eudi.pid.1/family_name",
                     trustListUrl,
-                    List.of());
+                    List.of(new IdpMapperConfig(
+                            "credential-family-name-session",
+                            "oid4vp-user-session-mapper",
+                            Map.of(
+                                    "claim",
+                                    "family_name",
+                                    "session.note",
+                                    "credentialFamilyName",
+                                    "optional",
+                                    "false"))));
         }
     }
 
@@ -96,13 +105,7 @@ public final class Oid4vpTestKeycloakSetup {
 
     static void addRedirectUriToClient(KeycloakAdminClient admin, String realm, String clientId, String redirectUri)
             throws Exception {
-        List<Map<String, Object>> clients =
-                admin.getJsonList("/admin/realms/" + realm + "/clients?clientId=" + urlEncode(clientId));
-        Map<String, Object> client = clients.stream()
-                .filter(entry -> clientId.equals(entry.get("clientId")))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("Client not found: " + clientId));
-        String id = String.valueOf(client.get("id"));
+        String id = findClientUuid(admin, realm, clientId);
 
         Map<String, Object> rep = admin.getJson("/admin/realms/" + realm + "/clients/" + id);
         Object raw = rep.get("redirectUris");
@@ -267,6 +270,16 @@ public final class Oid4vpTestKeycloakSetup {
             }
         }
         return result;
+    }
+
+    private static String findClientUuid(KeycloakAdminClient admin, String realm, String clientId) throws Exception {
+        List<Map<String, Object>> clients =
+                admin.getJsonList("/admin/realms/" + realm + "/clients?clientId=" + urlEncode(clientId));
+        Map<String, Object> client = clients.stream()
+                .filter(entry -> clientId.equals(entry.get("clientId")))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Client not found: " + clientId));
+        return String.valueOf(client.get("id"));
     }
 
     private Oid4vpTestKeycloakSetup() {}

@@ -21,7 +21,9 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperConfigProperties;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.AbstractIdentityProviderMapper;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
@@ -48,6 +50,7 @@ public class Oid4vpClaimToUserSessionMapper extends AbstractIdentityProviderMapp
     public static final String PROVIDER_ID = "oid4vp-user-session-mapper";
 
     public static final String SESSION_NOTE = "session.note";
+    static final String CONTEXT_SESSION_NOTES_KEY = "MAPPER_SESSION_NOTES";
 
     private static final String[] COMPATIBLE_PROVIDERS = new String[] {Oid4vpConstants.PROVIDER_ID};
 
@@ -106,6 +109,30 @@ public class Oid4vpClaimToUserSessionMapper extends AbstractIdentityProviderMapp
             RealmModel realm,
             IdentityProviderMapperModel mapperModel,
             BrokeredIdentityContext context) {
+        mapSessionNote(mapperModel, context);
+    }
+
+    @Override
+    public void importNewUser(
+            KeycloakSession session,
+            RealmModel realm,
+            UserModel user,
+            IdentityProviderMapperModel mapperModel,
+            BrokeredIdentityContext context) {
+        mapSessionNote(mapperModel, context);
+    }
+
+    @Override
+    public void updateBrokeredUser(
+            KeycloakSession session,
+            RealmModel realm,
+            UserModel user,
+            IdentityProviderMapperModel mapperModel,
+            BrokeredIdentityContext context) {
+        mapSessionNote(mapperModel, context);
+    }
+
+    private void mapSessionNote(IdentityProviderMapperModel mapperModel, BrokeredIdentityContext context) {
         if (!Oid4vpMapperUtils.matchesCredential(mapperModel, context)) {
             return;
         }
@@ -128,16 +155,19 @@ public class Oid4vpClaimToUserSessionMapper extends AbstractIdentityProviderMapp
 
         String stringValue = Oid4vpMapperUtils.toStringValue(claimValue);
         if (stringValue == null) return;
+        ensureContextSessionNotes(context).put(sessionNote, stringValue);
         context.setSessionNote(sessionNote, stringValue);
     }
 
-    @Override
-    public void updateBrokeredUser(
-            KeycloakSession session,
-            RealmModel realm,
-            UserModel user,
-            IdentityProviderMapperModel mapperModel,
-            BrokeredIdentityContext context) {
-        // Session notes are transient, set during preprocessing only
+    @SuppressWarnings("unchecked")
+    private static Map<String, String> ensureContextSessionNotes(BrokeredIdentityContext context) {
+        Object existing = context.getContextData().get(CONTEXT_SESSION_NOTES_KEY);
+        if (existing instanceof Map<?, ?> sessionNotes) {
+            return (Map<String, String>) sessionNotes;
+        }
+
+        Map<String, String> sessionNotes = new HashMap<>();
+        context.getContextData().put(CONTEXT_SESSION_NOTES_KEY, sessionNotes);
+        return sessionNotes;
     }
 }

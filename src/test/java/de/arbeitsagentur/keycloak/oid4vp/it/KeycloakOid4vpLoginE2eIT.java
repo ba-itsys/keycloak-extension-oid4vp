@@ -17,7 +17,9 @@ package de.arbeitsagentur.keycloak.oid4vp.it;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.microsoft.playwright.Page;
+import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import io.github.dominikschlosser.oid4vc.CredentialFormat;
 import io.github.dominikschlosser.oid4vc.Oid4vcContainer;
@@ -274,6 +276,31 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
         } finally {
             idTokenWallet.stop();
         }
+    }
+
+    @Test
+    void sessionMapperStoresCredentialClaimInSessionAndMapsItToIdToken() throws Exception {
+        callback().reset();
+        flow.clearBrowserSession();
+        Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient(), Oid4vpE2eEnvironment.REALM);
+
+        String expectedFamilyName = wallet().client().getCredentials().stream()
+                .map(credential -> credential.claims().get("family_name"))
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("No credential with family_name claim found"));
+
+        performSameDeviceLogin("session-note-user");
+        flow.assertLoginSucceeded();
+
+        JsonNode tokenResponse = exchangeAuthorizationCode(flow);
+        String serializedIdToken = tokenResponse.path("id_token").asText();
+        assertThat(serializedIdToken).isNotBlank();
+
+        SignedJWT idToken = SignedJWT.parse(serializedIdToken);
+        String familyNameFromIdToken = idToken.getJWTClaimsSet().getStringClaim("credential_family_name");
+        assertThat(familyNameFromIdToken).isEqualTo(expectedFamilyName);
     }
 
     @Test

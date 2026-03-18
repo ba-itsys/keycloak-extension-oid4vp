@@ -12,6 +12,20 @@
       "webOrigins": ["*"],
       "protocol": "openid-connect",
       "standardFlowEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "credential-family-name-id-token",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usersessionmodel-note-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.session.note": "credentialFamilyName",
+            "claim.name": "credential_family_name",
+            "jsonType.label": "String",
+            "id.token.claim": "true"
+          }
+        }
+      ],
       "attributes": {
         "pkce.code.challenge.method": "S256"
       }
