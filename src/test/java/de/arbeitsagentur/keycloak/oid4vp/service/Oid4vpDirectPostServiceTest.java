@@ -141,6 +141,7 @@ class Oid4vpDirectPostServiceTest {
         RootAuthenticationSessionModel rootSession = mock(RootAuthenticationSessionModel.class);
         Oid4vpIdentityProviderConfig idpConfig = new Oid4vpIdentityProviderConfig();
         idpConfig.setAlias("oid4vp");
+        idpConfig.setEnabled(true);
         BrokeredIdentityContext context = createBrokeredIdentityContext(idpConfig);
 
         when(authSession.getParentSession()).thenReturn(rootSession);
@@ -162,6 +163,7 @@ class Oid4vpDirectPostServiceTest {
         RootAuthenticationSessionModel rootSession = mock(RootAuthenticationSessionModel.class);
         Oid4vpIdentityProviderConfig idpConfig = new Oid4vpIdentityProviderConfig();
         idpConfig.setAlias("oid4vp");
+        idpConfig.setEnabled(true);
         BrokeredIdentityContext context = createBrokeredIdentityContext(idpConfig);
 
         when(authSession.getParentSession()).thenReturn(rootSession);

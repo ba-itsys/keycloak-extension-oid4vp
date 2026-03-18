@@ -118,7 +118,7 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
         String callbackUrl = callback.localCallbackUrl();
 
         network = Network.newNetwork();
-        keycloak = new GenericContainer<>("quay.io/keycloak/keycloak:26.5.4")
+        keycloak = new GenericContainer<>("quay.io/keycloak/keycloak:26.5.5")
                 .withNetwork(network)
                 .withEnv("KEYCLOAK_ADMIN", "admin")
                 .withEnv("KEYCLOAK_ADMIN_PASSWORD", "admin")

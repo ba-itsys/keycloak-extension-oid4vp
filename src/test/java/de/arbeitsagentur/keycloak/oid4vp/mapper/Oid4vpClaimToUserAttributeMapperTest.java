@@ -118,6 +118,7 @@ class Oid4vpClaimToUserAttributeMapperTest {
     private static BrokeredIdentityContext contextWithClaims(Map<String, Object> claims) {
         IdentityProviderModel identityProvider = new IdentityProviderModel();
         identityProvider.setAlias("oid4vp");
+        identityProvider.setEnabled(true);
         BrokeredIdentityContext context = new BrokeredIdentityContext("broker-user", identityProvider);
         context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CLAIMS_KEY, claims);
         context.getContextData().put(Oid4vpMapperUtils.CONTEXT_PRESENTATION_TYPE_KEY, "SD_JWT");

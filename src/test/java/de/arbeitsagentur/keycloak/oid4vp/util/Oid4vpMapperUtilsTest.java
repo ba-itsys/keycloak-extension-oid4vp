@@ -194,6 +194,7 @@ class Oid4vpMapperUtilsTest {
     void getClaimValue_extractsFromContext() {
         IdentityProviderModel idpModel = new IdentityProviderModel();
         idpModel.setAlias("test-idp");
+        idpModel.setEnabled(true);
         BrokeredIdentityContext context = new BrokeredIdentityContext("id", idpModel);
         context.getContextData().put("oid4vp_claims", Map.of("sub", "user123"));
 
@@ -204,6 +205,7 @@ class Oid4vpMapperUtilsTest {
     void getClaimValue_noClaims_returnsNull() {
         IdentityProviderModel idpModel = new IdentityProviderModel();
         idpModel.setAlias("test-idp");
+        idpModel.setEnabled(true);
         BrokeredIdentityContext context = new BrokeredIdentityContext("id", idpModel);
 
         assertThat(Oid4vpMapperUtils.getClaimValue(context, "sub")).isNull();
