@@ -35,10 +35,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
-import java.util.Comparator;
 import java.util.Date;
 import java.util.EnumSet;
-import java.util.stream.Stream;
 import javax.security.auth.x500.X500Principal;
 import org.bouncycastle.asn1.x509.BasicConstraints;
 import org.bouncycastle.asn1.x509.Extension;
@@ -69,6 +67,8 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
     private static final DockerImageName WALLET_IMAGE =
             DockerImageName.parse("ghcr.io/dominikschlosser/oid4vc-dev:latest");
     private static final String JACOCO_AGENT_VERSION = "0.8.13";
+    private static final Path PROVIDER_JAR =
+            Path.of("target/keycloak-extension-oid4vp.jar").toAbsolutePath();
     private static final Path JACOCO_AGENT_JAR = Path.of(System.getProperty("user.home"))
             .resolve(".m2/repository/org/jacoco/org.jacoco.agent")
             .resolve(JACOCO_AGENT_VERSION)
@@ -254,22 +254,11 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
     }
 
     private static void copyProviderJars(GenericContainer<?> keycloak) throws IOException {
-        Path providerJar = findProviderJar();
+        if (!Files.isRegularFile(PROVIDER_JAR)) {
+            throw new IllegalStateException("Provider jar not found at " + PROVIDER_JAR);
+        }
         keycloak.withCopyFileToContainer(
-                MountableFile.forHostPath(providerJar), "/opt/keycloak/providers/" + providerJar.getFileName());
-
-        Path deps = Path.of("target/providers").toAbsolutePath();
-        if (!Files.isDirectory(deps)) {
-            return;
-        }
-        try (Stream<Path> stream = Files.list(deps)) {
-            for (Path jar : stream.filter(path -> path.getFileName().toString().endsWith(".jar"))
-                    .filter(path -> !path.getFileName().toString().startsWith("keycloak-extension-oid4vp-"))
-                    .toList()) {
-                keycloak.withCopyFileToContainer(
-                        MountableFile.forHostPath(jar), "/opt/keycloak/providers/" + jar.getFileName());
-            }
-        }
+                MountableFile.forHostPath(PROVIDER_JAR), "/opt/keycloak/providers/" + PROVIDER_JAR.getFileName());
     }
 
     private static void configureCoverage(GenericContainer<?> keycloak) throws IOException {
@@ -302,18 +291,6 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
                             PosixFilePermission.OTHERS_EXECUTE));
         } catch (UnsupportedOperationException ignored) {
             // Non-POSIX filesystems (for example Docker Desktop mounts on macOS) do not support chmod here.
-        }
-    }
-
-    private static Path findProviderJar() throws IOException {
-        Path target = Path.of("target").toAbsolutePath();
-        try (Stream<Path> stream = Files.list(target)) {
-            return stream.filter(path -> path.getFileName().toString().startsWith("keycloak-extension-oid4vp-"))
-                    .filter(path -> path.getFileName().toString().endsWith(".jar"))
-                    .filter(path -> !path.getFileName().toString().endsWith("-sources.jar"))
-                    .filter(path -> !path.getFileName().toString().endsWith("-javadoc.jar"))
-                    .max(Comparator.comparingLong(path -> path.toFile().lastModified()))
-                    .orElseThrow(() -> new IllegalStateException("Provider jar not found in target/"));
         }
     }
 

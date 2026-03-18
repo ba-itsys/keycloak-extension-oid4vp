@@ -13,5 +13,5 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./target/providers:/opt/keycloak/providers:ro
+      - ./target/keycloak-extension-oid4vp.jar:/opt/keycloak/providers/keycloak-extension-oid4vp.jar:ro
       - ./src/test/resources/realm-wallet-demo-local.json:/opt/keycloak/data/import/realm-wallet-demo-local.json:ro

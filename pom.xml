@@ -219,6 +219,8 @@
   </dependencies>
 
   <build>
+    <finalName>${project.artifactId}</finalName>
+
     <pluginManagement>
       <plugins>
 
@@ -410,39 +412,33 @@
         </executions>
       </plugin>
 
-      <!-- Copy runtime dependencies for Keycloak deployment / E2E tests -->
+      <!-- Build a single provider jar with non-Keycloak runtime dependencies included -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-dependency-plugin</artifactId>
-        <version>3.8.1</version>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.6.2</version>
         <executions>
           <execution>
-            <id>copy-keycloak-provider-deps</id>
+            <id>shade-provider</id>
             <goals>
-              <goal>copy-dependencies</goal>
+              <goal>shade</goal>
             </goals>
             <phase>package</phase>
             <configuration>
-              <includeScope>runtime</includeScope>
-              <outputDirectory>${project.build.directory}/providers</outputDirectory>
-            </configuration>
-          </execution>
-          <execution>
-            <id>copy-keycloak-provider-jar</id>
-            <goals>
-              <goal>copy</goal>
-            </goals>
-            <phase>package</phase>
-            <configuration>
-              <artifactItems>
-                <artifactItem>
-                  <groupId>${project.groupId}</groupId>
-                  <artifactId>${project.artifactId}</artifactId>
-                  <version>${project.version}</version>
-                  <type>jar</type>
-                </artifactItem>
-              </artifactItems>
-              <outputDirectory>${project.build.directory}/providers</outputDirectory>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/MANIFEST.MF</exclude>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                    <exclude>META-INF/versions/**/module-info.class</exclude>
+                    <exclude>module-info.class</exclude>
+                  </excludes>
+                </filter>
+              </filters>
             </configuration>
           </execution>
         </executions>

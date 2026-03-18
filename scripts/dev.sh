@@ -2,6 +2,7 @@
 set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+PROVIDER_JAR="$ROOT_DIR/target/keycloak-extension-oid4vp.jar"
 
 # Sensible defaults – override via flags or env vars
 DEFAULT_SANDBOX_DIR="${SANDBOX_DIR:-${ROOT_DIR}/sandbox}"
@@ -26,7 +27,7 @@ Options:
                            Default: sandbox/sandbox-verifier-info.json
   --domain <name>          Custom ngrok domain (overrides auto-detection)
                            Default: extracted from SAN DNS in PEM cert, or none
-  --no-build               Skip Maven build (use existing target/providers/)
+  --no-build               Skip Maven build (use existing packaged provider jar)
   --skip-realm             Skip realm generation (use existing local realm)
   --no-proxy               Disable oid4vc-dev proxy even if available
   --no-ngrok               Run Keycloak without ngrok (localhost only)
@@ -94,8 +95,8 @@ if [ "$DO_BUILD" = "true" ]; then
   (cd "$ROOT_DIR" && mvn package -DskipTests -q)
   echo "    Build complete."
 else
-  if [ ! -d "$ROOT_DIR/target/providers" ]; then
-    echo "target/providers/ not found. Run without --no-build or build manually." >&2
+  if [ ! -f "$PROVIDER_JAR" ]; then
+    echo "Packaged provider jar not found at target/keycloak-extension-oid4vp.jar. Run without --no-build or build manually." >&2
     exit 1
   fi
   echo "==> Skipping build (--no-build)"
