@@ -15,6 +15,7 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -46,14 +47,28 @@ public record ClaimSpec(String path, boolean optional, boolean multivalued) {
             return List.of();
         }
         if (path.contains(PATH_SEPARATOR)) {
-            return Arrays.stream(path.split(PATH_SEPARATOR))
+            List<Object> segments = Arrays.stream(path.split(PATH_SEPARATOR))
                     .map(ClaimSpec::parsePathSegment)
-                    .collect(Collectors.toList());
+                    .collect(Collectors.toCollection(ArrayList::new));
+            if (multivalued) {
+                segments.add(null);
+            }
+            return segments;
         }
         if (Oid4vpConstants.FORMAT_MSO_MDOC.equals(format) && type != null) {
+            if (multivalued) {
+                return listWithNullableEntries(type, path, null);
+            }
             return List.of(type, path);
         }
+        if (multivalued) {
+            return listWithNullableEntries(path, null);
+        }
         return List.of(path);
+    }
+
+    private static List<Object> listWithNullableEntries(Object... values) {
+        return new ArrayList<>(Arrays.asList(values));
     }
 
     private static Object parsePathSegment(String segment) {
