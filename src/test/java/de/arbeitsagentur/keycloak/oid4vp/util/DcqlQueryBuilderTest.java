@@ -146,6 +146,12 @@ class DcqlQueryBuilderTest {
     }
 
     @Test
+    void toDcqlPath_placeOfBirthLocality_usesNestedLeafPath() {
+        List<Object> path = new ClaimSpec("place_of_birth/locality").toDcqlPath("dc+sd-jwt", "urn:eudi:pid:de:1");
+        assertThat(path).containsExactly("place_of_birth", "locality");
+    }
+
+    @Test
     void toDcqlPath_mdocFormat_prependsDocType() {
         List<Object> path = new ClaimSpec("given_name").toDcqlPath("mso_mdoc", "org.iso.18013.5.1.mDL");
         assertThat(path).containsExactly("org.iso.18013.5.1.mDL", "given_name");

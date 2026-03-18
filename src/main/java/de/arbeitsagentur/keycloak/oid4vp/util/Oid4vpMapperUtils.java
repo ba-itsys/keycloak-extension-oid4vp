@@ -97,14 +97,15 @@ public final class Oid4vpMapperUtils {
      * string representation. Returns {@code null} for null, empty list, or empty string values.
      */
     public static String toStringValue(Object claimValue) {
-        if (claimValue == null) return null;
+        Object normalizedValue = normalizeClaimValue(claimValue);
+        if (normalizedValue == null) return null;
 
-        if (claimValue instanceof List<?> list) {
+        if (normalizedValue instanceof List<?> list) {
             if (list.isEmpty()) return null;
             return list.get(0).toString();
         }
 
-        return claimValue.toString();
+        return normalizedValue.toString();
     }
 
     /**
@@ -112,14 +113,15 @@ public final class Oid4vpMapperUtils {
      * Scalar values are wrapped in a single-element list.
      */
     public static List<String> toStringList(Object claimValue) {
-        if (claimValue == null) return new ArrayList<>();
+        Object normalizedValue = normalizeClaimValue(claimValue);
+        if (normalizedValue == null) return new ArrayList<>();
 
-        if (claimValue instanceof List<?> list) {
+        if (normalizedValue instanceof List<?> list) {
             return list.stream().map(Object::toString).collect(Collectors.toList());
         }
 
         ArrayList<String> result = new ArrayList<>(1);
-        result.add(claimValue.toString());
+        result.add(normalizedValue.toString());
         return result;
     }
 
@@ -165,8 +167,9 @@ public final class Oid4vpMapperUtils {
         if (claims == null || claimPath == null) return null;
 
         // Try exact key match first (handles mDoc flat keys like "namespace/element")
-        Object direct = claims.get(claimPath);
-        if (direct != null) return direct;
+        if (claims.containsKey(claimPath)) {
+            return claims.get(claimPath);
+        }
 
         // Fall back to nested path navigation (supports DCQL-style null for array traversal)
         String[] pathParts = claimPath.split("/");
@@ -199,5 +202,12 @@ public final class Oid4vpMapperUtils {
         }
 
         return null;
+    }
+
+    private static Object normalizeClaimValue(Object value) {
+        if (value instanceof Map<?, ?> map && map.isEmpty()) {
+            return null;
+        }
+        return value;
     }
 }
