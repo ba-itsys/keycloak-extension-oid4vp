@@ -152,13 +152,12 @@ class DcqlQueryBuilderTest {
     }
 
     @Test
-    void toDcqlPath_multivalued_doesNotAffectPath() {
-        // multivalued only affects response-side handling, not the DCQL query path
+    void toDcqlPath_multivalued_appendsArraySelector() {
         List<Object> sdJwt = new ClaimSpec("nationalities", false, true).toDcqlPath("dc+sd-jwt", "PID");
-        assertThat(sdJwt).containsExactly("nationalities");
+        assertThat(sdJwt).containsExactly("nationalities", null);
 
         List<Object> mdoc = new ClaimSpec("nationality", false, true).toDcqlPath("mso_mdoc", "eu.europa.ec.eudi.pid.1");
-        assertThat(mdoc).containsExactly("eu.europa.ec.eudi.pid.1", "nationality");
+        assertThat(mdoc).containsExactly("eu.europa.ec.eudi.pid.1", "nationality", null);
     }
 
     @Test

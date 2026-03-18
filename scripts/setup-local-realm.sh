@@ -298,18 +298,6 @@ cat > "$REALM_OUT" <<REALMEOF
       }
     },
     {
-      "name": "sd-jwt-address-to-attribute",
-      "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
-      "config": {
-        "syncMode": "INHERIT",
-        "credential.format": "dc+sd-jwt",
-        "credential.type": "urn:eudi:pid:de:1",
-        "claim": "address",
-        "user.attribute": "address"
-      }
-    },
-    {
       "name": "sd-jwt-street_address-to-attribute",
       "identityProviderAlias": "oid4vp",
       "identityProviderMapper": "oid4vp-user-attribute-mapper",
@@ -331,6 +319,90 @@ cat > "$REALM_OUT" <<REALMEOF
         "credential.type": "urn:eudi:pid:de:1",
         "claim": "address/locality",
         "user.attribute": "address.locality"
+      }
+    },
+    {
+      "name": "sd-jwt-country-to-attribute",
+      "identityProviderAlias": "oid4vp",
+      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "credential.format": "dc+sd-jwt",
+        "credential.type": "urn:eudi:pid:de:1",
+        "claim": "address/country",
+        "user.attribute": "address.country"
+      }
+    },
+    {
+      "name": "sd-jwt-region-to-attribute",
+      "identityProviderAlias": "oid4vp",
+      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "credential.format": "dc+sd-jwt",
+        "credential.type": "urn:eudi:pid:de:1",
+        "claim": "address/region",
+        "user.attribute": "address.region"
+      }
+    },
+    {
+      "name": "sd-jwt-postal_code-to-attribute",
+      "identityProviderAlias": "oid4vp",
+      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "credential.format": "dc+sd-jwt",
+        "credential.type": "urn:eudi:pid:de:1",
+        "claim": "address/postal_code",
+        "user.attribute": "address.postal_code"
+      }
+    },
+    {
+      "name": "sd-jwt-place_of_birth-to-attribute",
+      "identityProviderAlias": "oid4vp",
+      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "credential.format": "dc+sd-jwt",
+        "credential.type": "urn:eudi:pid:de:1",
+        "claim": "place_of_birth",
+        "user.attribute": "place_of_birth"
+      }
+    },
+    {
+      "name": "sd-jwt-date_of_expiry-to-attribute",
+      "identityProviderAlias": "oid4vp",
+      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "credential.format": "dc+sd-jwt",
+        "credential.type": "urn:eudi:pid:de:1",
+        "claim": "date_of_expiry",
+        "user.attribute": "date_of_expiry"
+      }
+    },
+    {
+      "name": "sd-jwt-issuing_authority-to-attribute",
+      "identityProviderAlias": "oid4vp",
+      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "credential.format": "dc+sd-jwt",
+        "credential.type": "urn:eudi:pid:de:1",
+        "claim": "issuing_authority",
+        "user.attribute": "issuing_authority"
+      }
+    },
+    {
+      "name": "sd-jwt-issuing_country-to-attribute",
+      "identityProviderAlias": "oid4vp",
+      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "credential.format": "dc+sd-jwt",
+        "credential.type": "urn:eudi:pid:de:1",
+        "claim": "issuing_country",
+        "user.attribute": "issuing_country"
       }
     },
     {
@@ -358,6 +430,18 @@ cat > "$REALM_OUT" <<REALMEOF
       }
     },
     {
+      "name": "mdoc-place_of_birth-to-attribute",
+      "identityProviderAlias": "oid4vp",
+      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "credential.format": "mso_mdoc",
+        "credential.type": "eu.europa.ec.eudi.pid.1",
+        "claim": "place_of_birth",
+        "user.attribute": "place_of_birth"
+      }
+    },
+    {
       "name": "sd-jwt-nationalities-to-attribute",
       "identityProviderAlias": "oid4vp",
       "identityProviderMapper": "oid4vp-user-attribute-mapper",
@@ -380,6 +464,78 @@ cat > "$REALM_OUT" <<REALMEOF
         "credential.type": "eu.europa.ec.eudi.pid.1",
         "claim": "nationality",
         "user.attribute": "nationality"
+      }
+    },
+    {
+      "name": "mdoc-resident_country-to-attribute",
+      "identityProviderAlias": "oid4vp",
+      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "credential.format": "mso_mdoc",
+        "credential.type": "eu.europa.ec.eudi.pid.1",
+        "claim": "resident_country",
+        "user.attribute": "resident_country"
+      }
+    },
+    {
+      "name": "mdoc-resident_state-to-attribute",
+      "identityProviderAlias": "oid4vp",
+      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "credential.format": "mso_mdoc",
+        "credential.type": "eu.europa.ec.eudi.pid.1",
+        "claim": "resident_state",
+        "user.attribute": "resident_state"
+      }
+    },
+    {
+      "name": "mdoc-resident_postal_code-to-attribute",
+      "identityProviderAlias": "oid4vp",
+      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "credential.format": "mso_mdoc",
+        "credential.type": "eu.europa.ec.eudi.pid.1",
+        "claim": "resident_postal_code",
+        "user.attribute": "resident_postal_code"
+      }
+    },
+    {
+      "name": "mdoc-expiry_date-to-attribute",
+      "identityProviderAlias": "oid4vp",
+      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "credential.format": "mso_mdoc",
+        "credential.type": "eu.europa.ec.eudi.pid.1",
+        "claim": "expiry_date",
+        "user.attribute": "expiry_date"
+      }
+    },
+    {
+      "name": "mdoc-issuing_authority-to-attribute",
+      "identityProviderAlias": "oid4vp",
+      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "credential.format": "mso_mdoc",
+        "credential.type": "eu.europa.ec.eudi.pid.1",
+        "claim": "issuing_authority",
+        "user.attribute": "issuing_authority"
+      }
+    },
+    {
+      "name": "mdoc-issuing_country-to-attribute",
+      "identityProviderAlias": "oid4vp",
+      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "credential.format": "mso_mdoc",
+        "credential.type": "eu.europa.ec.eudi.pid.1",
+        "claim": "issuing_country",
+        "user.attribute": "issuing_country"
       }
     }
   ]
