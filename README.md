@@ -1,4 +1,4 @@
-# keycloak-extension-wallet
+# keycloak-extension-oid4vp
 
 A Keycloak identity provider extension that enables login with EUDI-compatible digital identity wallets via [OpenID for Verifiable Presentations (OID4VP) 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html).
 
