@@ -74,6 +74,7 @@ class Oid4vpCallbackProcessorTest {
     void setUp() throws Exception {
         config = mock(Oid4vpIdentityProviderConfig.class);
         when(config.getAlias()).thenReturn("oid4vp");
+        when(config.isEnabled()).thenReturn(true);
         when(config.isIssuerAllowed(anyString())).thenReturn(true);
         when(config.isCredentialTypeAllowed(anyString())).thenReturn(true);
         when(config.getUserMappingClaimForFormat(anyString())).thenReturn("sub");
