@@ -6,14 +6,11 @@
 
         var statusUrl = root.dataset.statusUrl || "";
         var requestHandle = root.dataset.requestHandle || "";
-        var pollIntervalMs = Number(root.dataset.pollIntervalMs || "2000");
-
         if (!statusUrl || !requestHandle) {
             return null;
         }
 
         return {
-            pollIntervalMs: Number.isFinite(pollIntervalMs) ? pollIntervalMs : 2000,
             statusUrl: statusUrl,
             requestHandle: requestHandle
         };
@@ -29,32 +26,16 @@
         }
 
         var statusUrl = buildStatusUrl(config);
-        var pollIntervalMs = config.pollIntervalMs || 2000;
         var currentSource = null;
-        var reconnectTimerId = null;
         var stopped = false;
 
         window.__oid4vpSseReady = false;
 
         function stop() {
             stopped = true;
-            if (reconnectTimerId !== null) {
-                window.clearTimeout(reconnectTimerId);
-                reconnectTimerId = null;
-            }
             if (currentSource) {
                 currentSource.close();
             }
-        }
-
-        function scheduleReconnect() {
-            if (stopped || reconnectTimerId !== null) {
-                return;
-            }
-            reconnectTimerId = window.setTimeout(function() {
-                reconnectTimerId = null;
-                connect();
-            }, pollIntervalMs);
         }
 
         function connect() {
@@ -82,10 +63,6 @@
 
             currentSource.addEventListener("timeout", function() {
                 window.__oid4vpSseReady = true;
-                if (currentSource) {
-                    currentSource.close();
-                }
-                scheduleReconnect();
             });
 
             currentSource.addEventListener("expired", function() {
@@ -99,10 +76,6 @@
 
             currentSource.onerror = function() {
                 window.__oid4vpSseReady = false;
-                if (currentSource) {
-                    currentSource.close();
-                }
-                scheduleReconnect();
             };
         }
 

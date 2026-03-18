@@ -79,7 +79,6 @@
             <div id="oid4vp-cross-device-sse-config"
                  data-status-url="${crossDeviceStatusUrl!''}"
                  data-request-handle="${crossDeviceRequestHandle!''}"
-                 data-poll-interval-ms="${crossDevicePollIntervalMs!'2000'}"
                  hidden></div>
             <script nonce="${cspNonce!}" src="${url.resourcesPath}/js/oid4vp-cross-device-sse.js"></script>
         </#if>
