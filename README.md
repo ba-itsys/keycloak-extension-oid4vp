@@ -41,14 +41,14 @@ For the full flow, security model, and request/state lifecycle, see [docs/reques
 
 ## Installation
 
-Build the extension and copy the provider jar plus its runtime dependencies into Keycloak's `providers/` directory:
+Build the extension and copy the shaded provider jar into Keycloak's `providers/` directory:
 
 ```bash
 mvn package -DskipTests
-cp target/providers/* /opt/keycloak/providers/
+cp target/keycloak-extension-oid4vp.jar /opt/keycloak/providers/
 ```
 
-When using the provided `docker-compose.yml`, `target/providers/` is mounted automatically.
+When using the provided `docker-compose.yml`, `target/keycloak-extension-oid4vp.jar` is mounted automatically.
 
 ## Development and Testing
 

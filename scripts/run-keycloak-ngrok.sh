@@ -2,6 +2,7 @@
 set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+PROVIDER_JAR="$ROOT_DIR/target/keycloak-extension-oid4vp.jar"
 
 usage() {
   cat <<'EOF'
@@ -11,7 +12,7 @@ Starts ngrok and Keycloak (via docker compose) with a public HTTPS URL.
 Keycloak is configured with KC_HOSTNAME so it generates correct endpoint URLs.
 
 Prerequisites:
-  - mvn package must have been run first (to build target/providers/)
+  - mvn package must have been run first (to build the packaged provider jar)
   - ngrok must be installed and authenticated
   - docker must be running
 
@@ -70,8 +71,8 @@ require_cmd jq
 require_cmd docker
 
 # Build providers if not already present
-if [ ! -d "$ROOT_DIR/target/providers" ]; then
-  echo "==> Building extension (target/providers/ not found)..."
+if [ ! -f "$PROVIDER_JAR" ]; then
+  echo "==> Building extension (packaged provider jar not found)..."
   (cd "$ROOT_DIR" && mvn package -DskipTests -q)
   echo "    Build complete."
 fi
