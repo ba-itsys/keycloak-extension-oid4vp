@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.4.0...v0.4.1) (2026-03-18)
+
+
+### Bug Fixes
+
+* dcql for array disclosures ([1f6be96](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/1f6be966b2b322306444b3af8afc77aa48eed503))
+
 ## [0.4.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.3.0...v0.4.0) (2026-03-17)
 
 
