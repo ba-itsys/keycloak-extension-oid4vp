@@ -1,4 +1,5 @@
-<#import "template.ftl" as layout>
+<#-- Use a dedicated layout so the broker-bound OID4VP step does not inherit Keycloak's generic restart polling. -->
+<#import "oid4vp-template.ftl" as layout>
 <@layout.registrationLayout displayInfo=false; section>
     <#if section = "header">
         Sign in with Wallet
