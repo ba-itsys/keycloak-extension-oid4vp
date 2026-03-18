@@ -33,6 +33,10 @@ import org.keycloak.models.KeycloakTransactionManager;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.RealmProvider;
 import org.keycloak.models.SingleUseObjectProvider;
+import org.keycloak.sessions.AuthenticationSessionModel;
+import org.keycloak.sessions.AuthenticationSessionProvider;
+import org.keycloak.sessions.RootAuthenticationSessionModel;
+import org.keycloak.timer.TimerProvider;
 
 class Oid4vpCrossDeviceSseServiceTest {
 
@@ -40,6 +44,7 @@ class Oid4vpCrossDeviceSseServiceTest {
     private KeycloakSessionFactory sessionFactory;
     private SingleUseObjectProvider singleUseObjects;
     private RealmProvider realmProvider;
+    private AuthenticationSessionProvider authenticationSessions;
     private Oid4vpIdentityProviderConfig config;
 
     @BeforeEach
@@ -60,6 +65,7 @@ class Oid4vpCrossDeviceSseServiceTest {
 
         singleUseObjects = mock(SingleUseObjectProvider.class);
         realmProvider = mock(RealmProvider.class);
+        authenticationSessions = mock(AuthenticationSessionProvider.class);
     }
 
     @AfterEach
@@ -161,6 +167,28 @@ class Oid4vpCrossDeviceSseServiceTest {
     }
 
     @Test
+    void subscribe_sendsExpiredWhenAuthenticationSessionDisappears() throws Exception {
+        Oid4vpCrossDeviceSseService service = createService();
+        SseEventSink sink = mock(SseEventSink.class);
+        Sse sse = mockSse("expired");
+        AuthenticationSessionModel authSession = mock(AuthenticationSessionModel.class);
+        RootAuthenticationSessionModel rootSession = mock(RootAuthenticationSessionModel.class);
+
+        when(authSession.getParentSession()).thenReturn(rootSession);
+        when(rootSession.getId()).thenReturn("root-session");
+        when(authSession.getTabId()).thenReturn("tab-1");
+        when(authenticationSessions.getRootAuthenticationSession(any(), eq("root-session")))
+                .thenReturn(null);
+        when(singleUseObjects.get(anyString())).thenReturn(null);
+
+        service.subscribe("test-handle", sink, sse, authSession);
+        service.pollOnce();
+
+        verify(sink).send(any(OutboundSseEvent.class));
+        verify(sink).close();
+    }
+
+    @Test
     void subscribe_sendsErrorImmediatelyWhenSessionFactoryIsMissing() {
         KeycloakSession sessionWithoutFactory = mock(KeycloakSession.class);
         RealmModel realm = mock(RealmModel.class);
@@ -183,12 +211,15 @@ class Oid4vpCrossDeviceSseServiceTest {
         KeycloakSession pollingSession = mock(KeycloakSession.class);
         KeycloakTransactionManager tx = mock(KeycloakTransactionManager.class);
         RealmModel pollingRealm = mock(RealmModel.class);
+        TimerProvider timerProvider = mock(TimerProvider.class);
 
         when(sessionFactory.create()).thenReturn(pollingSession);
         when(pollingSession.getTransactionManager()).thenReturn(tx);
         when(pollingSession.realms()).thenReturn(realmProvider);
+        when(pollingSession.authenticationSessions()).thenReturn(authenticationSessions);
         when(realmProvider.getRealmByName("test-realm")).thenReturn(pollingRealm);
         when(pollingSession.singleUseObjects()).thenReturn(singleUseObjects);
+        when(pollingSession.getProvider(TimerProvider.class)).thenReturn(timerProvider);
 
         return new Oid4vpCrossDeviceSseService(session, realm, config);
     }

@@ -29,7 +29,6 @@ import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpResponseDecryptor;
 import jakarta.enterprise.inject.Vetoed;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.FormParam;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
@@ -37,6 +36,7 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -293,12 +293,15 @@ public class Oid4vpIdentityProviderEndpoint {
             throw new BadRequestException("Missing request handle parameter");
         }
         AuthenticationSessionModel expectedAuthSession = directPostService.resolveExpectedAuthSession(requestHandle);
+        if (expectedAuthSession == null) {
+            throw stopSseReconnects();
+        }
         AuthenticationSessionModel currentBrowserSession =
                 authSessionResolver.resolveCurrentBrowserSession(expectedAuthSession);
         if (!authSessionResolver.sameAuthenticationSession(currentBrowserSession, expectedAuthSession)) {
-            throw new ForbiddenException("Current browser session does not match the request handle");
+            throw stopSseReconnects();
         }
-        sseService.subscribe(requestHandle, eventSink, sse);
+        sseService.subscribe(requestHandle, eventSink, sse, expectedAuthSession);
     }
 
     @GET
@@ -345,5 +348,14 @@ public class Oid4vpIdentityProviderEndpoint {
         // Include the state so the GET handler can resolve the auth session for Keycloak's error template.
         return responseFactory.jsonRedirectResponse(
                 responseFactory.buildErrorRedirectUri(error, errorDescription, state));
+    }
+
+    /**
+     * SSE resource methods with {@link SseEventSink} do not return a regular {@link Response} body.
+     * Aborting the handshake with HTTP 204 is the SSE-compatible way to stop browser reconnects for
+     * dead or mismatched login flows.
+     */
+    private WebApplicationException stopSseReconnects() {
+        return new WebApplicationException(Response.noContent().build());
     }
 }

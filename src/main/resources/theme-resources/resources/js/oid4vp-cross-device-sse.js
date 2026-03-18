@@ -31,15 +31,41 @@
         var statusUrl = buildStatusUrl(config);
         var pollIntervalMs = config.pollIntervalMs || 2000;
         var currentSource = null;
+        var reconnectTimerId = null;
+        var stopped = false;
 
         window.__oid4vpSseReady = false;
 
+        function stop() {
+            stopped = true;
+            if (reconnectTimerId !== null) {
+                window.clearTimeout(reconnectTimerId);
+                reconnectTimerId = null;
+            }
+            if (currentSource) {
+                currentSource.close();
+            }
+        }
+
+        function scheduleReconnect() {
+            if (stopped || reconnectTimerId !== null) {
+                return;
+            }
+            reconnectTimerId = window.setTimeout(function() {
+                reconnectTimerId = null;
+                connect();
+            }, pollIntervalMs);
+        }
+
         function connect() {
+            if (stopped) {
+                return;
+            }
             currentSource = new EventSource(statusUrl);
 
             currentSource.addEventListener("complete", function(event) {
                 window.__oid4vpSseReady = true;
-                currentSource.close();
+                stop();
                 try {
                     var data = JSON.parse(event.data);
                     if (data.redirect_uri) {
@@ -56,8 +82,15 @@
 
             currentSource.addEventListener("timeout", function() {
                 window.__oid4vpSseReady = true;
-                currentSource.close();
-                connect();
+                if (currentSource) {
+                    currentSource.close();
+                }
+                scheduleReconnect();
+            });
+
+            currentSource.addEventListener("expired", function() {
+                window.__oid4vpSseReady = true;
+                stop();
             });
 
             currentSource.onopen = function() {
@@ -66,8 +99,10 @@
 
             currentSource.onerror = function() {
                 window.__oid4vpSseReady = false;
-                currentSource.close();
-                window.setTimeout(connect, pollIntervalMs);
+                if (currentSource) {
+                    currentSource.close();
+                }
+                scheduleReconnect();
             };
         }
 
@@ -75,9 +110,7 @@
 
         return {
             close: function() {
-                if (currentSource) {
-                    currentSource.close();
-                }
+                stop();
             }
         };
     }

@@ -30,7 +30,7 @@ import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpResponseMode;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import jakarta.ws.rs.BadRequestException;
-import jakarta.ws.rs.ForbiddenException;
+import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
 import java.net.URI;
 import java.util.Map;
@@ -224,15 +224,26 @@ class Oid4vpIdentityProviderEndpointTest {
     }
 
     @Test
-    void crossDeviceStatus_withMismatchedBrowserSession_throwsForbidden() {
+    void crossDeviceStatus_withExpiredAuthSession_returnsNoContent() {
+        assertThatThrownBy(() -> endpoint.crossDeviceStatus("handle-1", null, null))
+                .isInstanceOf(WebApplicationException.class)
+                .extracting(throwable ->
+                        ((WebApplicationException) throwable).getResponse().getStatus())
+                .isEqualTo(204);
+    }
+
+    @Test
+    void crossDeviceStatus_withMismatchedBrowserSession_returnsNoContent() {
         when(store.resolveFlowHandle(session, "handle-1"))
                 .thenReturn(new Oid4vpRequestObjectStore.FlowContextEntry(
                         "root-session", "tab-1", "effective-client", "https://example.com/endpoint", "cross_device"));
         when(context.getAuthenticationSession()).thenReturn(null);
 
         assertThatThrownBy(() -> endpoint.crossDeviceStatus("handle-1", null, null))
-                .isInstanceOf(ForbiddenException.class)
-                .hasMessageContaining("Current browser session does not match");
+                .isInstanceOf(WebApplicationException.class)
+                .extracting(throwable ->
+                        ((WebApplicationException) throwable).getResponse().getStatus())
+                .isEqualTo(204);
     }
 
     @Test
