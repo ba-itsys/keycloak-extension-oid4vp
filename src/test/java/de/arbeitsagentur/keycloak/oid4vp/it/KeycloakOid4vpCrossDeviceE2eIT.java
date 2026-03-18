@@ -216,7 +216,7 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
-    void crossDeviceStatusWithoutBrowserSessionCookieIsRejected() throws Exception {
+    void crossDeviceStatusWithoutBrowserSessionCookieReturnsNoContent() throws Exception {
         callback().reset();
         flow.clearBrowserSession();
         Oid4vpTestKeycloakSetup.configureCrossDeviceFlow(adminClient(), Oid4vpE2eEnvironment.REALM, true);
@@ -246,7 +246,7 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
                                     .build(),
                             HttpResponse.BodyHandlers.ofString());
 
-            assertThat(sseResponse.statusCode()).isEqualTo(403);
+            assertThat(sseResponse.statusCode()).isEqualTo(204);
         } finally {
             Oid4vpTestKeycloakSetup.configureCrossDeviceFlow(adminClient(), Oid4vpE2eEnvironment.REALM, false);
         }

@@ -37,8 +37,11 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.SingleUseObjectProvider;
+import org.keycloak.sessions.AuthenticationSessionModel;
+import org.keycloak.sessions.RootAuthenticationSessionModel;
 import org.keycloak.timer.TimerProvider;
 import org.keycloak.util.JsonSerialization;
+import org.keycloak.utils.StringUtil;
 
 /**
  * Provides Server-Sent Events (SSE) for cross-device OID4VP login polling.
@@ -79,6 +82,23 @@ public class Oid4vpCrossDeviceSseService {
         subscribe(requestHandle, eventSink, sse, true);
     }
 
+    public void subscribe(
+            String requestHandle, SseEventSink eventSink, Sse sse, AuthenticationSessionModel authSession) {
+        coordinator.register(
+                new PendingConnection(
+                        new HandleKey(realmName, requestHandle),
+                        eventSink,
+                        sse,
+                        Instant.now().plusSeconds(timeoutSeconds),
+                        pingIntervalSeconds,
+                        pollIntervalMs,
+                        Instant.now().plusSeconds(pingIntervalSeconds),
+                        authSessionRootId(authSession),
+                        authSessionTabId(authSession),
+                        authSessionClientId(authSession)),
+                true);
+    }
+
     void subscribe(String requestHandle, SseEventSink eventSink, Sse sse, boolean startScheduler) {
         coordinator.register(
                 new PendingConnection(
@@ -88,7 +108,10 @@ public class Oid4vpCrossDeviceSseService {
                         Instant.now().plusSeconds(timeoutSeconds),
                         pingIntervalSeconds,
                         pollIntervalMs,
-                        Instant.now().plusSeconds(pingIntervalSeconds)),
+                        Instant.now().plusSeconds(pingIntervalSeconds),
+                        null,
+                        null,
+                        null),
                 startScheduler);
     }
 
@@ -251,6 +274,11 @@ public class Oid4vpCrossDeviceSseService {
                             continue;
                         }
 
+                        if (isAuthenticationSessionExpired(pollingSession, realm, listeners)) {
+                            closeAll(handleKey, listeners, "expired", "{\"error\":\"authentication_session_expired\"}");
+                            continue;
+                        }
+
                         List<PendingConnection> expired = new ArrayList<>();
                         for (PendingConnection listener : listeners) {
                             if (listener.eventSink().isClosed()) {
@@ -343,6 +371,39 @@ public class Oid4vpCrossDeviceSseService {
                 throw new IllegalStateException("Failed to serialize SSE payload", e);
             }
         }
+
+        private boolean isAuthenticationSessionExpired(
+                KeycloakSession pollingSession, RealmModel realm, CopyOnWriteArrayList<PendingConnection> listeners) {
+            PendingConnection reference = null;
+            for (PendingConnection listener : listeners) {
+                if (StringUtil.isNotBlank(listener.rootSessionId()) && StringUtil.isNotBlank(listener.tabId())) {
+                    reference = listener;
+                    break;
+                }
+            }
+            if (reference == null) {
+                return false;
+            }
+
+            RootAuthenticationSessionModel rootSession = pollingSession
+                    .authenticationSessions()
+                    .getRootAuthenticationSession(realm, reference.rootSessionId());
+            if (rootSession == null) {
+                return true;
+            }
+
+            AuthenticationSessionModel authSession =
+                    rootSession.getAuthenticationSessions().get(reference.tabId());
+            if (authSession == null) {
+                return true;
+            }
+
+            if (StringUtil.isBlank(reference.clientId())) {
+                return false;
+            }
+            return authSession.getClient() == null
+                    || !reference.clientId().equals(authSession.getClient().getId());
+        }
     }
 
     private record HandleKey(String realmName, String requestHandle) {}
@@ -354,6 +415,9 @@ public class Oid4vpCrossDeviceSseService {
         private final Instant deadline;
         private final int pingIntervalSeconds;
         private final int pollIntervalMs;
+        private final String rootSessionId;
+        private final String tabId;
+        private final String clientId;
         private volatile Instant nextPingAt;
 
         private PendingConnection(
@@ -363,7 +427,10 @@ public class Oid4vpCrossDeviceSseService {
                 Instant deadline,
                 int pingIntervalSeconds,
                 int pollIntervalMs,
-                Instant nextPingAt) {
+                Instant nextPingAt,
+                String rootSessionId,
+                String tabId,
+                String clientId) {
             this.handleKey = handleKey;
             this.eventSink = eventSink;
             this.sse = sse;
@@ -371,6 +438,9 @@ public class Oid4vpCrossDeviceSseService {
             this.nextPingAt = nextPingAt;
             this.pingIntervalSeconds = pingIntervalSeconds;
             this.pollIntervalMs = pollIntervalMs;
+            this.rootSessionId = rootSessionId;
+            this.tabId = tabId;
+            this.clientId = clientId;
         }
 
         private HandleKey handleKey() {
@@ -401,8 +471,36 @@ public class Oid4vpCrossDeviceSseService {
             return pollIntervalMs;
         }
 
+        private String rootSessionId() {
+            return rootSessionId;
+        }
+
+        private String tabId() {
+            return tabId;
+        }
+
+        private String clientId() {
+            return clientId;
+        }
+
         private void setNextPingAt(Instant nextPingAt) {
             this.nextPingAt = nextPingAt;
         }
+    }
+
+    private static String authSessionRootId(AuthenticationSessionModel authSession) {
+        return authSession != null && authSession.getParentSession() != null
+                ? authSession.getParentSession().getId()
+                : null;
+    }
+
+    private static String authSessionTabId(AuthenticationSessionModel authSession) {
+        return authSession != null ? authSession.getTabId() : null;
+    }
+
+    private static String authSessionClientId(AuthenticationSessionModel authSession) {
+        return authSession != null && authSession.getClient() != null
+                ? authSession.getClient().getId()
+                : null;
     }
 }
