@@ -34,6 +34,15 @@ class ThemeResourcesTest {
         assertThat(layoutTemplate).doesNotContain("checkAuthSession");
     }
 
+    @Test
+    void oid4vpLoginTemplateFiltersCurrentBrokerFromAlternativeMethods() throws Exception {
+        String loginTemplate = loadResource("/theme-resources/templates/login-oid4vp-idp.ftl");
+
+        assertThat(loginTemplate).contains("currentBrokerAlias");
+        assertThat(loginTemplate).contains("p.alias != (currentBrokerAlias!'')");
+        assertThat(loginTemplate).contains("<#if hasAlternativeProvider>");
+    }
+
     private String loadResource(String resourcePath) throws IOException {
         try (InputStream input = getClass().getResourceAsStream(resourcePath)) {
             assertThat(input).as("resource %s", resourcePath).isNotNull();

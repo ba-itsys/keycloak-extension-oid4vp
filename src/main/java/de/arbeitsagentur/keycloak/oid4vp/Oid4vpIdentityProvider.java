@@ -368,6 +368,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 .setAttribute("state", state)
                 .setAttribute("requestHandle", requestHandle)
                 .setAttribute("crossDeviceRequestHandle", crossDeviceRequestHandle)
+                .setAttribute("currentBrokerAlias", getConfig().getAlias())
                 .setAttribute("formActionUrl", formActionUrl)
                 .setAttribute("sameDeviceEnabled", sameDeviceEnabled)
                 .setAttribute("crossDeviceEnabled", crossDeviceEnabled)

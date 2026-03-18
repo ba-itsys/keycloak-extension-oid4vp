@@ -49,20 +49,32 @@
             </div>
         </#if>
 
+        <#assign hasAlternativeProvider = false>
         <#if social.providers?? && social.providers?size gt 0>
+            <#list social.providers as p>
+                <#if p.alias != (currentBrokerAlias!'')>
+                    <#assign hasAlternativeProvider = true>
+                    <#break>
+                </#if>
+            </#list>
+        </#if>
+
+        <#if hasAlternativeProvider>
             <div class="${properties.kcFormGroupClass!}">
                 <hr/>
                 <p>Or sign in with another method:</p>
                 <ul class="${properties.kcFormSocialAccountListClass!}">
                     <#list social.providers as p>
-                        <li class="${properties.kcFormSocialAccountListItemClass!}">
-                            <a href="${p.loginUrl}" id="social-${p.alias}" class="${properties.kcFormSocialAccountButtonClass!}">
-                                <#if p.iconClasses?has_content>
-                                    <i class="${properties.kcFormSocialAccountButtonTextClass!} ${p.iconClasses!}" aria-hidden="true"></i>
-                                </#if>
-                                <span class="${properties.kcFormSocialAccountButtonText!}">${p.displayName!}</span>
-                            </a>
-                        </li>
+                        <#if p.alias != (currentBrokerAlias!'')>
+                            <li class="${properties.kcFormSocialAccountListItemClass!}">
+                                <a href="${p.loginUrl}" id="social-${p.alias}" class="${properties.kcFormSocialAccountButtonClass!}">
+                                    <#if p.iconClasses?has_content>
+                                        <i class="${properties.kcFormSocialAccountButtonTextClass!} ${p.iconClasses!}" aria-hidden="true"></i>
+                                    </#if>
+                                    <span class="${properties.kcFormSocialAccountButtonText!}">${p.displayName!}</span>
+                                </a>
+                            </li>
+                        </#if>
                     </#list>
                 </ul>
             </div>
