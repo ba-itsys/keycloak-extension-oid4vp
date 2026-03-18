@@ -107,7 +107,7 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
 
         flow.navigateToLoginPage();
         flow.clickOid4vpIdpButton();
-        page.waitForSelector("a:has-text('Open Wallet App')", new Page.WaitForSelectorOptions().setTimeout(30000));
+        page.waitForSelector("#oid4vp-open-wallet", new Page.WaitForSelectorOptions().setTimeout(30000));
 
         assertThat(page.locator("a#social-oid4vp").count())
                 .as("OID4VP login page must not offer the active wallet broker as an alternative method")

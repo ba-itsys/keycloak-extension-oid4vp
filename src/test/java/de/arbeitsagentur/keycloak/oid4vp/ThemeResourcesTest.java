@@ -43,6 +43,32 @@ class ThemeResourcesTest {
         assertThat(loginTemplate).contains("<#if hasAlternativeProvider>");
     }
 
+    @Test
+    void oid4vpLoginTemplateUsesMessageBundleForUserFacingTexts() throws Exception {
+        String loginTemplate = loadResource("/theme-resources/templates/login-oid4vp-idp.ftl");
+        String messages = loadResource("/theme-resources/messages/messages_en.properties");
+
+        assertThat(loginTemplate).contains("${msg(\"oid4vpLoginTitle\")}");
+        assertThat(loginTemplate).contains("${msg(\"oid4vpOpenWalletApp\")}");
+        assertThat(loginTemplate).contains("${msg(\"oid4vpScanWithPhone\")}");
+        assertThat(loginTemplate).contains("${msg(\"oid4vpScanWithWalletApp\")}");
+        assertThat(loginTemplate).contains("${msg(\"oid4vpQrCodeAlt\")}");
+        assertThat(loginTemplate).contains("${msg(\"oid4vpAlternativeMethods\")}");
+        assertThat(loginTemplate).doesNotContain("Sign in with Wallet");
+        assertThat(loginTemplate).doesNotContain("Open Wallet App");
+        assertThat(loginTemplate).doesNotContain("Or scan with your phone:");
+        assertThat(loginTemplate).doesNotContain("Scan with your wallet app:");
+        assertThat(loginTemplate).doesNotContain("QR Code for wallet login");
+        assertThat(loginTemplate).doesNotContain("Or sign in with another method:");
+
+        assertThat(messages).contains("oid4vpLoginTitle=Sign in with Wallet");
+        assertThat(messages).contains("oid4vpOpenWalletApp=Open Wallet App");
+        assertThat(messages).contains("oid4vpScanWithPhone=Or scan with your phone:");
+        assertThat(messages).contains("oid4vpScanWithWalletApp=Scan with your wallet app:");
+        assertThat(messages).contains("oid4vpQrCodeAlt=QR Code for wallet login");
+        assertThat(messages).contains("oid4vpAlternativeMethods=Or sign in with another method:");
+    }
+
     private String loadResource(String resourcePath) throws IOException {
         try (InputStream input = getClass().getResourceAsStream(resourcePath)) {
             assertThat(input).as("resource %s", resourcePath).isNotNull();

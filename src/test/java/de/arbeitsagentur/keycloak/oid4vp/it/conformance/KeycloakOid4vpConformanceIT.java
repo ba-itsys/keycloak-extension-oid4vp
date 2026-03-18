@@ -401,7 +401,7 @@ class KeycloakOid4vpConformanceIT {
     }
 
     private static String extractSameDeviceWalletUrl(String loginHtml) {
-        int marker = loginHtml.indexOf("Open Wallet App");
+        int marker = loginHtml.indexOf("id=\"oid4vp-open-wallet\"");
         if (marker < 0) {
             throw new IllegalStateException("OID4VP login page did not contain the same-device action");
         }

@@ -2,7 +2,7 @@
 <#import "oid4vp-template.ftl" as layout>
 <@layout.registrationLayout displayInfo=false; section>
     <#if section = "header">
-        Sign in with Wallet
+        ${msg("oid4vpLoginTitle")}
     <#elseif section = "form">
         <form id="oid4vpForm"
               action="${formActionUrl!''}"
@@ -16,17 +16,14 @@
             <input type="hidden" id="error_description" name="error_description"/>
         </form>
 
-        <div class="${properties.kcFormGroupClass!}">
-            <p>Present a verifiable credential from your wallet to sign in.</p>
-        </div>
-
         <#-- Same-device redirect button -->
         <#if (sameDeviceEnabled!false) && (sameDeviceWalletUrl!'')?has_content>
             <div class="${properties.kcFormGroupClass!}">
-                <a href="${sameDeviceWalletUrl!''}"
+                <a id="oid4vp-open-wallet"
+                   href="${sameDeviceWalletUrl!''}"
                    class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!} ${properties.kcButtonBlockClass!} ${properties.kcButtonLargeClass!}"
                    style="display: block; text-align: center; text-decoration: none;">
-                    Open Wallet App
+                    ${msg("oid4vpOpenWalletApp")}
                 </a>
             </div>
         </#if>
@@ -35,17 +32,15 @@
         <#if (crossDeviceEnabled!false) && (qrCodeBase64!'')?has_content>
             <div class="${properties.kcFormGroupClass!}" style="text-align: center; margin-top: 20px;">
                 <#if (sameDeviceEnabled!false)>
-                    <p style="margin-bottom: 10px;">Or scan with your phone:</p>
+                    <p style="margin-bottom: 10px;">${msg("oid4vpScanWithPhone")}</p>
                 <#else>
-                    <p style="margin-bottom: 10px;">Scan with your wallet app:</p>
+                    <p style="margin-bottom: 10px;">${msg("oid4vpScanWithWalletApp")}</p>
                 </#if>
-                <img src="data:image/png;base64,${qrCodeBase64!''}"
-                     alt="QR Code for wallet login"
+                <img id="oid4vp-qr-code"
+                     src="data:image/png;base64,${qrCodeBase64!''}"
+                     alt="${msg("oid4vpQrCodeAlt")}"
                      data-wallet-url="${crossDeviceWalletUrl!''}"
                      style="max-width: 250px; border: 1px solid #ddd; padding: 10px; background: white;"/>
-                <p style="font-size: 12px; color: #666; margin-top: 10px;">
-                    Scan this QR code with your wallet app
-                </p>
             </div>
         </#if>
 
@@ -62,7 +57,7 @@
         <#if hasAlternativeProvider>
             <div class="${properties.kcFormGroupClass!}">
                 <hr/>
-                <p>Or sign in with another method:</p>
+                <p>${msg("oid4vpAlternativeMethods")}</p>
                 <ul class="${properties.kcFormSocialAccountListClass!}">
                     <#list social.providers as p>
                         <#if p.alias != (currentBrokerAlias!'')>

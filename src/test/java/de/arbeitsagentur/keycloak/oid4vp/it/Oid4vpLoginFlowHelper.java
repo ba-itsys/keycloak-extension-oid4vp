@@ -79,24 +79,23 @@ class Oid4vpLoginFlowHelper {
 
     String getSameDeviceWalletUrl() {
         page.waitForSelector(
-                "a:has-text('Open Wallet App')",
+                "#oid4vp-open-wallet",
                 new Page.WaitForSelectorOptions()
                         .setState(WaitForSelectorState.VISIBLE)
                         .setTimeout(30000));
-        String walletUrl = page.locator("a:has-text('Open Wallet App')").getAttribute("href");
+        String walletUrl = page.locator("#oid4vp-open-wallet").getAttribute("href");
         assertThat(walletUrl).as("Wallet URL should be present").isNotEmpty();
         return walletUrl;
     }
 
     String getCrossDeviceWalletUrl() {
         page.waitForSelector(
-                "img[alt='QR Code for wallet login']",
+                "#oid4vp-qr-code",
                 new Page.WaitForSelectorOptions()
                         .setState(WaitForSelectorState.VISIBLE)
                         .setTimeout(30000));
         String walletUrl = (String)
-                page.evaluate(
-                        "() => document.querySelector('img[alt=\"QR Code for wallet login\"]').getAttribute('data-wallet-url')");
+                page.evaluate("() => document.querySelector('#oid4vp-qr-code').getAttribute('data-wallet-url')");
         assertThat(walletUrl).as("Cross-device wallet URL should be present").isNotEmpty();
         lastCrossDeviceRequestHandle = extractRequestHandleFromRequestUri(extractRequestUri(walletUrl));
         return walletUrl;
