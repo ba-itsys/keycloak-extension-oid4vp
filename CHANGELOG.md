@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.5.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.4.2...v0.5.0) (2026-03-19)
+
+
+### Features
+
+* move tests to message bundle ([cb41ba0](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/cb41ba0b0c63f50ba08b604378ac821650d1ab5a))
+
+
+### Bug Fixes
+
+* build uber-jar that packages dependencies for easier installation ([f5deae1](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/f5deae1076d03ef2762431a283f5efb87dc2582f))
+* cancel SSE if session is gone ([900ec80](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/900ec809aa91a718258629d37d395ebeac500e46))
+* map unresolved sub-claims to null instead of {} ([3aef48e](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/3aef48ed26b91619c2407543557a032671d9f8b9))
+* remove unused scripts, simplify sse client-side ([05c0c7b](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/05c0c7b709dc4ef0a09d33db1b4cfaf1daca179d))
+* session mapper didnt work correctly ([f82b5e2](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/f82b5e2c0745fdff57488c447030ef5dfdfeef22))
+* use our own template to remove startSessionPolling ([128d936](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/128d936aa2d61b83b2fb310aec6545f83e7e1829))
+* wallet should not be shown as alternate provider in wallet login ([2a66c72](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/2a66c723b089cc0bd8dc8178ad92bf58b4357ecf))
+
 ## [0.4.2](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.4.1...v0.4.2) (2026-03-18)
 
 
