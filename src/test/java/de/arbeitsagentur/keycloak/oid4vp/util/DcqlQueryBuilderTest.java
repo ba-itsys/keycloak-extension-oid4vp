@@ -429,6 +429,27 @@ class DcqlQueryBuilderTest {
     }
 
     @Test
+    void aggregateFromMappers_transientUsersEnabled_skipsUserMappingClaim() {
+        KeycloakSession session = mock(KeycloakSession.class);
+        KeycloakContext context = mock(KeycloakContext.class);
+        RealmModel realm = mock(RealmModel.class);
+        IdentityProviderMapperModel mapper = new IdentityProviderMapperModel();
+        mapper.setConfig(new LinkedHashMap<>());
+        mapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_FORMAT, "dc+sd-jwt");
+        mapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_TYPE, "IdentityCredential");
+        mapper.getConfig().put(Oid4vpMapperConfigProperties.CLAIM_PATH, "given_name");
+        when(session.getContext()).thenReturn(context);
+        when(context.getRealm()).thenReturn(realm);
+        when(realm.getIdentityProviderMappersByAliasStream("oid4vp")).thenReturn(java.util.stream.Stream.of(mapper));
+        Oid4vpConfigProvider config = config("oid4vp", false, true, "sub", "mdoc-sub");
+
+        Map<String, CredentialTypeSpec> result = DcqlQueryBuilder.aggregateFromMappers(session, config);
+
+        CredentialTypeSpec type = result.values().iterator().next();
+        assertThat(type.claimSpecs()).extracting(ClaimSpec::path).containsExactly("given_name");
+    }
+
+    @Test
     void aggregateFromMappers_ignoresBlankTypesAndHandlesMapperFailure() {
         KeycloakSession session = mock(KeycloakSession.class);
         KeycloakContext context = mock(KeycloakContext.class);
@@ -449,6 +470,15 @@ class DcqlQueryBuilderTest {
 
     private static Oid4vpConfigProvider config(
             String alias, boolean useIdTokenSubject, String userClaim, String mdocClaim) {
+        return config(alias, useIdTokenSubject, false, userClaim, mdocClaim);
+    }
+
+    private static Oid4vpConfigProvider config(
+            String alias,
+            boolean useIdTokenSubject,
+            boolean transientUsersEnabled,
+            String userClaim,
+            String mdocClaim) {
         return new Oid4vpConfigProvider() {
             @Override
             public String getAlias() {
@@ -507,7 +537,7 @@ class DcqlQueryBuilderTest {
 
             @Override
             public boolean isTransientUsersEnabled() {
-                return false;
+                return transientUsersEnabled;
             }
 
             @Override

@@ -282,7 +282,7 @@ public class DcqlQueryBuilder {
                 }
             });
 
-            if (!config.isUseIdTokenSubject()) {
+            if (!config.isUseIdTokenSubject() && !config.isTransientUsersEnabled()) {
                 String sdJwtUserMappingClaim = config.getUserMappingClaim();
                 String mdocUserMappingClaim = config.getUserMappingClaimMdoc();
 
