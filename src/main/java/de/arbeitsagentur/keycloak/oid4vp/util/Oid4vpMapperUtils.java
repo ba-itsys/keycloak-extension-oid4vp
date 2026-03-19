@@ -15,6 +15,7 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
 import java.util.ArrayList;
@@ -38,6 +39,8 @@ import org.keycloak.utils.StringUtil;
 public final class Oid4vpMapperUtils {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpMapperUtils.class);
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final String PATH_SEPARATOR = "/";
 
     public static final String CONTEXT_CLAIMS_KEY = "oid4vp_claims";
     public static final String CONTEXT_ISSUER_KEY = "oid4vp_issuer";
@@ -97,7 +100,15 @@ public final class Oid4vpMapperUtils {
      * string representation. Returns {@code null} for null, empty list, or empty string values.
      */
     public static String toStringValue(Object claimValue) {
-        Object normalizedValue = normalizeClaimValue(claimValue);
+        return toStringValue(claimValue, false);
+    }
+
+    /**
+     * Converts a claim value to a string, optionally parsing JSON scalar/array strings first.
+     * If the value is a list, returns the first element's string representation.
+     */
+    public static String toStringValue(Object claimValue, boolean parseJsonStrings) {
+        Object normalizedValue = normalizeClaimValue(claimValue, parseJsonStrings);
         if (normalizedValue == null) return null;
 
         if (normalizedValue instanceof List<?> list) {
@@ -113,7 +124,15 @@ public final class Oid4vpMapperUtils {
      * Scalar values are wrapped in a single-element list.
      */
     public static List<String> toStringList(Object claimValue) {
-        Object normalizedValue = normalizeClaimValue(claimValue);
+        return toStringList(claimValue, false);
+    }
+
+    /**
+     * Converts a claim value to a list of strings for multi-valued Keycloak attributes, optionally
+     * parsing JSON scalar/array strings first. Scalar values are wrapped in a single-element list.
+     */
+    public static List<String> toStringList(Object claimValue, boolean parseJsonStrings) {
+        Object normalizedValue = normalizeClaimValue(claimValue, parseJsonStrings);
         if (normalizedValue == null) return new ArrayList<>();
 
         if (normalizedValue instanceof List<?> list) {
@@ -161,53 +180,161 @@ public final class Oid4vpMapperUtils {
 
     /**
      * Navigates a claims map by path, supporting nested objects, mDoc namespaced keys,
-     * and DCQL {@code null} array traversal. Tries exact match, then nested path, then suffix match.
+     * JSON-encoded mDoc values, and DCQL {@code null} array traversal. Tries exact match, then nested
+     * path, then suffix match. For slash paths, if the base claim resolves to a scalar or JSON string
+     * instead of a nested object/array, the raw base value is returned as a fallback.
      */
     public static Object getNestedValue(Map<String, Object> claims, String claimPath) {
         if (claims == null || claimPath == null) return null;
 
-        // Try exact key match first (handles mDoc flat keys like "namespace/element")
-        if (claims.containsKey(claimPath)) {
-            return claims.get(claimPath);
+        Object resolvedValue = findDirectClaimValue(claims, claimPath);
+        if (resolvedValue != null) {
+            return resolvedValue;
         }
 
-        // Fall back to nested path navigation (supports DCQL-style null for array traversal)
-        String[] pathParts = claimPath.split("/");
-        Object current = claims;
-        for (String part : pathParts) {
-            if ("null".equals(part)) {
-                // DCQL null: select all elements of the current array
-                if (current instanceof List<?>) {
-                    continue;
-                }
-                current = null;
-                break;
-            } else if (current instanceof Map) {
-                current = ((Map<?, ?>) current).get(part);
-                if (current == null) break;
-            } else {
-                current = null;
-                break;
+        int separatorIndex = claimPath.indexOf(PATH_SEPARATOR);
+        if (separatorIndex < 0) {
+            return null;
+        }
+
+        String baseClaimPath = claimPath.substring(0, separatorIndex);
+        List<Object> baseClaimValues = findClaimCandidates(claims, baseClaimPath);
+        if (baseClaimValues.isEmpty()) {
+            return null;
+        }
+
+        String[] nestedParts = claimPath.substring(separatorIndex + 1).split(PATH_SEPARATOR);
+        Object fallbackValue = null;
+        for (Object baseClaimValue : baseClaimValues) {
+            Object nestedValue = extractNestedValue(baseClaimValue, nestedParts);
+            if (nestedValue != null) {
+                return nestedValue;
             }
-        }
-        if (current != null) return current;
-
-        // Fall back to suffix match for mDoc namespaced keys (e.g. "family_name" matches
-        // "eu.europa.ec.eudi.pid.1/family_name")
-        String suffix = "/" + claimPath;
-        for (Map.Entry<String, Object> entry : claims.entrySet()) {
-            if (entry.getKey().endsWith(suffix)) {
-                return entry.getValue();
+            if (fallbackValue == null && isScalarFallback(baseClaimValue)) {
+                fallbackValue = baseClaimValue;
             }
         }
 
-        return null;
+        return fallbackValue;
     }
 
-    private static Object normalizeClaimValue(Object value) {
+    private static Object normalizeClaimValue(Object value, boolean parseJsonStrings) {
         if (value instanceof Map<?, ?> map && map.isEmpty()) {
             return null;
         }
+        if (parseJsonStrings && value instanceof String stringValue) {
+            ParsedJson parsed = tryParseJson(stringValue);
+            if (!parsed.success()) {
+                return value;
+            }
+            Object parsedValue = parsed.value();
+            if (parsedValue == null) {
+                return null;
+            }
+            if (parsedValue instanceof List<?>
+                    || parsedValue instanceof String
+                    || parsedValue instanceof Number
+                    || parsedValue instanceof Boolean) {
+                return parsedValue;
+            }
+        }
         return value;
     }
+
+    private static Object findDirectClaimValue(Map<String, Object> claims, String claimPath) {
+        List<Object> candidates = findClaimCandidates(claims, claimPath);
+        return candidates.isEmpty() ? null : candidates.get(0);
+    }
+
+    private static List<Object> findClaimCandidates(Map<String, Object> claims, String claimPath) {
+        List<Object> candidates = new ArrayList<>();
+        if (claims.containsKey(claimPath)) {
+            candidates.add(claims.get(claimPath));
+        }
+
+        Object navigatedValue = navigateStructuredPath(claims, claimPath.split(PATH_SEPARATOR));
+        if (navigatedValue != null && !candidates.contains(navigatedValue)) {
+            candidates.add(navigatedValue);
+        }
+
+        String suffix = PATH_SEPARATOR + claimPath;
+        for (Map.Entry<String, Object> entry : claims.entrySet()) {
+            Object suffixValue = entry.getValue();
+            if (entry.getKey().endsWith(suffix) && !candidates.contains(suffixValue)) {
+                candidates.add(suffixValue);
+            }
+        }
+        return candidates;
+    }
+
+    private static Object extractNestedValue(Object baseClaimValue, String[] nestedParts) {
+        Object parsedBaseValue = parseJsonValueIfPossible(baseClaimValue);
+        if (parsedBaseValue == null) {
+            return null;
+        }
+        return navigateStructuredPath(parsedBaseValue, nestedParts);
+    }
+
+    private static Object navigateStructuredPath(Object value, String[] pathParts) {
+        Object current = value;
+        for (String part : pathParts) {
+            if ("null".equals(part)) {
+                if (current instanceof List<?>) {
+                    continue;
+                }
+                return null;
+            }
+
+            if (current instanceof Map<?, ?> map) {
+                current = map.get(part);
+                if (current == null) {
+                    return null;
+                }
+                continue;
+            }
+
+            Integer index = parseArrayIndex(part);
+            if (index != null && current instanceof List<?> list) {
+                if (index < 0 || index >= list.size()) {
+                    return null;
+                }
+                current = list.get(index);
+                continue;
+            }
+
+            return null;
+        }
+        return current;
+    }
+
+    private static Object parseJsonValueIfPossible(Object value) {
+        if (!(value instanceof String stringValue)) {
+            return value;
+        }
+        ParsedJson parsed = tryParseJson(stringValue);
+        return parsed.success() ? parsed.value() : value;
+    }
+
+    private static boolean isScalarFallback(Object value) {
+        return !(value instanceof Map<?, ?>) && !(value instanceof List<?>);
+    }
+
+    private static Integer parseArrayIndex(String segment) {
+        try {
+            int index = Integer.parseInt(segment);
+            return index >= 0 ? index : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private static ParsedJson tryParseJson(String value) {
+        try {
+            return new ParsedJson(true, OBJECT_MAPPER.readValue(value, Object.class));
+        } catch (Exception e) {
+            return new ParsedJson(false, null);
+        }
+    }
+
+    private record ParsedJson(boolean success, Object value) {}
 }
