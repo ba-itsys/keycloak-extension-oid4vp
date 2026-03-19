@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.1](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.5.0...v0.5.1) (2026-03-19)
+
+
+### Bug Fixes
+
+* birth_place dcql query for mDoc ([e9cfd55](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/e9cfd55681e8f11820668b69a73c9d846e0b9512))
+* do not include identifying claim in dcql if doNotStoreUsers is active ([9759ae6](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/9759ae6cd3ad4c2091a7b6c17b9bf9ab13c4d375))
+
 ## [0.5.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.4.2...v0.5.0) (2026-03-19)
 
 
