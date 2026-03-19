@@ -437,7 +437,7 @@ cat > "$REALM_OUT" <<REALMEOF
         "syncMode": "INHERIT",
         "credential.format": "mso_mdoc",
         "credential.type": "eu.europa.ec.eudi.pid.1",
-        "claim": "place_of_birth",
+        "claim": "birth_place",
         "user.attribute": "place_of_birth"
       }
     },
