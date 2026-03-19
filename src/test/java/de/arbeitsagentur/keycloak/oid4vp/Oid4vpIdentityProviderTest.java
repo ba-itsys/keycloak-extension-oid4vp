@@ -29,16 +29,19 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperConfigProperties;
 import jakarta.ws.rs.core.MultivaluedHashMap;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriBuilder;
 import java.net.URI;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.broker.provider.AuthenticationRequest;
 import org.keycloak.forms.login.LoginFormsProvider;
+import org.keycloak.models.IdentityProviderMapperModel;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakUriInfo;
@@ -56,12 +59,13 @@ class Oid4vpIdentityProviderTest {
     private LoginFormsProvider forms;
     private KeycloakContext context;
     private SingleUseObjectProvider singleUseObjects;
+    private RealmModel realm;
 
     @BeforeEach
     void setUp() {
         KeycloakSession session = mock(KeycloakSession.class);
         context = mock(KeycloakContext.class);
-        RealmModel realm = mock(RealmModel.class);
+        realm = mock(RealmModel.class);
         when(realm.getName()).thenReturn("test-realm");
         when(realm.getAccessCodeLifespanLogin()).thenReturn(300);
         when(context.getRealm()).thenReturn(realm);
@@ -184,6 +188,26 @@ class Oid4vpIdentityProviderTest {
         Map<String, Object> credential = ((List<Map<String, Object>>) dcql.get("credentials")).get(0);
 
         assertThat(credential).doesNotContainKey("trusted_authorities");
+    }
+
+    @Test
+    void buildDcqlQueryFromConfig_transientUsersEnabled_doesNotAddIdentifyingClaim() throws Exception {
+        IdentityProviderMapperModel mapper = new IdentityProviderMapperModel();
+        mapper.setConfig(new LinkedHashMap<>());
+        mapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_TYPE, "IdentityCredential");
+        mapper.getConfig().put(Oid4vpMapperConfigProperties.CLAIM_PATH, "given_name");
+        when(realm.getIdentityProviderMappersByAliasStream("oid4vp")).thenReturn(java.util.stream.Stream.of(mapper));
+
+        config.setUserMappingClaim("sub");
+        config.setTransientUsersEnabled(true);
+
+        Map<String, Object> dcql = parseDcql(provider.buildDcqlQueryFromConfig());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> credential = ((List<Map<String, Object>>) dcql.get("credentials")).get(0);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> claims = (List<Map<String, Object>>) credential.get("claims");
+
+        assertThat(claims).extracting(claim -> claim.get("path")).containsExactly(List.of("given_name"));
     }
 
     @Test
