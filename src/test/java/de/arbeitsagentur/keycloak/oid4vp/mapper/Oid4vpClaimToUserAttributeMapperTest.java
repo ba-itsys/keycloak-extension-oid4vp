@@ -109,6 +109,71 @@ class Oid4vpClaimToUserAttributeMapperTest {
     }
 
     @Test
+    void preprocessFederatedIdentity_mdocNestedClaimParsesJsonBaseValue() {
+        BrokeredIdentityContext context = contextWithClaims(
+                Map.of("eu.europa.ec.eudi.pid.1/birth_place", "{\"locality\":\"BERLIN\",\"country\":\"DE\"}"),
+                "MDOC",
+                "eu.europa.ec.eudi.pid.1");
+
+        mapper.preprocessFederatedIdentity(
+                null, null, mapperModel("birth_place/locality", "place_of_birth", false), context);
+
+        assertThat(context.getAttributes().get("place_of_birth")).containsExactly("BERLIN");
+    }
+
+    @Test
+    void preprocessFederatedIdentity_mdocNestedClaimPrefersNamespacedObjectOverScalarShadow() {
+        BrokeredIdentityContext context = contextWithClaims(
+                Map.of(
+                        "birth_place",
+                        "RAW-SCALAR",
+                        "eu.europa.ec.eudi.pid.1/birth_place",
+                        Map.of("locality", "BERLIN", "country", "DE")),
+                "MDOC",
+                "eu.europa.ec.eudi.pid.1");
+
+        mapper.preprocessFederatedIdentity(
+                null, null, mapperModel("birth_place/locality", "place_of_birth", false), context);
+
+        assertThat(context.getAttributes().get("place_of_birth")).containsExactly("BERLIN");
+    }
+
+    @Test
+    void preprocessFederatedIdentity_mdocBaseClaimStaysUnparsedWithoutNestedMapperSyntax() {
+        BrokeredIdentityContext context = contextWithClaims(
+                Map.of("eu.europa.ec.eudi.pid.1/birth_place", "{\"locality\":\"BERLIN\",\"country\":\"DE\"}"),
+                "MDOC",
+                "eu.europa.ec.eudi.pid.1");
+
+        mapper.preprocessFederatedIdentity(null, null, mapperModel("birth_place", "birth_place", false), context);
+
+        assertThat(context.getAttributes().get("birth_place"))
+                .containsExactly("{\"locality\":\"BERLIN\",\"country\":\"DE\"}");
+    }
+
+    @Test
+    void preprocessFederatedIdentity_mdocMultivaluedClaimParsesJsonArrayString() {
+        BrokeredIdentityContext context = contextWithClaims(
+                Map.of("eu.europa.ec.eudi.pid.1/nationality", "[\"DE\",\"FR\"]"), "MDOC", "eu.europa.ec.eudi.pid.1");
+
+        mapper.preprocessFederatedIdentity(
+                null, null, mapperModel("nationality", "nationalities", false, true), context);
+
+        assertThat(context.getAttributes().get("nationalities")).containsExactly("DE", "FR");
+    }
+
+    @Test
+    void preprocessFederatedIdentity_mdocMultivaluedClaimFallsBackToSingleScalarValue() {
+        BrokeredIdentityContext context = contextWithClaims(
+                Map.of("eu.europa.ec.eudi.pid.1/nationality", "DE"), "MDOC", "eu.europa.ec.eudi.pid.1");
+
+        mapper.preprocessFederatedIdentity(
+                null, null, mapperModel("nationality", "nationalities", false, true), context);
+
+        assertThat(context.getAttributes().get("nationalities")).containsExactly("DE");
+    }
+
+    @Test
     void preprocessFederatedIdentity_skipsMismatchedCredentialFilter() {
         BrokeredIdentityContext context = contextWithClaims(Map.of("email", "alice@example.org"));
         context.getContextData().put(Oid4vpMapperUtils.CONTEXT_PRESENTATION_TYPE_KEY, "MDOC");
@@ -159,22 +224,33 @@ class Oid4vpClaimToUserAttributeMapperTest {
     }
 
     private static BrokeredIdentityContext contextWithClaims(Map<String, Object> claims) {
+        return contextWithClaims(claims, "SD_JWT", "eu.europa.ec.eudi.pid.1");
+    }
+
+    private static BrokeredIdentityContext contextWithClaims(
+            Map<String, Object> claims, String presentationType, String credentialType) {
         IdentityProviderModel identityProvider = new IdentityProviderModel();
         identityProvider.setAlias("oid4vp");
         identityProvider.setEnabled(true);
         BrokeredIdentityContext context = new BrokeredIdentityContext("broker-user", identityProvider);
         context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CLAIMS_KEY, claims);
-        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_PRESENTATION_TYPE_KEY, "SD_JWT");
-        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CREDENTIAL_TYPE_KEY, "eu.europa.ec.eudi.pid.1");
+        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_PRESENTATION_TYPE_KEY, presentationType);
+        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CREDENTIAL_TYPE_KEY, credentialType);
         return context;
     }
 
     private static IdentityProviderMapperModel mapperModel(String claimPath, String attribute, boolean optional) {
+        return mapperModel(claimPath, attribute, optional, false);
+    }
+
+    private static IdentityProviderMapperModel mapperModel(
+            String claimPath, String attribute, boolean optional, boolean multivalued) {
         IdentityProviderMapperModel mapperModel = new IdentityProviderMapperModel();
         Map<String, String> config = new HashMap<>();
         config.put("claim", claimPath);
         config.put(Oid4vpClaimToUserAttributeMapper.USER_ATTRIBUTE, attribute);
         config.put("optional", String.valueOf(optional));
+        config.put("multivalued", String.valueOf(multivalued));
         mapperModel.setConfig(config);
         return mapperModel;
     }

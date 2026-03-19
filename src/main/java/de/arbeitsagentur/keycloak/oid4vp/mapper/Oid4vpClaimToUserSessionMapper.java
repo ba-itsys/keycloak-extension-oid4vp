@@ -137,6 +137,7 @@ public class Oid4vpClaimToUserSessionMapper extends AbstractIdentityProviderMapp
         String claimPath = mapperModel.getConfig().get(CLAIM_PATH);
         String sessionNote = mapperModel.getConfig().get(SESSION_NOTE);
         boolean isOptional = Boolean.parseBoolean(mapperModel.getConfig().getOrDefault(OPTIONAL, "false"));
+        boolean isMultivalued = Boolean.parseBoolean(mapperModel.getConfig().getOrDefault(MULTIVALUED, "false"));
 
         if (StringUtil.isBlank(claimPath) || StringUtil.isBlank(sessionNote)) {
             return;
@@ -150,7 +151,7 @@ public class Oid4vpClaimToUserSessionMapper extends AbstractIdentityProviderMapp
             return;
         }
 
-        String stringValue = Oid4vpMapperUtils.toStringValue(claimValue);
+        String stringValue = Oid4vpMapperUtils.toStringValue(claimValue, isMultivalued);
         if (stringValue == null) return;
         context.setSessionNote(sessionNote, stringValue);
     }

@@ -152,6 +152,12 @@ class DcqlQueryBuilderTest {
     }
 
     @Test
+    void toDcqlPath_mdocNestedMapperPath_requestsOnlyBaseClaim() {
+        List<Object> path = new ClaimSpec("birth_place/locality").toDcqlPath("mso_mdoc", "eu.europa.ec.eudi.pid.1");
+        assertThat(path).containsExactly("eu.europa.ec.eudi.pid.1", "birth_place");
+    }
+
+    @Test
     void toDcqlPath_mdocFormat_prependsDocType() {
         List<Object> path = new ClaimSpec("given_name").toDcqlPath("mso_mdoc", "org.iso.18013.5.1.mDL");
         assertThat(path).containsExactly("org.iso.18013.5.1.mDL", "given_name");
@@ -164,6 +170,13 @@ class DcqlQueryBuilderTest {
 
         List<Object> mdoc = new ClaimSpec("nationality", false, true).toDcqlPath("mso_mdoc", "eu.europa.ec.eudi.pid.1");
         assertThat(mdoc).containsExactly("eu.europa.ec.eudi.pid.1", "nationality", null);
+    }
+
+    @Test
+    void toDcqlPath_mdocNestedMultivaluedPath_requestsBaseClaimWithArraySelector() {
+        List<Object> path =
+                new ClaimSpec("birth_place/locality", false, true).toDcqlPath("mso_mdoc", "eu.europa.ec.eudi.pid.1");
+        assertThat(path).containsExactly("eu.europa.ec.eudi.pid.1", "birth_place", null);
     }
 
     @Test
