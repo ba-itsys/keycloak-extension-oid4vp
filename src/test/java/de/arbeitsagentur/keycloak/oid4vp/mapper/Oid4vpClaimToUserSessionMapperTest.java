@@ -110,23 +110,81 @@ class Oid4vpClaimToUserSessionMapperTest {
         verify(userSession).setNote("issuer_note", "https://issuer.example");
     }
 
+    @Test
+    void preprocessFederatedIdentity_mdocNestedClaimParsesJsonBaseValue() {
+        AuthenticationSessionModel authenticationSession = mock(AuthenticationSessionModel.class);
+        BrokeredIdentityContext context = contextWithClaims(
+                Map.of("eu.europa.ec.eudi.pid.1/birth_place", "{\"locality\":\"BERLIN\"}"),
+                "MDOC",
+                "eu.europa.ec.eudi.pid.1");
+        context.setAuthenticationSession(authenticationSession);
+
+        mapper.preprocessFederatedIdentity(
+                null, null, mapperModel("birth_place/locality", "birth_place_note", false), context);
+
+        verify(authenticationSession).setUserSessionNote("birth_place_note", "BERLIN");
+    }
+
+    @Test
+    void preprocessFederatedIdentity_mdocNestedClaimPrefersNamespacedObjectOverScalarShadow() {
+        AuthenticationSessionModel authenticationSession = mock(AuthenticationSessionModel.class);
+        BrokeredIdentityContext context = contextWithClaims(
+                Map.of(
+                        "birth_place",
+                        "RAW-SCALAR",
+                        "eu.europa.ec.eudi.pid.1/birth_place",
+                        Map.of("locality", "BERLIN")),
+                "MDOC",
+                "eu.europa.ec.eudi.pid.1");
+        context.setAuthenticationSession(authenticationSession);
+
+        mapper.preprocessFederatedIdentity(
+                null, null, mapperModel("birth_place/locality", "birth_place_note", false), context);
+
+        verify(authenticationSession).setUserSessionNote("birth_place_note", "BERLIN");
+    }
+
+    @Test
+    void preprocessFederatedIdentity_mdocMultivaluedClaimFallsBackToSingleScalarValue() {
+        AuthenticationSessionModel authenticationSession = mock(AuthenticationSessionModel.class);
+        BrokeredIdentityContext context = contextWithClaims(
+                Map.of("eu.europa.ec.eudi.pid.1/nationality", "DE"), "MDOC", "eu.europa.ec.eudi.pid.1");
+        context.setAuthenticationSession(authenticationSession);
+
+        mapper.preprocessFederatedIdentity(
+                null, null, mapperModel("nationality", "nationality_note", false, true), context);
+
+        verify(authenticationSession).setUserSessionNote("nationality_note", "DE");
+    }
+
     private static BrokeredIdentityContext contextWithClaims(Map<String, Object> claims) {
+        return contextWithClaims(claims, "SD_JWT", "eu.europa.ec.eudi.pid.1");
+    }
+
+    private static BrokeredIdentityContext contextWithClaims(
+            Map<String, Object> claims, String presentationType, String credentialType) {
         IdentityProviderModel identityProvider = new IdentityProviderModel();
         identityProvider.setAlias("oid4vp");
         identityProvider.setEnabled(true);
         BrokeredIdentityContext context = new BrokeredIdentityContext("broker-user", identityProvider);
         context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CLAIMS_KEY, claims);
-        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_PRESENTATION_TYPE_KEY, "SD_JWT");
-        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CREDENTIAL_TYPE_KEY, "eu.europa.ec.eudi.pid.1");
+        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_PRESENTATION_TYPE_KEY, presentationType);
+        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CREDENTIAL_TYPE_KEY, credentialType);
         return context;
     }
 
     private static IdentityProviderMapperModel mapperModel(String claimPath, String sessionNote, boolean optional) {
+        return mapperModel(claimPath, sessionNote, optional, false);
+    }
+
+    private static IdentityProviderMapperModel mapperModel(
+            String claimPath, String sessionNote, boolean optional, boolean multivalued) {
         IdentityProviderMapperModel mapperModel = new IdentityProviderMapperModel();
         Map<String, String> config = new HashMap<>();
         config.put("claim", claimPath);
         config.put(Oid4vpClaimToUserSessionMapper.SESSION_NOTE, sessionNote);
         config.put("optional", String.valueOf(optional));
+        config.put("multivalued", String.valueOf(multivalued));
         mapperModel.setConfig(config);
         return mapperModel;
     }

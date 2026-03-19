@@ -437,7 +437,7 @@ cat > "$REALM_OUT" <<REALMEOF
         "syncMode": "INHERIT",
         "credential.format": "mso_mdoc",
         "credential.type": "eu.europa.ec.eudi.pid.1",
-        "claim": "birth_place",
+        "claim": "birth_place/locality",
         "user.attribute": "place_of_birth"
       }
     },
@@ -449,7 +449,7 @@ cat > "$REALM_OUT" <<REALMEOF
         "syncMode": "INHERIT",
         "credential.format": "dc+sd-jwt",
         "credential.type": "urn:eudi:pid:de:1",
-        "claim": "nationalities",
+        "claim": "nationalities/null",
         "multivalued": "true",
         "user.attribute": "nationality"
       }
@@ -463,6 +463,7 @@ cat > "$REALM_OUT" <<REALMEOF
         "credential.format": "mso_mdoc",
         "credential.type": "eu.europa.ec.eudi.pid.1",
         "claim": "nationality",
+        "multivalued": "true",
         "user.attribute": "nationality"
       }
     },

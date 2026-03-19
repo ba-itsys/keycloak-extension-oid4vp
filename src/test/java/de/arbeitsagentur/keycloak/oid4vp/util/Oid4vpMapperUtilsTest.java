@@ -86,10 +86,10 @@ class Oid4vpMapperUtilsTest {
     }
 
     @Test
-    void getNestedValue_nonMapIntermediate_returnsNull() {
+    void getNestedValue_nonMapIntermediate_fallsBackToScalarBaseValue() {
         Map<String, Object> claims = Map.of("a", "not-a-map");
 
-        assertThat(Oid4vpMapperUtils.getNestedValue(claims, "a/b")).isNull();
+        assertThat(Oid4vpMapperUtils.getNestedValue(claims, "a/b")).isEqualTo("not-a-map");
     }
 
     @Test
@@ -114,6 +114,42 @@ class Oid4vpMapperUtilsTest {
     }
 
     @Test
+    void getNestedValue_mdocJsonString_extractsNestedLeafFromBaseClaim() {
+        Map<String, Object> claims =
+                Map.of("eu.europa.ec.eudi.pid.1/birth_place", "{\"locality\":\"BERLIN\",\"country\":\"DE\"}");
+
+        assertThat(Oid4vpMapperUtils.getNestedValue(claims, "birth_place/locality"))
+                .isEqualTo("BERLIN");
+    }
+
+    @Test
+    void getNestedValue_mdocMap_extractsNestedLeafFromBaseClaim() {
+        Map<String, Object> claims =
+                Map.of("eu.europa.ec.eudi.pid.1/birth_place", Map.of("locality", "BERLIN", "country", "DE"));
+
+        assertThat(Oid4vpMapperUtils.getNestedValue(claims, "birth_place/locality"))
+                .isEqualTo("BERLIN");
+    }
+
+    @Test
+    void getNestedValue_prefersNamespacedNestedClaimOverScalarFallback() {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("birth_place", "RAW-SCALAR");
+        claims.put("eu.europa.ec.eudi.pid.1/birth_place", Map.of("locality", "BERLIN"));
+
+        assertThat(Oid4vpMapperUtils.getNestedValue(claims, "birth_place/locality"))
+                .isEqualTo("BERLIN");
+    }
+
+    @Test
+    void getNestedValue_nestedClaimFallsBackToScalarBaseValue() {
+        Map<String, Object> claims = Map.of("eu.europa.ec.eudi.pid.1/birth_place", "BERLIN");
+
+        assertThat(Oid4vpMapperUtils.getNestedValue(claims, "birth_place/locality"))
+                .isEqualTo("BERLIN");
+    }
+
+    @Test
     void getNestedValue_nullPathSegment_selectsAllArrayElements() {
         Map<String, Object> claims = Map.of("nationalities", List.of("DE", "FR"));
 
@@ -122,10 +158,10 @@ class Oid4vpMapperUtilsTest {
     }
 
     @Test
-    void getNestedValue_nullPathSegment_onNonArray_returnsNull() {
+    void getNestedValue_nullPathSegment_onNonArray_fallsBackToScalarBaseValue() {
         Map<String, Object> claims = Map.of("name", "Alice");
 
-        assertThat(Oid4vpMapperUtils.getNestedValue(claims, "name/null")).isNull();
+        assertThat(Oid4vpMapperUtils.getNestedValue(claims, "name/null")).isEqualTo("Alice");
     }
 
     @Test
@@ -137,6 +173,16 @@ class Oid4vpMapperUtilsTest {
     @Test
     void toStringValue_list_returnsFirstElement() {
         assertThat(Oid4vpMapperUtils.toStringValue(List.of("DE", "FR"))).isEqualTo("DE");
+    }
+
+    @Test
+    void toStringValue_leavesPlainJsonStringUnparsedByDefault() {
+        assertThat(Oid4vpMapperUtils.toStringValue("{\"locality\":\"BERLIN\"}")).isEqualTo("{\"locality\":\"BERLIN\"}");
+    }
+
+    @Test
+    void toStringValue_parsesJsonArrayStringWhenRequested() {
+        assertThat(Oid4vpMapperUtils.toStringValue("[\"DE\",\"FR\"]", true)).isEqualTo("DE");
     }
 
     @Test
@@ -157,6 +203,11 @@ class Oid4vpMapperUtilsTest {
     @Test
     void toStringList_list_returnsAllElements() {
         assertThat(Oid4vpMapperUtils.toStringList(List.of("DE", "FR"))).containsExactly("DE", "FR");
+    }
+
+    @Test
+    void toStringList_parsesJsonArrayStringWhenRequested() {
+        assertThat(Oid4vpMapperUtils.toStringList("[\"DE\",\"FR\"]", true)).containsExactly("DE", "FR");
     }
 
     @Test
