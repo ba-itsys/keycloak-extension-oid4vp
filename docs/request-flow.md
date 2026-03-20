@@ -127,7 +127,10 @@ This:
 - Passes `mdocGeneratedNonce` from the decrypted callback payload when present
 - Calls `VpTokenProcessor.process(vpToken, clientId, nonce, responseUri, mdocGeneratedNonce, encryptionJwkThumbprint)`:
   - SD-JWT: `SdJwtVerifier.verify()` — delegates to Keycloak's `SdJwtVP.verify()` which performs:
-    1. **Issuer signature verification** — validates the SD-JWT's JWS signature using the issuer's public key, resolved via x5c certificate chain validation (`X5cChainValidator`) or direct trust list lookup
+    1. **Issuer signature verification** — validates the SD-JWT's JWS signature using the issuer's public key, resolved in this order:
+       - `x5c` certificate-chain validation against the trust list (`X5cChainValidator`)
+       - outside HAIP only: JWT VC issuer metadata lookup via `iss` + JOSE `kid` (`JwtVcIssuerMetadataResolver`), including `jwks_uri`
+       - final direct trusted-certificate fallback for non-HAIP deployments that use self-signed or directly trusted issuer keys
     2. **Issuer JWT time checks** — `exp` (must not be expired), `nbf` (must be valid now), both with configurable clock skew (default 60s). No `iat` freshness check on the issuer JWT (old credentials are valid as long as `exp` holds)
     3. **Selective disclosure digest verification** — SHA-256 hashes of disclosed claims match the `_sd` digests in the issuer JWT
     4. **KB-JWT signature verification** — verifies the Key Binding JWT signature against the holder's public key from the credential's `cnf.jwk` claim
@@ -218,7 +221,8 @@ Errors can occur at multiple points:
 | `Oid4vpRequestObjectEncryptor` | Optional request-object JWE wrapping based on wallet metadata |
 | `Oid4vpCallbackProcessor` | VP token verification orchestration, claim mapping to BrokeredIdentityContext |
 | `VpTokenProcessor` | Credential format detection, SD-JWT/mDoc verification, revocation checks |
-| `SdJwtVerifier` | SD-JWT signature + KB-JWT verification, disclosure resolution |
+| `SdJwtVerifier` | SD-JWT signature + KB-JWT verification, disclosure resolution, verification-order policy (`x5c` first, metadata fallback outside HAIP) |
+| `JwtVcIssuerMetadataResolver` | JWT VC issuer metadata discovery (`/.well-known/jwt-vc-issuer`), `jwks`/`jwks_uri` lookup, and bounded caching by response TTL and JWK `exp` |
 | `MdocVerifier` | mDoc issuer/device auth verification, digest/validity checks, claim extraction |
 | `MdocSessionTranscriptBuilder` | Builds OID4VP 1.0 and ISO 18013-7 SessionTranscript structures |
 | `StatusListVerifier` | Token Status List fetching, caching, revocation bit checking |

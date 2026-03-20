@@ -72,6 +72,7 @@ class Oid4vpIdentityProviderFactoryTest {
                         Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME,
                         Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM,
                         Oid4vpIdentityProviderConfig.TRUST_LIST_URL,
+                        Oid4vpIdentityProviderConfig.ISSUER_METADATA_MAX_CACHE_TTL_SECONDS,
                         Oid4vpIdentityProviderConfig.REQUEST_OBJECT_LIFESPAN_SECONDS);
     }
 

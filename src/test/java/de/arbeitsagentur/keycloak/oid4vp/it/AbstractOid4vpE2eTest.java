@@ -29,7 +29,6 @@ import com.nimbusds.jose.Payload;
 import com.nimbusds.jose.crypto.ECDHEncrypter;
 import com.nimbusds.jose.jwk.ECKey;
 import io.github.dominikschlosser.oid4vc.Oid4vcContainer;
-import io.github.dominikschlosser.oid4vc.PresentationResponse;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.net.URI;
@@ -43,11 +42,13 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.cert.X509Certificate;
 import java.security.spec.ECGenParameterSpec;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import javax.security.auth.x500.X500Principal;
 import org.bouncycastle.asn1.x509.BasicConstraints;
@@ -88,8 +89,10 @@ abstract class AbstractOid4vpE2eTest {
 
     @AfterEach
     void closeBrowserContext() {
-        env.wallet().client().clearPreferredFormat();
-        env.wallet().client().clearNextError();
+        for (Oid4vcContainer walletContainer : env.wallets()) {
+            walletContainer.client().clearPreferredFormat();
+            walletContainer.client().clearNextError();
+        }
         if (page != null) {
             page.close();
         }
@@ -110,24 +113,23 @@ abstract class AbstractOid4vpE2eTest {
         return env.wallet();
     }
 
-    protected Oid4vpLoginFlowHelper flowFor(Oid4vcContainer walletContainer) {
-        return env.newFlow(context, page, walletContainer);
+    protected Oid4vcContainer encryptedRequestWallet() {
+        return env.encryptedRequestWallet();
     }
 
-    protected Oid4vcContainer newWallet(String alias) {
-        return new Oid4vcContainer(env.walletImage())
-                .withHostAccess()
-                .withNetwork(env.network())
-                .withNetworkAliases(alias)
-                .withStatusList()
-                .withStatusListBaseUrl("http://" + alias + ":8085");
+    protected Oid4vcContainer isoWallet() {
+        return env.isoWallet();
+    }
+
+    protected Oid4vpLoginFlowHelper flowFor(Oid4vcContainer walletContainer) {
+        return env.newFlow(context, page, walletContainer);
     }
 
     protected void performSameDeviceLogin(String usernamePrefix) throws Exception {
         flow.navigateToLoginPage();
         flow.clickOid4vpIdpButton();
         String walletUrl = flow.getSameDeviceWalletUrl();
-        PresentationResponse response = flow.submitToWallet(walletUrl);
+        Oid4vpLoginFlowHelper.WalletResponse response = flow.submitToWallet(walletUrl);
         flow.waitForLoginCompletion(response);
         flow.completeFirstBrokerLoginIfNeeded(usernamePrefix);
     }
@@ -154,7 +156,7 @@ abstract class AbstractOid4vpE2eTest {
         page.waitForLoadState();
     }
 
-    protected void assertLoginFailed(PresentationResponse walletResponse, String... expectedSnippets) {
+    protected void assertLoginFailed(Oid4vpLoginFlowHelper.WalletResponse walletResponse, String... expectedSnippets) {
         String redirectUri = walletResponse.redirectUri();
         if (redirectUri != null) {
             page.navigate(redirectUri);
@@ -197,7 +199,7 @@ abstract class AbstractOid4vpE2eTest {
             flow.navigateToLoginPage();
             flow.clickOid4vpIdpButton();
             String walletUrl = flow.getSameDeviceWalletUrl();
-            PresentationResponse walletResponse = flow.submitToWallet(walletUrl);
+            Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
 
             String redirectUri = walletResponse.redirectUri();
             if (redirectUri != null) {
@@ -205,12 +207,8 @@ abstract class AbstractOid4vpE2eTest {
                 page.waitForLoadState();
             }
 
-            Thread.sleep(2000);
-            String bodyText = page.locator("body").textContent().toLowerCase();
-            boolean hasError = bodyText.contains("error")
-                    || bodyText.contains("revoked")
-                    || bodyText.contains("failed")
-                    || bodyText.contains("denied");
+            String bodyText = waitForErrorPageContent(Duration.ofSeconds(10));
+            boolean hasError = containsErrorSnippet(bodyText);
 
             assertThat(hasError)
                     .as(
@@ -220,6 +218,31 @@ abstract class AbstractOid4vpE2eTest {
         } finally {
             wallet().client().unrevokeCredential(credentialId);
         }
+    }
+
+    private String waitForErrorPageContent(Duration timeout) throws InterruptedException {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        String lastBodyText = "";
+        while (System.nanoTime() < deadline) {
+            lastBodyText = normalizedBodyText();
+            if (containsErrorSnippet(lastBodyText)) {
+                return lastBodyText;
+            }
+            Thread.sleep(200);
+        }
+        return lastBodyText;
+    }
+
+    private String normalizedBodyText() {
+        String bodyText = page.locator("body").textContent();
+        return bodyText == null ? "" : bodyText.toLowerCase(Locale.ROOT);
+    }
+
+    private static boolean containsErrorSnippet(String bodyText) {
+        return bodyText.contains("error")
+                || bodyText.contains("revoked")
+                || bodyText.contains("failed")
+                || bodyText.contains("denied");
     }
 
     protected String extractRedirectUriFromSseResponse(String sseBody) throws IOException {

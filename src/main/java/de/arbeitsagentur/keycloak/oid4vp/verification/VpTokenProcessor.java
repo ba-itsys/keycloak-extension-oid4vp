@@ -59,6 +59,8 @@ public class VpTokenProcessor {
             String trustListUrl,
             Duration statusListMaxCacheTtl,
             Duration trustListMaxCacheTtl,
+            Duration issuerMetadataMaxCacheTtl,
+            boolean strictX5cVerification,
             int clockSkewSeconds,
             int kbJwtMaxAgeSeconds) {
         this(
@@ -67,6 +69,8 @@ public class VpTokenProcessor {
                 trustListUrl,
                 statusListMaxCacheTtl,
                 trustListMaxCacheTtl,
+                issuerMetadataMaxCacheTtl,
+                strictX5cVerification,
                 clockSkewSeconds,
                 kbJwtMaxAgeSeconds,
                 null);
@@ -81,6 +85,8 @@ public class VpTokenProcessor {
             String trustListUrl,
             Duration statusListMaxCacheTtl,
             Duration trustListMaxCacheTtl,
+            Duration issuerMetadataMaxCacheTtl,
+            boolean strictX5cVerification,
             int clockSkewSeconds,
             int kbJwtMaxAgeSeconds,
             List<X509Certificate> trustListSigningCerts) {
@@ -90,6 +96,8 @@ public class VpTokenProcessor {
                 trustListUrl,
                 statusListMaxCacheTtl,
                 trustListMaxCacheTtl,
+                issuerMetadataMaxCacheTtl,
+                strictX5cVerification,
                 clockSkewSeconds,
                 kbJwtMaxAgeSeconds,
                 trustListSigningCerts,
@@ -106,11 +114,17 @@ public class VpTokenProcessor {
             String trustListUrl,
             Duration statusListMaxCacheTtl,
             Duration trustListMaxCacheTtl,
+            Duration issuerMetadataMaxCacheTtl,
+            boolean strictX5cVerification,
             int clockSkewSeconds,
             int kbJwtMaxAgeSeconds,
             List<X509Certificate> trustListSigningCerts,
             Duration trustListMaxStaleAge) {
-        this.sdJwtVerifier = new SdJwtVerifier(clockSkewSeconds, kbJwtMaxAgeSeconds);
+        this.sdJwtVerifier = new SdJwtVerifier(
+                clockSkewSeconds,
+                kbJwtMaxAgeSeconds,
+                new JwtVcIssuerMetadataResolver(session, issuerMetadataMaxCacheTtl),
+                strictX5cVerification);
         this.mdocVerifier = new MdocVerifier();
         this.trustListProvider = new TrustListProvider(
                 session, trustListUrl, trustListMaxCacheTtl, trustListMaxStaleAge, trustListSigningCerts);

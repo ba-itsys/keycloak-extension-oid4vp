@@ -18,6 +18,8 @@ package de.arbeitsagentur.keycloak.oid4vp.verification;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.node.IntNode;
+import com.fasterxml.jackson.databind.node.TextNode;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
@@ -86,6 +88,23 @@ class StatusListVerifierTest {
         StatusListVerifier.StatusReference ref = verifier.extractStatusReference(payload);
         assertThat(ref).isNotNull();
         assertThat(ref.idx()).isEqualTo(17);
+    }
+
+    @Test
+    void extractsStatusReferenceFromJsonNodeValues() {
+        Map<String, Object> payload = Map.of(
+                "status",
+                Map.of(
+                        "status_list",
+                        Map.of(
+                                "uri", TextNode.valueOf("https://issuer.example/status/abc"),
+                                "idx", IntNode.valueOf(42))));
+
+        StatusListVerifier.StatusReference ref = verifier.extractStatusReference(payload);
+
+        assertThat(ref).isNotNull();
+        assertThat(ref.uri()).isEqualTo("https://issuer.example/status/abc");
+        assertThat(ref.idx()).isEqualTo(42);
     }
 
     @Test
