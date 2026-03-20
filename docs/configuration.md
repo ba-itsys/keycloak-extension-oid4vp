@@ -108,15 +108,24 @@ This mode is intended for credentials that do not carry a stable account identif
 | `clockSkewSeconds` | Clock skew tolerance for credential verification. | `60` |
 | `kbJwtMaxAgeSeconds` | Maximum accepted age of the SD-JWT KB-JWT `iat` claim. | `300` |
 
+For SD-JWT VC verification, the verifier tries issuer-key resolution in this order:
+
+1. `x5c` certificate-chain validation against the trust list
+2. When HAIP is disabled, JWT VC issuer metadata lookup via `iss` + JOSE `kid` from `/.well-known/jwt-vc-issuer`, including `jwks_uri`
+3. Final direct trusted-certificate fallback for non-HAIP deployments
+
+When `enforceHaip=true`, only the `x5c` path is attempted.
+
 ### Caching
 
-Trust lists and status lists are cached according to their JWT `exp` claim. Responses without `exp` are not cached and are not reused as stale fallback.
+Trust lists are cached according to their JWT `exp` claim. Status lists are cached according to their `ttl` claim when present, capped by `exp` if present; if `ttl` is absent they fall back to `exp`. Status-list responses without both `ttl` and `exp` are treated as immediately expired. Trust-list responses without `exp` are not cached and are not reused as stale fallback. JWT VC issuer metadata caching is bounded by HTTP cache headers, `issuerMetadataMaxCacheTtlSeconds`, and each JWK's optional `exp`, whichever expires first.
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `statusListMaxCacheTtlSeconds` | Optional maximum cache TTL for token status lists. | *(use JWT exp)* |
+| `statusListMaxCacheTtlSeconds` | Optional maximum cache TTL for token status lists. The effective lifetime uses status-list `ttl` when present, capped by `exp`; otherwise it falls back to `exp`. | *(use status-list ttl / exp)* |
 | `trustListMaxCacheTtlSeconds` | Optional maximum cache TTL for trust lists. | *(use JWT exp)* |
 | `trustListMaxStaleAgeSeconds` | Maximum age of an expired trust-list cache entry that may be reused when refresh fails. Set `0` to disable stale fallback. | `86400` |
+| `issuerMetadataMaxCacheTtlSeconds` | Optional maximum cache TTL for JWT VC issuer metadata and resolved issuer JWKS. The effective lifetime is capped earlier by HTTP `Cache-Control` and any JWK `exp`. Set `0` to disable issuer-metadata caching. | `86400` |
 
 ### Cross-Device SSE
 

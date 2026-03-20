@@ -26,7 +26,6 @@ import com.microsoft.playwright.options.LoadState;
 import com.microsoft.playwright.options.WaitForSelectorState;
 import com.nimbusds.jwt.SignedJWT;
 import io.github.dominikschlosser.oid4vc.Oid4vcContainer;
-import io.github.dominikschlosser.oid4vc.PresentationResponse;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
@@ -40,6 +39,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 class Oid4vpLoginFlowHelper {
+
+    record WalletResponse(String rawBody, String redirectUri) {}
 
     private static final Logger LOG = LoggerFactory.getLogger(Oid4vpLoginFlowHelper.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -101,9 +102,9 @@ class Oid4vpLoginFlowHelper {
         return walletUrl;
     }
 
-    PresentationResponse submitToWallet(String walletUrl) {
+    WalletResponse submitToWallet(String walletUrl) {
         String presentationUri = convertToOpenid4vpUri(walletUrl);
-        PresentationResponse response = wallet.acceptPresentationRequest(presentationUri);
+        var response = wallet.acceptPresentationRequest(presentationUri);
         if (isSessionExpiredResponse(response.rawBody())) {
             LOG.info("[Test] Wallet callback raced request-context visibility; retrying same presentation once");
             try {
@@ -114,7 +115,7 @@ class Oid4vpLoginFlowHelper {
             response = wallet.acceptPresentationRequest(presentationUri);
         }
         LOG.info("[Test] Wallet response: {}", response.rawBody());
-        return response;
+        return new WalletResponse(response.rawBody(), response.redirectUri());
     }
 
     private boolean isSessionExpiredResponse(String rawBody) {
@@ -155,7 +156,7 @@ class Oid4vpLoginFlowHelper {
         return lastCrossDeviceRequestHandle;
     }
 
-    void waitForLoginCompletion(PresentationResponse walletResponse) {
+    void waitForLoginCompletion(WalletResponse walletResponse) {
         String redirectUri = walletResponse.redirectUri();
 
         boolean sseNavigated = false;

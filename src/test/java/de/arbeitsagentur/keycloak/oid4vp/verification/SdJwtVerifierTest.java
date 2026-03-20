@@ -35,6 +35,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.cert.X509Certificate;
 import java.security.interfaces.ECPublicKey;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
@@ -386,6 +387,63 @@ class SdJwtVerifierTest {
                 .hasMessageContaining("Signature could not be verified");
     }
 
+    @Test
+    void verify_withIssuerMetadataResolverAndKid_fallsBackWhenX5cIsUnavailable() throws Exception {
+        ECKey metadataKey = new ECKeyGenerator(Curve.P_256).keyID("issuer-key").generate();
+        SdJwtVerifier verifierWithFallback = new SdJwtVerifier(
+                60,
+                300,
+                new FakeIssuerMetadataResolver(new JwtVcIssuerMetadataResolver.ResolvedIssuerKey(
+                        "issuer-key",
+                        metadataKey.toECPublicKey(),
+                        List.of(),
+                        Instant.now().plusSeconds(3600))),
+                false);
+
+        String jwt = buildSignedJwtWithKeyAndKid(
+                Map.of("iss", "https://issuer.example", "vct", "PID"), metadataKey, "issuer-key");
+        String sdJwt = jwt + "~";
+
+        SdJwtVerificationResult result = verifierWithFallback.verify(sdJwt, null, null, List.of());
+
+        assertThat(result.issuer()).isEqualTo("https://issuer.example");
+        assertThat(result.credentialType()).isEqualTo("PID");
+    }
+
+    @Test
+    void verify_haipModeWithoutX5c_throws() throws Exception {
+        SdJwtVerifier strictVerifier = new SdJwtVerifier(
+                60,
+                300,
+                new FakeIssuerMetadataResolver(new JwtVcIssuerMetadataResolver.ResolvedIssuerKey(
+                        "unused",
+                        signingKey.toECPublicKey(),
+                        List.of(),
+                        Instant.now().plusSeconds(3600))),
+                true);
+        ECKey unsignedX5cKey =
+                new ECKeyGenerator(Curve.P_256).keyID("issuer-key").generate();
+        String jwt = buildSignedJwtWithKeyAndKid(
+                Map.of("iss", "https://issuer.example", "vct", "PID"), unsignedX5cKey, "issuer-key");
+        String sdJwt = jwt + "~";
+
+        assertThatThrownBy(() -> strictVerifier.verify(sdJwt, null, null, List.of()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("HAIP requires SD-JWT issuer certificates in the x5c header");
+    }
+
+    @Test
+    void verify_prefersX5cOverIssuerMetadataFallback() throws Exception {
+        SdJwtVerifier verifierWithFallback = new SdJwtVerifier(60, 300, new FailingIssuerMetadataResolver(), false);
+        String jwt = buildSignedJwt(Map.of("iss", "https://issuer.example", "vct", "PID"));
+        String sdJwt = jwt + "~";
+
+        SdJwtVerificationResult result = verifierWithFallback.verify(sdJwt, null, null, List.of(signingCert));
+
+        assertThat(result.issuer()).isEqualTo("https://issuer.example");
+        assertThat(result.credentialType()).isEqualTo("PID");
+    }
+
     // ===== Helper Methods =====
 
     private String computeDigest(String disclosureB64) throws Exception {
@@ -472,6 +530,22 @@ class SdJwtVerifierTest {
         return signedJWT.serialize();
     }
 
+    private String buildSignedJwtWithKeyAndKid(Map<String, Object> claimsMap, ECKey key, String kid) throws Exception {
+        JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder();
+        for (var entry : claimsMap.entrySet()) {
+            builder.claim(entry.getKey(), entry.getValue());
+        }
+        Instant now = Instant.now();
+        builder.issueTime(Date.from(now));
+        builder.notBeforeTime(Date.from(now));
+        builder.expirationTime(Date.from(now.plusSeconds(86400)));
+
+        JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.ES256).keyID(kid).build();
+        SignedJWT signedJWT = new SignedJWT(header, builder.build());
+        signedJWT.sign(new ECDSASigner(key));
+        return signedJWT.serialize();
+    }
+
     private static X509Certificate generateSelfSignedCert(ECKey ecKey) throws Exception {
         return generateSelfSignedCert(ecKey, "CN=Test SD-JWT Issuer");
     }
@@ -509,5 +583,36 @@ class SdJwtVerifierTest {
         ContentSigner signer = new JcaContentSignerBuilder("SHA256withECDSA").build(caKey.toECPrivateKey());
 
         return new JcaX509CertificateConverter().getCertificate(certBuilder.build(signer));
+    }
+
+    private static final class FakeIssuerMetadataResolver extends JwtVcIssuerMetadataResolver {
+
+        private final JwtVcIssuerMetadataResolver.ResolvedIssuerKey resolvedKey;
+
+        private FakeIssuerMetadataResolver(JwtVcIssuerMetadataResolver.ResolvedIssuerKey resolvedKey) {
+            super(Duration.ofDays(1));
+            this.resolvedKey = resolvedKey;
+        }
+
+        @Override
+        public JwtVcIssuerMetadataResolver.ResolvedIssuerKey resolveSigningKey(String issuer, String kid) {
+            if (kid == null || kid.isBlank()) {
+                throw new IllegalStateException("SD-JWT issuer JWT header is missing required kid");
+            }
+            assertThat(issuer).isEqualTo("https://issuer.example");
+            return resolvedKey;
+        }
+    }
+
+    private static final class FailingIssuerMetadataResolver extends JwtVcIssuerMetadataResolver {
+
+        private FailingIssuerMetadataResolver() {
+            super(Duration.ofDays(1));
+        }
+
+        @Override
+        public JwtVcIssuerMetadataResolver.ResolvedIssuerKey resolveSigningKey(String issuer, String kid) {
+            throw new AssertionError("issuer metadata fallback should not be used when x5c verification succeeds");
+        }
     }
 }

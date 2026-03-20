@@ -37,6 +37,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.Date;
 import java.util.EnumSet;
+import java.util.List;
 import javax.security.auth.x500.X500Principal;
 import org.bouncycastle.asn1.x509.BasicConstraints;
 import org.bouncycastle.asn1.x509.Extension;
@@ -96,6 +97,8 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
     private final Network network;
     private final GenericContainer<?> keycloak;
     private final Oid4vcContainer wallet;
+    private final Oid4vcContainer encryptedRequestWallet;
+    private final Oid4vcContainer isoWallet;
     private final Oid4vpTestCallbackServer callback;
     private final KeycloakAdminClient adminClient;
     private final Playwright playwright;
@@ -118,13 +121,43 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
         String callbackUrl = callback.localCallbackUrl();
 
         network = Network.newNetwork();
+        wallet = new Oid4vcContainer(WALLET_IMAGE)
+                .withHostAccess()
+                .withNetwork(network)
+                .withNetworkAliases("oid4vc-dev")
+                .withStatusList()
+                .withBaseUrl("http://oid4vc-dev:8085");
+        encryptedRequestWallet = new Oid4vcContainer(WALLET_IMAGE)
+                .withHostAccess()
+                .withNetwork(network)
+                .withNetworkAliases("oid4vc-enc")
+                .withStatusList()
+                .withBaseUrl("http://oid4vc-enc:8085")
+                .withRequireEncryptedRequest();
+        isoWallet = new Oid4vcContainer(WALLET_IMAGE)
+                .withHostAccess()
+                .withNetwork(network)
+                .withNetworkAliases("oid4vc-iso")
+                .withStatusList()
+                .withBaseUrl("http://oid4vc-iso:8085")
+                .withSessionTranscript("iso");
+        wallet.start();
+        encryptedRequestWallet.start();
+        isoWallet.start();
+
+        Path walletTlsBundle = exportWalletTlsCertificatesToFile(wallet, encryptedRequestWallet, isoWallet);
         keycloak = new GenericContainer<>("quay.io/keycloak/keycloak:26.5.5")
                 .withNetwork(network)
-                .withEnv("KEYCLOAK_ADMIN", "admin")
-                .withEnv("KEYCLOAK_ADMIN_PASSWORD", "admin")
+                .withEnv("KC_BOOTSTRAP_ADMIN_USERNAME", "admin")
+                .withEnv("KC_BOOTSTRAP_ADMIN_PASSWORD", "admin")
                 .withEnv("KC_PROXY_HEADERS", "xforwarded")
                 .withExposedPorts(8080)
-                .withCommand("start-dev", "--features=transient-users", "--import-realm")
+                .withCommand(
+                        "start-dev",
+                        "--features=transient-users",
+                        "--import-realm",
+                        "--truststore-paths=/opt/keycloak/conf/oid4vc-wallets.pem",
+                        "--tls-hostname-verifier=ANY")
                 .withLogConsumer(
                         frame -> LOG.info("[KC] {}", frame.getUtf8String().stripTrailing()))
                 .waitingFor(
@@ -132,17 +165,15 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
 
         copyRealmImport(keycloak);
         copyProviderJars(keycloak);
+        keycloak.withCopyFileToContainer(
+                MountableFile.forHostPath(walletTlsBundle), "/opt/keycloak/conf/oid4vc-wallets.pem");
         configureCoverage(keycloak);
-        keycloak.start();
+        try {
+            keycloak.start();
+        } finally {
+            Files.deleteIfExists(walletTlsBundle);
+        }
         keycloakHostUrl = "http://localhost:" + keycloak.getMappedPort(8080);
-
-        wallet = new Oid4vcContainer(WALLET_IMAGE)
-                .withHostAccess()
-                .withNetwork(network)
-                .withNetworkAliases("oid4vc-dev")
-                .withStatusList()
-                .withStatusListBaseUrl("http://oid4vc-dev:8085");
-        wallet.start();
 
         playwright = Playwright.create();
         browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(true));
@@ -188,6 +219,18 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
         return wallet;
     }
 
+    public Oid4vcContainer encryptedRequestWallet() {
+        return encryptedRequestWallet;
+    }
+
+    public Oid4vcContainer isoWallet() {
+        return isoWallet;
+    }
+
+    List<Oid4vcContainer> wallets() {
+        return List.of(wallet, encryptedRequestWallet, isoWallet);
+    }
+
     public Oid4vpTestCallbackServer callback() {
         return callback;
     }
@@ -208,10 +251,6 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
         return callback.localCallbackUrl();
     }
 
-    public DockerImageName walletImage() {
-        return WALLET_IMAGE;
-    }
-
     @Override
     public void close() {
         if (browser != null) {
@@ -223,8 +262,10 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
         if (keycloak != null) {
             keycloak.stop();
         }
-        if (wallet != null) {
-            wallet.stop();
+        for (Oid4vcContainer walletContainer : wallets()) {
+            if (walletContainer != null) {
+                walletContainer.stop();
+            }
         }
         if (network != null) {
             network.close();
@@ -244,6 +285,26 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
             LOG.warn("Failed to close shared OID4VP test environment", e);
         } finally {
             instance = null;
+        }
+    }
+
+    private Path exportWalletTlsCertificatesToFile(Oid4vcContainer... walletContainers) throws Exception {
+        Path tempCert = Files.createTempFile("oid4vp-wallet-trust-", ".pem");
+        try {
+            StringBuilder pemBundle = new StringBuilder();
+            for (Oid4vcContainer walletContainer : walletContainers) {
+                if (pemBundle.length() > 0) {
+                    pemBundle.append(System.lineSeparator());
+                }
+                pemBundle
+                        .append(walletContainer.getIssuerTlsCertificatePem().strip())
+                        .append(System.lineSeparator());
+            }
+            Files.writeString(tempCert, pemBundle);
+            ensureReadableFile(tempCert);
+            return tempCert;
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("Failed to export wallet TLS certificates", e);
         }
     }
 
@@ -291,6 +352,20 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
                             PosixFilePermission.OTHERS_EXECUTE));
         } catch (UnsupportedOperationException ignored) {
             // Non-POSIX filesystems (for example Docker Desktop mounts on macOS) do not support chmod here.
+        }
+    }
+
+    private static void ensureReadableFile(Path file) throws IOException {
+        try {
+            Files.setPosixFilePermissions(
+                    file,
+                    EnumSet.of(
+                            PosixFilePermission.OWNER_READ,
+                            PosixFilePermission.OWNER_WRITE,
+                            PosixFilePermission.GROUP_READ,
+                            PosixFilePermission.OTHERS_READ));
+        } catch (UnsupportedOperationException ignored) {
+            // Non-POSIX filesystems can ignore chmod here.
         }
     }
 

@@ -22,8 +22,6 @@ import com.microsoft.playwright.Page;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import io.github.dominikschlosser.oid4vc.CredentialFormat;
-import io.github.dominikschlosser.oid4vc.Oid4vcContainer;
-import io.github.dominikschlosser.oid4vc.PresentationResponse;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.IdentityProviderModel;
 
@@ -95,7 +93,7 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
         flow.navigateToLoginPage();
         flow.clickOid4vpIdpButton();
         String walletUrl = flow.getSameDeviceWalletUrl();
-        PresentationResponse response = flow.submitToWallet(walletUrl);
+        Oid4vpLoginFlowHelper.WalletResponse response = flow.submitToWallet(walletUrl);
         flow.waitForLoginCompletion(response);
 
         flow.assertLoginSucceeded();
@@ -136,15 +134,10 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
                   ]
                 }
                 """;
-        Oid4vpTestKeycloakSetup.configureDcqlQuery(adminClient(), Oid4vpE2eEnvironment.REALM, mdocDcqlQuery);
+        idpConfig.set(Oid4vpIdentityProviderConfig.DCQL_QUERY, mdocDcqlQuery).apply();
 
-        try {
-            performSameDeviceLogin("mdoc-wallet-user");
-            flow.assertLoginSucceeded();
-        } finally {
-            Oid4vpTestKeycloakSetup.configureDcqlQuery(
-                    adminClient(), Oid4vpE2eEnvironment.REALM, buildDefaultDcqlQuery());
-        }
+        performSameDeviceLogin("mdoc-wallet-user");
+        flow.assertLoginSucceeded();
     }
 
     @Test
@@ -182,7 +175,9 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
                   ]
                 }
                 """;
-        Oid4vpTestKeycloakSetup.configureDcqlQuery(adminClient(), Oid4vpE2eEnvironment.REALM, credentialSetsDcqlQuery);
+        idpConfig
+                .set(Oid4vpIdentityProviderConfig.DCQL_QUERY, credentialSetsDcqlQuery)
+                .apply();
         wallet().client().setPreferredFormat(CredentialFormat.MSO_MDOC);
 
         try {
@@ -191,8 +186,6 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
             flow.assertLoginSucceeded();
         } finally {
             wallet().client().clearPreferredFormat();
-            Oid4vpTestKeycloakSetup.configureDcqlQuery(
-                    adminClient(), Oid4vpE2eEnvironment.REALM, buildDefaultDcqlQuery());
         }
     }
 
@@ -206,7 +199,7 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
             flow.navigateToLoginPage();
             flow.clickOid4vpIdpButton();
             String walletUrl = flow.getSameDeviceWalletUrl();
-            PresentationResponse walletResponse = flow.submitToWallet(walletUrl);
+            Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
 
             assertThat(walletResponse.redirectUri()).isNull();
             assertThat(walletResponse.rawBody()).contains("access_denied");
@@ -229,7 +222,7 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
         flow.navigateToLoginPage();
         flow.clickOid4vpIdpButton();
         String walletUrl = flow.getSameDeviceWalletUrl();
-        PresentationResponse response = flow.submitToWallet(walletUrl);
+        Oid4vpLoginFlowHelper.WalletResponse response = flow.submitToWallet(walletUrl);
         String redirectUri = response.redirectUri();
 
         assertThat(redirectUri).contains("complete-auth");
@@ -254,28 +247,18 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
         flow.clearBrowserSession();
         Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient(), Oid4vpE2eEnvironment.REALM);
 
-        Oid4vcContainer idTokenWallet = newWallet("oid4vc-idtoken");
-        idTokenWallet.start();
-
-        String idTokenTrustListUrl = "http://oid4vc-idtoken:8085/api/trustlist";
         idpConfig
                 .set(Oid4vpIdentityProviderConfig.ENFORCE_HAIP, "false")
                 .set(Oid4vpIdentityProviderConfig.USE_ID_TOKEN_SUBJECT, "true")
-                .set(Oid4vpIdentityProviderConfig.TRUST_LIST_URL, idTokenTrustListUrl)
                 .apply();
 
-        try {
-            Oid4vpLoginFlowHelper idTokenFlow = flowFor(idTokenWallet);
-            idTokenFlow.navigateToLoginPage();
-            idTokenFlow.clickOid4vpIdpButton();
-            String walletUrl = idTokenFlow.getSameDeviceWalletUrl();
-            PresentationResponse response = idTokenFlow.submitToWallet(walletUrl);
-            idTokenFlow.waitForLoginCompletion(response);
-            idTokenFlow.completeFirstBrokerLoginIfNeeded("id-token-user");
-            idTokenFlow.assertLoginSucceeded();
-        } finally {
-            idTokenWallet.stop();
-        }
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        String walletUrl = flow.getSameDeviceWalletUrl();
+        Oid4vpLoginFlowHelper.WalletResponse response = flow.submitToWallet(walletUrl);
+        flow.waitForLoginCompletion(response);
+        flow.completeFirstBrokerLoginIfNeeded("id-token-user");
+        flow.assertLoginSucceeded();
     }
 
     @Test

@@ -46,15 +46,13 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
                   ]
                 }
                 """;
-        Oid4vpTestKeycloakSetup.configureDcqlQuery(adminClient(), Oid4vpE2eEnvironment.REALM, mdocDcqlQuery);
+        idpConfig.set(Oid4vpIdentityProviderConfig.DCQL_QUERY, mdocDcqlQuery).apply();
         wallet().client().setPreferredFormat(CredentialFormat.MSO_MDOC);
 
         try {
             assertRevokedCredentialIsRejected("mDoc", "eu.europa.ec.eudi.pid.1");
         } finally {
             wallet().client().clearPreferredFormat();
-            Oid4vpTestKeycloakSetup.configureDcqlQuery(
-                    adminClient(), Oid4vpE2eEnvironment.REALM, buildDefaultDcqlQuery());
         }
     }
 
