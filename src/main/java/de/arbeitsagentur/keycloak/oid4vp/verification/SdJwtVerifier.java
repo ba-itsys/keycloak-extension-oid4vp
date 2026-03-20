@@ -19,10 +19,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SdJwtVerificationResult;
+import de.arbeitsagentur.keycloak.oid4vp.verification.JwtVcIssuerMetadataResolver.ResolvedIssuerKey;
 import java.security.PublicKey;
 import java.security.cert.X509Certificate;
 import java.security.interfaces.ECPublicKey;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -53,10 +55,22 @@ public class SdJwtVerifier {
 
     private final int clockSkewSeconds;
     private final int kbJwtMaxAgeSeconds;
+    private final JwtVcIssuerMetadataResolver issuerMetadataResolver;
+    private final boolean strictX5cVerification;
 
     public SdJwtVerifier(int clockSkewSeconds, int kbJwtMaxAgeSeconds) {
+        this(clockSkewSeconds, kbJwtMaxAgeSeconds, null, false);
+    }
+
+    public SdJwtVerifier(
+            int clockSkewSeconds,
+            int kbJwtMaxAgeSeconds,
+            JwtVcIssuerMetadataResolver issuerMetadataResolver,
+            boolean strictX5cVerification) {
         this.clockSkewSeconds = clockSkewSeconds;
         this.kbJwtMaxAgeSeconds = kbJwtMaxAgeSeconds;
+        this.issuerMetadataResolver = issuerMetadataResolver;
+        this.strictX5cVerification = strictX5cVerification;
     }
 
     public boolean isSdJwt(String token) {
@@ -103,12 +117,11 @@ public class SdJwtVerifier {
 
             sdJwtVP.verify(verifiers, issuerOpts, kbOptsBuilder.build());
 
+            ObjectNode issuerPayload = sdJwtVP.getIssuerSignedJWT().getPayload();
             Map<String, Object> claims = extractDisclosedClaims(sdJwtVP);
 
-            Object issuerObj = claims.get("iss");
-            String issuer = issuerObj != null ? issuerObj.toString() : null;
-            Object vctObj = claims.get("vct");
-            String vct = vctObj != null ? vctObj.toString() : null;
+            String issuer = stringValue(issuerPayload.get("iss"));
+            String vct = stringValue(issuerPayload.get("vct"));
 
             return new SdJwtVerificationResult(claims, issuer, vct);
         } catch (IllegalStateException e) {
@@ -120,31 +133,110 @@ public class SdJwtVerifier {
 
     private List<SignatureVerifierContext> resolveIssuerVerifiers(
             SdJwtVP sdJwtVP, List<X509Certificate> trustedCertificates) {
-        if (trustedCertificates == null || trustedCertificates.isEmpty()) {
-            throw new IllegalStateException("No trusted keys available for SD-JWT signature verification");
+        IllegalStateException x5cFailure = null;
+        try {
+            List<SignatureVerifierContext> x5cVerifiers = resolveIssuerVerifiersFromX5c(sdJwtVP, trustedCertificates);
+            if (x5cVerifiers != null) {
+                return x5cVerifiers;
+            }
+        } catch (IllegalStateException e) {
+            x5cFailure = e;
+            if (strictX5cVerification) {
+                throw e;
+            }
+            LOG.debugf("x5c-based SD-JWT verification unavailable, trying fallback mechanisms: %s", e.getMessage());
         }
 
-        // Try x5c chain validation: extract the leaf cert from the SD-JWT header,
-        // verify the chain against trusted CA certificates, then use the leaf key.
-        JWSHeader header = sdJwtVP.getIssuerSignedJWT().getJwsHeader();
-        List<String> x5c = header != null ? header.getX5c() : null;
-        if (x5c != null && !x5c.isEmpty()) {
+        if (issuerMetadataResolver != null) {
             try {
-                PublicKey leafKey = X5cChainValidator.validateChain(x5c, trustedCertificates);
-                LOG.debug("SD-JWT x5c chain validated against trust list, using leaf certificate key");
-                return List.of(toVerifierContext(leafKey));
-            } catch (Exception e) {
-                LOG.debugf("x5c chain validation failed: %s", e.getMessage());
+                ResolvedIssuerKey issuerKey = resolveIssuerKeyFromMetadata(sdJwtVP, trustedCertificates);
+                LOG.debug("SD-JWT issuer key resolved via issuer metadata fallback");
+                return List.of(toVerifierContext(issuerKey.publicKey()));
+            } catch (IllegalStateException e) {
+                LOG.debugf("Issuer metadata fallback failed: %s", e.getMessage());
+                if (x5cFailure == null) {
+                    x5cFailure = e;
+                }
             }
         }
 
-        // Fallback: try all trusted certificate keys directly (for self-signed or direct trust)
+        if (trustedCertificates == null || trustedCertificates.isEmpty()) {
+            if (x5cFailure != null) {
+                throw x5cFailure;
+            }
+            throw new IllegalStateException("No trusted keys available for SD-JWT signature verification");
+        }
+
+        // Final fallback: try all trusted certificate keys directly (for self-signed or direct trust)
         LOG.debug("Using trusted certificate keys directly for signature verification");
         List<SignatureVerifierContext> verifiers = new ArrayList<>();
         for (X509Certificate cert : trustedCertificates) {
             verifiers.add(toVerifierContext(cert.getPublicKey()));
         }
         return verifiers;
+    }
+
+    private List<SignatureVerifierContext> resolveIssuerVerifiersFromX5c(
+            SdJwtVP sdJwtVP, List<X509Certificate> trustedCertificates) {
+        JWSHeader header = sdJwtVP.getIssuerSignedJWT().getJwsHeader();
+        List<String> x5c = header != null ? header.getX5c() : null;
+        if (x5c == null || x5c.isEmpty()) {
+            if (strictX5cVerification) {
+                throw new IllegalStateException("HAIP requires SD-JWT issuer certificates in the x5c header");
+            }
+            return null;
+        }
+        if (trustedCertificates == null || trustedCertificates.isEmpty()) {
+            throw new IllegalStateException("No trusted keys available for SD-JWT x5c signature verification");
+        }
+        try {
+            PublicKey leafKey = X5cChainValidator.validateChain(x5c, trustedCertificates);
+            LOG.debug("SD-JWT x5c chain validated against trust list, using leaf certificate key");
+            return List.of(toVerifierContext(leafKey));
+        } catch (Exception e) {
+            throw new IllegalStateException("SD-JWT x5c validation failed: " + e.getMessage(), e);
+        }
+    }
+
+    private ResolvedIssuerKey resolveIssuerKeyFromMetadata(SdJwtVP sdJwtVP, List<X509Certificate> trustedCertificates) {
+        String issuer = stringValue(sdJwtVP.getIssuerSignedJWT().getPayload().get("iss"));
+        JWSHeader header = sdJwtVP.getIssuerSignedJWT().getJwsHeader();
+        String kid = header != null ? header.getKeyId() : null;
+
+        ResolvedIssuerKey issuerKey = issuerMetadataResolver.resolveSigningKey(issuer, kid);
+        validateResolvedKeyTrust(issuerKey, trustedCertificates);
+        return issuerKey;
+    }
+
+    private String stringValue(Object claim) {
+        if (claim == null) {
+            return null;
+        }
+        if (claim instanceof JsonNode jsonNode) {
+            return jsonNode.isTextual() ? jsonNode.textValue() : null;
+        }
+        return claim instanceof String string ? string : claim.toString();
+    }
+
+    private void validateResolvedKeyTrust(ResolvedIssuerKey issuerKey, List<X509Certificate> trustedCertificates) {
+        if (trustedCertificates == null || trustedCertificates.isEmpty()) {
+            return;
+        }
+        List<X509Certificate> chain = issuerKey.certificateChain();
+        if (chain.isEmpty()) {
+            return;
+        }
+        try {
+            PublicKey validatedLeafKey = X5cChainValidator.validateCertChain(chain, trustedCertificates);
+            if (!Arrays.equals(
+                    validatedLeafKey.getEncoded(), issuerKey.publicKey().getEncoded())) {
+                throw new IllegalStateException("Issuer metadata x5c leaf key does not match the resolved JWK");
+            }
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalStateException("Issuer metadata x5c validation failed: " + e.getMessage(), e);
+        }
     }
 
     private SignatureVerifierContext toVerifierContext(PublicKey publicKey) {

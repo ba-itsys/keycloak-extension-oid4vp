@@ -220,6 +220,17 @@ class Oid4vpIdentityProviderConfigTest {
     }
 
     @Test
+    void issuerMetadataMaxCacheTtl_defaultsToOneDay() {
+        assertThat(config.getIssuerMetadataMaxCacheTtl()).isEqualTo(Duration.ofDays(1));
+    }
+
+    @Test
+    void issuerMetadataMaxCacheTtl_parsesSeconds() {
+        config.setIssuerMetadataMaxCacheTtlSeconds(45);
+        assertThat(config.getIssuerMetadataMaxCacheTtl()).isEqualTo(Duration.ofSeconds(45));
+    }
+
+    @Test
     void statusListMaxCacheTtl_invalidFallsBackToNull() {
         config.getConfig().put(Oid4vpIdentityProviderConfig.STATUS_LIST_MAX_CACHE_TTL_SECONDS, "not-a-number");
         assertThat(config.getStatusListMaxCacheTtl()).isNull();

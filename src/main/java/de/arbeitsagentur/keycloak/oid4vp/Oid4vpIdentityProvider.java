@@ -92,6 +92,8 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                         config.getTrustListUrl(),
                         config.getStatusListMaxCacheTtl(),
                         config.getTrustListMaxCacheTtl(),
+                        config.getIssuerMetadataMaxCacheTtl(),
+                        config.isEnforceHaip(),
                         config.getClockSkewSeconds(),
                         config.getKbJwtMaxAgeSeconds(),
                         trustListSigningCerts,

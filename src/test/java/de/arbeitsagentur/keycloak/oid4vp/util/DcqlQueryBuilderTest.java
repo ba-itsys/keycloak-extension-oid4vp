@@ -169,14 +169,29 @@ class DcqlQueryBuilderTest {
         assertThat(sdJwt).containsExactly("nationalities", null);
 
         List<Object> mdoc = new ClaimSpec("nationality", false, true).toDcqlPath("mso_mdoc", "eu.europa.ec.eudi.pid.1");
-        assertThat(mdoc).containsExactly("eu.europa.ec.eudi.pid.1", "nationality", null);
+        assertThat(mdoc).containsExactly("eu.europa.ec.eudi.pid.1", "nationality");
     }
 
     @Test
-    void toDcqlPath_mdocNestedMultivaluedPath_requestsBaseClaimWithArraySelector() {
+    void toDcqlPath_multivaluedPathWithArraySelector_doesNotAppendDuplicateNull() {
+        List<Object> sdJwt = new ClaimSpec("nationalities/null", false, true).toDcqlPath("dc+sd-jwt", "PID");
+        assertThat(sdJwt).containsExactly("nationalities", null);
+    }
+
+    @Test
+    void toDcqlPath_sdJwtMultivaluedPath_isSameWithOrWithoutExplicitArraySelector() {
+        List<Object> implicitSelector = new ClaimSpec("nationalities", false, true).toDcqlPath("dc+sd-jwt", "PID");
+        List<Object> explicitSelector = new ClaimSpec("nationalities/null", false, true).toDcqlPath("dc+sd-jwt", "PID");
+
+        assertThat(implicitSelector).containsExactly("nationalities", null);
+        assertThat(explicitSelector).isEqualTo(implicitSelector);
+    }
+
+    @Test
+    void toDcqlPath_mdocNestedMultivaluedPath_requestsOnlyBaseClaim() {
         List<Object> path =
                 new ClaimSpec("birth_place/locality", false, true).toDcqlPath("mso_mdoc", "eu.europa.ec.eudi.pid.1");
-        assertThat(path).containsExactly("eu.europa.ec.eudi.pid.1", "birth_place", null);
+        assertThat(path).containsExactly("eu.europa.ec.eudi.pid.1", "birth_place");
     }
 
     @Test
