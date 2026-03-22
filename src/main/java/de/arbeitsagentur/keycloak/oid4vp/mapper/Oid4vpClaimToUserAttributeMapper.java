@@ -111,7 +111,7 @@ public class Oid4vpClaimToUserAttributeMapper extends AbstractIdentityProviderMa
             BrokeredIdentityContext context) {
         Mapping mapping = resolveMapping(mapperModel, context, "in credential");
         if (mapping == null) return;
-        applyToContext(context, mapping.userAttribute(), mapping.claimValue());
+        applyToContext(context, mapping.userAttribute(), mapping.claimValue(), mapping.isMultivalued());
     }
 
     @Override
@@ -123,7 +123,7 @@ public class Oid4vpClaimToUserAttributeMapper extends AbstractIdentityProviderMa
             BrokeredIdentityContext context) {
         Mapping mapping = resolveMapping(mapperModel, context, "during user import");
         if (mapping == null) return;
-        applyToUser(user, mapping.userAttribute(), mapping.claimValue());
+        applyToUser(user, mapping.userAttribute(), mapping.claimValue(), mapping.isMultivalued());
     }
 
     @Override
@@ -135,7 +135,7 @@ public class Oid4vpClaimToUserAttributeMapper extends AbstractIdentityProviderMa
             BrokeredIdentityContext context) {
         Mapping mapping = resolveMapping(mapperModel, context, "during user update");
         if (mapping == null) return;
-        applyToUser(user, mapping.userAttribute(), mapping.claimValue());
+        applyToUser(user, mapping.userAttribute(), mapping.claimValue(), mapping.isMultivalued());
     }
 
     private Mapping resolveMapping(
@@ -149,6 +149,7 @@ public class Oid4vpClaimToUserAttributeMapper extends AbstractIdentityProviderMa
         String claimPath = mapperModel.getConfig().get(CLAIM_PATH);
         String userAttribute = mapperModel.getConfig().get(USER_ATTRIBUTE);
         boolean isOptional = Boolean.parseBoolean(mapperModel.getConfig().getOrDefault(OPTIONAL, "false"));
+        boolean isMultivalued = Boolean.parseBoolean(mapperModel.getConfig().getOrDefault(MULTIVALUED, "false"));
 
         if (StringUtil.isBlank(claimPath) || StringUtil.isBlank(userAttribute)) {
             return null;
@@ -161,11 +162,12 @@ public class Oid4vpClaimToUserAttributeMapper extends AbstractIdentityProviderMa
             }
             return null;
         }
-        return new Mapping(userAttribute, claimValue);
+        return new Mapping(userAttribute, claimValue, isMultivalued);
     }
 
-    private void applyToContext(BrokeredIdentityContext context, String attribute, Object claimValue) {
-        String stringValue = Oid4vpMapperUtils.toStringValue(claimValue);
+    private void applyToContext(
+            BrokeredIdentityContext context, String attribute, Object claimValue, boolean isMultivalued) {
+        String stringValue = Oid4vpMapperUtils.toStringValue(claimValue, isMultivalued);
         if (stringValue == null) return;
 
         switch (attribute.toLowerCase()) {
@@ -173,12 +175,12 @@ public class Oid4vpClaimToUserAttributeMapper extends AbstractIdentityProviderMa
             case "firstname", "first_name", "givenname", "given_name" -> context.setFirstName(stringValue);
             case "lastname", "last_name", "familyname", "family_name" -> context.setLastName(stringValue);
             case "username" -> context.setUsername(stringValue);
-            default -> context.setUserAttribute(attribute, Oid4vpMapperUtils.toStringList(claimValue));
+            default -> context.setUserAttribute(attribute, Oid4vpMapperUtils.toStringList(claimValue, isMultivalued));
         }
     }
 
-    private void applyToUser(UserModel user, String attribute, Object claimValue) {
-        String stringValue = Oid4vpMapperUtils.toStringValue(claimValue);
+    private void applyToUser(UserModel user, String attribute, Object claimValue, boolean isMultivalued) {
+        String stringValue = Oid4vpMapperUtils.toStringValue(claimValue, isMultivalued);
         if (stringValue == null) return;
 
         switch (attribute.toLowerCase()) {
@@ -186,9 +188,9 @@ public class Oid4vpClaimToUserAttributeMapper extends AbstractIdentityProviderMa
             case "firstname", "first_name", "givenname", "given_name" -> user.setFirstName(stringValue);
             case "lastname", "last_name", "familyname", "family_name" -> user.setLastName(stringValue);
             case "username" -> user.setUsername(stringValue);
-            default -> user.setAttribute(attribute, Oid4vpMapperUtils.toStringList(claimValue));
+            default -> user.setAttribute(attribute, Oid4vpMapperUtils.toStringList(claimValue, isMultivalued));
         }
     }
 
-    private record Mapping(String userAttribute, Object claimValue) {}
+    private record Mapping(String userAttribute, Object claimValue, boolean isMultivalued) {}
 }

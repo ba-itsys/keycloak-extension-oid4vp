@@ -15,6 +15,7 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import java.io.ByteArrayInputStream;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
@@ -101,12 +102,7 @@ public class StatusListVerifier {
 
         Object statusObj = claims.get("status");
         if (statusObj == null) {
-            for (Map.Entry<String, Object> entry : claims.entrySet()) {
-                if (entry.getKey().endsWith("/status")) {
-                    statusObj = entry.getValue();
-                    break;
-                }
-            }
+            statusObj = findNestedStatusClaim(claims);
         }
 
         if (!(statusObj instanceof Map<?, ?> statusMap)) return null;
@@ -118,18 +114,19 @@ public class StatusListVerifier {
         Object idxObj = statusListMap.get("idx");
         if (uriObj == null || idxObj == null) return null;
 
-        String uri = uriObj.toString();
-        int idx;
-        if (idxObj instanceof Number num) {
-            idx = num.intValue();
-        } else {
-            try {
-                idx = Integer.parseInt(idxObj.toString());
-            } catch (NumberFormatException e) {
-                return null;
+        String uri = stringValue(uriObj);
+        Integer idx = integerValue(idxObj);
+        if (uri == null || idx == null) return null;
+        return new StatusReference(uri, idx);
+    }
+
+    private Object findNestedStatusClaim(Map<String, Object> claims) {
+        for (Map.Entry<String, Object> entry : claims.entrySet()) {
+            if (entry.getKey().endsWith("/status")) {
+                return entry.getValue();
             }
         }
-        return new StatusReference(uri, idx);
+        return null;
     }
 
     DecodedStatusList fetchAndDecodeStatusList(String uri) throws Exception {
@@ -307,17 +304,65 @@ public class StatusListVerifier {
     }
 
     private String stringClaim(Map<String, Object> claims, String name) {
-        Object value = claims.get(name);
-        return value != null ? value.toString() : null;
+        return stringValue(claims.get(name));
     }
 
     private Instant instantClaim(Map<String, Object> claims, String name) {
-        Object value = claims.get(name);
+        Long epochSeconds = longValue(claims.get(name));
+        if (epochSeconds != null) {
+            return Instant.ofEpochSecond(epochSeconds);
+        }
+        return null;
+    }
+
+    private String stringValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof JsonNode jsonNode) {
+            return jsonNode.isTextual() ? jsonNode.textValue() : null;
+        }
+        return value.toString();
+    }
+
+    private Integer integerValue(Object value) {
         if (value instanceof Number number) {
-            return Instant.ofEpochSecond(number.longValue());
+            return number.intValue();
+        }
+        Long longValue = longValue(value);
+        if (longValue == null) {
+            return null;
+        }
+        try {
+            return Math.toIntExact(longValue);
+        } catch (ArithmeticException e) {
+            return null;
+        }
+    }
+
+    private Long longValue(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof JsonNode jsonNode) {
+            if (jsonNode.isIntegralNumber()) {
+                return jsonNode.longValue();
+            }
+            if (jsonNode.isTextual()) {
+                try {
+                    return Long.parseLong(jsonNode.textValue());
+                } catch (NumberFormatException e) {
+                    return null;
+                }
+            }
+            return null;
         }
         if (value != null) {
-            return Instant.ofEpochSecond(Long.parseLong(value.toString()));
+            try {
+                return Long.parseLong(value.toString());
+            } catch (NumberFormatException e) {
+                return null;
+            }
         }
         return null;
     }

@@ -102,6 +102,22 @@ class Oid4vpIdentityProviderConfigTest {
     }
 
     @Test
+    void haipEnabled_useIdTokenSubject_isForcedFalse() {
+        config.setEnforceHaip(true);
+        config.setUseIdTokenSubject(true);
+
+        assertThat(config.isUseIdTokenSubject()).isFalse();
+    }
+
+    @Test
+    void useIdTokenSubject_respectsConfiguredValueWhenHaipDisabled() {
+        config.setEnforceHaip(false);
+        config.setUseIdTokenSubject(true);
+
+        assertThat(config.isUseIdTokenSubject()).isTrue();
+    }
+
+    @Test
     void haipEnabled_clientIdScheme_overridesToX509Hash() {
         config.setEnforceHaip(true);
         config.setClientIdScheme("x509_san_dns");
@@ -217,6 +233,17 @@ class Oid4vpIdentityProviderConfigTest {
     void statusListMaxCacheTtl_zeroDisablesCaching() {
         config.setStatusListMaxCacheTtlSeconds(0);
         assertThat(config.getStatusListMaxCacheTtl()).isEqualTo(Duration.ZERO);
+    }
+
+    @Test
+    void issuerMetadataMaxCacheTtl_defaultsToOneDay() {
+        assertThat(config.getIssuerMetadataMaxCacheTtl()).isEqualTo(Duration.ofDays(1));
+    }
+
+    @Test
+    void issuerMetadataMaxCacheTtl_parsesSeconds() {
+        config.setIssuerMetadataMaxCacheTtlSeconds(45);
+        assertThat(config.getIssuerMetadataMaxCacheTtl()).isEqualTo(Duration.ofSeconds(45));
     }
 
     @Test

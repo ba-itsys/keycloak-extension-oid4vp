@@ -205,6 +205,16 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
+                .name(Oid4vpIdentityProviderConfig.ISSUER_METADATA_MAX_CACHE_TTL_SECONDS)
+                .label("Issuer Metadata Cache TTL (seconds)")
+                .helpText("Maximum time to cache JWT VC Issuer Metadata and resolved issuer JWKS. "
+                        + "If the remote Cache-Control max-age is shorter, that shorter lifetime is used. "
+                        + "Set to 0 to disable caching.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .defaultValue(
+                        String.valueOf(Oid4vpIdentityProviderConfig.DEFAULT_ISSUER_METADATA_MAX_CACHE_TTL_SECONDS))
+                .add()
+                .property()
                 .name(Oid4vpIdentityProviderConfig.TRUST_LIST_MAX_STALE_AGE_SECONDS)
                 .label("Trust List Max Stale Age (seconds)")
                 .helpText("Maximum age of a stale (expired) trust list cache entry that can be used as fallback "
@@ -218,15 +228,17 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .label("Use ID Token Subject (SIOPv2)")
                 .helpText("When enabled, requests a Self-Issued ID Token alongside the VP Token. "
                         + "The user's subject is determined from the ID Token's sub claim (JWK Thumbprint) "
-                        + "instead of a credential claim. The VP Token is still required for credential attributes.")
+                        + "instead of a credential claim. The VP Token is still required for credential attributes. "
+                        + "Ignored when HAIP is enabled.")
                 .type(ProviderConfigProperty.BOOLEAN_TYPE)
                 .defaultValue("false")
                 .add()
                 .property()
                 .name(Oid4vpIdentityProviderConfig.STATUS_LIST_MAX_CACHE_TTL_SECONDS)
                 .label("Status List Cache TTL (seconds)")
-                .helpText("Maximum time to cache credential status lists (overrides JWT expiry if shorter). "
-                        + "Leave empty to use the JWT's own expiration.")
+                .helpText(
+                        "Maximum time to cache credential status lists (overrides status-list ttl/expiry if shorter). "
+                                + "Leave empty to use the status list's own ttl, capped by exp if present.")
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()

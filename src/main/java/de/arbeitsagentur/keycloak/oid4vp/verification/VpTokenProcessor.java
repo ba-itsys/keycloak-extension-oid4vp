@@ -59,6 +59,8 @@ public class VpTokenProcessor {
             String trustListUrl,
             Duration statusListMaxCacheTtl,
             Duration trustListMaxCacheTtl,
+            Duration issuerMetadataMaxCacheTtl,
+            boolean strictX5cVerification,
             int clockSkewSeconds,
             int kbJwtMaxAgeSeconds) {
         this(
@@ -67,6 +69,8 @@ public class VpTokenProcessor {
                 trustListUrl,
                 statusListMaxCacheTtl,
                 trustListMaxCacheTtl,
+                issuerMetadataMaxCacheTtl,
+                strictX5cVerification,
                 clockSkewSeconds,
                 kbJwtMaxAgeSeconds,
                 null);
@@ -81,6 +85,8 @@ public class VpTokenProcessor {
             String trustListUrl,
             Duration statusListMaxCacheTtl,
             Duration trustListMaxCacheTtl,
+            Duration issuerMetadataMaxCacheTtl,
+            boolean strictX5cVerification,
             int clockSkewSeconds,
             int kbJwtMaxAgeSeconds,
             List<X509Certificate> trustListSigningCerts) {
@@ -90,6 +96,8 @@ public class VpTokenProcessor {
                 trustListUrl,
                 statusListMaxCacheTtl,
                 trustListMaxCacheTtl,
+                issuerMetadataMaxCacheTtl,
+                strictX5cVerification,
                 clockSkewSeconds,
                 kbJwtMaxAgeSeconds,
                 trustListSigningCerts,
@@ -106,11 +114,17 @@ public class VpTokenProcessor {
             String trustListUrl,
             Duration statusListMaxCacheTtl,
             Duration trustListMaxCacheTtl,
+            Duration issuerMetadataMaxCacheTtl,
+            boolean strictX5cVerification,
             int clockSkewSeconds,
             int kbJwtMaxAgeSeconds,
             List<X509Certificate> trustListSigningCerts,
             Duration trustListMaxStaleAge) {
-        this.sdJwtVerifier = new SdJwtVerifier(clockSkewSeconds, kbJwtMaxAgeSeconds);
+        this.sdJwtVerifier = new SdJwtVerifier(
+                clockSkewSeconds,
+                kbJwtMaxAgeSeconds,
+                new JwtVcIssuerMetadataResolver(session, issuerMetadataMaxCacheTtl),
+                strictX5cVerification);
         this.mdocVerifier = new MdocVerifier();
         this.trustListProvider = new TrustListProvider(
                 session, trustListUrl, trustListMaxCacheTtl, trustListMaxStaleAge, trustListSigningCerts);
@@ -240,29 +254,21 @@ public class VpTokenProcessor {
 
             for (Map.Entry<String, Object> entry : wrapper.entrySet()) {
                 String credentialId = entry.getKey();
-                Object value = entry.getValue();
-
-                String credential;
-                if (value instanceof List<?> list && !list.isEmpty()) {
-                    credential = list.get(0).toString();
-                } else if (value instanceof String s) {
-                    credential = s;
-                } else {
-                    continue;
-                }
-
-                VerifiedCredential cred = verifyCredential(
-                        credentialId,
-                        credential,
-                        clientId,
-                        expectedNonce,
-                        trustedCerts,
-                        alternateResponseUri,
-                        mdocGeneratedNonce,
-                        encryptionJwkThumbprint);
-                if (cred != null) {
-                    credentials.put(credentialId, cred);
-                    mergedClaims.putAll(cred.claims());
+                String credential = extractCredentialString(entry.getValue());
+                if (credential != null) {
+                    VerifiedCredential cred = verifyCredential(
+                            credentialId,
+                            credential,
+                            clientId,
+                            expectedNonce,
+                            trustedCerts,
+                            alternateResponseUri,
+                            mdocGeneratedNonce,
+                            encryptionJwkThumbprint);
+                    if (cred != null) {
+                        credentials.put(credentialId, cred);
+                        mergedClaims.putAll(cred.claims());
+                    }
                 }
             }
 
@@ -276,6 +282,16 @@ public class VpTokenProcessor {
         } catch (Exception e) {
             throw new IdentityBrokerException("Failed to process multi-credential VP token: " + e.getMessage(), e);
         }
+    }
+
+    private String extractCredentialString(Object value) {
+        if (value instanceof List<?> list && !list.isEmpty()) {
+            return list.get(0).toString();
+        }
+        if (value instanceof String s) {
+            return s;
+        }
+        return null;
     }
 
     private VerifiedCredential verifyCredential(

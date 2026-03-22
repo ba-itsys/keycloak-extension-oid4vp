@@ -177,29 +177,32 @@ public class DcqlQueryBuilder {
                 trustedAuthoritiesMode.toDcqlEntries(trustListUrl, authorityKeyIdentifiers);
 
         for (Object credentialObj : credentials) {
-            if (!(credentialObj instanceof Map<?, ?> rawCredential)) {
-                continue;
+            if (credentialObj instanceof Map<?, ?> rawCredential) {
+                normalizeCredential(rawCredential, trustedAuthorities);
             }
+        }
+    }
 
-            Object formatObj = rawCredential.get(DCQL_FORMAT);
-            Object idObj = rawCredential.get(DCQL_ID);
-            if (!(formatObj instanceof String format)
-                    || !(idObj instanceof String credentialType)
-                    || StringUtil.isBlank(credentialType)) {
-                continue;
-            }
+    @SuppressWarnings("unchecked")
+    private static void normalizeCredential(Map<?, ?> rawCredential, List<Map<String, Object>> trustedAuthorities) {
+        Object formatObj = rawCredential.get(DCQL_FORMAT);
+        Object idObj = rawCredential.get(DCQL_ID);
+        if (!(formatObj instanceof String format)
+                || !(idObj instanceof String credentialType)
+                || StringUtil.isBlank(credentialType)) {
+            return;
+        }
 
-            Map<String, Object> credential = (Map<String, Object>) rawCredential;
-            Map<String, Object> meta = ensureMetaConstraint(credential, format, credentialType);
-            if (meta != null && FORMAT_SD_JWT_VC.equals(format) && !meta.containsKey(DCQL_VCT_VALUES)) {
-                meta.put(DCQL_VCT_VALUES, List.of(credentialType));
-            } else if (meta != null && FORMAT_MSO_MDOC.equals(format) && !meta.containsKey(DCQL_DOCTYPE_VALUE)) {
-                meta.put(DCQL_DOCTYPE_VALUE, credentialType);
-            }
+        Map<String, Object> credential = (Map<String, Object>) rawCredential;
+        Map<String, Object> meta = ensureMetaConstraint(credential, format, credentialType);
+        if (meta != null && FORMAT_SD_JWT_VC.equals(format) && !meta.containsKey(DCQL_VCT_VALUES)) {
+            meta.put(DCQL_VCT_VALUES, List.of(credentialType));
+        } else if (meta != null && FORMAT_MSO_MDOC.equals(format) && !meta.containsKey(DCQL_DOCTYPE_VALUE)) {
+            meta.put(DCQL_DOCTYPE_VALUE, credentialType);
+        }
 
-            if (!trustedAuthorities.isEmpty() && !credential.containsKey(DCQL_TRUSTED_AUTHORITIES)) {
-                credential.put(DCQL_TRUSTED_AUTHORITIES, trustedAuthorities);
-            }
+        if (!trustedAuthorities.isEmpty() && !credential.containsKey(DCQL_TRUSTED_AUTHORITIES)) {
+            credential.put(DCQL_TRUSTED_AUTHORITIES, trustedAuthorities);
         }
     }
 

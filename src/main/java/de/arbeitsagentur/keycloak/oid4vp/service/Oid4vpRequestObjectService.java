@@ -80,11 +80,16 @@ public class Oid4vpRequestObjectService {
                     "Authentication session expired. Please restart the login flow.");
         }
 
+        Oid4vpRequestObjectStore.RequestContextEntry requestContext = null;
         try {
             Oid4vpIdentityProviderConfig config = provider.getConfig();
             Oid4vpResponseMode responseMode = config.getResolvedResponseMode();
-            Oid4vpRequestObjectStore.RequestContextEntry requestContext =
-                    createRequestContext(requestHandle, flowContext, responseMode);
+            requestContext = createRequestContext(requestHandle, flowContext, responseMode);
+            requestObjectStore.storeRequestContext(session, requestContext);
+            String kid = Oid4vpRequestObjectStore.extractKidFromJwk(requestContext.encryptionKeyJson());
+            if (kid != null) {
+                requestObjectStore.storeKidIndex(session, kid, requestContext.state());
+            }
 
             SignedRequestObject signedRequest = provider.getRedirectFlowService()
                     .buildSignedRequestObject(new RequestObjectParams(
@@ -104,18 +109,22 @@ public class Oid4vpRequestObjectService {
                             config.isEnforceHaip()));
 
             String responseJwt = maybeEncryptRequestObject(signedRequest.jwt(), walletMetadataJson);
-            requestObjectStore.storeRequestContext(session, requestContext);
-            String kid = Oid4vpRequestObjectStore.extractKidFromJwk(requestContext.encryptionKeyJson());
-            if (kid != null) {
-                requestObjectStore.storeKidIndex(session, kid, requestContext.state());
-            }
             return Response.ok(responseJwt).type(REQUEST_OBJECT_CONTENT_TYPE).build();
         } catch (IllegalArgumentException e) {
+            cleanupRequestContext(requestContext);
             return responseFactory.jsonErrorResponse(Response.Status.BAD_REQUEST, "invalid_request", e.getMessage());
         } catch (Exception e) {
+            cleanupRequestContext(requestContext);
             LOG.errorf(e, "Failed to generate request object: %s", e.getMessage());
             return responseFactory.jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", null);
         }
+    }
+
+    private void cleanupRequestContext(Oid4vpRequestObjectStore.RequestContextEntry requestContext) {
+        if (requestContext == null || StringUtil.isBlank(requestContext.state())) {
+            return;
+        }
+        requestObjectStore.removeRequestContext(session, requestContext.state());
     }
 
     private String maybeEncryptRequestObject(String responseJwt, String walletMetadataJson) {

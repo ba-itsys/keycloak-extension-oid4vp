@@ -12,6 +12,7 @@ Supported capabilities:
 
 - same-device and cross-device wallet login flows
 - SD-JWT VC and mDoc (`mso_mdoc`) verification
+- SD-JWT issuer verification with `x5c` first and JWT VC issuer-metadata (`kid`) fallback outside HAIP
 - DCQL-based credential requests
 - `direct_post` and `direct_post.jwt` response modes
 - HAIP-oriented verifier configuration, including encrypted wallet responses
@@ -29,6 +30,8 @@ Supported capabilities:
 ## How It Works
 
 At login time, Keycloak creates a stable `request_handle` for each enabled browser flow and renders either a same-device deep link, a cross-device QR code, or both. The wallet fetches the `request_uri`, Keycloak generates a fresh signed request object for that fetch, and the wallet posts the resulting presentation to the verifier endpoint. After successful verification, the browser completes the login through `/complete-auth`, bound to the original Keycloak authentication session.
+
+For SD-JWT VC, the verifier prefers `x5c`-based issuer verification. When HAIP is disabled and no usable `x5c` chain is present, it can resolve the issuer signing key from JWT VC issuer metadata at `/.well-known/jwt-vc-issuer`, including `jwks_uri` documents, using the JOSE `kid`.
 
 For the full flow, security model, and request/state lifecycle, see [docs/request-flow.md](docs/request-flow.md).
 

@@ -46,25 +46,28 @@ public record ClaimSpec(String path, boolean optional, boolean multivalued) {
         if (StringUtil.isBlank(path)) {
             return List.of();
         }
+        if (Oid4vpConstants.FORMAT_MSO_MDOC.equals(format) && type != null) {
+            String requestedPath =
+                    path.contains(PATH_SEPARATOR) ? path.substring(0, path.indexOf(PATH_SEPARATOR)) : path;
+            return List.of(type, parsePathSegment(requestedPath));
+        }
         if (path.contains(PATH_SEPARATOR)) {
             List<Object> segments = Arrays.stream(path.split(PATH_SEPARATOR))
                     .map(ClaimSpec::parsePathSegment)
                     .collect(Collectors.toCollection(ArrayList::new));
-            if (multivalued) {
+            if (multivalued && !endsWithArraySelector(segments)) {
                 segments.add(null);
             }
             return segments;
-        }
-        if (Oid4vpConstants.FORMAT_MSO_MDOC.equals(format) && type != null) {
-            if (multivalued) {
-                return listWithNullableEntries(type, path, null);
-            }
-            return List.of(type, path);
         }
         if (multivalued) {
             return listWithNullableEntries(path, null);
         }
         return List.of(path);
+    }
+
+    private static boolean endsWithArraySelector(List<Object> segments) {
+        return !segments.isEmpty() && segments.get(segments.size() - 1) == null;
     }
 
     private static List<Object> listWithNullableEntries(Object... values) {

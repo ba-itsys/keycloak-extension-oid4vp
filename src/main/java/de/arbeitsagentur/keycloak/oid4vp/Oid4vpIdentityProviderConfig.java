@@ -65,7 +65,9 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final String STATUS_LIST_MAX_CACHE_TTL_SECONDS = "statusListMaxCacheTtlSeconds";
     public static final String TRUST_LIST_MAX_CACHE_TTL_SECONDS = "trustListMaxCacheTtlSeconds";
     public static final String TRUST_LIST_MAX_STALE_AGE_SECONDS = "trustListMaxStaleAgeSeconds";
+    public static final String ISSUER_METADATA_MAX_CACHE_TTL_SECONDS = "issuerMetadataMaxCacheTtlSeconds";
     public static final int DEFAULT_TRUST_LIST_MAX_STALE_AGE_SECONDS = 86400;
+    public static final int DEFAULT_ISSUER_METADATA_MAX_CACHE_TTL_SECONDS = 86400;
 
     public static final String SSE_POLL_INTERVAL_MS = "ssePollIntervalMs";
     public static final String SSE_TIMEOUT_SECONDS = "sseTimeoutSeconds";
@@ -256,7 +258,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     }
 
     public boolean isUseIdTokenSubject() {
-        return getBoolConfig(USE_ID_TOKEN_SUBJECT, false);
+        return !isEnforceHaip() && getBoolConfig(USE_ID_TOKEN_SUBJECT, false);
     }
 
     @Override
@@ -310,6 +312,22 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public void setTrustListMaxCacheTtlSeconds(int seconds) {
         getConfig().put(TRUST_LIST_MAX_CACHE_TTL_SECONDS, String.valueOf(seconds));
+    }
+
+    public Duration getIssuerMetadataMaxCacheTtl() {
+        String value = getConfig().get(ISSUER_METADATA_MAX_CACHE_TTL_SECONDS);
+        if (StringUtil.isBlank(value)) {
+            return Duration.ofSeconds(DEFAULT_ISSUER_METADATA_MAX_CACHE_TTL_SECONDS);
+        }
+        try {
+            return Duration.ofSeconds(Long.parseLong(value));
+        } catch (NumberFormatException e) {
+            return Duration.ofSeconds(DEFAULT_ISSUER_METADATA_MAX_CACHE_TTL_SECONDS);
+        }
+    }
+
+    public void setIssuerMetadataMaxCacheTtlSeconds(int seconds) {
+        getConfig().put(ISSUER_METADATA_MAX_CACHE_TTL_SECONDS, String.valueOf(seconds));
     }
 
     /**

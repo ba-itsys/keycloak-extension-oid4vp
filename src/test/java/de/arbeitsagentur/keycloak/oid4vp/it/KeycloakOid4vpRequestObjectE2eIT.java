@@ -19,7 +19,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jwt.SignedJWT;
-import io.github.dominikschlosser.oid4vc.PresentationResponse;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -99,7 +98,7 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
         assertThat(prefetch1.statusCode()).isEqualTo(200);
         assertThat(prefetch2.statusCode()).isEqualTo(200);
 
-        PresentationResponse response = flow.submitToWallet(walletUrl);
+        Oid4vpLoginFlowHelper.WalletResponse response = flow.submitToWallet(walletUrl);
         flow.waitForLoginCompletion(response);
         flow.completeFirstBrokerLoginIfNeeded("multi-fetch-user");
         flow.assertLoginSucceeded();
@@ -115,7 +114,7 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
         flow.clickOid4vpIdpButton();
         String walletUrl = flow.getSameDeviceWalletUrl();
 
-        PresentationResponse response = flow.submitToWallet(walletUrl);
+        Oid4vpLoginFlowHelper.WalletResponse response = flow.submitToWallet(walletUrl);
         flow.waitForLoginCompletion(response);
         flow.completeFirstBrokerLoginIfNeeded("earlier-ro-user");
         flow.assertLoginSucceeded();
