@@ -228,7 +228,8 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .label("Use ID Token Subject (SIOPv2)")
                 .helpText("When enabled, requests a Self-Issued ID Token alongside the VP Token. "
                         + "The user's subject is determined from the ID Token's sub claim (JWK Thumbprint) "
-                        + "instead of a credential claim. The VP Token is still required for credential attributes.")
+                        + "instead of a credential claim. The VP Token is still required for credential attributes. "
+                        + "Ignored when HAIP is enabled.")
                 .type(ProviderConfigProperty.BOOLEAN_TYPE)
                 .defaultValue("false")
                 .add()

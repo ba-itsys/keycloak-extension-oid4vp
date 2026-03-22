@@ -47,10 +47,10 @@ This method:
 3. **Renders the login page** (`buildLoginFormResponse`) — passes wallet URLs, QR code, and SSE status URL to `login-oid4vp-idp.ftl`
 
 The login page contains:
-- A hidden form that posts `vp_token`/`response` back to the Keycloak endpoint
+- Hidden state/request-handle fields used to keep the browser-side flow bound to the original Keycloak login attempt
 - A same-device deep link (`openid4vp://...?request_uri=...`)
 - A cross-device QR code encoding a similar URL (`openid4vp://...?request_uri=...`)
-- JavaScript that opens an SSE connection to `/cross-device/status?request_handle=...` using the cross-device flow's stable request handle when that flow is enabled, while the hidden form fields remain bound to the same-device flow when it exists
+- JavaScript that opens an SSE connection to `/cross-device/status?request_handle=...` using the cross-device flow's stable request handle when that flow is enabled
 
 **Key detail:** The `request_uri` points to `/endpoint/request-object/{requestHandle}`. The request handle is stable for the browser flow, but each request-object fetch creates a fresh request context with its own `state`, `nonce`, and response-encryption key when the effective `response_mode` is `direct_post.jwt`. The request object JWT itself expires quickly (default 10 seconds) to limit fetch/replay windows, but once a wallet has fetched it, the later callback is accepted as long as the stored request context and authentication session still exist.
 
@@ -68,7 +68,7 @@ Oid4vpRequestObjectService.generateRequestObject(requestHandle, walletNonce, wal
 
 1. Resolves the `requestHandle` → looks up the stored flow context `{rootSessionId, tabId, effectiveClientId, responseUri, flow}` from `Oid4vpRequestObjectStore`
 2. Resolves the auth session from `rootSessionId` + `tabId` to ensure the login attempt is still active
-3. Creates a fresh request context `{requestHandle, state, nonce, encryptionKeyJson, encryptionJwkThumbprint, flow}` and stores it under the new `state` (and `kid` when the effective `response_mode` is `direct_post.jwt`)
+3. Creates a fresh request context `{requestHandle, state, nonce, encryptionKeyJson, encryptionJwkThumbprint, flow}` and stores it under the new `state` (and `kid` when the effective `response_mode` is `direct_post.jwt`) before the response is returned to the wallet
 4. Delegates to `Oid4vpRedirectFlowService.buildSignedRequestObject(params)` using that fresh request context:
 
 ```
@@ -78,7 +78,7 @@ Oid4vpRedirectFlowService.buildSignedRequestObject(RequestObjectParams)
 This method:
 
 1. **Resolves signing and response-encryption keys** — uses the configured x509 signing JWK when present, otherwise the realm signing key; when the effective `response_mode` is `direct_post.jwt`, it also generates or reuses the fresh per-request ECDH-ES response-encryption key
-2. **Builds request claims** — `jti`, `iat`, `exp`, `iss`, `aud`, `client_id`, `response_type`, `response_mode`, `response_uri`, `nonce`, `state`, optional `wallet_nonce`, DCQL query, verifier info, and `client_metadata`
+2. **Builds request claims** — `jti`, `iat`, `exp`, `iss`, `aud`, `client_id`, `response_type`, `response_mode`, `response_uri`, `nonce`, `state`, optional `wallet_nonce`, DCQL query, verifier info, and `client_metadata`. When `useIdTokenSubject` is enabled and HAIP is disabled, `response_type` becomes `vp_token id_token` and `scope=openid` is added; under HAIP, `useIdTokenSubject` is effectively disabled
 3. **Builds `client_metadata`** — only for encrypted wallet responses: includes the public response-encryption JWK in `jwks`, the verifier's supported wallet-response encryption methods, and `vp_formats_supported`
 4. **Normalizes DCQL trusted-authorities constraints** — if `trustedAuthoritiesMode` is enabled, the generated/manual DCQL query gets exactly one `trusted_authorities` type:
    - `etsi_tl` advertises the configured trust-list URL
@@ -138,7 +138,7 @@ This:
     6. **KB-JWT `sd_hash` validation** — must equal SHA-256 of the unbound SD-JWT presentation (issuer JWT + disclosures, without the KB-JWT itself)
   - mDoc: `MdocVerifier.verifyWithTrustedCerts()` — validates MSO COSE_Sign1 issuer signature, MSO validity period (`validFrom`/`validUntil`), value digest integrity (SHA-256 of IssuerSignedItems vs MSO digests), device authentication signature via SessionTranscript binding, and extracts namespace-prefixed claims. The device authentication supports two SessionTranscript formats:
     - **OID4VP 1.0** (Appendix B.3.2.2): `[null, null, ["OpenID4VPHandover", SHA-256(CBOR([client_id, nonce, jwk_thumbprint, response_uri]))]]` — the `jwk_thumbprint` is the RFC 7638 SHA-256 thumbprint of the HAIP encryption key from `client_metadata.jwks`, stored in the request context when the request object is created
-    - **ISO 18013-7** (Annex B.4.4): `[null, null, [SHA-256(CBOR([client_id, mdoc_generated_nonce])), SHA-256(CBOR([response_uri, mdoc_generated_nonce])), nonce]]` — used when `mdocGeneratedNonce` is present (extracted from JWE `apu` header). Tried first with OID4VP 1.0 as fallback.
+    - **ISO 18013-7** (Annex B.4.4): `[null, null, [SHA-256(CBOR([client_id, mdoc_generated_nonce])), SHA-256(CBOR([response_uri, mdoc_generated_nonce])), nonce]]` — used as a fallback when `mdocGeneratedNonce` is present (extracted from JWE `apu` header) and the OID4VP 1.0 transcript does not verify
   - Checks revocation via `StatusListVerifier`
 - Validates issuer is allowed, credential type is allowed
 - Maps claims to `BrokeredIdentityContext`

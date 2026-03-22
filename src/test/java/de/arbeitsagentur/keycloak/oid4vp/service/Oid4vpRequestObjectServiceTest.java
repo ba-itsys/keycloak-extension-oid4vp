@@ -18,6 +18,7 @@ package de.arbeitsagentur.keycloak.oid4vp.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -43,6 +44,7 @@ import org.keycloak.models.KeycloakUriInfo;
 import org.keycloak.models.RealmModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 
 class Oid4vpRequestObjectServiceTest {
 
@@ -121,5 +123,41 @@ class Oid4vpRequestObjectServiceTest {
         assertThat(requestContextCaptor.getAllValues().get(0).requestHandle()).isEqualTo("handle-1");
         assertThat(requestContextCaptor.getAllValues().get(1).requestHandle()).isEqualTo("handle-1");
         verify(authSession, never()).setAuthNote(any(), any());
+    }
+
+    @Test
+    void generateRequestObject_persistsRequestContextBeforeBuildingResponse() throws Exception {
+        Oid4vpRequestObjectStore.FlowContextEntry flowContext = new Oid4vpRequestObjectStore.FlowContextEntry(
+                "root-session", "tab-1", "effective-client", "https://example.com/endpoint", "same_device");
+        when(store.resolveFlowHandle(session, "handle-1")).thenReturn(flowContext);
+        when(redirectFlowService.createResponseEncryptionKey())
+                .thenReturn(Oid4vpJwk.generate("P-256", "ECDH-ES", "enc"));
+        when(redirectFlowService.buildSignedRequestObject(any(RequestObjectParams.class)))
+                .thenReturn(new SignedRequestObject("signed-jwt", "{\"kid\":\"kid-1\"}"));
+
+        Response response = service.generateRequestObject("handle-1", null, null);
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        InOrder inOrder = inOrder(store, redirectFlowService);
+        inOrder.verify(store).storeRequestContext(eq(session), any(Oid4vpRequestObjectStore.RequestContextEntry.class));
+        inOrder.verify(store).storeKidIndex(eq(session), any(String.class), any(String.class));
+        inOrder.verify(redirectFlowService).buildSignedRequestObject(any(RequestObjectParams.class));
+    }
+
+    @Test
+    void generateRequestObject_buildFailure_cleansStoredRequestContext() throws Exception {
+        Oid4vpRequestObjectStore.FlowContextEntry flowContext = new Oid4vpRequestObjectStore.FlowContextEntry(
+                "root-session", "tab-1", "effective-client", "https://example.com/endpoint", "same_device");
+        when(store.resolveFlowHandle(session, "handle-1")).thenReturn(flowContext);
+        when(redirectFlowService.createResponseEncryptionKey())
+                .thenReturn(Oid4vpJwk.generate("P-256", "ECDH-ES", "enc"));
+        when(redirectFlowService.buildSignedRequestObject(any(RequestObjectParams.class)))
+                .thenThrow(new IllegalStateException("boom"));
+
+        Response response = service.generateRequestObject("handle-1", null, null);
+
+        assertThat(response.getStatus()).isEqualTo(500);
+        verify(store).storeRequestContext(eq(session), any(Oid4vpRequestObjectStore.RequestContextEntry.class));
+        verify(store).removeRequestContext(eq(session), any(String.class));
     }
 }

@@ -102,12 +102,7 @@ public class StatusListVerifier {
 
         Object statusObj = claims.get("status");
         if (statusObj == null) {
-            for (Map.Entry<String, Object> entry : claims.entrySet()) {
-                if (entry.getKey().endsWith("/status")) {
-                    statusObj = entry.getValue();
-                    break;
-                }
-            }
+            statusObj = findNestedStatusClaim(claims);
         }
 
         if (!(statusObj instanceof Map<?, ?> statusMap)) return null;
@@ -123,6 +118,15 @@ public class StatusListVerifier {
         Integer idx = integerValue(idxObj);
         if (uri == null || idx == null) return null;
         return new StatusReference(uri, idx);
+    }
+
+    private Object findNestedStatusClaim(Map<String, Object> claims) {
+        for (Map.Entry<String, Object> entry : claims.entrySet()) {
+            if (entry.getKey().endsWith("/status")) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
 
     DecodedStatusList fetchAndDecodeStatusList(String uri) throws Exception {

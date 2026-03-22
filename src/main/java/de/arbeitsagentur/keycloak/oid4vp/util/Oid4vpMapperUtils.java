@@ -279,30 +279,24 @@ public final class Oid4vpMapperUtils {
         Object current = value;
         for (String part : pathParts) {
             if ("null".equals(part)) {
-                if (current instanceof List<?>) {
-                    continue;
+                if (!(current instanceof List<?>)) {
+                    return null;
                 }
-                return null;
-            }
-
-            if (current instanceof Map<?, ?> map) {
+            } else if (current instanceof Map<?, ?> map) {
                 current = map.get(part);
                 if (current == null) {
                     return null;
                 }
-                continue;
-            }
-
-            Integer index = parseArrayIndex(part);
-            if (index != null && current instanceof List<?> list) {
+            } else {
+                Integer index = parseArrayIndex(part);
+                if (index == null || !(current instanceof List<?> list)) {
+                    return null;
+                }
                 if (index < 0 || index >= list.size()) {
                     return null;
                 }
                 current = list.get(index);
-                continue;
             }
-
-            return null;
         }
         return current;
     }
