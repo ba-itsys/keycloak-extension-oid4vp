@@ -360,42 +360,58 @@ public class TrustListProvider {
         List<Map<String, Object>> entitiesList = (List<Map<String, Object>>) claims.get("TrustedEntitiesList");
         if (entitiesList != null) {
             for (Map<String, Object> entity : entitiesList) {
-                List<Map<String, Object>> services = (List<Map<String, Object>>) entity.get("TrustedEntityServices");
-                if (services == null) continue;
-
-                for (Map<String, Object> service : services) {
-                    Map<String, Object> serviceInfo = (Map<String, Object>) service.get("ServiceInformation");
-                    if (serviceInfo == null) continue;
-
-                    Map<String, Object> digitalIdentity =
-                            (Map<String, Object>) serviceInfo.get("ServiceDigitalIdentity");
-                    if (digitalIdentity == null) continue;
-
-                    List<Map<String, Object>> x509Certs =
-                            (List<Map<String, Object>>) digitalIdentity.get("X509Certificates");
-                    if (x509Certs == null) continue;
-
-                    for (Map<String, Object> certEntry : x509Certs) {
-                        Object val = certEntry.get("val");
-                        if (val == null) continue;
-
-                        try {
-                            byte[] certDer = Base64.getMimeDecoder().decode(val.toString());
-                            X509Certificate cert = (X509Certificate) CertificateFactory.getInstance("X.509")
-                                    .generateCertificate(new ByteArrayInputStream(certDer));
-                            certificates.add(cert);
-                            LOG.debugf(
-                                    "Loaded trusted certificate: %s",
-                                    cert.getSubjectX500Principal().getName());
-                        } catch (Exception e) {
-                            LOG.warnf("Failed to parse certificate from trust list: %s", e.getMessage());
-                        }
-                    }
-                }
+                addEntityCertificates(entity, certificates);
             }
         }
 
         return new TrustListParseResult(List.copyOf(certificates), expiresAt);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void addEntityCertificates(Map<String, Object> entity, List<X509Certificate> certificates) {
+        List<Map<String, Object>> services = (List<Map<String, Object>>) entity.get("TrustedEntityServices");
+        if (services == null) {
+            return;
+        }
+
+        for (Map<String, Object> service : services) {
+            Map<String, Object> serviceInfo = (Map<String, Object>) service.get("ServiceInformation");
+            if (serviceInfo != null) {
+                Map<String, Object> digitalIdentity = (Map<String, Object>) serviceInfo.get("ServiceDigitalIdentity");
+                if (digitalIdentity != null) {
+                    List<Map<String, Object>> x509Certs =
+                            (List<Map<String, Object>>) digitalIdentity.get("X509Certificates");
+                    addCertificates(x509Certs, certificates);
+                }
+            }
+        }
+    }
+
+    private static void addCertificates(List<Map<String, Object>> x509Certs, List<X509Certificate> certificates) {
+        if (x509Certs == null) {
+            return;
+        }
+
+        for (Map<String, Object> certEntry : x509Certs) {
+            Object value = certEntry.get("val");
+            if (value != null) {
+                addCertificate(value, certificates);
+            }
+        }
+    }
+
+    private static void addCertificate(Object value, List<X509Certificate> certificates) {
+        try {
+            byte[] certDer = Base64.getMimeDecoder().decode(value.toString());
+            X509Certificate cert = (X509Certificate)
+                    CertificateFactory.getInstance("X.509").generateCertificate(new ByteArrayInputStream(certDer));
+            certificates.add(cert);
+            LOG.debugf(
+                    "Loaded trusted certificate: %s",
+                    cert.getSubjectX500Principal().getName());
+        } catch (Exception e) {
+            LOG.warnf("Failed to parse certificate from trust list: %s", e.getMessage());
+        }
     }
 
     private static Instant instantClaim(Object value) {

@@ -258,7 +258,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     }
 
     public boolean isUseIdTokenSubject() {
-        return getBoolConfig(USE_ID_TOKEN_SUBJECT, false);
+        return !isEnforceHaip() && getBoolConfig(USE_ID_TOKEN_SUBJECT, false);
     }
 
     @Override

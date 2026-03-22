@@ -77,15 +77,20 @@ class Oid4vpCrossDeviceSseServiceTest {
     void subscribe_sendsCompleteWhenSharedSignalExists() throws Exception {
         Oid4vpCrossDeviceSseService service = createService();
         SseEventSink sink = mock(SseEventSink.class);
-        Sse sse = mockSse("complete");
+        MockSseContext sse = mockSse("complete");
 
         when(singleUseObjects.get(CROSS_DEVICE_COMPLETE_PREFIX + "test-handle"))
                 .thenReturn(
                         Map.of("complete_auth_url", "http://localhost:8080/complete-auth?request_handle=test-handle"));
 
-        service.subscribe("test-handle", sink, sse, false);
+        service.subscribe("test-handle", sink, sse.sse(), false);
         service.pollOnce();
 
+        verify(sse.builder()).name("complete");
+        verify(sse.builder())
+                .data(
+                        String.class,
+                        "{\"redirect_uri\":\"http://localhost:8080/complete-auth?request_handle=test-handle\"}");
         verify(sink).send(any(OutboundSseEvent.class));
         verify(sink).close();
     }
@@ -95,14 +100,16 @@ class Oid4vpCrossDeviceSseServiceTest {
         config.setSseTimeoutSeconds(5);
         Oid4vpCrossDeviceSseService service = createService();
         SseEventSink sink = mock(SseEventSink.class);
-        Sse sse = mockSse("ping");
+        MockSseContext sse = mockSse("ping");
 
         when(singleUseObjects.get(anyString())).thenReturn(null);
 
-        service.subscribe("test-handle", sink, sse, false);
+        service.subscribe("test-handle", sink, sse.sse(), false);
         Thread.sleep(1100);
         service.pollOnce();
 
+        verify(sse.builder()).name("ping");
+        verify(sse.builder()).data(String.class, "{}");
         verify(sink).send(any(OutboundSseEvent.class));
         verify(sink, never()).close();
     }
@@ -112,13 +119,15 @@ class Oid4vpCrossDeviceSseServiceTest {
         config.setSseTimeoutSeconds(0);
         Oid4vpCrossDeviceSseService service = createService();
         SseEventSink sink = mock(SseEventSink.class);
-        Sse sse = mockSse("timeout");
+        MockSseContext sse = mockSse("timeout");
 
         when(singleUseObjects.get(anyString())).thenReturn(null);
 
-        service.subscribe("test-handle", sink, sse, false);
+        service.subscribe("test-handle", sink, sse.sse(), false);
         service.pollOnce();
 
+        verify(sse.builder()).name("timeout");
+        verify(sse.builder()).data(String.class, "{\"error\":\"timeout\"}");
         verify(sink).send(any(OutboundSseEvent.class));
         verify(sink).close();
     }
@@ -136,11 +145,13 @@ class Oid4vpCrossDeviceSseServiceTest {
         when(realm.getName()).thenReturn("test-realm");
         Oid4vpCrossDeviceSseService service = new Oid4vpCrossDeviceSseService(session, realm, config);
         SseEventSink sink = mock(SseEventSink.class);
-        Sse sse = mockSse("error");
+        MockSseContext sse = mockSse("error");
 
-        service.subscribe("test-handle", sink, sse, false);
+        service.subscribe("test-handle", sink, sse.sse(), false);
         service.pollOnce();
 
+        verify(sse.builder()).name("error");
+        verify(sse.builder()).data(String.class, "{\"error\":\"realm_not_found\"}");
         verify(sink).send(any(OutboundSseEvent.class));
         verify(sink).close();
     }
@@ -150,14 +161,14 @@ class Oid4vpCrossDeviceSseServiceTest {
         Oid4vpCrossDeviceSseService service = createService();
         SseEventSink firstSink = mock(SseEventSink.class);
         SseEventSink secondSink = mock(SseEventSink.class);
-        Sse sse = mockSse("complete");
+        MockSseContext sse = mockSse("complete");
 
         when(singleUseObjects.get(CROSS_DEVICE_COMPLETE_PREFIX + "test-handle"))
                 .thenReturn(
                         Map.of("complete_auth_url", "http://localhost:8080/complete-auth?request_handle=test-handle"));
 
-        service.subscribe("test-handle", firstSink, sse, false);
-        service.subscribe("test-handle", secondSink, sse, false);
+        service.subscribe("test-handle", firstSink, sse.sse(), false);
+        service.subscribe("test-handle", secondSink, sse.sse(), false);
         service.pollOnce();
 
         verify(firstSink).send(any(OutboundSseEvent.class));
@@ -170,7 +181,7 @@ class Oid4vpCrossDeviceSseServiceTest {
     void subscribe_sendsExpiredWhenAuthenticationSessionDisappears() throws Exception {
         Oid4vpCrossDeviceSseService service = createService();
         SseEventSink sink = mock(SseEventSink.class);
-        Sse sse = mockSse("expired");
+        MockSseContext sse = mockSse("expired");
         AuthenticationSessionModel authSession = mock(AuthenticationSessionModel.class);
         RootAuthenticationSessionModel rootSession = mock(RootAuthenticationSessionModel.class);
 
@@ -181,9 +192,11 @@ class Oid4vpCrossDeviceSseServiceTest {
                 .thenReturn(null);
         when(singleUseObjects.get(anyString())).thenReturn(null);
 
-        service.subscribe("test-handle", sink, sse, authSession);
+        service.subscribe("test-handle", sink, sse.sse(), authSession);
         service.pollOnce();
 
+        verify(sse.builder()).name("expired");
+        verify(sse.builder()).data(String.class, "{\"error\":\"authentication_session_expired\"}");
         verify(sink).send(any(OutboundSseEvent.class));
         verify(sink).close();
     }
@@ -196,10 +209,12 @@ class Oid4vpCrossDeviceSseServiceTest {
 
         Oid4vpCrossDeviceSseService service = new Oid4vpCrossDeviceSseService(sessionWithoutFactory, realm, config);
         SseEventSink sink = mock(SseEventSink.class);
-        Sse sse = mockSse("error");
+        MockSseContext sse = mockSse("error");
 
-        service.subscribe("test-handle", sink, sse, false);
+        service.subscribe("test-handle", sink, sse.sse(), false);
 
+        verify(sse.builder()).name("error");
+        verify(sse.builder()).data(String.class, "{\"error\":\"sse_unavailable\"}");
         verify(sink).send(any(OutboundSseEvent.class));
         verify(sink).close();
     }
@@ -224,7 +239,7 @@ class Oid4vpCrossDeviceSseServiceTest {
         return new Oid4vpCrossDeviceSseService(session, realm, config);
     }
 
-    private Sse mockSse(String eventName) {
+    private MockSseContext mockSse(String eventName) {
         Sse sse = mock(Sse.class);
         OutboundSseEvent.Builder builder = mock(OutboundSseEvent.Builder.class);
         OutboundSseEvent event = mock(OutboundSseEvent.class);
@@ -235,6 +250,8 @@ class Oid4vpCrossDeviceSseServiceTest {
         when(builder.data(eq(String.class), any())).thenReturn(builder);
         when(builder.build()).thenReturn(event);
         when(event.getName()).thenReturn(eventName);
-        return sse;
+        return new MockSseContext(sse, builder);
     }
+
+    private record MockSseContext(Sse sse, OutboundSseEvent.Builder builder) {}
 }

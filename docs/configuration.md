@@ -51,9 +51,9 @@ Example realm import fragment:
 |-----|-------------|---------|
 | `userMappingClaim` | Claim from an SD-JWT credential used as the unique user identifier. Not required when `useIdTokenSubject` is enabled. Ignored when OID4VP transient users are enabled. | `sub` |
 | `userMappingClaimMdoc` | Claim from an mDoc credential used as the unique user identifier. Falls back to `userMappingClaim`. Ignored when OID4VP transient users are enabled. | *(falls back)* |
-| `useIdTokenSubject` | Requests an additional self-issued `id_token` and uses its subject as the user identifier. The VP token remains required for credential attributes. | `false` |
+| `useIdTokenSubject` | When HAIP is disabled, requests an additional self-issued `id_token` and uses its subject as the user identifier. The VP token remains required for credential attributes. Ignored when HAIP is enabled. | `false` |
 | `doNotStoreUsers` | Native Keycloak IdP setting. When enabled, OID4VP switches to transient per-login identities, ignores configured identifying claims, and relies on Keycloak transient users. Requires the Keycloak `transient-users` feature to be enabled. | `false` |
-| `clockSkewSeconds` | Allowed clock skew for ID token time checks. | `30` |
+| `clockSkewSeconds` | Allowed clock skew for ID token time checks. | `60` |
 
 ### Transient Login Mode
 
