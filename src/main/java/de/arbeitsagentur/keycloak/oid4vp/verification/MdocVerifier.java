@@ -135,15 +135,8 @@ public class MdocVerifier {
 
         for (var nsPair : nameSpaces.getPairs()) {
             String namespace = stringValue(nsPair.getKey());
-            if (namespace == null || !(nsPair.getValue() instanceof CBORItemList elementsList)) continue;
-
-            for (CBORItem element : elementsList.getItems()) {
-                CBORPairList item = unwrapTag24(element);
-                if (item == null) continue;
-                String elementId = str(item, "elementIdentifier");
-                if (elementId != null) {
-                    claims.put(namespace + "/" + elementId, cborToJava(val(item, "elementValue")));
-                }
+            if (namespace != null && nsPair.getValue() instanceof CBORItemList elementsList) {
+                addNamespaceClaims(claims, namespace, elementsList);
             }
         }
 
@@ -152,6 +145,18 @@ public class MdocVerifier {
             if (status != null) claims.put("status", cborToJava(status));
         }
         return claims;
+    }
+
+    private void addNamespaceClaims(Map<String, Object> claims, String namespace, CBORItemList elementsList) {
+        for (CBORItem element : elementsList.getItems()) {
+            CBORPairList item = unwrapTag24(element);
+            if (item != null) {
+                String elementId = str(item, "elementIdentifier");
+                if (elementId != null) {
+                    claims.put(namespace + "/" + elementId, cborToJava(val(item, "elementValue")));
+                }
+            }
+        }
     }
 
     private CBORPairList unwrapTag24(CBORItem element) {
@@ -319,26 +324,40 @@ public class MdocVerifier {
             MessageDigest sha256 = MessageDigest.getInstance(JavaAlgorithm.SHA256);
             for (var nsPair : nameSpaces.getPairs()) {
                 String namespace = stringValue(nsPair.getKey());
-                if (namespace == null || !(nsPair.getValue() instanceof CBORItemList elements)) continue;
-
-                CBORPairList nsDigests = map(valueDigests, namespace);
-                if (nsDigests == null) continue;
-
-                for (CBORItem element : elements.getItems()) {
-                    CBORPairList item = unwrapTag24(element);
-                    if (item == null || val(item, "digestID") == null) continue;
-
-                    int digestId = intValue(val(item, "digestID"));
-                    if (!(intKeyVal(nsDigests, digestId) instanceof CBORByteArray expected)) {
-                        throw new IllegalStateException("Missing digest for element " + digestId);
-                    }
-                    if (!Arrays.equals(sha256.digest(element.encode()), expected.getValue())) {
-                        throw new IllegalStateException("Digest mismatch for element " + digestId);
-                    }
+                if (namespace != null && nsPair.getValue() instanceof CBORItemList elements) {
+                    verifyNamespaceDigests(valueDigests, namespace, elements, sha256);
                 }
             }
         } catch (Exception e) {
             throw wrapIfNeeded(e, "Digest verification failed: ");
+        }
+    }
+
+    private void verifyNamespaceDigests(
+            CBORPairList valueDigests, String namespace, CBORItemList elements, MessageDigest sha256) {
+        CBORPairList nsDigests = map(valueDigests, namespace);
+        if (nsDigests == null) {
+            return;
+        }
+
+        for (CBORItem element : elements.getItems()) {
+            verifyElementDigest(element, nsDigests, sha256);
+        }
+    }
+
+    private void verifyElementDigest(CBORItem element, CBORPairList nsDigests, MessageDigest sha256) {
+        CBORPairList item = unwrapTag24(element);
+        CBORItem digestIdValue = item != null ? val(item, "digestID") : null;
+        if (digestIdValue == null) {
+            return;
+        }
+
+        int digestId = intValue(digestIdValue);
+        if (!(intKeyVal(nsDigests, digestId) instanceof CBORByteArray expected)) {
+            throw new IllegalStateException("Missing digest for element " + digestId);
+        }
+        if (!Arrays.equals(sha256.digest(element.encode()), expected.getValue())) {
+            throw new IllegalStateException("Digest mismatch for element " + digestId);
         }
     }
 

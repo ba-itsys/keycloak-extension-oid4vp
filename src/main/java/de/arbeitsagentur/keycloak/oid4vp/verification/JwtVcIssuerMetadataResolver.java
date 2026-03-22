@@ -188,24 +188,31 @@ public class JwtVcIssuerMetadataResolver {
 
         List<ResolvedIssuerKey> keys = new ArrayList<>();
         for (JWK jwk : rawKeys) {
-            if (jwk == null) {
-                continue;
+            ResolvedIssuerKey resolvedKey = toResolvedIssuerKey(jwk, baseExpiry);
+            if (resolvedKey != null) {
+                keys.add(resolvedKey);
             }
-            if (jwk.getPublicKeyUse() != null && !"sig".equalsIgnoreCase(jwk.getPublicKeyUse())) {
-                continue;
-            }
-            String kid = jwk.getKeyId();
-            if (kid == null || kid.isBlank()) {
-                continue;
-            }
-            keys.add(new ResolvedIssuerKey(
-                    kid, toPublicKey(jwk), extractCertificateChain(jwk), resolveKeyExpiry(jwk, baseExpiry)));
         }
 
         if (keys.isEmpty()) {
             throw new IllegalStateException("JWKS does not contain any usable signing keys");
         }
         return List.copyOf(keys);
+    }
+
+    private ResolvedIssuerKey toResolvedIssuerKey(JWK jwk, Instant baseExpiry) {
+        if (jwk == null) {
+            return null;
+        }
+        if (jwk.getPublicKeyUse() != null && !"sig".equalsIgnoreCase(jwk.getPublicKeyUse())) {
+            return null;
+        }
+        String kid = jwk.getKeyId();
+        if (kid == null || kid.isBlank()) {
+            return null;
+        }
+        return new ResolvedIssuerKey(
+                kid, toPublicKey(jwk), extractCertificateChain(jwk), resolveKeyExpiry(jwk, baseExpiry));
     }
 
     private PublicKey toPublicKey(JWK jwk) {
@@ -312,10 +319,8 @@ public class JwtVcIssuerMetadataResolver {
     private Instant computeCacheExpiry(List<ResolvedIssuerKey> keys, Instant baseExpiry) {
         Instant latestKeyExpiry = null;
         for (ResolvedIssuerKey key : keys) {
-            if (key.expiresAt() == null) {
-                continue;
-            }
-            if (latestKeyExpiry == null || key.expiresAt().isAfter(latestKeyExpiry)) {
+            if (key.expiresAt() != null
+                    && (latestKeyExpiry == null || key.expiresAt().isAfter(latestKeyExpiry))) {
                 latestKeyExpiry = key.expiresAt();
             }
         }
@@ -353,12 +358,11 @@ public class JwtVcIssuerMetadataResolver {
         for (String header : values) {
             for (String directive : header.split(",")) {
                 String trimmed = directive.trim();
-                if (!trimmed.startsWith("max-age=")) {
-                    continue;
-                }
-                try {
-                    return Duration.ofSeconds(Long.parseLong(trimmed.substring("max-age=".length())));
-                } catch (NumberFormatException ignored) {
+                if (trimmed.startsWith("max-age=")) {
+                    try {
+                        return Duration.ofSeconds(Long.parseLong(trimmed.substring("max-age=".length())));
+                    } catch (NumberFormatException ignored) {
+                    }
                 }
             }
         }

@@ -148,7 +148,7 @@ public class Oid4vpCrossDeviceSseService {
 
         private void register(PendingConnection connection, boolean startScheduler) {
             if (sessionFactory == null) {
-                sendAndClose(connection, "error", "{\"error\":\"sse_unavailable\"}");
+                sendAndCloseError(connection, "error", "sse_unavailable");
                 return;
             }
             pendingConnections
@@ -251,57 +251,7 @@ public class Oid4vpCrossDeviceSseService {
                     Map<String, RealmModel> realmsByName = new ConcurrentHashMap<>();
                     for (Map.Entry<HandleKey, CopyOnWriteArrayList<PendingConnection>> entry :
                             pendingConnections.entrySet()) {
-                        HandleKey handleKey = entry.getKey();
-                        CopyOnWriteArrayList<PendingConnection> listeners = entry.getValue();
-                        if (listeners == null || listeners.isEmpty()) {
-                            pendingConnections.remove(handleKey, listeners);
-                            continue;
-                        }
-
-                        RealmModel realm = realmsByName.computeIfAbsent(
-                                handleKey.realmName(), pollingSession.realms()::getRealmByName);
-                        if (realm == null) {
-                            closeAll(handleKey, listeners, "error", "{\"error\":\"realm_not_found\"}");
-                            continue;
-                        }
-
-                        Map<String, String> signal =
-                                store.get(CROSS_DEVICE_COMPLETE_PREFIX + handleKey.requestHandle());
-                        String completeAuthUrl = signal != null ? signal.get(KEY_COMPLETE_AUTH_URL) : null;
-                        if (completeAuthUrl != null) {
-                            String payload = toJson(Map.of(OAuth2Constants.REDIRECT_URI, completeAuthUrl));
-                            closeAll(handleKey, listeners, "complete", payload);
-                            continue;
-                        }
-
-                        if (isAuthenticationSessionExpired(pollingSession, realm, listeners)) {
-                            closeAll(handleKey, listeners, "expired", "{\"error\":\"authentication_session_expired\"}");
-                            continue;
-                        }
-
-                        List<PendingConnection> expired = new ArrayList<>();
-                        for (PendingConnection listener : listeners) {
-                            if (listener.eventSink().isClosed()) {
-                                expired.add(listener);
-                                continue;
-                            }
-                            if (!now.isBefore(listener.deadline())) {
-                                sendAndClose(listener, "timeout", "{\"error\":\"timeout\"}");
-                                expired.add(listener);
-                                continue;
-                            }
-                            if (!now.isBefore(listener.nextPingAt())) {
-                                if (send(listener, "ping", "{}")) {
-                                    listener.setNextPingAt(now.plusSeconds(listener.pingIntervalSeconds()));
-                                } else {
-                                    expired.add(listener);
-                                }
-                            }
-                        }
-                        listeners.removeAll(expired);
-                        if (listeners.isEmpty()) {
-                            pendingConnections.remove(handleKey, listeners);
-                        }
+                        processPendingConnections(entry, now, pollingSession, store, realmsByName);
                     }
                     pollingSession.getTransactionManager().commit();
                 } catch (Exception e) {
@@ -314,6 +264,76 @@ public class Oid4vpCrossDeviceSseService {
             }
         }
 
+        private void processPendingConnections(
+                Map.Entry<HandleKey, CopyOnWriteArrayList<PendingConnection>> entry,
+                Instant now,
+                KeycloakSession pollingSession,
+                SingleUseObjectProvider store,
+                Map<String, RealmModel> realmsByName) {
+            HandleKey handleKey = entry.getKey();
+            CopyOnWriteArrayList<PendingConnection> listeners = entry.getValue();
+            if (listeners == null || listeners.isEmpty()) {
+                pendingConnections.remove(handleKey, listeners);
+                return;
+            }
+
+            RealmModel realm =
+                    realmsByName.computeIfAbsent(handleKey.realmName(), pollingSession.realms()::getRealmByName);
+            if (realm == null) {
+                closeAllWithError(handleKey, listeners, "error", "realm_not_found");
+                return;
+            }
+
+            if (closeCompletedOrExpiredConnections(handleKey, listeners, pollingSession, realm, store)) {
+                return;
+            }
+
+            purgeClosedOrTimedOutListeners(listeners, now);
+            if (listeners.isEmpty()) {
+                pendingConnections.remove(handleKey, listeners);
+            }
+        }
+
+        private boolean closeCompletedOrExpiredConnections(
+                HandleKey handleKey,
+                CopyOnWriteArrayList<PendingConnection> listeners,
+                KeycloakSession pollingSession,
+                RealmModel realm,
+                SingleUseObjectProvider store) {
+            Map<String, String> signal = store.get(CROSS_DEVICE_COMPLETE_PREFIX + handleKey.requestHandle());
+            String completeAuthUrl = signal != null ? signal.get(KEY_COMPLETE_AUTH_URL) : null;
+            if (completeAuthUrl != null) {
+                closeAllWithJson(
+                        handleKey, listeners, "complete", Map.of(OAuth2Constants.REDIRECT_URI, completeAuthUrl));
+                return true;
+            }
+
+            if (isAuthenticationSessionExpired(pollingSession, realm, listeners)) {
+                closeAllWithError(handleKey, listeners, "expired", "authentication_session_expired");
+                return true;
+            }
+            return false;
+        }
+
+        private void purgeClosedOrTimedOutListeners(CopyOnWriteArrayList<PendingConnection> listeners, Instant now) {
+            List<PendingConnection> expired = new ArrayList<>();
+            for (PendingConnection listener : listeners) {
+                if (listener.eventSink().isClosed()) {
+                    expired.add(listener);
+                } else if (!now.isBefore(listener.deadline())) {
+                    sendAndCloseError(listener, "timeout", "timeout");
+                    expired.add(listener);
+                } else if (!now.isBefore(listener.nextPingAt())) {
+                    if (send(listener, "ping", Map.of())) {
+                        listener.setNextPingAt(now.plusSeconds(listener.pingIntervalSeconds()));
+                    } else {
+                        expired.add(listener);
+                    }
+                }
+            }
+            listeners.removeAll(expired);
+        }
+
         private void closeAll(
                 HandleKey handleKey, CopyOnWriteArrayList<PendingConnection> listeners, String eventType, String data) {
             for (PendingConnection listener : listeners) {
@@ -322,12 +342,36 @@ public class Oid4vpCrossDeviceSseService {
             pendingConnections.remove(handleKey, listeners);
         }
 
+        private void closeAllWithJson(
+                HandleKey handleKey,
+                CopyOnWriteArrayList<PendingConnection> listeners,
+                String eventType,
+                Map<String, ?> payload) {
+            closeAll(handleKey, listeners, eventType, toJson(payload));
+        }
+
+        private void closeAllWithError(
+                HandleKey handleKey,
+                CopyOnWriteArrayList<PendingConnection> listeners,
+                String eventType,
+                String errorCode) {
+            closeAllWithJson(handleKey, listeners, eventType, Map.of("error", errorCode));
+        }
+
         private void sendAndClose(PendingConnection listener, String eventType, String data) {
             send(listener, eventType, data);
             try {
                 listener.eventSink().close();
             } catch (Exception ignored) {
             }
+        }
+
+        private void sendAndCloseError(PendingConnection listener, String eventType, String errorCode) {
+            sendAndClose(listener, eventType, toJson(Map.of("error", errorCode)));
+        }
+
+        private boolean send(PendingConnection listener, String eventType, Map<String, ?> payload) {
+            return send(listener, eventType, toJson(payload));
         }
 
         private boolean send(PendingConnection listener, String eventType, String data) {
@@ -364,7 +408,7 @@ public class Oid4vpCrossDeviceSseService {
             pendingConnections.clear();
         }
 
-        private String toJson(Map<String, String> payload) {
+        private String toJson(Map<String, ?> payload) {
             try {
                 return JsonSerialization.writeValueAsString(payload);
             } catch (Exception e) {

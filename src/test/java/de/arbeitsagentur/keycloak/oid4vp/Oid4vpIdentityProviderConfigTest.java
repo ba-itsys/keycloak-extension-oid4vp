@@ -102,6 +102,22 @@ class Oid4vpIdentityProviderConfigTest {
     }
 
     @Test
+    void haipEnabled_useIdTokenSubject_isForcedFalse() {
+        config.setEnforceHaip(true);
+        config.setUseIdTokenSubject(true);
+
+        assertThat(config.isUseIdTokenSubject()).isFalse();
+    }
+
+    @Test
+    void useIdTokenSubject_respectsConfiguredValueWhenHaipDisabled() {
+        config.setEnforceHaip(false);
+        config.setUseIdTokenSubject(true);
+
+        assertThat(config.isUseIdTokenSubject()).isTrue();
+    }
+
+    @Test
     void haipEnabled_clientIdScheme_overridesToX509Hash() {
         config.setEnforceHaip(true);
         config.setClientIdScheme("x509_san_dns");
