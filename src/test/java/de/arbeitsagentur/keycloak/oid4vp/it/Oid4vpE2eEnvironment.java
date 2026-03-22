@@ -22,8 +22,10 @@ import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import io.github.dominikschlosser.oid4vc.Oid4vcContainer;
+import io.github.dominikschlosser.oid4vc.TrustListIndexEntry;
 import java.io.IOException;
 import java.math.BigInteger;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
@@ -67,6 +69,10 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final DockerImageName WALLET_IMAGE =
             DockerImageName.parse("ghcr.io/dominikschlosser/oid4vc-dev:latest");
+    private static final String PID_PROVIDERS_LOTE_TYPE = "http://uri.etsi.org/19602/LoTEType/EUPIDProvidersList";
+    private static final String DEFAULT_WALLET_INTERNAL_BASE_URL = "http://oid4vc-dev:8085";
+    private static final String ENCRYPTED_WALLET_INTERNAL_BASE_URL = "http://oid4vc-enc:8085";
+    private static final String ISO_WALLET_INTERNAL_BASE_URL = "http://oid4vc-iso:8085";
     private static final String JACOCO_AGENT_VERSION = "0.8.13";
     private static final Path PROVIDER_JAR =
             Path.of("target/keycloak-extension-oid4vp.jar").toAbsolutePath();
@@ -126,20 +132,20 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
                 .withNetwork(network)
                 .withNetworkAliases("oid4vc-dev")
                 .withStatusList()
-                .withBaseUrl("http://oid4vc-dev:8085");
+                .withBaseUrl(DEFAULT_WALLET_INTERNAL_BASE_URL);
         encryptedRequestWallet = new Oid4vcContainer(WALLET_IMAGE)
                 .withHostAccess()
                 .withNetwork(network)
                 .withNetworkAliases("oid4vc-enc")
                 .withStatusList()
-                .withBaseUrl("http://oid4vc-enc:8085")
+                .withBaseUrl(ENCRYPTED_WALLET_INTERNAL_BASE_URL)
                 .withRequireEncryptedRequest();
         isoWallet = new Oid4vcContainer(WALLET_IMAGE)
                 .withHostAccess()
                 .withNetwork(network)
                 .withNetworkAliases("oid4vc-iso")
                 .withStatusList()
-                .withBaseUrl("http://oid4vc-iso:8085")
+                .withBaseUrl(ISO_WALLET_INTERNAL_BASE_URL)
                 .withSessionTranscript("iso");
         wallet.start();
         encryptedRequestWallet.start();
@@ -179,7 +185,7 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
         browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(true));
         adminClient = KeycloakAdminClient.login(OBJECT_MAPPER, keycloakHostUrl, "admin", "admin");
 
-        String trustListUrl = "http://oid4vc-dev:8085/api/trustlist";
+        String trustListUrl = pidTrustListUrl(wallet);
         KeyPair haipCaKeyPair = generateEcKeyPair();
         KeyPair haipLeafKeyPair = generateEcKeyPair();
         X509Certificate haipCaCert = generateCaCert(haipCaKeyPair);
@@ -229,6 +235,14 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
 
     List<Oid4vcContainer> wallets() {
         return List.of(wallet, encryptedRequestWallet, isoWallet);
+    }
+
+    String pidTrustListUrl(Oid4vcContainer walletContainer) {
+        return trustListUrl(walletContainer, PID_PROVIDERS_LOTE_TYPE);
+    }
+
+    String trustListUrl(Oid4vcContainer walletContainer, String loTEType) {
+        return resolveTrustListUrl(walletContainer, loTEType);
     }
 
     public Oid4vpTestCallbackServer callback() {
@@ -415,5 +429,35 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
     private static String toPem(String type, byte[] der) {
         String base64 = Base64.getMimeEncoder(64, "\n".getBytes()).encodeToString(der);
         return "-----BEGIN " + type + "-----\n" + base64 + "\n-----END " + type + "-----";
+    }
+
+    private String resolveTrustListUrl(Oid4vcContainer walletContainer, String loTEType) {
+        TrustListIndexEntry trustList = walletContainer.client().getTrustLists().stream()
+                .filter(entry -> loTEType.equals(entry.loteType()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("No trust list found for LoTE type " + loTEType));
+        return resolveInternalTrustListUrl(walletContainer, trustList);
+    }
+
+    private String resolveInternalTrustListUrl(Oid4vcContainer walletContainer, TrustListIndexEntry trustList) {
+        String internalBaseUrl = internalBaseUrl(walletContainer);
+        String path = trustList.path();
+        if (path != null && !path.isBlank()) {
+            return URI.create(internalBaseUrl).resolve(path).toString();
+        }
+        return internalBaseUrl + "/api/trustlists/" + trustList.id();
+    }
+
+    private String internalBaseUrl(Oid4vcContainer walletContainer) {
+        if (walletContainer == wallet) {
+            return DEFAULT_WALLET_INTERNAL_BASE_URL;
+        }
+        if (walletContainer == encryptedRequestWallet) {
+            return ENCRYPTED_WALLET_INTERNAL_BASE_URL;
+        }
+        if (walletContainer == isoWallet) {
+            return ISO_WALLET_INTERNAL_BASE_URL;
+        }
+        throw new IllegalArgumentException("Unknown wallet container");
     }
 }

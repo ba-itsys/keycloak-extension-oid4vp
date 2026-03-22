@@ -33,6 +33,7 @@ import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
 import java.net.URI;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -277,6 +278,7 @@ class Oid4vpIdentityProviderEndpointTest {
                 flow,
                 nonce,
                 encryptionKeyJson,
-                "thumbprint");
+                "thumbprint",
+                List.of());
     }
 }

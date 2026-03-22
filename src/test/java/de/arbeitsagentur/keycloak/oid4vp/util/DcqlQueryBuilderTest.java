@@ -377,6 +377,29 @@ class DcqlQueryBuilderTest {
     }
 
     @Test
+    void extractCredentialTypes_readsSdJwtAndMdocTypes() {
+        String dcqlQuery = """
+                {
+                  "credentials": [
+                    {
+                      "id": "pid_sd_jwt",
+                      "format": "dc+sd-jwt",
+                      "meta": { "vct_values": ["urn:eudi:pid:de:1", "urn:eudi:pid:eu:1"] }
+                    },
+                    {
+                      "id": "pid_mdoc",
+                      "format": "mso_mdoc",
+                      "meta": { "doctype_value": "eu.europa.ec.eudi.pid.1" }
+                    }
+                  ]
+                }
+                """;
+
+        assertThat(DcqlQueryBuilder.extractCredentialTypes(objectMapper, dcqlQuery))
+                .containsExactly("urn:eudi:pid:de:1", "urn:eudi:pid:eu:1", "eu.europa.ec.eudi.pid.1");
+    }
+
+    @Test
     void aggregateFromMappers_withoutRealm_returnsEmpty() {
         KeycloakSession session = mock(KeycloakSession.class);
         KeycloakContext context = mock(KeycloakContext.class);
@@ -519,8 +542,8 @@ class DcqlQueryBuilderTest {
             }
 
             @Override
-            public boolean isCredentialTypeAllowed(String credentialType) {
-                return true;
+            public String getTrustListLoTEType() {
+                return null;
             }
 
             @Override

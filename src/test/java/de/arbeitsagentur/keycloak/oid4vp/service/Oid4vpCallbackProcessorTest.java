@@ -37,6 +37,7 @@ import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor;
 import java.time.Instant;
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -59,7 +60,8 @@ class Oid4vpCallbackProcessorTest {
                     "same_device",
                     "test-nonce",
                     null,
-                    null);
+                    null,
+                    List.of("IdentityCredential"));
 
     private Oid4vpCallbackProcessor processor;
     private Oid4vpIdentityProviderConfig config;
@@ -76,7 +78,6 @@ class Oid4vpCallbackProcessorTest {
         when(config.getAlias()).thenReturn("oid4vp");
         when(config.isEnabled()).thenReturn(true);
         when(config.isIssuerAllowed(anyString())).thenReturn(true);
-        when(config.isCredentialTypeAllowed(anyString())).thenReturn(true);
         when(config.getUserMappingClaimForFormat(anyString())).thenReturn("sub");
         vpTokenProcessor = mock(VpTokenProcessor.class);
         UserAuthenticationIdentityProvider<?> provider = mock(UserAuthenticationIdentityProvider.class);
@@ -145,17 +146,16 @@ class Oid4vpCallbackProcessorTest {
     }
 
     @Test
-    void process_credentialTypeNotAllowed_throws() throws Exception {
-        when(config.isCredentialTypeAllowed("BadType")).thenReturn(false);
+    void process_credentialTypeNotConfiguredForRequest_throws() throws Exception {
         String vpToken = "vp-token";
         VerifiedCredential credential = new VerifiedCredential(
                 "cred-1", "https://issuer.example", "BadType", Map.of("sub", "user1"), PresentationType.SD_JWT);
         when(vpTokenProcessor.process(vpToken, "test-client", "nonce", "https://example.com/callback", null, null))
                 .thenReturn(new VpTokenResult(Map.of("cred-1", credential), Map.of()));
 
-        assertThatThrownBy(() -> processor.process(requestContext("state", "nonce"), vpToken, null, null))
+        assertThatThrownBy(() -> processor.process(requestContext("state", "nonce", "GoodType"), vpToken, null, null))
                 .isInstanceOf(IdentityBrokerException.class)
-                .hasMessageContaining("Credential type not allowed");
+                .hasMessageContaining("Credential type not trusted by this OID4VP IdP");
     }
 
     @Test
@@ -347,6 +347,11 @@ class Oid4vpCallbackProcessorTest {
     }
 
     private Oid4vpRequestObjectStore.RequestContextEntry requestContext(String state, String nonce) {
+        return requestContext(state, nonce, "IdentityCredential");
+    }
+
+    private Oid4vpRequestObjectStore.RequestContextEntry requestContext(
+            String state, String nonce, String... configuredCredentialTypes) {
         return new Oid4vpRequestObjectStore.RequestContextEntry(
                 "handle-1",
                 "root-session",
@@ -357,6 +362,7 @@ class Oid4vpCallbackProcessorTest {
                 "same_device",
                 nonce,
                 null,
-                null);
+                null,
+                List.of(configuredCredentialTypes));
     }
 }

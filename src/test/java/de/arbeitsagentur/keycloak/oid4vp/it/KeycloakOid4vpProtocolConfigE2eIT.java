@@ -279,7 +279,7 @@ class KeycloakOid4vpProtocolConfigE2eIT extends AbstractOid4vpE2eTest {
         Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient(), Oid4vpE2eEnvironment.REALM);
 
         loginWithSharedWallet(
-                encryptedRequestWallet(), "http://oid4vc-enc:8085/api/trustlist", null, "enc-request-user");
+                encryptedRequestWallet(), env.pidTrustListUrl(encryptedRequestWallet()), null, "enc-request-user");
     }
 
     @Test
@@ -303,8 +303,7 @@ class KeycloakOid4vpProtocolConfigE2eIT extends AbstractOid4vpE2eTest {
                   ]
                 }
                 """;
-        loginWithSharedWallet(
-                isoWallet(), "http://oid4vc-iso:8085/api/trustlist", mdocDcqlQuery, "iso-transcript-user");
+        loginWithSharedWallet(isoWallet(), env.pidTrustListUrl(isoWallet()), mdocDcqlQuery, "iso-transcript-user");
     }
 
     @Test
@@ -316,7 +315,7 @@ class KeycloakOid4vpProtocolConfigE2eIT extends AbstractOid4vpE2eTest {
 
         try {
             idpConfig
-                    .set(Oid4vpIdentityProviderConfig.TRUST_LIST_URL, "http://oid4vc-dev:8085/api/trustlist")
+                    .set(Oid4vpIdentityProviderConfig.TRUST_LIST_URL, env.pidTrustListUrl(wallet()))
                     .set(Oid4vpIdentityProviderConfig.ENFORCE_HAIP, "false")
                     .set(Oid4vpIdentityProviderConfig.DCQL_QUERY, buildDefaultDcqlQuery())
                     .apply();

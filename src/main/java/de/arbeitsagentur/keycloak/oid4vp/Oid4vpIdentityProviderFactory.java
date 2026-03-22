@@ -52,6 +52,7 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
     private static final Map<String, String> RESOLVED_KEY_CACHE = new ConcurrentHashMap<>();
     private static final Set<String> WARNED_UNCHECKED_TRUST_LISTS = ConcurrentHashMap.newKeySet();
     private static final Set<String> WARNED_MISSING_CERTIFICATE_BINDINGS = ConcurrentHashMap.newKeySet();
+    private static final Set<String> WARNED_MISSING_LOTE_TYPES = ConcurrentHashMap.newKeySet();
 
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES;
 
@@ -177,6 +178,14 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
+                .name(Oid4vpIdentityProviderConfig.TRUST_LIST_LOTE_TYPE)
+                .label("Trust List LoTE Type")
+                .helpText("Expected List of Trusted Entities (LoTE) type for this IdP's trust list. "
+                        + "Keep one trust domain per OID4VP IdP instance. "
+                        + "Leave empty only to accept all LoTE types from the configured trust list.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .add()
+                .property()
                 .name(Oid4vpIdentityProviderConfig.TRUSTED_AUTHORITIES_MODE)
                 .label("Trusted Authorities Mode")
                 .helpText("Adds one 'trusted_authorities' constraint type to each credential in the DCQL query. "
@@ -200,8 +209,8 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .property()
                 .name(Oid4vpIdentityProviderConfig.TRUST_LIST_MAX_CACHE_TTL_SECONDS)
                 .label("Trust List Cache TTL (seconds)")
-                .helpText("Maximum time to cache the trust list (overrides JWT expiry if shorter). "
-                        + "Leave empty to use the JWT's own expiration.")
+                .helpText("Maximum time to cache the trust list. "
+                        + "Leave empty to use ETSI NextUpdate and HTTP cache headers.")
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
@@ -270,6 +279,7 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
         resolveX509SigningKey(config);
         validateHaipConfig(config);
         warnIfTrustListSignatureIsUnchecked(config);
+        warnIfTrustListLoTETypeIsMissing(config);
 
         return new Oid4vpIdentityProvider(session, config);
     }
@@ -317,6 +327,18 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                     "OID4VP IdP '%s': trustListUrl is configured but trustListSigningCertPem is empty. "
                             + "The trust list JWT signature will not be verified and fetched trust anchors will be trusted as-is.",
                     config.getAlias());
+        }
+    }
+
+    private static void warnIfTrustListLoTETypeIsMissing(Oid4vpIdentityProviderConfig config) {
+        if (StringUtil.isBlank(config.getTrustListUrl()) || StringUtil.isNotBlank(config.getTrustListLoTEType())) {
+            return;
+        }
+        String warningKey = config.getAlias() + "|" + config.getTrustListUrl();
+        if (WARNED_MISSING_LOTE_TYPES.add(warningKey)) {
+            LOG.warnf(
+                    "OID4VP IdP '%s': trustListLoTEType is empty. All LoTE types from trust list %s will be accepted.",
+                    config.getAlias(), config.getTrustListUrl());
         }
     }
 
