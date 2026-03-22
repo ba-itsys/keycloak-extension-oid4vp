@@ -172,7 +172,7 @@ public class StatusListVerifier {
 
     private void verifyStatusListJwtSignature(String compactJwt, Map<String, Object> claims) throws Exception {
         List<X509Certificate> trustedCerts =
-                trustListProvider != null ? trustListProvider.getTrustedCertificates() : List.of();
+                trustListProvider != null ? trustListProvider.getRevocationCertificates() : List.of();
         if (trustedCerts.isEmpty()) {
             LOG.debugf(
                     "Status list JWT signature not verified: no trusted keys configured (issuer=%s)",

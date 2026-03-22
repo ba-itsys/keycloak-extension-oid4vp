@@ -84,6 +84,25 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
+    void trustListLoTETypeMismatchIsRejected() throws Exception {
+        idpConfig
+                .set(
+                        Oid4vpIdentityProviderConfig.TRUST_LIST_LOTE_TYPE,
+                        "http://uri.etsi.org/19602/LoTEType/EUWalletProvidersList")
+                .apply();
+
+        flow.clearBrowserSession();
+        Oid4vpTestKeycloakSetup.deleteAllOid4vpUsers(adminClient(), Oid4vpE2eEnvironment.REALM);
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        String walletUrl = flow.getSameDeviceWalletUrl();
+        var walletResponse = flow.submitToWallet(walletUrl);
+
+        assertLoginFailed(walletResponse, "trust list", "lote", "mismatch", "authentication");
+    }
+
+    @Test
     void activeCredentialPassesStatusListVerification() throws Exception {
         callback().reset();
         flow.clearBrowserSession();

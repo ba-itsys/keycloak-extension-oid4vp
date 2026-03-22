@@ -25,7 +25,10 @@ import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import de.arbeitsagentur.keycloak.oid4vp.verification.SelfIssuedIdTokenValidator;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
@@ -107,9 +110,7 @@ public class Oid4vpCallbackProcessor {
         if (issuer != null && !configProvider.isIssuerAllowed(issuer)) {
             throw new IdentityBrokerException("Issuer not allowed: " + issuer);
         }
-        if (!configProvider.isCredentialTypeAllowed(credentialType)) {
-            throw new IdentityBrokerException("Credential type not allowed: " + credentialType);
-        }
+        enforceConfiguredCredentialTypes(requestContext, vpResult);
 
         Map<String, Object> claims = Oid4vpMapperUtils.toMutableClaims(
                 vpResult.isMultiCredential() ? vpResult.mergedClaims() : primary.claims());
@@ -179,5 +180,22 @@ public class Oid4vpCallbackProcessor {
                 "OID4VP IdP '%s': generating transient subject for request handle '%s'",
                 idpModel.getAlias(), requestHandle);
         return "transient-" + requestHandle + "-" + UUID.randomUUID();
+    }
+
+    private void enforceConfiguredCredentialTypes(
+            Oid4vpRequestObjectStore.RequestContextEntry requestContext, VpTokenResult vpResult) {
+        Set<String> configuredCredentialTypes = new LinkedHashSet<>(
+                requestContext != null && requestContext.configuredCredentialTypes() != null
+                        ? requestContext.configuredCredentialTypes()
+                        : List.of());
+        if (configuredCredentialTypes.isEmpty()) {
+            return;
+        }
+        for (VerifiedCredential credential : vpResult.credentials().values()) {
+            String credentialType = credential.credentialType();
+            if (credentialType == null || !configuredCredentialTypes.contains(credentialType)) {
+                throw new IdentityBrokerException("Credential type not trusted by this OID4VP IdP: " + credentialType);
+            }
+        }
     }
 }

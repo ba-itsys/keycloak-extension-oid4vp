@@ -29,6 +29,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import de.arbeitsagentur.keycloak.oid4vp.domain.PreparedDcqlQuery;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperConfigProperties;
 import jakarta.ws.rs.core.MultivaluedHashMap;
 import jakarta.ws.rs.core.Response;
@@ -166,6 +167,27 @@ class Oid4vpIdentityProviderTest {
     }
 
     @Test
+    void prepareDcqlQueryFromConfig_manualQuery_extractsConfiguredCredentialTypesFromNormalizedQuery() {
+        config.setDcqlQuery("""
+                {
+                  "credentials": [
+                    {
+                      "id": "pid",
+                      "format": "dc+sd-jwt",
+                      "claims": [
+                        { "path": ["given_name"] }
+                      ]
+                    }
+                  ]
+                }
+                """);
+
+        PreparedDcqlQuery prepared = provider.prepareDcqlQueryFromConfig();
+
+        assertThat(prepared.configuredCredentialTypes()).containsExactly("pid");
+    }
+
+    @Test
     void buildDcqlQueryFromConfig_manualQueryWithoutTrustedAuthoritiesFlags_doesNotInjectThem() throws Exception {
         config.setDcqlQuery("""
                 {
@@ -208,6 +230,29 @@ class Oid4vpIdentityProviderTest {
         List<Map<String, Object>> claims = (List<Map<String, Object>>) credential.get("claims");
 
         assertThat(claims).extracting(claim -> claim.get("path")).containsExactly(List.of("given_name"));
+    }
+
+    @Test
+    void prepareDcqlQueryFromConfig_mapperGeneratedQuery_usesMapperTypesWithoutParsingBuiltJson() {
+        IdentityProviderMapperModel sdJwtMapper = new IdentityProviderMapperModel();
+        sdJwtMapper.setConfig(new LinkedHashMap<>());
+        sdJwtMapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_TYPE, "IdentityCredential");
+        sdJwtMapper.getConfig().put(Oid4vpMapperConfigProperties.CLAIM_PATH, "given_name");
+
+        IdentityProviderMapperModel mdocMapper = new IdentityProviderMapperModel();
+        mdocMapper.setConfig(new LinkedHashMap<>());
+        mdocMapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_FORMAT, "mso_mdoc");
+        mdocMapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_TYPE, "eu.europa.ec.eudi.pid.1");
+        mdocMapper.getConfig().put(Oid4vpMapperConfigProperties.CLAIM_PATH, "family_name");
+
+        when(realm.getIdentityProviderMappersByAliasStream("oid4vp"))
+                .thenReturn(java.util.stream.Stream.of(sdJwtMapper, mdocMapper));
+
+        PreparedDcqlQuery prepared = provider.prepareDcqlQueryFromConfig();
+
+        assertThat(prepared.dcqlQuery()).contains("\"credentials\"");
+        assertThat(prepared.configuredCredentialTypes())
+                .containsExactly("IdentityCredential", "eu.europa.ec.eudi.pid.1");
     }
 
     @Test

@@ -22,6 +22,7 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpClientIdScheme;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
+import de.arbeitsagentur.keycloak.oid4vp.domain.PreparedDcqlQuery;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpCallbackProcessor;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpRedirectFlowService;
 import de.arbeitsagentur.keycloak.oid4vp.util.DcqlQueryBuilder;
@@ -36,9 +37,11 @@ import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.jboss.logging.Logger;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
@@ -97,7 +100,8 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                         config.getClockSkewSeconds(),
                         config.getKbJwtMaxAgeSeconds(),
                         trustListSigningCerts,
-                        config.getTrustListMaxStaleAge()));
+                        config.getTrustListMaxStaleAge(),
+                        config.getTrustListLoTEType()));
 
         RealmModel realm = session.getContext().getRealm();
         int loginTimeoutSeconds = realm != null ? realm.getAccessCodeLifespanLogin() : DEFAULT_LOGIN_TIMEOUT_SECONDS;
@@ -144,20 +148,26 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     }
 
     public String buildDcqlQueryFromConfig() {
+        return prepareDcqlQueryFromConfig().dcqlQuery();
+    }
+
+    public PreparedDcqlQuery prepareDcqlQueryFromConfig() {
         String manual = getConfig().getDcqlQuery();
         if (StringUtil.isNotBlank(manual)) {
-            return DcqlQueryBuilder.normalizeManualQuery(
+            String normalized = DcqlQueryBuilder.normalizeManualQuery(
                     OBJECT_MAPPER,
                     manual,
                     getConfig().getTrustedAuthoritiesMode(),
                     getConfig().getTrustListUrl(),
                     resolveAuthorityKeyIdentifiers());
+            return new PreparedDcqlQuery(
+                    normalized, DcqlQueryBuilder.extractCredentialTypes(OBJECT_MAPPER, normalized));
         }
 
         Map<String, CredentialTypeSpec> credentialTypes = DcqlQueryBuilder.aggregateFromMappers(session, getConfig());
 
         if (!credentialTypes.isEmpty()) {
-            return DcqlQueryBuilder.fromMapperSpecs(
+            String dcqlQuery = DcqlQueryBuilder.fromMapperSpecs(
                             OBJECT_MAPPER,
                             credentialTypes,
                             getConfig().isAllCredentialsRequired(),
@@ -166,6 +176,11 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                             getConfig().getTrustListUrl(),
                             resolveAuthorityKeyIdentifiers())
                     .build();
+            List<String> configuredCredentialTypes = credentialTypes.values().stream()
+                    .map(CredentialTypeSpec::type)
+                    .filter(StringUtil::isNotBlank)
+                    .collect(Collectors.collectingAndThen(Collectors.toCollection(LinkedHashSet::new), List::copyOf));
+            return new PreparedDcqlQuery(dcqlQuery, configuredCredentialTypes);
         }
 
         throw new IdentityBrokerException(

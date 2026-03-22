@@ -21,6 +21,7 @@ import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProvider;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpResponseMode;
+import de.arbeitsagentur.keycloak.oid4vp.domain.PreparedDcqlQuery;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestObjectParams;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SignedRequestObject;
 import de.arbeitsagentur.keycloak.oid4vp.domain.WalletMetadata;
@@ -28,6 +29,7 @@ import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectEncryptor;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import jakarta.ws.rs.core.Response;
+import java.util.List;
 import java.util.UUID;
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
@@ -84,7 +86,9 @@ public class Oid4vpRequestObjectService {
         try {
             Oid4vpIdentityProviderConfig config = provider.getConfig();
             Oid4vpResponseMode responseMode = config.getResolvedResponseMode();
-            requestContext = createRequestContext(requestHandle, flowContext, responseMode);
+            PreparedDcqlQuery preparedDcqlQuery = provider.prepareDcqlQueryFromConfig();
+            requestContext = createRequestContext(
+                    requestHandle, flowContext, responseMode, preparedDcqlQuery.configuredCredentialTypes());
             requestObjectStore.storeRequestContext(session, requestContext);
             String kid = Oid4vpRequestObjectStore.extractKidFromJwk(requestContext.encryptionKeyJson());
             if (kid != null) {
@@ -93,7 +97,7 @@ public class Oid4vpRequestObjectService {
 
             SignedRequestObject signedRequest = provider.getRedirectFlowService()
                     .buildSignedRequestObject(new RequestObjectParams(
-                            provider.buildDcqlQueryFromConfig(),
+                            preparedDcqlQuery.dcqlQuery(),
                             config.getVerifierInfo(),
                             requestContext.effectiveClientId(),
                             config.getClientIdScheme(),
@@ -143,7 +147,8 @@ public class Oid4vpRequestObjectService {
     private Oid4vpRequestObjectStore.RequestContextEntry createRequestContext(
             String requestHandle,
             Oid4vpRequestObjectStore.FlowContextEntry flowContext,
-            Oid4vpResponseMode responseMode) {
+            Oid4vpResponseMode responseMode,
+            List<String> configuredCredentialTypes) {
         String state = buildRequestState(flowContext.tabId());
         String nonce = UUID.randomUUID().toString();
         String encryptionKeyJson = null;
@@ -163,7 +168,8 @@ public class Oid4vpRequestObjectService {
                 flowContext.flow(),
                 nonce,
                 encryptionKeyJson,
-                encryptionJwkThumbprint);
+                encryptionJwkThumbprint,
+                configuredCredentialTypes);
     }
 
     private String buildRequestState(String tabId) {

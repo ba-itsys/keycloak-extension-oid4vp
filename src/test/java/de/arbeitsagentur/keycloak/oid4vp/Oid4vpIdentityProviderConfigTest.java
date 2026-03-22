@@ -57,31 +57,6 @@ class Oid4vpIdentityProviderConfigTest {
     }
 
     @Test
-    void isCredentialTypeAllowed_wildcard_allowsAll() {
-        config.setAllowedCredentialTypes("*");
-        assertThat(config.isCredentialTypeAllowed("AnyType")).isTrue();
-    }
-
-    @Test
-    void isCredentialTypeAllowed_empty_allowsAll() {
-        assertThat(config.isCredentialTypeAllowed("AnyType")).isTrue();
-    }
-
-    @Test
-    void isCredentialTypeAllowed_specificList_matchesExact() {
-        config.setAllowedCredentialTypes("IdentityCredential,mDL");
-        assertThat(config.isCredentialTypeAllowed("IdentityCredential")).isTrue();
-        assertThat(config.isCredentialTypeAllowed("mDL")).isTrue();
-        assertThat(config.isCredentialTypeAllowed("Other")).isFalse();
-    }
-
-    @Test
-    void isCredentialTypeAllowed_nullType_notAllowed() {
-        config.setAllowedCredentialTypes("IdentityCredential");
-        assertThat(config.isCredentialTypeAllowed(null)).isFalse();
-    }
-
-    @Test
     void defaultValues() {
         assertThat(config.getUserMappingClaim()).isEqualTo("sub");
         assertThat(config.getClientIdScheme()).isEqualTo("x509_hash");
@@ -284,6 +259,17 @@ class Oid4vpIdentityProviderConfigTest {
     void trustedAuthoritiesMode_invalidFallsBackToNone() {
         config.setTrustedAuthoritiesMode("bogus");
         assertThat(config.getTrustedAuthoritiesMode()).isEqualTo(Oid4vpTrustedAuthoritiesMode.NONE);
+    }
+
+    @Test
+    void trustListLoTEType_defaultsToEmpty() {
+        assertThat(config.getTrustListLoTEType()).isNull();
+    }
+
+    @Test
+    void trustListLoTEType_readsConfiguredValue() {
+        config.setTrustListLoTEType("http://uri.etsi.org/19602/LoTEType/EUWalletProvidersList");
+        assertThat(config.getTrustListLoTEType()).isEqualTo("http://uri.etsi.org/19602/LoTEType/EUWalletProvidersList");
     }
 
     @Test

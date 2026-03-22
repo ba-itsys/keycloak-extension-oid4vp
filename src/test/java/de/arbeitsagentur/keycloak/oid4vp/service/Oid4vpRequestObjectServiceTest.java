@@ -29,6 +29,7 @@ import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProvider;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpResponseMode;
+import de.arbeitsagentur.keycloak.oid4vp.domain.PreparedDcqlQuery;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestObjectParams;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SignedRequestObject;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
@@ -68,7 +69,8 @@ class Oid4vpRequestObjectServiceTest {
         when(config.getResolvedResponseMode()).thenReturn(Oid4vpResponseMode.DIRECT_POST_JWT);
         when(config.isUseIdTokenSubject()).thenReturn(false);
         when(provider.getConfig()).thenReturn(config);
-        when(provider.buildDcqlQueryFromConfig()).thenReturn("{\"credentials\":[]}");
+        when(provider.prepareDcqlQueryFromConfig())
+                .thenReturn(new PreparedDcqlQuery("{\"credentials\":[]}", List.of()));
         redirectFlowService = mock(Oid4vpRedirectFlowService.class);
         when(provider.getRedirectFlowService()).thenReturn(redirectFlowService);
 

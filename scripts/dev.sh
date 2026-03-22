@@ -117,7 +117,7 @@ if [ "$DO_REALM" = "true" ]; then
   fi
   TRUST_LIST_ARGS=""
   if [ "$LOCAL_WALLET" = "true" ]; then
-    TRUST_LIST_ARGS="http://host.docker.internal:$WALLET_PORT/api/trustlist"
+    TRUST_LIST_ARGS="http://host.docker.internal:$WALLET_PORT/api/trustlists/pid"
   fi
   "$ROOT_DIR/scripts/setup-local-realm.sh" "$PEM_FILE" "$VERIFIER_INFO" $TRUST_LIST_ARGS
 else
@@ -158,7 +158,7 @@ if [ "$LOCAL_WALLET" = "true" ]; then
   # Give the wallet a moment to start
   sleep 1
   echo "    Wallet UI: http://localhost:$WALLET_PORT"
-  echo "    Trust list: http://localhost:$WALLET_PORT/api/trustlist"
+  echo "    Trust list: http://localhost:$WALLET_PORT/api/trustlists/pid"
 fi
 
 PROXY_OVERRIDE=""

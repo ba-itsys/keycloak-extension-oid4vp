@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -84,7 +85,8 @@ class Oid4vpAuthSessionResolverTest {
                         "same_device",
                         "nonce",
                         null,
-                        null));
+                        null,
+                        List.of()));
 
         AuthenticationSessionModel resolved = resolver.resolveFromStore("tab-1.random", null);
 
@@ -137,6 +139,7 @@ class Oid4vpAuthSessionResolverTest {
                 "same_device",
                 "nonce",
                 null,
-                null);
+                null,
+                List.of());
     }
 }

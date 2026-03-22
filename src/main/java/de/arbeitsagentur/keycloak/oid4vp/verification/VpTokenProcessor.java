@@ -52,6 +52,7 @@ public class VpTokenProcessor {
     private final StatusListVerifier statusListVerifier;
     private final ObjectMapper objectMapper;
     private final TrustListProvider trustListProvider;
+    private final String expectedTrustListLoTEType;
 
     public VpTokenProcessor(
             ObjectMapper objectMapper,
@@ -120,6 +121,34 @@ public class VpTokenProcessor {
             int kbJwtMaxAgeSeconds,
             List<X509Certificate> trustListSigningCerts,
             Duration trustListMaxStaleAge) {
+        this(
+                objectMapper,
+                session,
+                trustListUrl,
+                statusListMaxCacheTtl,
+                trustListMaxCacheTtl,
+                issuerMetadataMaxCacheTtl,
+                strictX5cVerification,
+                clockSkewSeconds,
+                kbJwtMaxAgeSeconds,
+                trustListSigningCerts,
+                trustListMaxStaleAge,
+                null);
+    }
+
+    public VpTokenProcessor(
+            ObjectMapper objectMapper,
+            KeycloakSession session,
+            String trustListUrl,
+            Duration statusListMaxCacheTtl,
+            Duration trustListMaxCacheTtl,
+            Duration issuerMetadataMaxCacheTtl,
+            boolean strictX5cVerification,
+            int clockSkewSeconds,
+            int kbJwtMaxAgeSeconds,
+            List<X509Certificate> trustListSigningCerts,
+            Duration trustListMaxStaleAge,
+            String expectedTrustListLoTEType) {
         this.sdJwtVerifier = new SdJwtVerifier(
                 clockSkewSeconds,
                 kbJwtMaxAgeSeconds,
@@ -130,6 +159,7 @@ public class VpTokenProcessor {
                 session, trustListUrl, trustListMaxCacheTtl, trustListMaxStaleAge, trustListSigningCerts);
         this.statusListVerifier = new StatusListVerifier(session, this.trustListProvider, statusListMaxCacheTtl);
         this.objectMapper = objectMapper;
+        this.expectedTrustListLoTEType = expectedTrustListLoTEType;
     }
 
     public VpTokenProcessor(ObjectMapper objectMapper, StatusListVerifier statusListVerifier) {
@@ -145,6 +175,7 @@ public class VpTokenProcessor {
         this.statusListVerifier = statusListVerifier;
         this.trustListProvider = trustListProvider;
         this.objectMapper = objectMapper;
+        this.expectedTrustListLoTEType = null;
     }
 
     /** @see #process(String, String, String, String, String, String) */
@@ -180,7 +211,8 @@ public class VpTokenProcessor {
             String mdocGeneratedNonce,
             String encryptionJwkThumbprint) {
         List<X509Certificate> trustedCerts =
-                trustListProvider != null ? trustListProvider.getTrustedCertificates() : List.of();
+                trustListProvider != null ? trustListProvider.getIssuanceCertificates() : List.of();
+        validateTrustListLoTEType();
         LOG.debugf("Trust list provides %d trusted keys", trustedCerts.size());
 
         try {
@@ -337,6 +369,20 @@ public class VpTokenProcessor {
         } catch (Exception e) {
             LOG.warnf("Failed to decode JWK thumbprint: %s", e.getMessage());
             return null;
+        }
+    }
+
+    private void validateTrustListLoTEType() {
+        if (trustListProvider == null || StringUtil.isBlank(expectedTrustListLoTEType)) {
+            return;
+        }
+        String actualLoTEType = trustListProvider.getCurrentLoTEType();
+        if (StringUtil.isBlank(actualLoTEType)) {
+            return;
+        }
+        if (!expectedTrustListLoTEType.equals(actualLoTEType)) {
+            throw new IdentityBrokerException("Trust list LoTE type mismatch: expected " + expectedTrustListLoTEType
+                    + " but got " + actualLoTEType);
         }
     }
 
