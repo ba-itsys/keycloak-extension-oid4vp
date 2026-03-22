@@ -28,7 +28,7 @@ public interface Oid4vpConfigProvider {
 
     boolean isIssuerAllowed(String issuer);
 
-    boolean isCredentialTypeAllowed(String credentialType);
+    String getTrustListLoTEType();
 
     String getUserMappingClaimForFormat(String format);
 

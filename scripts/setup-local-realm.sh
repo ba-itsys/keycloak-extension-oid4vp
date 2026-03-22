@@ -218,7 +218,7 @@ cat > "$REALM_OUT" <<REALMEOF
         "walletScheme": "openid4vp://",
         "userMappingClaim": "family_name",
         "userMappingClaimMdoc": "family_name",
-        "allowedCredentialTypes": "urn:eudi:pid:de:1,eu.europa.ec.eudi.pid.1",
+        "trustListLoTEType": "http://uri.etsi.org/19602/LoTEType/EUPIDProvidersList",
         "x509CertificatePem": "${PEM_CONTENT}",
         "verifierInfo": "${VERIFIER_INFO_CONTENT}"
       }

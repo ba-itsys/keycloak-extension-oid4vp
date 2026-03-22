@@ -124,6 +124,7 @@ Oid4vpCallbackProcessor.process(requestContext, vpToken, idToken, mdocGeneratedN
 This:
 - Validates that a request context was resolved for the callback
 - Reads `clientId`, `nonce`, `responseUri`, and `encryptionJwkThumbprint` from that request context
+- Reads the request-scoped configured credential types captured when the request object was created
 - Passes `mdocGeneratedNonce` from the decrypted callback payload when present
 - Calls `VpTokenProcessor.process(vpToken, clientId, nonce, responseUri, mdocGeneratedNonce, encryptionJwkThumbprint)`:
   - SD-JWT: `SdJwtVerifier.verify()` — delegates to Keycloak's `SdJwtVP.verify()` which performs:
@@ -140,7 +141,9 @@ This:
     - **OID4VP 1.0** (Appendix B.3.2.2): `[null, null, ["OpenID4VPHandover", SHA-256(CBOR([client_id, nonce, jwk_thumbprint, response_uri]))]]` — the `jwk_thumbprint` is the RFC 7638 SHA-256 thumbprint of the HAIP encryption key from `client_metadata.jwks`, stored in the request context when the request object is created
     - **ISO 18013-7** (Annex B.4.4): `[null, null, [SHA-256(CBOR([client_id, mdoc_generated_nonce])), SHA-256(CBOR([response_uri, mdoc_generated_nonce])), nonce]]` — used as a fallback when `mdocGeneratedNonce` is present (extracted from JWE `apu` header) and the OID4VP 1.0 transcript does not verify
   - Checks revocation via `StatusListVerifier`
+  - Validates the fetched trust list's `LoTEType` against the IdP's configured trust domain
 - Validates issuer is allowed, credential type is allowed
+- Rejects credentials whose `vct` / `docType` was not explicitly requested by this IdP's DCQL query
 - Maps claims to `BrokeredIdentityContext`
 
 9. **Stores deferred auth and returns redirect** — calls:
@@ -239,5 +242,8 @@ Errors can occur at multiple points:
 ## Configuration Notes
 
 - `trustedAuthoritiesMode` is explicit verifier policy. `none` is the default, `etsi_tl` adds the trust-list URL to DCQL, and `aki` adds extension-derived certificate key identifiers from the trust list.
+- If `trustListLoTEType` is configured, the fetched trust list must match this `LoTEType`, which keeps one OID4VP IdP instance bound to one trust domain. If it is empty, all LoTE types are accepted and a warning is logged.
+- Within an accepted trust list, issuer verification uses certificates from `.../SvcType/.../Issuance` services only, while status-list verification uses `.../SvcType/.../Revocation` services only.
+- The verifier trusts only the credential types it explicitly requested for that IdP.
 - If `trustListSigningCertPem` is not configured, the trust-list JWT signature is not verified and the fetched trust list is trusted as-is. The code warns about that configuration but does not fail startup.
 - When HAIP is enabled with `x509_hash`, the configured verifier certificate PEM is used for client ID derivation and request-object signing metadata. A full CA-issued chain is validated when present; a single non-self-signed leaf is also accepted, in which case issuer trust is expected to come from configured trust lists.

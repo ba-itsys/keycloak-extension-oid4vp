@@ -58,9 +58,9 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final String TRUST_LIST_URL = "trustListUrl";
     public static final String TRUST_LIST_SIGNING_CERT_PEM = "trustListSigningCertPem";
     public static final String TRUSTED_AUTHORITIES_MODE = "trustedAuthoritiesMode";
+    public static final String TRUST_LIST_LOTE_TYPE = "trustListLoTEType";
 
     public static final String ALLOWED_ISSUERS = "allowedIssuers";
-    public static final String ALLOWED_CREDENTIAL_TYPES = "allowedCredentialTypes";
 
     public static final String STATUS_LIST_MAX_CACHE_TTL_SECONDS = "statusListMaxCacheTtlSeconds";
     public static final String TRUST_LIST_MAX_CACHE_TTL_SECONDS = "trustListMaxCacheTtlSeconds";
@@ -249,6 +249,15 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         getConfig().put(TRUSTED_AUTHORITIES_MODE, mode);
     }
 
+    @Override
+    public String getTrustListLoTEType() {
+        return getConfig().get(TRUST_LIST_LOTE_TYPE);
+    }
+
+    public void setTrustListLoTEType(String value) {
+        getConfig().put(TRUST_LIST_LOTE_TYPE, value);
+    }
+
     public boolean isEnforceHaip() {
         return getBoolConfig(ENFORCE_HAIP, true);
     }
@@ -282,20 +291,8 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         getConfig().put(ALLOWED_ISSUERS, issuers);
     }
 
-    public String getAllowedCredentialTypes() {
-        return getConfig().get(ALLOWED_CREDENTIAL_TYPES);
-    }
-
-    public void setAllowedCredentialTypes(String types) {
-        getConfig().put(ALLOWED_CREDENTIAL_TYPES, types);
-    }
-
     public boolean isIssuerAllowed(String issuer) {
         return isValueAllowed(issuer, getAllowedIssuers());
-    }
-
-    public boolean isCredentialTypeAllowed(String credentialType) {
-        return isValueAllowed(credentialType, getAllowedCredentialTypes());
     }
 
     public Duration getStatusListMaxCacheTtl() {

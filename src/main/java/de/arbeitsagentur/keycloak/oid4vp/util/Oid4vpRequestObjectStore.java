@@ -17,11 +17,13 @@ package de.arbeitsagentur.keycloak.oid4vp.util;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import org.jboss.logging.Logger;
 import org.keycloak.jose.jwk.JWK;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.SingleUseObjectProvider;
+import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 
 /**
@@ -61,6 +63,7 @@ public class Oid4vpRequestObjectStore {
     private static final String KEY_NONCE = "nonce";
     private static final String KEY_ENCRYPTION_KEY_JSON = "encryptionKeyJson";
     private static final String KEY_ENCRYPTION_JWK_THUMBPRINT = "encryptionJwkThumbprint";
+    private static final String KEY_CONFIGURED_CREDENTIAL_TYPES_JSON = "configuredCredentialTypesJson";
     private static final String KEY_STATE = "state";
     private static final String KEY_KID = JWK.KEY_ID;
     private final Duration ttl;
@@ -82,7 +85,8 @@ public class Oid4vpRequestObjectStore {
             String flow,
             String nonce,
             String encryptionKeyJson,
-            String encryptionJwkThumbprint) {}
+            String encryptionJwkThumbprint,
+            List<String> configuredCredentialTypes) {}
 
     /** Stores a request handle → stable flow context mapping. Called when the login page is rendered. */
     public void storeFlowHandle(KeycloakSession session, String requestHandle, FlowContextEntry entry) {
@@ -123,6 +127,8 @@ public class Oid4vpRequestObjectStore {
                                 emptyIfNull(entry.encryptionKeyJson()),
                                 KEY_ENCRYPTION_JWK_THUMBPRINT,
                                 emptyIfNull(entry.encryptionJwkThumbprint()),
+                                KEY_CONFIGURED_CREDENTIAL_TYPES_JSON,
+                                serializeCredentialTypes(entry.configuredCredentialTypes()),
                                 KEY_KID,
                                 emptyIfNull(extractKidFromJwk(entry.encryptionKeyJson()))));
     }
@@ -165,7 +171,8 @@ public class Oid4vpRequestObjectStore {
                 flowContext.flow(),
                 blankToNull(entry.get(KEY_NONCE)),
                 blankToNull(entry.get(KEY_ENCRYPTION_KEY_JSON)),
-                blankToNull(entry.get(KEY_ENCRYPTION_JWK_THUMBPRINT)));
+                blankToNull(entry.get(KEY_ENCRYPTION_JWK_THUMBPRINT)),
+                deserializeCredentialTypes(entry.get(KEY_CONFIGURED_CREDENTIAL_TYPES_JSON)));
     }
 
     public RequestContextEntry resolveByKid(KeycloakSession session, String kid) {
@@ -217,5 +224,24 @@ public class Oid4vpRequestObjectStore {
 
     private static String blankToNull(String value) {
         return StringUtil.isBlank(value) ? null : value;
+    }
+
+    private static String serializeCredentialTypes(List<String> credentialTypes) {
+        try {
+            return JsonSerialization.writeValueAsString(credentialTypes != null ? credentialTypes : List.of());
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to serialize configured credential types", e);
+        }
+    }
+
+    private static List<String> deserializeCredentialTypes(String value) {
+        if (StringUtil.isBlank(value)) {
+            return List.of();
+        }
+        try {
+            return JsonSerialization.readValue(value, List.class);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to deserialize configured credential types", e);
+        }
     }
 }

@@ -39,6 +39,7 @@ public final class Oid4vpTestKeycloakSetup {
             String userMappingClaim,
             String userMappingClaimMdoc,
             String trustListUrl,
+            String trustListLoTEType,
             List<IdpMapperConfig> mappers) {
 
         public Oid4vpIdentityProviderSpec {
@@ -57,6 +58,7 @@ public final class Oid4vpTestKeycloakSetup {
                     "family_name",
                     "eu.europa.ec.eudi.pid.1/family_name",
                     trustListUrl,
+                    null,
                     List.of(new IdpMapperConfig(
                             "credential-family-name-session",
                             "oid4vp-user-session-mapper",
@@ -146,6 +148,9 @@ public final class Oid4vpTestKeycloakSetup {
         config.put(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM, spec.userMappingClaim());
         config.put(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM_MDOC, spec.userMappingClaimMdoc());
         config.put(Oid4vpIdentityProviderConfig.TRUST_LIST_URL, spec.trustListUrl());
+        if (spec.trustListLoTEType() != null) {
+            config.put(Oid4vpIdentityProviderConfig.TRUST_LIST_LOTE_TYPE, spec.trustListLoTEType());
+        }
         config.put(Oid4vpIdentityProviderConfig.TRUSTED_AUTHORITIES_MODE, "none");
         config.put(Oid4vpIdentityProviderConfig.STATUS_LIST_MAX_CACHE_TTL_SECONDS, "0");
         config.put(Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM, spec.x509CertPem());

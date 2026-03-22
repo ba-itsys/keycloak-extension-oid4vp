@@ -28,6 +28,7 @@ import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
@@ -77,7 +78,8 @@ class Oid4vpRequestObjectStoreTest {
                 "same_device",
                 "nonce-1",
                 KEY_JSON_1,
-                "thumbprint-1");
+                "thumbprint-1",
+                List.of());
 
         store.storeFlowHandle(session, "handle-1", flowContext);
         store.storeRequestContext(session, requestContext);
@@ -102,7 +104,8 @@ class Oid4vpRequestObjectStoreTest {
                 "same_device",
                 "nonce-1",
                 KEY_JSON_1,
-                "thumbprint-1");
+                "thumbprint-1",
+                List.of());
         Oid4vpRequestObjectStore.RequestContextEntry secondRequest = new Oid4vpRequestObjectStore.RequestContextEntry(
                 "handle-1",
                 "root-session",
@@ -113,7 +116,8 @@ class Oid4vpRequestObjectStoreTest {
                 "same_device",
                 "nonce-2",
                 KEY_JSON_2,
-                "thumbprint-2");
+                "thumbprint-2",
+                List.of());
 
         store.storeFlowHandle(session, "handle-1", flowContext);
         store.storeRequestContext(session, firstRequest);
@@ -151,7 +155,8 @@ class Oid4vpRequestObjectStoreTest {
                 "same_device",
                 "nonce-1",
                 KEY_JSON_1,
-                "thumbprint-1");
+                "thumbprint-1",
+                List.of());
         Oid4vpRequestObjectStore.RequestContextEntry secondRequest = new Oid4vpRequestObjectStore.RequestContextEntry(
                 "handle-1",
                 "root-session",
@@ -162,7 +167,8 @@ class Oid4vpRequestObjectStoreTest {
                 "same_device",
                 "nonce-2",
                 KEY_JSON_2,
-                "thumbprint-2");
+                "thumbprint-2",
+                List.of());
 
         store.storeFlowHandle(session, "handle-1", flowContext);
         store.storeRequestContext(session, firstRequest);
@@ -192,7 +198,8 @@ class Oid4vpRequestObjectStoreTest {
                 "same_device",
                 "nonce-1",
                 KEY_JSON_1,
-                "thumbprint-1");
+                "thumbprint-1",
+                List.of());
 
         store.storeRequestContext(session, requestContext);
         store.storeKidIndex(session, "kid-1", requestContext.state());
@@ -224,7 +231,8 @@ class Oid4vpRequestObjectStoreTest {
                 "same_device",
                 "nonce-1",
                 KEY_JSON_1,
-                "thumbprint-1");
+                "thumbprint-1",
+                List.of());
 
         store.storeFlowHandle(session, "handle-1", flowContext);
         store.storeRequestContext(session, requestContext);
@@ -250,7 +258,8 @@ class Oid4vpRequestObjectStoreTest {
                 "same_device",
                 "nonce-1",
                 KEY_JSON_1,
-                "thumbprint-1");
+                "thumbprint-1",
+                List.of());
         Oid4vpRequestObjectStore.RequestContextEntry secondRequest = new Oid4vpRequestObjectStore.RequestContextEntry(
                 "handle-1",
                 "root-session",
@@ -261,7 +270,8 @@ class Oid4vpRequestObjectStoreTest {
                 "same_device",
                 "nonce-2",
                 KEY_JSON_2,
-                "thumbprint-2");
+                "thumbprint-2",
+                List.of());
 
         store.storeFlowHandle(session, "handle-1", flowContext);
         store.storeRequestContext(session, firstRequest);

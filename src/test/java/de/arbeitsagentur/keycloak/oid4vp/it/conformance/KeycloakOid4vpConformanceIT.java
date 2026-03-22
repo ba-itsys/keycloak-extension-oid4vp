@@ -245,6 +245,7 @@ class KeycloakOid4vpConformanceIT {
                         scenario.credentialProfile().userMappingClaim(),
                         scenario.credentialProfile().userMappingClaimMdoc(),
                         trustListUrl,
+                        null,
                         scenario.credentialProfile().mappers()));
         return alias;
     }

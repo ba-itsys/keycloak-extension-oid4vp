@@ -17,6 +17,8 @@ package de.arbeitsagentur.keycloak.oid4vp.util;
 
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.arbeitsagentur.keycloak.oid4vp.domain.ClaimSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
@@ -24,6 +26,7 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import org.jboss.logging.Logger;
@@ -320,6 +323,38 @@ public class DcqlQueryBuilder {
         return result;
     }
 
+    /** Extracts the effective credential type identifiers from a DCQL query. */
+    public static List<String> extractCredentialTypes(ObjectMapper objectMapper, String dcqlQuery) {
+        if (StringUtil.isBlank(dcqlQuery)) {
+            return List.of();
+        }
+        try {
+            DcqlQuery dcql = objectMapper.readValue(dcqlQuery, DcqlQuery.class);
+            LinkedHashSet<String> types = new LinkedHashSet<>();
+            for (DcqlCredential credential : dcql.credentials()) {
+                if (credential == null || credential.meta() == null || StringUtil.isBlank(credential.format())) {
+                    continue;
+                }
+                if (FORMAT_SD_JWT_VC.equals(credential.format())) {
+                    for (String type : credential.meta().vctValues()) {
+                        if (StringUtil.isNotBlank(type)) {
+                            types.add(type);
+                        }
+                    }
+                } else if (FORMAT_MSO_MDOC.equals(credential.format())) {
+                    String type = credential.meta().doctypeValue();
+                    if (StringUtil.isNotBlank(type)) {
+                        types.add(type);
+                    }
+                }
+            }
+            return List.copyOf(types);
+        } catch (Exception e) {
+            LOG.warnf("Failed to extract credential types from DCQL query: %s", e.getMessage());
+            return List.of();
+        }
+    }
+
     private Map<String, Object> buildCredentialEntry(CredentialTypeSpec typeSpec, String credId) {
         Map<String, Object> credential = new LinkedHashMap<>();
         credential.put(DCQL_ID, credId);
@@ -407,4 +442,25 @@ public class DcqlQueryBuilder {
     }
 
     private record CredentialTypeKey(String format, String type) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record DcqlQuery(@JsonProperty(DCQL_CREDENTIALS) List<DcqlCredential> credentials) {
+        private DcqlQuery {
+            credentials = credentials != null ? List.copyOf(credentials) : List.of();
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record DcqlCredential(
+            @JsonProperty(DCQL_FORMAT) String format,
+            @JsonProperty(DCQL_META) DcqlMeta meta) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record DcqlMeta(
+            @JsonProperty(DCQL_VCT_VALUES) List<String> vctValues,
+            @JsonProperty(DCQL_DOCTYPE_VALUE) String doctypeValue) {
+        private DcqlMeta {
+            vctValues = vctValues != null ? List.copyOf(vctValues) : List.of();
+        }
+    }
 }
