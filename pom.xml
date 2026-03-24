@@ -448,7 +448,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-failsafe-plugin</artifactId>
-        <version>3.5.2</version>
+        <version>3.5.5</version>
         <configuration>
           <argLine>@{failsafeArgLine} -javaagent:${settings.localRepository}/net/bytebuddy/byte-buddy-agent/${bytebuddy.version}/byte-buddy-agent-${bytebuddy.version}.jar</argLine>
           <redirectTestOutputToFile>false</redirectTestOutputToFile>
