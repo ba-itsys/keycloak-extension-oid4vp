@@ -165,13 +165,16 @@ class Oid4vpIdentityProviderEndpointTest {
         when(store.resolveByKid(session, "kid-1"))
                 .thenReturn(requestContext("handle-1", "state-1", "nonce-1", key.toJSONString(), "same_device"));
 
-        Response response = endpoint.handlePost("state-1", null, null, encryptedResponse, null, null);
+        Response response = endpoint.handlePost(
+                "state-1", "plaintext-vp-token", "plaintext-id-token", encryptedResponse, "server_error", "Ignore me");
 
         assertThat(response.getStatus()).isEqualTo(200);
         assertThat((String) response.getEntity())
                 .contains("redirect_uri")
                 .contains("access_denied")
-                .contains("Wallet+rejected");
+                .contains("Wallet+rejected")
+                .doesNotContain("server_error")
+                .doesNotContain("Ignore+me");
     }
 
     @Test
