@@ -26,7 +26,6 @@ import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -56,90 +55,7 @@ public class VpTokenProcessor {
     private final TrustListProvider trustListProvider;
     private final String expectedTrustListLoTEType;
 
-    public VpTokenProcessor(
-            ObjectMapper objectMapper,
-            KeycloakSession session,
-            String trustListUrl,
-            Duration statusListMaxCacheTtl,
-            Duration trustListMaxCacheTtl,
-            Duration issuerMetadataMaxCacheTtl,
-            boolean strictX5cVerification,
-            int clockSkewSeconds,
-            int kbJwtMaxAgeSeconds) {
-        this(
-                objectMapper,
-                session,
-                trustListUrl,
-                statusListMaxCacheTtl,
-                trustListMaxCacheTtl,
-                issuerMetadataMaxCacheTtl,
-                strictX5cVerification,
-                clockSkewSeconds,
-                kbJwtMaxAgeSeconds,
-                null);
-    }
-
-    /**
-     * @param trustListSigningCerts if non-null/non-empty, the trust list JWT signature is verified against these certificates
-     */
-    public VpTokenProcessor(
-            ObjectMapper objectMapper,
-            KeycloakSession session,
-            String trustListUrl,
-            Duration statusListMaxCacheTtl,
-            Duration trustListMaxCacheTtl,
-            Duration issuerMetadataMaxCacheTtl,
-            boolean strictX5cVerification,
-            int clockSkewSeconds,
-            int kbJwtMaxAgeSeconds,
-            List<X509Certificate> trustListSigningCerts) {
-        this(
-                objectMapper,
-                session,
-                trustListUrl,
-                statusListMaxCacheTtl,
-                trustListMaxCacheTtl,
-                issuerMetadataMaxCacheTtl,
-                strictX5cVerification,
-                clockSkewSeconds,
-                kbJwtMaxAgeSeconds,
-                trustListSigningCerts,
-                null);
-    }
-
-    /**
-     * @param trustListSigningCerts if non-null/non-empty, the trust list JWT signature is verified against these certificates
-     * @param trustListMaxStaleAge maximum age of a stale (expired) trust list cache entry usable as fallback on fetch failure
-     */
-    public VpTokenProcessor(
-            ObjectMapper objectMapper,
-            KeycloakSession session,
-            String trustListUrl,
-            Duration statusListMaxCacheTtl,
-            Duration trustListMaxCacheTtl,
-            Duration issuerMetadataMaxCacheTtl,
-            boolean strictX5cVerification,
-            int clockSkewSeconds,
-            int kbJwtMaxAgeSeconds,
-            List<X509Certificate> trustListSigningCerts,
-            Duration trustListMaxStaleAge) {
-        this(
-                objectMapper,
-                session,
-                trustListUrl,
-                statusListMaxCacheTtl,
-                trustListMaxCacheTtl,
-                issuerMetadataMaxCacheTtl,
-                strictX5cVerification,
-                clockSkewSeconds,
-                kbJwtMaxAgeSeconds,
-                trustListSigningCerts,
-                trustListMaxStaleAge,
-                null);
-    }
-
-    public VpTokenProcessor(
-            ObjectMapper objectMapper,
+    public record Config(
             KeycloakSession session,
             String trustListUrl,
             Duration statusListMaxCacheTtl,
@@ -150,18 +66,33 @@ public class VpTokenProcessor {
             int kbJwtMaxAgeSeconds,
             List<X509Certificate> trustListSigningCerts,
             Duration trustListMaxStaleAge,
-            String expectedTrustListLoTEType) {
+            String expectedTrustListLoTEType) {}
+
+    public record Request(
+            String vpToken,
+            String clientId,
+            String expectedNonce,
+            String alternateResponseUri,
+            String mdocGeneratedNonce,
+            String encryptionJwkThumbprint) {}
+
+    public VpTokenProcessor(ObjectMapper objectMapper, Config config) {
         this.sdJwtVerifier = new SdJwtVerifier(
-                clockSkewSeconds,
-                kbJwtMaxAgeSeconds,
-                new JwtVcIssuerMetadataResolver(session, issuerMetadataMaxCacheTtl),
-                strictX5cVerification);
+                config.clockSkewSeconds(),
+                config.kbJwtMaxAgeSeconds(),
+                new JwtVcIssuerMetadataResolver(config.session(), config.issuerMetadataMaxCacheTtl()),
+                config.strictX5cVerification());
         this.mdocVerifier = new MdocVerifier();
         this.trustListProvider = new TrustListProvider(
-                session, trustListUrl, trustListMaxCacheTtl, trustListMaxStaleAge, trustListSigningCerts);
-        this.statusListVerifier = new StatusListVerifier(session, this.trustListProvider, statusListMaxCacheTtl);
+                config.session(),
+                config.trustListUrl(),
+                config.trustListMaxCacheTtl(),
+                config.trustListMaxStaleAge(),
+                config.trustListSigningCerts());
+        this.statusListVerifier =
+                new StatusListVerifier(config.session(), this.trustListProvider, config.statusListMaxCacheTtl());
         this.objectMapper = objectMapper;
-        this.expectedTrustListLoTEType = expectedTrustListLoTEType;
+        this.expectedTrustListLoTEType = config.expectedTrustListLoTEType();
     }
 
     public VpTokenProcessor(ObjectMapper objectMapper, StatusListVerifier statusListVerifier) {
@@ -180,38 +111,12 @@ public class VpTokenProcessor {
         this.expectedTrustListLoTEType = null;
     }
 
-    /** @see #process(String, String, String, String, String, String) */
-    public VpTokenResult process(String vpToken, String clientId, String expectedNonce, String alternateResponseUri) {
-        return process(vpToken, clientId, expectedNonce, alternateResponseUri, null, null);
-    }
-
-    /** @see #process(String, String, String, String, String, String) */
-    public VpTokenResult process(
-            String vpToken,
-            String clientId,
-            String expectedNonce,
-            String alternateResponseUri,
-            String mdocGeneratedNonce) {
-        return process(vpToken, clientId, expectedNonce, alternateResponseUri, mdocGeneratedNonce, null);
-    }
-
     /**
      * Processes a VP token: detects format, verifies credentials, checks revocation status.
      *
-     * @param vpToken the raw VP token (single SD-JWT/mDoc string, or JSON wrapper with one credential)
-     * @param clientId the expected audience for key binding JWT verification
-     * @param expectedNonce the nonce from the request object for replay protection
-     * @param alternateResponseUri fallback audience (response_uri) for wallets that use it instead of client_id
-     * @param mdocGeneratedNonce nonce from JWE apu header for ISO 18013-7 session transcript (may be null)
-     * @param encryptionJwkThumbprint Base64url-encoded JWK thumbprint of the HAIP encryption key (may be null)
+     * @param request the wallet response plus verification context
      */
-    public VpTokenResult process(
-            String vpToken,
-            String clientId,
-            String expectedNonce,
-            String alternateResponseUri,
-            String mdocGeneratedNonce,
-            String encryptionJwkThumbprint) {
+    public VpTokenResult process(Request request) {
         List<X509Certificate> trustedCerts =
                 trustListProvider != null ? trustListProvider.getIssuanceCertificates() : List.of();
         validateTrustListLoTEType();
@@ -219,25 +124,25 @@ public class VpTokenProcessor {
 
         try {
             // Detect format: single credential or a JSON wrapper around one credential
-            if (vpToken.trim().startsWith("{")) {
+            if (request.vpToken().trim().startsWith("{")) {
                 return processMultiCredential(
-                        vpToken,
-                        clientId,
-                        expectedNonce,
+                        request.vpToken(),
+                        request.clientId(),
+                        request.expectedNonce(),
                         trustedCerts,
-                        alternateResponseUri,
-                        mdocGeneratedNonce,
-                        encryptionJwkThumbprint);
+                        request.alternateResponseUri(),
+                        request.mdocGeneratedNonce(),
+                        request.encryptionJwkThumbprint());
             }
 
             return processSingleCredential(
-                    vpToken,
-                    clientId,
-                    expectedNonce,
+                    request.vpToken(),
+                    request.clientId(),
+                    request.expectedNonce(),
                     trustedCerts,
-                    alternateResponseUri,
-                    mdocGeneratedNonce,
-                    encryptionJwkThumbprint);
+                    request.alternateResponseUri(),
+                    request.mdocGeneratedNonce(),
+                    request.encryptionJwkThumbprint());
 
         } catch (IdentityBrokerException e) {
             throw e;
