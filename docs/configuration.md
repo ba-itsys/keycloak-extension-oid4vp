@@ -104,7 +104,7 @@ This mode is intended for credentials that do not carry a stable account identif
 | `trustListLoTEType` | Expected trust-list LoTE type for this IdP. Keep one trust domain per OID4VP IdP instance. Leave empty only to accept all LoTE types from the configured trust list. | empty |
 | `trustedAuthoritiesMode` | DCQL `trusted_authorities` mode: `none`, `etsi_tl`, or `aki`. | `none` |
 | `trustListSigningCertPem` | PEM-encoded certificate chain used to verify the trust list JWT signature. If omitted, the trust list JWT is not signature-verified. | *(none)* |
-| `allowedIssuers` | Comma-separated list of allowed issuer identifiers, or `*`. | `*` |
+| `allowedIssuers` | Comma-separated list of allowed SD-JWT issuer (`iss`) values, or `*`. mDoc credentials are not checked against this list because mDoc does not define a standard canonical credential-issuer string equivalent to SD-JWT `iss`. | `*` |
 | `clockSkewSeconds` | Clock skew tolerance for credential verification. | `60` |
 | `kbJwtMaxAgeSeconds` | Maximum accepted age of the SD-JWT KB-JWT `iat` claim. | `300` |
 
