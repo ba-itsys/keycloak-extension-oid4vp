@@ -26,6 +26,14 @@ public interface Oid4vpConfigProvider {
 
     String getAlias();
 
+    /**
+     * Returns whether the verified SD-JWT issuer is allowed.
+     *
+     * <p>This check currently applies only to credentials that expose a canonical issuer string
+     * (for example SD-JWT `iss`). mDoc credentials are not filtered by this allow-list because
+     * mDoc does not define a standard canonical credential-issuer string equivalent to SD-JWT
+     * `iss`.
+     */
     boolean isIssuerAllowed(String issuer);
 
     String getTrustListLoTEType();
