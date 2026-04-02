@@ -169,80 +169,31 @@ public class Oid4vpIdentityProviderEndpoint {
             @FormParam(OAuth2Constants.ERROR_DESCRIPTION) String errorDescription) {
 
         try {
-            Oid4vpRequestObjectStore.RequestContextEntry requestContext = null;
-            Oid4vpJwk kidBasedKey = null;
-
-            if (StringUtil.isNotBlank(encryptedResponse)) {
-                ResolvedKid resolved = resolveFromKid(encryptedResponse);
-                if (resolved != null) {
-                    kidBasedKey = resolved.key();
-                    requestContext = resolved.requestContext();
-                    if (StringUtil.isBlank(state)) {
-                        state = requestContext != null ? requestContext.state() : null;
-                    } else if (requestContext != null
-                            && StringUtil.isNotBlank(requestContext.state())
-                            && !state.equals(requestContext.state())) {
-                        throw new IdentityBrokerException("Encrypted response state does not match the request state.");
-                    }
-                }
-            }
-
-            if (requestContext == null) {
-                requestContext = requestObjectStore.resolveByState(session, state);
-            }
-
-            AuthenticationSessionModel authSession = authSessionResolver.resolveFromRequestContext(requestContext);
-
+            IncomingPost incomingPost =
+                    new IncomingPost(state, vpToken, idToken, encryptedResponse, error, errorDescription);
+            ResolvedRequest resolvedRequest = resolveRequest(incomingPost.state(), incomingPost.encryptedResponse());
+            AuthenticationSessionModel authSession =
+                    authSessionResolver.resolveFromRequestContext(resolvedRequest.requestContext());
             if (authSession == null) {
-                LOG.warnf(
-                        "OID4VP callback session resolution failed: state=%s encrypted=%s requestContextPresent=%s",
-                        state, StringUtil.isNotBlank(encryptedResponse), requestContext != null);
-                event.event(EventType.LOGIN_ERROR).error(Errors.SESSION_EXPIRED);
-                return responseFactory.jsonErrorResponse(Response.Status.BAD_REQUEST, "session_expired", null);
+                return sessionExpiredResponse(
+                        resolvedRequest.state(), incomingPost.encryptedResponse(), resolvedRequest.requestContext());
             }
 
-            // Decrypt if encrypted
-            boolean wasEncrypted = false;
-            String mdocGeneratedNonce = null;
-            if (StringUtil.isNotBlank(encryptedResponse)) {
-                if (kidBasedKey == null) {
-                    return handleError(
-                            "identity_provider_error",
-                            "Encrypted response could not be matched to a stored decryption key.",
-                            state);
-                }
-                DecryptedResponse decrypted = responseDecryptor.decrypt(encryptedResponse, kidBasedKey);
-                wasEncrypted = true;
-                vpToken = decrypted.vpToken() != null ? decrypted.vpToken() : vpToken;
-                idToken = decrypted.idToken() != null ? decrypted.idToken() : idToken;
-                error = decrypted.error() != null ? decrypted.error() : error;
-                errorDescription = decrypted.error() != null ? decrypted.errorDescription() : errorDescription;
-                if (decrypted.mdocGeneratedNonce() != null) {
-                    mdocGeneratedNonce = decrypted.mdocGeneratedNonce();
-                }
+            ResolvedSubmission submission = resolveSubmission(incomingPost, resolvedRequest);
+            if (StringUtil.isNotBlank(submission.error())) {
+                return handleError(submission.error(), submission.errorDescription(), submission.state());
             }
 
-            if (StringUtil.isNotBlank(error)) {
-                return handleError(error, errorDescription, state);
-            }
-
-            boolean encryptionExpected =
-                    provider.getConfig().getResolvedResponseMode().requiresEncryption();
-            if (encryptionExpected && !wasEncrypted) {
-                return handleError(
-                        "identity_provider_error",
-                        "Encrypted response expected (direct_post.jwt) but received unencrypted vp_token.",
-                        state);
-            }
+            ensureEncryptedWhenRequired(submission.wasEncrypted());
 
             return processVpToken(
                     authSession,
-                    requestContext,
-                    state,
-                    vpToken,
-                    idToken,
-                    mdocGeneratedNonce,
-                    FLOW_CROSS_DEVICE.equals(requestContext.flow()));
+                    resolvedRequest.requestContext(),
+                    submission.state(),
+                    submission.vpToken(),
+                    submission.idToken(),
+                    submission.mdocGeneratedNonce(),
+                    FLOW_CROSS_DEVICE.equals(resolvedRequest.requestContext().flow()));
         } catch (IdentityBrokerException e) {
             return handleError("identity_provider_error", e.getMessage(), state);
         } catch (Exception e) {
@@ -252,6 +203,105 @@ public class Oid4vpIdentityProviderEndpoint {
     }
 
     private record ResolvedKid(Oid4vpJwk key, Oid4vpRequestObjectStore.RequestContextEntry requestContext) {}
+
+    private record IncomingPost(
+            String state,
+            String vpToken,
+            String idToken,
+            String encryptedResponse,
+            String error,
+            String errorDescription) {}
+
+    private record ResolvedRequest(
+            String state, Oid4vpRequestObjectStore.RequestContextEntry requestContext, Oid4vpJwk kidBasedKey) {}
+
+    private record ResolvedSubmission(
+            String state,
+            String vpToken,
+            String idToken,
+            String error,
+            String errorDescription,
+            String mdocGeneratedNonce,
+            boolean wasEncrypted) {}
+
+    private ResolvedRequest resolveRequest(String state, String encryptedResponse) {
+        Oid4vpRequestObjectStore.RequestContextEntry requestContext = null;
+        Oid4vpJwk kidBasedKey = null;
+        String resolvedState = state;
+
+        if (StringUtil.isNotBlank(encryptedResponse)) {
+            ResolvedKid resolved = resolveFromKid(encryptedResponse);
+            if (resolved != null) {
+                kidBasedKey = resolved.key();
+                requestContext = resolved.requestContext();
+                resolvedState = resolveState(state, requestContext);
+            }
+        }
+
+        if (requestContext == null) {
+            requestContext = requestObjectStore.resolveByState(session, resolvedState);
+        }
+
+        return new ResolvedRequest(resolvedState, requestContext, kidBasedKey);
+    }
+
+    private String resolveState(String postedState, Oid4vpRequestObjectStore.RequestContextEntry requestContext) {
+        if (requestContext == null) {
+            return postedState;
+        }
+        if (StringUtil.isBlank(postedState)) {
+            return requestContext.state();
+        }
+        if (StringUtil.isNotBlank(requestContext.state()) && !postedState.equals(requestContext.state())) {
+            throw new IdentityBrokerException("Encrypted response state does not match the request state.");
+        }
+        return postedState;
+    }
+
+    private Response sessionExpiredResponse(
+            String state, String encryptedResponse, Oid4vpRequestObjectStore.RequestContextEntry requestContext) {
+        LOG.warnf(
+                "OID4VP callback session resolution failed: state=%s encrypted=%s requestContextPresent=%s",
+                state, StringUtil.isNotBlank(encryptedResponse), requestContext != null);
+        event.event(EventType.LOGIN_ERROR).error(Errors.SESSION_EXPIRED);
+        return responseFactory.jsonErrorResponse(Response.Status.BAD_REQUEST, "session_expired", null);
+    }
+
+    private ResolvedSubmission resolveSubmission(IncomingPost incomingPost, ResolvedRequest resolvedRequest) {
+        if (StringUtil.isBlank(incomingPost.encryptedResponse())) {
+            return new ResolvedSubmission(
+                    resolvedRequest.state(),
+                    incomingPost.vpToken(),
+                    incomingPost.idToken(),
+                    incomingPost.error(),
+                    incomingPost.errorDescription(),
+                    null,
+                    false);
+        }
+        if (resolvedRequest.kidBasedKey() == null) {
+            throw new IdentityBrokerException("Encrypted response could not be matched to a stored decryption key.");
+        }
+
+        DecryptedResponse decrypted =
+                responseDecryptor.decrypt(incomingPost.encryptedResponse(), resolvedRequest.kidBasedKey());
+        return new ResolvedSubmission(
+                resolvedRequest.state(),
+                decrypted.vpToken(),
+                decrypted.idToken(),
+                decrypted.error(),
+                decrypted.errorDescription(),
+                decrypted.mdocGeneratedNonce(),
+                true);
+    }
+
+    private void ensureEncryptedWhenRequired(boolean wasEncrypted) {
+        boolean encryptionExpected =
+                provider.getConfig().getResolvedResponseMode().requiresEncryption();
+        if (encryptionExpected && !wasEncrypted) {
+            throw new IdentityBrokerException(
+                    "Encrypted response expected (direct_post.jwt) but received unencrypted vp_token.");
+        }
+    }
 
     private ResolvedKid resolveFromKid(String encryptedResponse) {
         String kid = responseDecryptor.extractKid(encryptedResponse);

@@ -173,9 +173,8 @@ public class Oid4vpCallbackProcessor {
     }
 
     private String buildTransientSubject(Oid4vpRequestObjectStore.RequestContextEntry requestContext) {
-        String requestHandle = requestContext != null && StringUtil.isNotBlank(requestContext.requestHandle())
-                ? requestContext.requestHandle()
-                : "unknown";
+        String requestHandle =
+                StringUtil.isNotBlank(requestContext.requestHandle()) ? requestContext.requestHandle() : "unknown";
         LOG.debugf(
                 "OID4VP IdP '%s': generating transient subject for request handle '%s'",
                 idpModel.getAlias(), requestHandle);
