@@ -31,12 +31,10 @@ import org.keycloak.utils.StringUtil;
  *
  * <ul>
  *   <li><b>Request handle → flow context</b>: Maps a random UUID (used in the request_uri path)
- *       to the stable per-flow values (`rootSessionId`, `tabId`, `effectiveClientId`,
- *       `response_uri`, `flow`). The handle identifies the browser-side flow and remains stable across
- *       multiple request-object fetches.
+ *       to a serialized {@link FlowContextEntry}. The handle identifies the browser-side flow and
+ *       remains stable across multiple request-object fetches.
  *   <li><b>State → request context</b>: Maps the OAuth state parameter from a single created
- *       request object to its request-scoped values (`nonce`, optional HAIP response-encryption
- *       key) plus the originating request handle.
+ *       request object to a serialized {@link RequestContextEntry}.
  *   <li><b>KID → state</b>: Maps the HAIP response-encryption JWK key ID to the request state so
  *       `direct_post.jwt` callbacks can recover the correct request context even when the wallet
  *       omits the `state` form field.
@@ -54,16 +52,7 @@ public class Oid4vpRequestObjectStore {
     private static final String REQUEST_HANDLE_PREFIX = "oid4vp_request_handle:";
     private static final String STATE_INDEX_PREFIX = "oid4vp_state:";
     private static final String KID_INDEX_PREFIX = "oid4vp_kid:";
-    private static final String KEY_ROOT_SESSION_ID = "rootSessionId";
-    private static final String KEY_TAB_ID = "tabId";
-    private static final String KEY_EFFECTIVE_CLIENT_ID = "effectiveClientId";
-    private static final String KEY_RESPONSE_URI = "responseUri";
-    private static final String KEY_FLOW = "flow";
-    private static final String KEY_REQUEST_HANDLE = "requestHandle";
-    private static final String KEY_NONCE = "nonce";
-    private static final String KEY_ENCRYPTION_KEY_JSON = "encryptionKeyJson";
-    private static final String KEY_ENCRYPTION_JWK_THUMBPRINT = "encryptionJwkThumbprint";
-    private static final String KEY_CONFIGURED_CREDENTIAL_TYPES_JSON = "configuredCredentialTypesJson";
+    private static final String KEY_JSON = "json";
     private static final String KEY_STATE = "state";
     private static final String KEY_KID = JWK.KEY_ID;
     private final Duration ttl;
@@ -90,22 +79,8 @@ public class Oid4vpRequestObjectStore {
 
     /** Stores a request handle → stable flow context mapping. Called when the login page is rendered. */
     public void storeFlowHandle(KeycloakSession session, String requestHandle, FlowContextEntry entry) {
-        long lifespanSeconds = ttl.toSeconds();
         session.singleUseObjects()
-                .put(
-                        REQUEST_HANDLE_PREFIX + requestHandle,
-                        lifespanSeconds,
-                        Map.of(
-                                KEY_ROOT_SESSION_ID,
-                                emptyIfNull(entry.rootSessionId()),
-                                KEY_TAB_ID,
-                                emptyIfNull(entry.tabId()),
-                                KEY_EFFECTIVE_CLIENT_ID,
-                                emptyIfNull(entry.effectiveClientId()),
-                                KEY_RESPONSE_URI,
-                                emptyIfNull(entry.responseUri()),
-                                KEY_FLOW,
-                                emptyIfNull(entry.flow())));
+                .put(REQUEST_HANDLE_PREFIX + requestHandle, ttl.toSeconds(), Map.of(KEY_JSON, serializeEntry(entry)));
         LOG.debugf("Stored flow handle: handle=%s", requestHandle);
     }
 
@@ -119,16 +94,8 @@ public class Oid4vpRequestObjectStore {
                         STATE_INDEX_PREFIX + entry.state(),
                         ttl.toSeconds(),
                         Map.of(
-                                KEY_REQUEST_HANDLE,
-                                entry.requestHandle(),
-                                KEY_NONCE,
-                                emptyIfNull(entry.nonce()),
-                                KEY_ENCRYPTION_KEY_JSON,
-                                emptyIfNull(entry.encryptionKeyJson()),
-                                KEY_ENCRYPTION_JWK_THUMBPRINT,
-                                emptyIfNull(entry.encryptionJwkThumbprint()),
-                                KEY_CONFIGURED_CREDENTIAL_TYPES_JSON,
-                                serializeCredentialTypes(entry.configuredCredentialTypes()),
+                                KEY_JSON,
+                                serializeEntry(entry),
                                 KEY_KID,
                                 emptyIfNull(extractKidFromJwk(entry.encryptionKeyJson()))));
     }
@@ -143,36 +110,19 @@ public class Oid4vpRequestObjectStore {
         if (StringUtil.isBlank(requestHandle)) return null;
         Map<String, String> entry = session.singleUseObjects().get(REQUEST_HANDLE_PREFIX + requestHandle);
         if (entry == null) return null;
-        return new FlowContextEntry(
-                blankToNull(entry.get(KEY_ROOT_SESSION_ID)),
-                blankToNull(entry.get(KEY_TAB_ID)),
-                blankToNull(entry.get(KEY_EFFECTIVE_CLIENT_ID)),
-                blankToNull(entry.get(KEY_RESPONSE_URI)),
-                blankToNull(entry.get(KEY_FLOW)));
+        return deserializeEntry(entry.get(KEY_JSON), FlowContextEntry.class);
     }
 
     public RequestContextEntry resolveByState(KeycloakSession session, String state) {
         if (StringUtil.isBlank(state)) return null;
         Map<String, String> entry = session.singleUseObjects().get(STATE_INDEX_PREFIX + state);
         if (entry == null) return null;
-        String requestHandle = blankToNull(entry.get(KEY_REQUEST_HANDLE));
-        FlowContextEntry flowContext = resolveFlowHandle(session, requestHandle);
-        if (flowContext == null) {
+        RequestContextEntry requestContext = deserializeEntry(entry.get(KEY_JSON), RequestContextEntry.class);
+        if (resolveFlowHandle(session, requestContext.requestHandle()) == null) {
             removeRequestContext(session, state);
             return null;
         }
-        return new RequestContextEntry(
-                requestHandle,
-                flowContext.rootSessionId(),
-                flowContext.tabId(),
-                state,
-                flowContext.effectiveClientId(),
-                flowContext.responseUri(),
-                flowContext.flow(),
-                blankToNull(entry.get(KEY_NONCE)),
-                blankToNull(entry.get(KEY_ENCRYPTION_KEY_JSON)),
-                blankToNull(entry.get(KEY_ENCRYPTION_JWK_THUMBPRINT)),
-                deserializeCredentialTypes(entry.get(KEY_CONFIGURED_CREDENTIAL_TYPES_JSON)));
+        return requestContext;
     }
 
     public RequestContextEntry resolveByKid(KeycloakSession session, String kid) {
@@ -226,22 +176,22 @@ public class Oid4vpRequestObjectStore {
         return StringUtil.isBlank(value) ? null : value;
     }
 
-    private static String serializeCredentialTypes(List<String> credentialTypes) {
+    private static String serializeEntry(Object entry) {
         try {
-            return JsonSerialization.writeValueAsString(credentialTypes != null ? credentialTypes : List.of());
+            return JsonSerialization.writeValueAsString(entry);
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to serialize configured credential types", e);
+            throw new IllegalStateException("Failed to serialize request-object store entry", e);
         }
     }
 
-    private static List<String> deserializeCredentialTypes(String value) {
+    private static <T> T deserializeEntry(String value, Class<T> type) {
         if (StringUtil.isBlank(value)) {
-            return List.of();
+            throw new IllegalStateException("Missing serialized request-object store entry");
         }
         try {
-            return JsonSerialization.readValue(value, List.class);
+            return JsonSerialization.readValue(value, type);
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to deserialize configured credential types", e);
+            throw new IllegalStateException("Failed to deserialize request-object store entry", e);
         }
     }
 }
