@@ -40,6 +40,7 @@ import java.security.interfaces.ECPublicKey;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import javax.security.auth.x500.X500Principal;
@@ -99,7 +100,7 @@ class VpTokenProcessorTest {
     }
 
     @Test
-    void process_multiCredentialWrapper_verifiesAll() throws Exception {
+    void process_multiCredentialWrapperWithDifferentTypes_throws() throws Exception {
         String credJwt1 = buildSdJwt(Map.of(
                 "iss",
                 "issuer1",
@@ -121,14 +122,81 @@ class VpTokenProcessorTest {
         String sdJwt1 = buildSdJwtVpWithKbJwt(credJwt1, "client-id", "nonce");
         String sdJwt2 = buildSdJwtVpWithKbJwt(credJwt2, "client-id", "nonce");
 
-        String wrapper = objectMapper.writeValueAsString(Map.of("cred1", sdJwt1, "cred2", sdJwt2));
+        Map<String, Object> wrapper = new LinkedHashMap<>();
+        wrapper.put("cred1", sdJwt1);
+        wrapper.put("cred2", sdJwt2);
+
+        assertThatThrownBy(() -> processor.process(objectMapper.writeValueAsString(wrapper), "client-id", "nonce", null))
+                .isInstanceOf(IdentityBrokerException.class)
+                .hasMessageContaining("Only one credential type is currently supported");
+    }
+
+    @Test
+    void process_multiCredentialWrapperWithSameType_usesFirstCredential() throws Exception {
+        String credJwt1 = buildSdJwt(Map.of(
+                "iss",
+                "issuer1",
+                "vct",
+                "IdentityCredential",
+                "name",
+                "Alice",
+                "cnf",
+                Map.of("jwk", holderKey.toPublicJWK().toJSONObject())));
+        String credJwt2 = buildSdJwt(Map.of(
+                "iss",
+                "issuer2",
+                "vct",
+                "IdentityCredential",
+                "email",
+                "alice@test.com",
+                "cnf",
+                Map.of("jwk", holderKey.toPublicJWK().toJSONObject())));
+        String sdJwt1 = buildSdJwtVpWithKbJwt(credJwt1, "client-id", "nonce");
+        String sdJwt2 = buildSdJwtVpWithKbJwt(credJwt2, "client-id", "nonce");
+
+        Map<String, Object> wrapper = new LinkedHashMap<>();
+        wrapper.put("cred1", sdJwt1);
+        wrapper.put("cred2", sdJwt2);
+
+        VpTokenResult result = processor.process(objectMapper.writeValueAsString(wrapper), "client-id", "nonce", null);
+
+        assertThat(result.credentials()).hasSize(1);
+        assertThat(result.getPrimaryCredential().credentialId()).isEqualTo("cred1");
+        assertThat(result.getPrimaryCredential().credentialType()).isEqualTo("IdentityCredential");
+        assertThat(result.mergedClaims()).containsEntry("name", "Alice");
+    }
+
+    @Test
+    void process_wrapperEntryWithSameType_usesFirstCredential() throws Exception {
+        String credJwt1 = buildSdJwt(Map.of(
+                "iss",
+                "issuer1",
+                "vct",
+                "IdentityCredential",
+                "name",
+                "Alice",
+                "cnf",
+                Map.of("jwk", holderKey.toPublicJWK().toJSONObject())));
+        String credJwt2 = buildSdJwt(Map.of(
+                "iss",
+                "issuer2",
+                "vct",
+                "IdentityCredential",
+                "email",
+                "alice@test.com",
+                "cnf",
+                Map.of("jwk", holderKey.toPublicJWK().toJSONObject())));
+        String sdJwt1 = buildSdJwtVpWithKbJwt(credJwt1, "client-id", "nonce");
+        String sdJwt2 = buildSdJwtVpWithKbJwt(credJwt2, "client-id", "nonce");
+
+        String wrapper = objectMapper.writeValueAsString(Map.of("cred1", List.of(sdJwt1, sdJwt2)));
 
         VpTokenResult result = processor.process(wrapper, "client-id", "nonce", null);
 
-        assertThat(result.credentials()).hasSize(2);
-        assertThat(result.isMultiCredential()).isTrue();
-        assertThat(result.mergedClaims()).containsKey("name");
-        assertThat(result.mergedClaims()).containsKey("email");
+        assertThat(result.credentials()).hasSize(1);
+        assertThat(result.getPrimaryCredential().credentialId()).isEqualTo("cred1");
+        assertThat(result.getPrimaryCredential().credentialType()).isEqualTo("IdentityCredential");
+        assertThat(result.mergedClaims()).containsEntry("name", "Alice");
     }
 
     @Test
