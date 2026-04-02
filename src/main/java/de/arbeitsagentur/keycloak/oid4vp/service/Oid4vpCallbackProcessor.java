@@ -85,13 +85,13 @@ public class Oid4vpCallbackProcessor {
 
         LOG.debugf("VP token received (length=%d)", vpToken.length());
 
-        VpTokenResult vpResult = vpTokenProcessor.process(
+        VpTokenResult vpResult = vpTokenProcessor.process(new VpTokenProcessor.Request(
                 vpToken,
                 requestContext.effectiveClientId(),
                 requestContext.nonce(),
                 requestContext.responseUri(),
                 mdocGeneratedNonce,
-                requestContext.encryptionJwkThumbprint());
+                requestContext.encryptionJwkThumbprint()));
 
         VerifiedCredential primary = vpResult.getPrimaryCredential();
         if (primary == null) {

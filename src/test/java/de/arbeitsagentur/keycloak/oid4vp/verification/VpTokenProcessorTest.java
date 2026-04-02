@@ -89,7 +89,7 @@ class VpTokenProcessorTest {
                 Map.of("jwk", holderKey.toPublicJWK().toJSONObject())));
         String sdJwt = buildSdJwtVpWithKbJwt(credJwt, "client-id", "nonce");
 
-        VpTokenResult result = processor.process(sdJwt, "client-id", "nonce", null);
+        VpTokenResult result = processor.process(request(sdJwt, "client-id", "nonce", null));
 
         assertThat(result.credentials()).hasSize(1);
         VerifiedCredential primary = result.getPrimaryCredential();
@@ -126,7 +126,8 @@ class VpTokenProcessorTest {
         wrapper.put("cred1", sdJwt1);
         wrapper.put("cred2", sdJwt2);
 
-        assertThatThrownBy(() -> processor.process(objectMapper.writeValueAsString(wrapper), "client-id", "nonce", null))
+        assertThatThrownBy(() -> processor.process(
+                        request(objectMapper.writeValueAsString(wrapper), "client-id", "nonce", null)))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("Only one credential type is currently supported");
     }
@@ -158,7 +159,8 @@ class VpTokenProcessorTest {
         wrapper.put("cred1", sdJwt1);
         wrapper.put("cred2", sdJwt2);
 
-        VpTokenResult result = processor.process(objectMapper.writeValueAsString(wrapper), "client-id", "nonce", null);
+        VpTokenResult result =
+                processor.process(request(objectMapper.writeValueAsString(wrapper), "client-id", "nonce", null));
 
         assertThat(result.credentials()).hasSize(1);
         assertThat(result.getPrimaryCredential().credentialId()).isEqualTo("cred1");
@@ -191,7 +193,7 @@ class VpTokenProcessorTest {
 
         String wrapper = objectMapper.writeValueAsString(Map.of("cred1", List.of(sdJwt1, sdJwt2)));
 
-        VpTokenResult result = processor.process(wrapper, "client-id", "nonce", null);
+        VpTokenResult result = processor.process(request(wrapper, "client-id", "nonce", null));
 
         assertThat(result.credentials()).hasSize(1);
         assertThat(result.getPrimaryCredential().credentialId()).isEqualTo("cred1");
@@ -201,14 +203,14 @@ class VpTokenProcessorTest {
 
     @Test
     void process_unsupportedFormat_throws() {
-        assertThatThrownBy(() -> processor.process("not-sd-jwt-or-mdoc", "client-id", "nonce", null))
+        assertThatThrownBy(() -> processor.process(request("not-sd-jwt-or-mdoc", "client-id", "nonce", null)))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("Unsupported VP token format");
     }
 
     @Test
     void process_nullVpToken_throws() {
-        assertThatThrownBy(() -> processor.process(null, "client-id", "nonce", null))
+        assertThatThrownBy(() -> processor.process(request(null, "client-id", "nonce", null)))
                 .isInstanceOf(Exception.class);
     }
 
@@ -224,7 +226,7 @@ class VpTokenProcessorTest {
         // KB-JWT audience is the alternate URI, not the client-id
         String sdJwt = buildSdJwtVpWithKbJwt(credJwt, "https://alternate.example", "nonce");
 
-        VpTokenResult result = processor.process(sdJwt, "client-id", "nonce", "https://alternate.example");
+        VpTokenResult result = processor.process(request(sdJwt, "client-id", "nonce", "https://alternate.example"));
 
         assertThat(result.getPrimaryCredential()).isNotNull();
     }
@@ -290,5 +292,10 @@ class VpTokenProcessorTest {
         ContentSigner signer = new JcaContentSignerBuilder("SHA256withECDSA").build(ecKey.toECPrivateKey());
 
         return new JcaX509CertificateConverter().getCertificate(certBuilder.build(signer));
+    }
+
+    private static VpTokenProcessor.Request request(
+            String vpToken, String clientId, String expectedNonce, String alternateResponseUri) {
+        return new VpTokenProcessor.Request(vpToken, clientId, expectedNonce, alternateResponseUri, null, null);
     }
 }

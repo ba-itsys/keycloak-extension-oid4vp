@@ -91,17 +91,18 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 this,
                 new VpTokenProcessor(
                         OBJECT_MAPPER,
-                        session,
-                        config.getTrustListUrl(),
-                        config.getStatusListMaxCacheTtl(),
-                        config.getTrustListMaxCacheTtl(),
-                        config.getIssuerMetadataMaxCacheTtl(),
-                        config.isEnforceHaip(),
-                        config.getClockSkewSeconds(),
-                        config.getKbJwtMaxAgeSeconds(),
-                        trustListSigningCerts,
-                        config.getTrustListMaxStaleAge(),
-                        config.getTrustListLoTEType()));
+                        new VpTokenProcessor.Config(
+                                session,
+                                config.getTrustListUrl(),
+                                config.getStatusListMaxCacheTtl(),
+                                config.getTrustListMaxCacheTtl(),
+                                config.getIssuerMetadataMaxCacheTtl(),
+                                config.isEnforceHaip(),
+                                config.getClockSkewSeconds(),
+                                config.getKbJwtMaxAgeSeconds(),
+                                trustListSigningCerts,
+                                config.getTrustListMaxStaleAge(),
+                                config.getTrustListLoTEType())));
 
         RealmModel realm = session.getContext().getRealm();
         int loginTimeoutSeconds = realm != null ? realm.getAccessCodeLifespanLogin() : DEFAULT_LOGIN_TIMEOUT_SECONDS;
