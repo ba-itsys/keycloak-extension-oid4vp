@@ -24,10 +24,12 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.IdentityBrokerException;
 import org.keycloak.models.KeycloakSession;
@@ -36,7 +38,7 @@ import org.keycloak.utils.StringUtil;
 /**
  * Top-level processor for VP tokens received from wallets.
  *
- * <p>Handles format detection (SD-JWT vs mDoc), single and multi-credential VP tokens,
+ * <p>Handles format detection (SD-JWT vs mDoc), single-credential VP tokens,
  * signature verification (delegated to {@link SdJwtVerifier} / {@link MdocVerifier}),
  * trust list validation, and revocation checking (via {@link StatusListVerifier}).
  *
@@ -196,7 +198,7 @@ public class VpTokenProcessor {
     /**
      * Processes a VP token: detects format, verifies credentials, checks revocation status.
      *
-     * @param vpToken the raw VP token (single SD-JWT/mDoc string, or JSON wrapper for multi-credential)
+     * @param vpToken the raw VP token (single SD-JWT/mDoc string, or JSON wrapper with one credential)
      * @param clientId the expected audience for key binding JWT verification
      * @param expectedNonce the nonce from the request object for replay protection
      * @param alternateResponseUri fallback audience (response_uri) for wallets that use it instead of client_id
@@ -216,7 +218,7 @@ public class VpTokenProcessor {
         LOG.debugf("Trust list provides %d trusted keys", trustedCerts.size());
 
         try {
-            // Detect format: single credential or multi-credential JSON wrapper
+            // Detect format: single credential or a JSON wrapper around one credential
             if (vpToken.trim().startsWith("{")) {
                 return processMultiCredential(
                         vpToken,
@@ -281,13 +283,11 @@ public class VpTokenProcessor {
 
         try {
             Map<String, Object> wrapper = objectMapper.readValue(vpToken, Map.class);
-            Map<String, VerifiedCredential> credentials = new LinkedHashMap<>();
-            Map<String, Object> mergedClaims = new LinkedHashMap<>();
+            List<VerifiedCredential> credentials = new ArrayList<>();
 
             for (Map.Entry<String, Object> entry : wrapper.entrySet()) {
                 String credentialId = entry.getKey();
-                String credential = extractCredentialString(entry.getValue());
-                if (credential != null) {
+                for (String credential : extractCredentialStrings(entry.getValue())) {
                     VerifiedCredential cred = verifyCredential(
                             credentialId,
                             credential,
@@ -298,8 +298,7 @@ public class VpTokenProcessor {
                             mdocGeneratedNonce,
                             encryptionJwkThumbprint);
                     if (cred != null) {
-                        credentials.put(credentialId, cred);
-                        mergedClaims.putAll(cred.claims());
+                        credentials.add(cred);
                     }
                 }
             }
@@ -308,7 +307,16 @@ public class VpTokenProcessor {
                 throw new IdentityBrokerException("No valid credentials found in multi-credential VP token");
             }
 
-            return new VpTokenResult(credentials, mergedClaims);
+            VerifiedCredential primary = credentials.get(0);
+            boolean mixedCredentialTypes = credentials.stream()
+                    .skip(1)
+                    .map(VerifiedCredential::credentialType)
+                    .anyMatch(type -> !Objects.equals(type, primary.credentialType()));
+            if (mixedCredentialTypes) {
+                throw new IdentityBrokerException("Only one credential type is currently supported in vp_token");
+            }
+
+            return new VpTokenResult(Map.of(primary.credentialId(), primary), primary.claims());
         } catch (IdentityBrokerException e) {
             throw e;
         } catch (Exception e) {
@@ -316,14 +324,14 @@ public class VpTokenProcessor {
         }
     }
 
-    private String extractCredentialString(Object value) {
+    private List<String> extractCredentialStrings(Object value) {
         if (value instanceof List<?> list && !list.isEmpty()) {
-            return list.get(0).toString();
+            return list.stream().map(Object::toString).toList();
         }
         if (value instanceof String s) {
-            return s;
+            return List.of(s);
         }
-        return null;
+        return List.of();
     }
 
     private VerifiedCredential verifyCredential(
