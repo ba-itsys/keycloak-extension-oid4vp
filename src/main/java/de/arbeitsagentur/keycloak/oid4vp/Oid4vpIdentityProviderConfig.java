@@ -291,6 +291,13 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         getConfig().put(ALLOWED_ISSUERS, issuers);
     }
 
+    /**
+     * Checks whether the verified SD-JWT issuer is allowed.
+     *
+     * <p>This is currently evaluated only for credentials with a canonical issuer string. In
+     * practice that means SD-JWT `iss` values. mDoc credentials are not checked here because mDoc
+     * does not define a standard canonical credential-issuer string equivalent to SD-JWT `iss`.
+     */
     public boolean isIssuerAllowed(String issuer) {
         return isValueAllowed(issuer, getAllowedIssuers());
     }

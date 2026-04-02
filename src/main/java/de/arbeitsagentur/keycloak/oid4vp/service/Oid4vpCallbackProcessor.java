@@ -107,6 +107,9 @@ public class Oid4vpCallbackProcessor {
         String issuer = primary.issuer();
         String credentialType = primary.credentialType();
 
+        // This allow-list only applies to formats that expose a canonical issuer string.
+        // In practice that means SD-JWT, because mDoc does not define a standard issuer identifier
+        // equivalent to SD-JWT `iss`.
         if (issuer != null && !configProvider.isIssuerAllowed(issuer)) {
             throw new IdentityBrokerException("Issuer not allowed: " + issuer);
         }
