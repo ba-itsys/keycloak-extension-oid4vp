@@ -306,8 +306,8 @@ class Oid4vpIdentityProviderTest {
 
         provider.performLogin(request);
 
-        verify(singleUseObjects).put(startsWith("oid4vp_request_handle:"), anyLong(), argThat(values -> "auth-tab"
-                .equals(values.get("tabId"))));
+        verify(singleUseObjects)
+                .put(startsWith("oid4vp_request_handle:"), anyLong(), argThat(this::hasStoredFlowContextTabId));
         verify(forms)
                 .setAttribute(
                         eq("state"),
@@ -340,16 +340,33 @@ class Oid4vpIdentityProviderTest {
         provider.performLogin(request);
 
         verify(singleUseObjects)
-                .put(
-                        startsWith("oid4vp_request_handle:"),
-                        anyLong(),
-                        argThat(values -> "cross_device".equals(values.get("flow"))
-                                && "http://localhost:8080/realms/test-realm/broker/oid4vp/endpoint"
-                                        .equals(values.get("responseUri"))));
+                .put(startsWith("oid4vp_request_handle:"), anyLong(), argThat(this::hasStoredCrossDeviceFlowContext));
     }
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> parseDcql(String dcqlJson) throws Exception {
         return OBJECT_MAPPER.readValue(dcqlJson, Map.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean hasStoredFlowContextTabId(Map<String, String> values) {
+        try {
+            Map<String, Object> flowContext = OBJECT_MAPPER.readValue(values.get("json"), Map.class);
+            return "auth-tab".equals(flowContext.get("tabId"));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean hasStoredCrossDeviceFlowContext(Map<String, String> values) {
+        try {
+            Map<String, Object> flowContext = OBJECT_MAPPER.readValue(values.get("json"), Map.class);
+            return "cross_device".equals(flowContext.get("flow"))
+                    && "http://localhost:8080/realms/test-realm/broker/oid4vp/endpoint"
+                            .equals(flowContext.get("responseUri"));
+        } catch (Exception e) {
+            return false;
+        }
     }
 }
