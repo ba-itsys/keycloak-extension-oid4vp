@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.5.2](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.5.1...v0.5.2) (2026-04-07)
+
+
+### Bug Fixes
+
+* check LoTEType and Service Type when evaluating trust lists ([d1e24c5](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/d1e24c505e0f6e214bcc1159d2479a9d49517d7f))
+* docs and flaky test ([8131710](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/8131710e1e66ad2ab3edb51c3807c3be4527f3ba))
+* kid-based signing cert lookup/https statuslist tests ([7859fc8](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/7859fc8f2f1e019287e9813af283d04ead492471))
+* parse nested json claim values in mDoc credentials ([b3f1640](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/b3f1640323d2ea71157534b5ae4f894e0f9ce6e1))
+* support a single credential type in vp_token ([b7fe9a5](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/b7fe9a59f9d0141c19eda32da33b28e07d2479f5))
+
+
+### Dependencies
+
+* **deps-dev:** bump org.apache.maven.plugins:maven-compiler-plugin ([2876d23](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/2876d23987a900d09a967d9aa27d1e359decd863))
+* **deps-dev:** bump org.apache.maven.plugins:maven-failsafe-plugin ([f75a825](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/f75a8252787831ccc88c25b2a181a4e4474f5d7a))
+* **deps:** bump org.projectlombok:lombok from 1.18.42 to 1.18.44 ([15b3d73](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/15b3d7350a17ffe1b378c92b04e11517b2de317f))
+
+
+### Documentation
+
+* clarify issuer allow-list scope ([3c99bda](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/3c99bda17331d118ea6cbac4fe56e3874a035602))
+
 ## [0.5.1](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.5.0...v0.5.1) (2026-03-19)
 
 
