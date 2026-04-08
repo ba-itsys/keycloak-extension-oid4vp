@@ -23,6 +23,7 @@ Supported capabilities:
 ## Documentation
 
 - [Configuration](docs/configuration.md)
+- [Diagrams](docs/diagrams.md)
 - [Request Flow Walkthrough](docs/request-flow.md)
 - [Development](docs/development.md)
 - [OIDF Conformance Testing](docs/conformance.md)

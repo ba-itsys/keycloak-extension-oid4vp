@@ -159,6 +159,12 @@ public class MdocVerifier {
         }
     }
 
+    /**
+     * CBOR tag 24 means "encoded CBOR data item": the tag content is a byte string whose bytes
+     * contain another CBOR structure. mdoc issuer-signed items commonly use this wrapper, so we
+     * decode the inner bytes before reading fields like {@code elementIdentifier} or
+     * {@code digestID}.
+     */
     private CBORPairList unwrapTag24(CBORItem element) {
         if (element instanceof CBORTaggedItem tagged && tagged.getTagNumber().intValue() == 24) {
             CBORItem content = tagged.getTagContent();

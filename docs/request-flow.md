@@ -48,13 +48,15 @@ This method:
 
 The login page contains:
 - Hidden state/request-handle fields used to keep the browser-side flow bound to the original Keycloak login attempt
-- A same-device deep link (`openid4vp://...?request_uri=...`)
-- A cross-device QR code encoding a similar URL (`openid4vp://...?request_uri=...`)
+- A same-device deep link (`openid4vp://...?client_id=...&request_uri=...`)
+- A cross-device QR code encoding a similar URL (`openid4vp://...?client_id=...&request_uri=...`)
 - JavaScript that opens an SSE connection to `/cross-device/status?request_handle=...` using the cross-device flow's stable request handle when that flow is enabled
 
 **Key detail:** The `request_uri` points to `/endpoint/request-object/{requestHandle}`. The request handle is stable for the browser flow, but each request-object fetch creates a fresh request context with its own `state`, `nonce`, and response-encryption key when the effective `response_mode` is `direct_post.jwt`. The request object JWT itself expires quickly (default 10 seconds) to limit fetch/replay windows, but once a wallet has fetched it, the later callback is accepted as long as the stored request context and authentication session still exist.
 
 ## Phase 1: Wallet Fetches Request Object
+
+The wallet URL rendered by the login page only advertises `client_id` and `request_uri`, so wallets normally fetch the request object with `GET /request-object/{requestHandle}`. The implementation also accepts `POST /request-object/{requestHandle}` so a wallet can send `wallet_nonce` and/or `wallet_metadata`.
 
 ```
 Oid4vpIdentityProviderEndpoint.getRequestObject(requestHandle)
@@ -95,7 +97,7 @@ Returns `SignedRequestObject(jwt, encryptionKeyJson)`. The returned `encryptionK
 
 The wallet verifies the request, prompts the user, and POSTs the VP token.
 
-Both same-device and cross-device wallets POST to the `response_uri` (direct_post). The endpoint handles both in the same method:
+Both same-device and cross-device wallets POST to the `response_uri`. For `direct_post`, the form body carries `vp_token`, optional `id_token`, and `state`. For `direct_post.jwt`, the form body carries `response=<JWE/JWT>`; the decrypted payload inside that JWT/JWE must contain `state`, and the form body may also include a separate `state` parameter. The endpoint handles both in the same method:
 
 ```
 Oid4vpIdentityProviderEndpoint.handlePost(state, vpToken, encryptedResponse, error, errorDescription)
@@ -103,11 +105,11 @@ Oid4vpIdentityProviderEndpoint.handlePost(state, vpToken, encryptedResponse, err
 
 `handlePost`:
 
-1. **Reads state** from the form body (OID4VP `direct_post` form parameter)
-2. **KID-based resolution** (encrypted responses only) — whenever `encryptedResponse` is present, extracts the KID from the JWE header, resolves the full request context from `Oid4vpRequestObjectStore`, fills in the state if the wallet omitted it, and rejects the callback if the posted `state` disagrees with that request context
+1. **Reads form parameters** — `state`, `vp_token`, `id_token`, `response`, `error`, and `error_description`
+2. **KID-based resolution** (encrypted responses only) — whenever the `response` form parameter is present, extracts the KID from the JWE header and resolves the full request context from `Oid4vpRequestObjectStore`
 3. **Resolves auth session** from the request context's `{rootSessionId, tabId}`
-4. **Decrypts** (when `response_mode=direct_post.jwt`) — decrypts the JWE using the request context's stored private key, extracts `vp_token`, `error`, `mdocGeneratedNonce`
-5. **Error handling** — if the wallet sent an error, returns a JSON response with `redirect_uri` pointing to the error page (GET endpoint)
+4. **Decrypts and validates state** (when `response_mode=direct_post.jwt`) — decrypts the JWT/JWE from the `response` form parameter using the request context's stored private key, extracts `vp_token`, `id_token`, `state`, `error`, `error_description`, and `mdocGeneratedNonce`, requires the decrypted `state` to match the stored request context, and also rejects the callback if a separate posted `state` form parameter is present but differs from the decrypted `state`
+5. **Error handling** — if the wallet sent an OAuth error (for example `access_denied`), returns a JSON body containing `error` and optional `error_description` without a `redirect_uri`, so the browser can remain on the login page and retry
 6. **Derives same-device vs cross-device behavior from the stored request context** — the callback does not trust a `flow` query parameter; it uses the `flow` value anchored behind the resolved request context
 7. **Calls `processVpToken`** →
 
@@ -208,7 +210,7 @@ The SSE implementation is node-local but state-shared: each node keeps one sched
 
 Errors can occur at multiple points:
 
-- **Wallet-side errors** (user denied consent, credential not available): The wallet may not POST to the verifier at all. The browser stays on the login page and the user can retry.
+- **Wallet-side errors** (user denied consent, credential not available): The wallet may not POST to the verifier at all, or it may POST an OAuth error. In both cases the endpoint returns a plain JSON error body without `redirect_uri`, the browser stays on the login page, and the user can retry.
 - **Server-side errors during direct_post** (revoked credential, invalid signature, etc.): The endpoint returns a JSON `{"redirect_uri": "/endpoint?error=...&error_description=..."}`. The wallet redirects the browser to this URL. The GET handler (`handleGet`) renders the Keycloak error page via `callback.error()`.
 
 ## Class Responsibilities
