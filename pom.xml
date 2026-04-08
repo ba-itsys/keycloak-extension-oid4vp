@@ -37,7 +37,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <jdk.version>21</jdk.version>
 
-    <keycloak.version>26.5.5</keycloak.version>
+    <keycloak.version>26.6.0</keycloak.version>
     <testcontainers.version>2.0.3</testcontainers.version>
     <playwright.version>1.58.0</playwright.version>
     <bytebuddy.version>1.18.7</bytebuddy.version>
