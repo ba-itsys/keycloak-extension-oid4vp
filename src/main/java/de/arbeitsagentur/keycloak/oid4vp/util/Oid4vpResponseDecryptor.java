@@ -83,6 +83,7 @@ public class Oid4vpResponseDecryptor {
             Map<String, Object> payloadMap = JsonSerialization.readValue(payload, Map.class);
 
             String mdocGeneratedNonce = decodeHeaderValue(header.getAgreementPartyUInfo());
+            String state = stringValue(payloadMap.get(OAuth2Constants.STATE));
 
             Object errorObj = payloadMap.get(OAuth2Constants.ERROR);
             if (errorObj != null) {
@@ -90,6 +91,7 @@ public class Oid4vpResponseDecryptor {
                 return new DecryptedResponse(
                         null,
                         null,
+                        state,
                         mdocGeneratedNonce,
                         errorObj.toString(),
                         errorDescObj != null ? errorDescObj.toString() : null);
@@ -107,7 +109,7 @@ public class Oid4vpResponseDecryptor {
                 idToken = s;
             }
 
-            return new DecryptedResponse(vpToken, idToken, mdocGeneratedNonce, null, null);
+            return new DecryptedResponse(vpToken, idToken, state, mdocGeneratedNonce, null, null);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to decrypt response: " + e.getMessage(), e);
         }
@@ -130,5 +132,9 @@ public class Oid4vpResponseDecryptor {
 
     static String decodeHeaderValue(String value) {
         return value != null ? new String(Base64Url.decode(value), StandardCharsets.UTF_8) : null;
+    }
+
+    private static String stringValue(Object value) {
+        return value != null ? value.toString() : null;
     }
 }

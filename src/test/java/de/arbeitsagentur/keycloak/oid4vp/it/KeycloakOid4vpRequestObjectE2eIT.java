@@ -163,16 +163,17 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
         ECKey encryptionKey = ECKey.parse(publicJwk);
 
         String encryptedResponse = encryptWalletResponse(
-                encryptionKey, Map.of("error", "access_denied", "error_description", "wallet rejected"));
+                encryptionKey,
+                Map.of("state", state, "error", "access_denied", "error_description", "wallet rejected"));
         String endpointUri = requestUri.replaceFirst("/request-object/[^/?]+.*$", "");
-        String formBody = "state=" + urlEncode(state) + "&response=" + urlEncode(encryptedResponse);
+        String formBody = "response=" + urlEncode(encryptedResponse);
 
         HttpResponse<String> directPostResponse = postDirectPostWithRetry(httpClient, endpointUri, formBody);
 
         assertThat(directPostResponse.statusCode()).isEqualTo(200);
         assertThat(directPostResponse.body())
-                .contains("redirect_uri")
                 .contains("access_denied")
+                .doesNotContain("redirect_uri")
                 .doesNotContain("Encrypted response expected");
     }
 

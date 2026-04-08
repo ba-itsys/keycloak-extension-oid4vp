@@ -181,7 +181,7 @@ public class Oid4vpIdentityProviderEndpoint {
 
             ResolvedSubmission submission = resolveSubmission(incomingPost, resolvedRequest);
             if (StringUtil.isNotBlank(submission.error())) {
-                return handleError(submission.error(), submission.errorDescription(), submission.state());
+                return handleWalletError(submission.error(), submission.errorDescription());
             }
 
             ensureEncryptedWhenRequired(submission.wasEncrypted());
@@ -284,14 +284,34 @@ public class Oid4vpIdentityProviderEndpoint {
 
         DecryptedResponse decrypted =
                 responseDecryptor.decrypt(incomingPost.encryptedResponse(), resolvedRequest.kidBasedKey());
+        String resolvedState = resolveEncryptedResponseState(
+                resolvedRequest.requestContext(), incomingPost.state(), decrypted.state());
         return new ResolvedSubmission(
-                resolvedRequest.state(),
+                resolvedState,
                 decrypted.vpToken(),
                 decrypted.idToken(),
                 decrypted.error(),
                 decrypted.errorDescription(),
                 decrypted.mdocGeneratedNonce(),
                 true);
+    }
+
+    private String resolveEncryptedResponseState(
+            Oid4vpRequestObjectStore.RequestContextEntry requestContext, String formState, String responseState) {
+        if (requestContext == null || StringUtil.isBlank(requestContext.state())) {
+            throw new IdentityBrokerException("Encrypted response could not be matched to a stored request state.");
+        }
+        if (StringUtil.isBlank(responseState)) {
+            throw new IdentityBrokerException("Encrypted response payload is missing the state parameter.");
+        }
+        String expectedState = requestContext.state();
+        if (!expectedState.equals(responseState)) {
+            throw new IdentityBrokerException("Encrypted response state does not match the request state.");
+        }
+        if (StringUtil.isNotBlank(formState) && !formState.equals(responseState)) {
+            throw new IdentityBrokerException("Encrypted response state does not match the request state.");
+        }
+        return responseState;
     }
 
     private void ensureEncryptedWhenRequired(boolean wasEncrypted) {
@@ -387,7 +407,6 @@ public class Oid4vpIdentityProviderEndpoint {
     }
 
     private Response handleError(String error, String errorDescription, String state) {
-
         event.event(EventType.LOGIN_ERROR)
                 .detail(OAuth2Constants.ERROR, error)
                 .detail(OAuth2Constants.ERROR_DESCRIPTION, errorDescription)
@@ -398,6 +417,15 @@ public class Oid4vpIdentityProviderEndpoint {
         // Include the state so the GET handler can resolve the auth session for Keycloak's error template.
         return responseFactory.jsonRedirectResponse(
                 responseFactory.buildErrorRedirectUri(error, errorDescription, state));
+    }
+
+    private Response handleWalletError(String error, String errorDescription) {
+        event.event(EventType.LOGIN_ERROR)
+                .detail(OAuth2Constants.ERROR, error)
+                .detail(OAuth2Constants.ERROR_DESCRIPTION, errorDescription)
+                .error(Errors.IDENTITY_PROVIDER_ERROR);
+
+        return responseFactory.jsonErrorResponse(Response.Status.OK, error, errorDescription);
     }
 
     /**
