@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.3](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.5.2...v0.5.3) (2026-04-08)
+
+
+### Bug Fixes
+
+* correctly check state in encrypted wallet responses ([285be0c](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/285be0c7d1049db7db424632aa3d8f066d0ef372))
+
+
+### Dependencies
+
+* **deps-dev:** bump com.diffplug.spotless:spotless-maven-plugin ([9d2a8a1](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/9d2a8a1dde9b550e5e6ff2e6469e2817603c8cb9))
+* **deps-dev:** bump net.bytebuddy:byte-buddy-agent ([ee51b75](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/ee51b750edc0c19cf52ac914939dbdd10d48bf97))
+
 ## [0.5.2](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.5.1...v0.5.2) (2026-04-07)
 
 
