@@ -161,6 +161,25 @@ class TrustListProviderTest {
     }
 
     @Test
+    void parseTrustListJwt_unwrappedPayload_throws() throws Exception {
+        SignedJWT signedJWT = new SignedJWT(
+                new JWSHeader(JWSAlgorithm.ES256),
+                new JWTClaimsSet.Builder()
+                        .claim(
+                                "ListAndSchemeInformation",
+                                Map.of(
+                                        "NextUpdate",
+                                        Instant.now().plusSeconds(600).toString()))
+                        .claim("TrustedEntitiesList", List.of())
+                        .build());
+        signedJWT.sign(signer);
+
+        assertThatThrownBy(() -> TrustListProvider.parseTrustListJwt(signedJWT.serialize()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("top-level LoTE object");
+    }
+
+    @Test
     void staticKeys_returnedDirectly() {
         TrustListProvider provider = new TrustListProvider(List.of());
         assertThat(provider.getTrustedKeys()).isEmpty();
@@ -486,7 +505,9 @@ class TrustListProviderTest {
     }
 
     private String buildSignedJwt(JWTClaimsSet claims) throws Exception {
-        SignedJWT signedJWT = new SignedJWT(new JWSHeader(JWSAlgorithm.ES256), claims);
+        SignedJWT signedJWT = new SignedJWT(
+                new JWSHeader(JWSAlgorithm.ES256),
+                new JWTClaimsSet.Builder().claim("LoTE", claims.toJSONObject()).build());
         signedJWT.sign(signer);
         return signedJWT.serialize();
     }
