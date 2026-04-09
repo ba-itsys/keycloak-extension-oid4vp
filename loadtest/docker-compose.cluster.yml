@@ -1,0 +1,115 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  oid4vc-dev:
+    image: ghcr.io/dominikschlosser/oid4vc-dev:v1.8.0
+    user: "0:0"
+    entrypoint:
+      - /bin/sh
+      - -lc
+    command:
+      - >
+        oid4vc-dev issue --wallet-dir /wallet sdjwt --wallet --pid --status-list-uri= --iss https://oid4vc-dev:8086 >/tmp/oid4vc-dev-seed.log 2>&1
+        && exec oid4vc-dev wallet --wallet-dir /wallet serve --port 8085 --base-url http://oid4vc-dev:8085 --auto-accept --preferred-format dc+sd-jwt
+    ports:
+      - "${WALLET_PORT:-18085}:8085"
+      - "${WALLET_UI_PORT:-18086}:8086"
+    volumes:
+      - oid4vc-wallet:/wallet
+
+  keycloak-1:
+    image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.5.5}
+    command:
+      - start
+      - --http-enabled=true
+      - --hostname-strict=false
+      - --proxy-headers=xforwarded
+      - --features=transient-users
+      - --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL_HOST: postgres
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KC_CACHE: ispn
+      KC_CACHE_STACK: jdbc-ping
+      KC_LOG_LEVEL: info,de.arbeitsagentur.keycloak.oid4vp:debug
+    depends_on:
+      postgres:
+        condition: service_healthy
+      oid4vc-dev:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "bash -lc \"exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /realms/wallet-demo/.well-known/openid-configuration HTTP/1.1\\\\r\\\\nHost: localhost\\\\r\\\\n\\\\r\\\\n' >&3 && grep -q '200' <&3\""]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    ports:
+      - "${KC1_PORT:-18081}:8080"
+    volumes:
+      - ../target/keycloak-extension-oid4vp.jar:/opt/keycloak/providers/keycloak-extension-oid4vp.jar:ro
+      - ../src/test/resources/realm-wallet-demo-local.json:/opt/keycloak/data/import/realm-wallet-demo-local.json:ro
+
+  keycloak-2:
+    image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.5.5}
+    command:
+      - start
+      - --http-enabled=true
+      - --hostname-strict=false
+      - --proxy-headers=xforwarded
+      - --features=transient-users
+      - --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL_HOST: postgres
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KC_CACHE: ispn
+      KC_CACHE_STACK: jdbc-ping
+      KC_LOG_LEVEL: info,de.arbeitsagentur.keycloak.oid4vp:debug
+    depends_on:
+      keycloak-1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -lc \"exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /realms/wallet-demo/.well-known/openid-configuration HTTP/1.1\\\\r\\\\nHost: localhost\\\\r\\\\n\\\\r\\\\n' >&3 && grep -q '200' <&3\""]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    ports:
+      - "${KC2_PORT:-18082}:8080"
+    volumes:
+      - ../target/keycloak-extension-oid4vp.jar:/opt/keycloak/providers/keycloak-extension-oid4vp.jar:ro
+      - ../src/test/resources/realm-wallet-demo-local.json:/opt/keycloak/data/import/realm-wallet-demo-local.json:ro
+
+  haproxy:
+    image: haproxy:3.1
+    depends_on:
+      keycloak-1:
+        condition: service_healthy
+      keycloak-2:
+        condition: service_healthy
+    ports:
+      - "${HAPROXY_PORT:-18080}:8080"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+
+volumes:
+  oid4vc-wallet:

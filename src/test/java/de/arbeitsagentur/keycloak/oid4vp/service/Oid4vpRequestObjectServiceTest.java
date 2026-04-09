@@ -142,7 +142,8 @@ class Oid4vpRequestObjectServiceTest {
         assertThat(response.getStatus()).isEqualTo(200);
         InOrder inOrder = inOrder(store, redirectFlowService);
         inOrder.verify(store).storeRequestContext(eq(session), any(Oid4vpRequestObjectStore.RequestContextEntry.class));
-        inOrder.verify(store).storeKidIndex(eq(session), any(String.class), any(String.class));
+        inOrder.verify(store)
+                .storeKidIndex(eq(session), any(String.class), any(Oid4vpRequestObjectStore.RequestContextEntry.class));
         inOrder.verify(redirectFlowService).buildSignedRequestObject(any(RequestObjectParams.class));
     }
 

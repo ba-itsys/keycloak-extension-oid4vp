@@ -91,3 +91,7 @@ mvn spotless:apply verify
 ## Conformance
 
 For OIDF verifier conformance setup and execution, see [conformance.md](conformance.md).
+
+## Load Testing
+
+For clustered browser+SSE load testing of the cross-device flow, see [../loadtest/README.md](../loadtest/README.md).

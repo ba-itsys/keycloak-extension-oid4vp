@@ -35,9 +35,10 @@ import org.keycloak.utils.StringUtil;
  *       remains stable across multiple request-object fetches.
  *   <li><b>State → request context</b>: Maps the OAuth state parameter from a single created
  *       request object to a serialized {@link RequestContextEntry}.
- *   <li><b>KID → state</b>: Maps the HAIP response-encryption JWK key ID to the request state so
- *       `direct_post.jwt` callbacks can recover the correct request context even when the wallet
- *       omits the `state` form field.
+ *   <li><b>KID → request context</b>: Maps the HAIP response-encryption JWK key ID directly to the
+ *       serialized request context so `direct_post.jwt` callbacks can recover the correct
+ *       decryption key even when the wallet omits the `state` form field and state propagation
+ *       across nodes lags slightly.
  * </ul>
  *
  * <p>The flow handle is the authoritative liveness check for every state and KID lookup. Once a
@@ -100,10 +101,14 @@ public class Oid4vpRequestObjectStore {
                                 emptyIfNull(extractKidFromJwk(entry.encryptionKeyJson()))));
     }
 
-    /** Stores a KID → state mapping for decrypting direct_post.jwt responses. */
-    public void storeKidIndex(KeycloakSession session, String kid, String state) {
-        if (StringUtil.isBlank(kid) || StringUtil.isBlank(state)) return;
-        session.singleUseObjects().put(KID_INDEX_PREFIX + kid, ttl.toSeconds(), Map.of(KEY_STATE, state));
+    /** Stores a KID → request context mapping for decrypting direct_post.jwt responses. */
+    public void storeKidIndex(KeycloakSession session, String kid, RequestContextEntry entry) {
+        if (StringUtil.isBlank(kid) || entry == null || StringUtil.isBlank(entry.state())) return;
+        session.singleUseObjects()
+                .put(
+                        KID_INDEX_PREFIX + kid,
+                        ttl.toSeconds(),
+                        Map.of(KEY_STATE, entry.state(), KEY_JSON, serializeEntry(entry)));
     }
 
     public FlowContextEntry resolveFlowHandle(KeycloakSession session, String requestHandle) {
@@ -129,6 +134,15 @@ public class Oid4vpRequestObjectStore {
         if (StringUtil.isBlank(kid)) return null;
         Map<String, String> entry = session.singleUseObjects().get(KID_INDEX_PREFIX + kid);
         if (entry == null) return null;
+        String serializedRequestContext = blankToNull(entry.get(KEY_JSON));
+        if (serializedRequestContext != null) {
+            RequestContextEntry requestContext = deserializeEntry(serializedRequestContext, RequestContextEntry.class);
+            if (resolveFlowHandle(session, requestContext.requestHandle()) == null) {
+                removeKidIndex(session, kid, requestContext.state());
+                return null;
+            }
+            return requestContext;
+        }
         String state = blankToNull(entry.get(KEY_STATE));
         if (state == null) {
             session.singleUseObjects().remove(KID_INDEX_PREFIX + kid);
@@ -146,6 +160,13 @@ public class Oid4vpRequestObjectStore {
         String kid = blankToNull(stateEntry.get(KEY_KID));
         if (kid != null) {
             store.remove(KID_INDEX_PREFIX + kid);
+        }
+    }
+
+    private void removeKidIndex(KeycloakSession session, String kid, String state) {
+        session.singleUseObjects().remove(KID_INDEX_PREFIX + kid);
+        if (StringUtil.isNotBlank(state)) {
+            session.singleUseObjects().remove(STATE_INDEX_PREFIX + state);
         }
     }
 

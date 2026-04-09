@@ -135,8 +135,6 @@ public class Oid4vpDirectPostService {
                             Map.of(KEY_COMPLETE_AUTH_URL, completeAuthUrl));
         }
 
-        requestObjectStore.removeFlowHandle(session, requestHandle);
-
         if (isCrossDevice) {
             return Response.ok("{}").type(MediaType.APPLICATION_JSON).build();
         }
@@ -213,7 +211,9 @@ public class Oid4vpDirectPostService {
         storedAuthSession.removeAuthNote(DEFERRED_IDENTITY_NOTE);
 
         event.event(EventType.LOGIN);
-        return callback.authenticated(context);
+        Response response = callback.authenticated(context);
+        requestObjectStore.removeFlowHandle(session, requestHandle);
+        return response;
     }
 
     public AuthenticationSessionModel resolveExpectedAuthSession(String requestHandle) {

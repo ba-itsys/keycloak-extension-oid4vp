@@ -83,7 +83,7 @@ class Oid4vpRequestObjectStoreTest {
 
         store.storeFlowHandle(session, "handle-1", flowContext);
         store.storeRequestContext(session, requestContext);
-        store.storeKidIndex(session, "kid-1", requestContext.state());
+        store.storeKidIndex(session, "kid-1", requestContext);
 
         assertThat(store.resolveFlowHandle(session, "handle-1")).isEqualTo(flowContext);
         assertThat(store.resolveByState(session, requestContext.state())).isEqualTo(requestContext);
@@ -122,8 +122,8 @@ class Oid4vpRequestObjectStoreTest {
         store.storeFlowHandle(session, "handle-1", flowContext);
         store.storeRequestContext(session, firstRequest);
         store.storeRequestContext(session, secondRequest);
-        store.storeKidIndex(session, "kid-1", firstRequest.state());
-        store.storeKidIndex(session, "kid-2", secondRequest.state());
+        store.storeKidIndex(session, "kid-1", firstRequest);
+        store.storeKidIndex(session, "kid-2", secondRequest);
 
         store.removeFlowHandle(session, "handle-1");
 
@@ -173,8 +173,8 @@ class Oid4vpRequestObjectStoreTest {
         store.storeFlowHandle(session, "handle-1", flowContext);
         store.storeRequestContext(session, firstRequest);
         store.storeRequestContext(session, secondRequest);
-        store.storeKidIndex(session, "kid-1", firstRequest.state());
-        store.storeKidIndex(session, "kid-2", secondRequest.state());
+        store.storeKidIndex(session, "kid-1", firstRequest);
+        store.storeKidIndex(session, "kid-2", secondRequest);
 
         store.removeRequestContext(session, firstRequest.state());
 
@@ -202,7 +202,7 @@ class Oid4vpRequestObjectStoreTest {
                 List.of());
 
         store.storeRequestContext(session, requestContext);
-        store.storeKidIndex(session, "kid-1", requestContext.state());
+        store.storeKidIndex(session, "kid-1", requestContext);
 
         assertThat(store.resolveByState(session, requestContext.state())).isNull();
         assertThat(store.resolveByKid(session, "kid-1")).isNull();
@@ -210,7 +210,7 @@ class Oid4vpRequestObjectStoreTest {
     }
 
     @Test
-    void resolveByKid_keepsKidIndexWhenStateEntryAppearsShortlyAfterward() {
+    void resolveByKid_usesEmbeddedRequestContextWhenStateEntryIsNotVisibleYet() {
         AtomicInteger stateReads = new AtomicInteger();
         when(session.singleUseObjects().get("oid4vp_state:state-1")).thenAnswer(invocation -> {
             if (stateReads.incrementAndGet() == 1) {
@@ -236,10 +236,8 @@ class Oid4vpRequestObjectStoreTest {
 
         store.storeFlowHandle(session, "handle-1", flowContext);
         store.storeRequestContext(session, requestContext);
-        store.storeKidIndex(session, "kid-1", requestContext.state());
+        store.storeKidIndex(session, "kid-1", requestContext);
 
-        assertThat(store.resolveByKid(session, "kid-1")).isNull();
-        assertThat(entries).containsKey("oid4vp_kid:kid-1");
         assertThat(store.resolveByKid(session, "kid-1")).isEqualTo(requestContext);
         assertThat(entries).containsKey("oid4vp_kid:kid-1");
     }
@@ -276,8 +274,8 @@ class Oid4vpRequestObjectStoreTest {
         store.storeFlowHandle(session, "handle-1", flowContext);
         store.storeRequestContext(session, firstRequest);
         store.storeRequestContext(session, secondRequest);
-        store.storeKidIndex(session, "kid-1", firstRequest.state());
-        store.storeKidIndex(session, "kid-2", secondRequest.state());
+        store.storeKidIndex(session, "kid-1", firstRequest);
+        store.storeKidIndex(session, "kid-2", secondRequest);
 
         store.removeFlowHandle(session, "handle-1");
 
