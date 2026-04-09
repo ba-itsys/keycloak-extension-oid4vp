@@ -24,6 +24,7 @@ import jakarta.ws.rs.sse.OutboundSseEvent;
 import jakarta.ws.rs.sse.Sse;
 import jakarta.ws.rs.sse.SseEventSink;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,7 +37,6 @@ import org.keycloak.models.SingleUseObjectProvider;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.sessions.AuthenticationSessionProvider;
 import org.keycloak.sessions.RootAuthenticationSessionModel;
-import org.keycloak.timer.TimerProvider;
 
 class Oid4vpCrossDeviceSseServiceTest {
 
@@ -59,7 +59,7 @@ class Oid4vpCrossDeviceSseServiceTest {
         when(realm.getName()).thenReturn("test-realm");
 
         config = new Oid4vpIdentityProviderConfig();
-        config.setSsePollIntervalMs(100000);
+        config.setSsePollIntervalMs(25);
         config.setSseTimeoutSeconds(1);
         config.setSsePingIntervalSeconds(1);
 
@@ -76,60 +76,60 @@ class Oid4vpCrossDeviceSseServiceTest {
     @Test
     void subscribe_sendsCompleteWhenSharedSignalExists() throws Exception {
         Oid4vpCrossDeviceSseService service = createService();
-        SseEventSink sink = mock(SseEventSink.class);
-        MockSseContext sse = mockSse("complete");
+        AtomicBoolean closed = new AtomicBoolean(false);
+        SseEventSink sink = mockTrackedSink(closed);
+        MockSseContext sse = mockSse();
 
         when(singleUseObjects.get(CROSS_DEVICE_COMPLETE_PREFIX + "test-handle"))
                 .thenReturn(
                         Map.of("complete_auth_url", "http://localhost:8080/complete-auth?request_handle=test-handle"));
 
-        service.subscribe("test-handle", sink, sse.sse(), false);
-        service.pollOnce();
+        service.subscribe("test-handle", sink, sse.sse());
 
-        verify(sse.builder()).name("complete");
-        verify(sse.builder())
+        verify(sse.builder(), timeout(1000)).name("complete");
+        verify(sse.builder(), timeout(1000))
                 .data(
                         String.class,
                         "{\"redirect_uri\":\"http://localhost:8080/complete-auth?request_handle=test-handle\"}");
-        verify(sink).send(any(OutboundSseEvent.class));
-        verify(sink).close();
+        verify(sink, timeout(1000)).send(any(OutboundSseEvent.class));
+        verify(sink, timeout(1000)).close();
     }
 
     @Test
     void subscribe_keepsConnectionOpenAndSendsPingBeforeTimeout() throws Exception {
         config.setSseTimeoutSeconds(5);
         Oid4vpCrossDeviceSseService service = createService();
-        SseEventSink sink = mock(SseEventSink.class);
-        MockSseContext sse = mockSse("ping");
+        AtomicBoolean closed = new AtomicBoolean(false);
+        SseEventSink sink = mockTrackedSink(closed);
+        MockSseContext sse = mockSse();
 
         when(singleUseObjects.get(anyString())).thenReturn(null);
 
-        service.subscribe("test-handle", sink, sse.sse(), false);
-        Thread.sleep(1100);
-        service.pollOnce();
+        service.subscribe("test-handle", sink, sse.sse());
 
-        verify(sse.builder()).name("ping");
-        verify(sse.builder()).data(String.class, "{}");
-        verify(sink).send(any(OutboundSseEvent.class));
-        verify(sink, never()).close();
+        verify(sse.builder(), timeout(2000)).name("ping");
+        verify(sse.builder(), timeout(2000)).data(String.class, "{}");
+        verify(sink, timeout(2000)).send(any(OutboundSseEvent.class));
+        verify(sink, after(1500).never()).close();
+        closed.set(true);
     }
 
     @Test
     void subscribe_sendsTimeoutAndClosesExpiredConnection() throws Exception {
         config.setSseTimeoutSeconds(0);
         Oid4vpCrossDeviceSseService service = createService();
-        SseEventSink sink = mock(SseEventSink.class);
-        MockSseContext sse = mockSse("timeout");
+        AtomicBoolean closed = new AtomicBoolean(false);
+        SseEventSink sink = mockTrackedSink(closed);
+        MockSseContext sse = mockSse();
 
         when(singleUseObjects.get(anyString())).thenReturn(null);
 
-        service.subscribe("test-handle", sink, sse.sse(), false);
-        service.pollOnce();
+        service.subscribe("test-handle", sink, sse.sse());
 
-        verify(sse.builder()).name("timeout");
-        verify(sse.builder()).data(String.class, "{\"error\":\"timeout\"}");
-        verify(sink).send(any(OutboundSseEvent.class));
-        verify(sink).close();
+        verify(sse.builder(), timeout(1000)).name("timeout");
+        verify(sse.builder(), timeout(1000)).data(String.class, "{\"error\":\"timeout\"}");
+        verify(sink, timeout(1000)).send(any(OutboundSseEvent.class));
+        verify(sink, timeout(1000)).close();
     }
 
     @Test
@@ -144,44 +144,46 @@ class Oid4vpCrossDeviceSseServiceTest {
         RealmModel realm = mock(RealmModel.class);
         when(realm.getName()).thenReturn("test-realm");
         Oid4vpCrossDeviceSseService service = new Oid4vpCrossDeviceSseService(session, realm, config);
-        SseEventSink sink = mock(SseEventSink.class);
-        MockSseContext sse = mockSse("error");
+        AtomicBoolean closed = new AtomicBoolean(false);
+        SseEventSink sink = mockTrackedSink(closed);
+        MockSseContext sse = mockSse();
 
-        service.subscribe("test-handle", sink, sse.sse(), false);
-        service.pollOnce();
+        service.subscribe("test-handle", sink, sse.sse());
 
-        verify(sse.builder()).name("error");
-        verify(sse.builder()).data(String.class, "{\"error\":\"realm_not_found\"}");
-        verify(sink).send(any(OutboundSseEvent.class));
-        verify(sink).close();
+        verify(sse.builder(), timeout(1000)).name("error");
+        verify(sse.builder(), timeout(1000)).data(String.class, "{\"error\":\"realm_not_found\"}");
+        verify(sink, timeout(1000)).send(any(OutboundSseEvent.class));
+        verify(sink, timeout(1000)).close();
     }
 
     @Test
     void subscribe_supportsMultipleLocalListenersForSameHandle() throws Exception {
         Oid4vpCrossDeviceSseService service = createService();
-        SseEventSink firstSink = mock(SseEventSink.class);
-        SseEventSink secondSink = mock(SseEventSink.class);
-        MockSseContext sse = mockSse("complete");
+        AtomicBoolean firstClosed = new AtomicBoolean(false);
+        AtomicBoolean secondClosed = new AtomicBoolean(false);
+        SseEventSink firstSink = mockTrackedSink(firstClosed);
+        SseEventSink secondSink = mockTrackedSink(secondClosed);
+        MockSseContext sse = mockSse();
 
         when(singleUseObjects.get(CROSS_DEVICE_COMPLETE_PREFIX + "test-handle"))
                 .thenReturn(
                         Map.of("complete_auth_url", "http://localhost:8080/complete-auth?request_handle=test-handle"));
 
-        service.subscribe("test-handle", firstSink, sse.sse(), false);
-        service.subscribe("test-handle", secondSink, sse.sse(), false);
-        service.pollOnce();
+        service.subscribe("test-handle", firstSink, sse.sse());
+        service.subscribe("test-handle", secondSink, sse.sse());
 
-        verify(firstSink).send(any(OutboundSseEvent.class));
-        verify(firstSink).close();
-        verify(secondSink).send(any(OutboundSseEvent.class));
-        verify(secondSink).close();
+        verify(firstSink, timeout(1000)).send(any(OutboundSseEvent.class));
+        verify(firstSink, timeout(1000)).close();
+        verify(secondSink, timeout(1000)).send(any(OutboundSseEvent.class));
+        verify(secondSink, timeout(1000)).close();
     }
 
     @Test
     void subscribe_sendsExpiredWhenAuthenticationSessionDisappears() throws Exception {
         Oid4vpCrossDeviceSseService service = createService();
-        SseEventSink sink = mock(SseEventSink.class);
-        MockSseContext sse = mockSse("expired");
+        AtomicBoolean closed = new AtomicBoolean(false);
+        SseEventSink sink = mockTrackedSink(closed);
+        MockSseContext sse = mockSse();
         AuthenticationSessionModel authSession = mock(AuthenticationSessionModel.class);
         RootAuthenticationSessionModel rootSession = mock(RootAuthenticationSessionModel.class);
 
@@ -193,12 +195,11 @@ class Oid4vpCrossDeviceSseServiceTest {
         when(singleUseObjects.get(anyString())).thenReturn(null);
 
         service.subscribe("test-handle", sink, sse.sse(), authSession);
-        service.pollOnce();
 
-        verify(sse.builder()).name("expired");
-        verify(sse.builder()).data(String.class, "{\"error\":\"authentication_session_expired\"}");
-        verify(sink).send(any(OutboundSseEvent.class));
-        verify(sink).close();
+        verify(sse.builder(), timeout(1000)).name("expired");
+        verify(sse.builder(), timeout(1000)).data(String.class, "{\"error\":\"authentication_session_expired\"}");
+        verify(sink, timeout(1000)).send(any(OutboundSseEvent.class));
+        verify(sink, timeout(1000)).close();
     }
 
     @Test
@@ -208,10 +209,11 @@ class Oid4vpCrossDeviceSseServiceTest {
         when(realm.getName()).thenReturn("test-realm");
 
         Oid4vpCrossDeviceSseService service = new Oid4vpCrossDeviceSseService(sessionWithoutFactory, realm, config);
-        SseEventSink sink = mock(SseEventSink.class);
-        MockSseContext sse = mockSse("error");
+        AtomicBoolean closed = new AtomicBoolean(false);
+        SseEventSink sink = mockTrackedSink(closed);
+        MockSseContext sse = mockSse();
 
-        service.subscribe("test-handle", sink, sse.sse(), false);
+        service.subscribe("test-handle", sink, sse.sse());
 
         verify(sse.builder()).name("error");
         verify(sse.builder()).data(String.class, "{\"error\":\"sse_unavailable\"}");
@@ -226,7 +228,6 @@ class Oid4vpCrossDeviceSseServiceTest {
         KeycloakSession pollingSession = mock(KeycloakSession.class);
         KeycloakTransactionManager tx = mock(KeycloakTransactionManager.class);
         RealmModel pollingRealm = mock(RealmModel.class);
-        TimerProvider timerProvider = mock(TimerProvider.class);
 
         when(sessionFactory.create()).thenReturn(pollingSession);
         when(pollingSession.getTransactionManager()).thenReturn(tx);
@@ -234,12 +235,23 @@ class Oid4vpCrossDeviceSseServiceTest {
         when(pollingSession.authenticationSessions()).thenReturn(authenticationSessions);
         when(realmProvider.getRealmByName("test-realm")).thenReturn(pollingRealm);
         when(pollingSession.singleUseObjects()).thenReturn(singleUseObjects);
-        when(pollingSession.getProvider(TimerProvider.class)).thenReturn(timerProvider);
 
         return new Oid4vpCrossDeviceSseService(session, realm, config);
     }
 
-    private MockSseContext mockSse(String eventName) {
+    private SseEventSink mockTrackedSink(AtomicBoolean closed) {
+        SseEventSink sink = mock(SseEventSink.class);
+        when(sink.isClosed()).thenAnswer(invocation -> closed.get());
+        doAnswer(invocation -> {
+                    closed.set(true);
+                    return null;
+                })
+                .when(sink)
+                .close();
+        return sink;
+    }
+
+    private MockSseContext mockSse() {
         Sse sse = mock(Sse.class);
         OutboundSseEvent.Builder builder = mock(OutboundSseEvent.Builder.class);
         OutboundSseEvent event = mock(OutboundSseEvent.class);
@@ -249,7 +261,6 @@ class Oid4vpCrossDeviceSseServiceTest {
         when(builder.mediaType(MediaType.APPLICATION_JSON_TYPE)).thenReturn(builder);
         when(builder.data(eq(String.class), any())).thenReturn(builder);
         when(builder.build()).thenReturn(event);
-        when(event.getName()).thenReturn(eventName);
         return new MockSseContext(sse, builder);
     }
 

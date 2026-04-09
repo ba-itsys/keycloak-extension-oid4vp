@@ -19,7 +19,7 @@ sequenceDiagram
 
     opt Cross-device browser waiting path
         Browser->>Keycloak: GET /cross-device/status?request_handle={request_handle}
-        Note over Browser,Keycloak: Browser keeps one SSE connection open.<br/>The SSE service polls Keycloak's shared single-use-object store<br/>for oid4vp_complete:{request_handle} and emits a complete event when found.
+        Note over Browser,Keycloak: Browser keeps one SSE connection open.<br/>A virtual-thread SSE worker polls Keycloak's shared single-use-object store<br/>for oid4vp_complete:{request_handle} and emits a complete event when found.
     end
 
     Wallet->>Keycloak: GET /request-object/{request_handle}

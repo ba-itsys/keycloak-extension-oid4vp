@@ -139,7 +139,7 @@ Trust lists are cached until the earliest of ETSI `ListAndSchemeInformation.Next
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `ssePollIntervalMs` | How often the node-local SSE scheduler polls shared completion state. | `2000` |
+| `ssePollIntervalMs` | How often each SSE connection polls shared completion state. | `2000` |
 | `sseTimeoutSeconds` | Maximum SSE connection lifetime before timeout. | `120` |
 | `ssePingIntervalSeconds` | Keep-alive ping interval. | `10` |
 | `crossDeviceCompleteTtlSeconds` | Lifetime of the cross-device completion marker. The deferred auth record itself uses the realm login timeout. | `300` |
@@ -155,4 +155,4 @@ Each mapper declares a credential format, credential type, and claim path. When 
 
 ## Multi-Node Behavior
 
-Cross-device completion depends on a shared Keycloak `SingleUseObjectProvider`. Each node keeps only its local SSE connections and uses one scheduler thread to poll shared completion markers from the backing store. No cluster notification channel is required, but the single-use object store itself must be shared.
+Cross-device completion depends on a shared Keycloak `SingleUseObjectProvider`. Each node keeps only its local SSE connections; every open cross-device watcher polls the shared completion marker from a virtual thread on the node currently serving that browser connection. No cluster notification channel is required, but the single-use object store itself must be shared.
