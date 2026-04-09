@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.5.3...v0.6.0) (2026-04-09)
+
+
+### Features
+
+* add loadtest and fix sse stability issues ([64b656c](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/64b656c02e049b4346b47b079471cf4151231837))
+
+
+### Bug Fixes
+
+* rework SSE to use virtual threads ([063760a](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/063760a70ff24f6b29b7f9a68b4dbbdc792702a5))
+* use correct lote trust list shape ([808ed16](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/808ed163be470524afb1088befc3cf79e2fbed7d))
+
 ## [0.5.3](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.5.2...v0.5.3) (2026-04-08)
 
 
