@@ -92,7 +92,7 @@ public class Oid4vpRequestObjectService {
             requestObjectStore.storeRequestContext(session, requestContext);
             String kid = Oid4vpRequestObjectStore.extractKidFromJwk(requestContext.encryptionKeyJson());
             if (kid != null) {
-                requestObjectStore.storeKidIndex(session, kid, requestContext.state());
+                requestObjectStore.storeKidIndex(session, kid, requestContext);
             }
 
             SignedRequestObject signedRequest = provider.getRedirectFlowService()

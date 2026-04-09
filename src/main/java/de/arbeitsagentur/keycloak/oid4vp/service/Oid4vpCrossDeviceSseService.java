@@ -85,8 +85,10 @@ public class Oid4vpCrossDeviceSseService {
             return;
         }
 
-        Thread worker =
-                Thread.ofVirtual().name(WORKER_NAME_PREFIX + requestHandle, 0).unstarted(() -> run(connection));
+        Thread worker = Thread.ofVirtual()
+                .name(WORKER_NAME_PREFIX + requestHandle, 0)
+                .inheritInheritableThreadLocals(false)
+                .unstarted(() -> run(connection));
         ACTIVE_WORKERS.add(worker);
         worker.start();
     }

@@ -24,6 +24,7 @@ import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import jakarta.ws.rs.core.Response;
 import java.net.URI;
+import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -49,6 +50,7 @@ class Oid4vpDirectPostServiceTest {
     private RealmModel realm;
     private KeycloakContext context;
     private AuthenticationSessionProvider authenticationSessions;
+    private Oid4vpRequestObjectStore store;
 
     @BeforeEach
     void setUp() {
@@ -57,8 +59,19 @@ class Oid4vpDirectPostServiceTest {
         singleUseObjects = mock(SingleUseObjectProvider.class);
         authenticationSessions = mock(AuthenticationSessionProvider.class);
         Oid4vpIdentityProviderConfig config = mock(Oid4vpIdentityProviderConfig.class);
+        Map<String, Map<String, String>> singleUseEntries = new HashMap<>();
 
         when(session.singleUseObjects()).thenReturn(singleUseObjects);
+        doAnswer(invocation -> {
+                    singleUseEntries.put(invocation.getArgument(0), Map.copyOf(invocation.getArgument(2)));
+                    return null;
+                })
+                .when(singleUseObjects)
+                .put(anyString(), anyLong(), anyMap());
+        when(singleUseObjects.get(anyString()))
+                .thenAnswer(invocation -> singleUseEntries.get(invocation.getArgument(0)));
+        when(singleUseObjects.remove(anyString()))
+                .thenAnswer(invocation -> singleUseEntries.remove(invocation.getArgument(0)));
         when(session.authenticationSessions()).thenReturn(authenticationSessions);
         when(realm.getName()).thenReturn("test-realm");
         when(realm.getAccessCodeLifespanLogin()).thenReturn(600);
@@ -78,7 +91,7 @@ class Oid4vpDirectPostServiceTest {
             return Response.status(status).entity("error-page").build();
         });
 
-        Oid4vpRequestObjectStore store = mock(Oid4vpRequestObjectStore.class);
+        store = mock(Oid4vpRequestObjectStore.class);
 
         service = new Oid4vpDirectPostService(session, realm, config, store);
     }
@@ -133,6 +146,7 @@ class Oid4vpDirectPostServiceTest {
         assertThat(response.getStatus()).isEqualTo(400);
         verify(singleUseObjects, never()).remove(DEFERRED_AUTH_PREFIX + "handle-1");
         verify(singleUseObjects, never()).remove(CROSS_DEVICE_COMPLETE_PREFIX + "handle-1");
+        verify(store, never()).removeFlowHandle(session, "handle-1");
     }
 
     @Test
@@ -155,6 +169,7 @@ class Oid4vpDirectPostServiceTest {
         assertThat(response.getStatus()).isEqualTo(200);
         verify(singleUseObjects).put(eq(DEFERRED_AUTH_PREFIX + "handle-1"), eq(600L), anyMap());
         verify(singleUseObjects, never()).put(eq(CROSS_DEVICE_COMPLETE_PREFIX + "handle-1"), anyLong(), anyMap());
+        verify(store, never()).removeFlowHandle(session, "handle-1");
     }
 
     @Test
@@ -182,6 +197,7 @@ class Oid4vpDirectPostServiceTest {
                         eq(CROSS_DEVICE_COMPLETE_PREFIX + "handle-2"),
                         eq(300L),
                         eq(Map.of(KEY_COMPLETE_AUTH_URL, completeAuthUrl)));
+        verify(store, never()).removeFlowHandle(session, "handle-2");
     }
 
     @SuppressWarnings("unchecked")

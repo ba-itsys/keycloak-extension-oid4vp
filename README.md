@@ -27,6 +27,7 @@ Supported capabilities:
 - [Request Flow Walkthrough](docs/request-flow.md)
 - [Development](docs/development.md)
 - [OIDF Conformance Testing](docs/conformance.md)
+- [Load Testing](loadtest/README.md)
 
 ## How It Works
 
