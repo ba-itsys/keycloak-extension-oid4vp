@@ -204,7 +204,7 @@ Before accepting the subscription, the endpoint resolves the auth session for th
 
 The browser JavaScript receives this and navigates to `/complete-auth?request_handle=...`, triggering the completion flow above.
 
-The SSE implementation is node-local but state-shared: each node keeps one scheduler thread that polls Keycloak's shared single-use object store and fans out events to all SSE listeners currently connected to that node. This avoids a polling thread per browser connection and does not depend on cluster notifications, but it still requires the single-use store itself to be shared across nodes.
+The SSE implementation is node-local but state-shared: each browser SSE connection runs on its own virtual thread and polls Keycloak's shared single-use object store until the flow completes, expires, or times out. No cluster notification channel is required, but the single-use store itself must be shared across nodes so reconnects can resume on any node.
 
 ## Error Handling
 
@@ -234,7 +234,7 @@ Errors can occur at multiple points:
 | `TrustListProvider` | ETSI trust list fetching, certificate extraction, caching, optional JWT signature verification |
 | `X5cChainValidator` | x5c certificate chain validation (shared by SD-JWT, mDoc, status list, trust list) |
 | `Oid4vpDirectPostService` | Deferred auth storage for both flows, session restoration at `/complete-auth` |
-| `Oid4vpCrossDeviceSseService` | Node-local SSE subscription and fan-out for cross-device completion |
+| `Oid4vpCrossDeviceSseService` | Node-local SSE subscription handling for cross-device completion |
 | `Oid4vpRequestObjectStore` | Transient storage for stable flow handles, per-request contexts, state→request mappings, and KID→state mappings. Flow-handle removal invalidates all sibling request contexts without needing explicit per-flow state tracking |
 | `Oid4vpAuthSessionResolver` | Auth session lookup from request object store (state→handle→session, rootSessionId→tabId) |
 | `Oid4vpResponseDecryptor` | JWE decryption for direct_post.jwt responses |
