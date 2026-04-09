@@ -35,6 +35,7 @@ import java.util.Base64;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.jboss.logging.Logger;
@@ -402,8 +403,7 @@ public class TrustListProvider {
 
     static TrustListParseResult parseTrustListJwt(String jwt) throws Exception {
         JWSInput parsedJwt = X5cChainValidator.parseJwt(jwt);
-        TrustListJwt trustList =
-                JsonSerialization.mapper.convertValue(X5cChainValidator.parseClaims(parsedJwt), TrustListJwt.class);
+        TrustListJwt trustList = parseTrustListClaims(X5cChainValidator.parseClaims(parsedJwt));
         Instant expiresAt = parseLoTEInstant(trustList.nextUpdate());
         List<X509Certificate> certificates = new ArrayList<>();
         List<X509Certificate> issuanceCertificates = new ArrayList<>();
@@ -420,6 +420,15 @@ public class TrustListProvider {
                 List.copyOf(revocationCertificates),
                 expiresAt,
                 trustList.loTEType());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static TrustListJwt parseTrustListClaims(Map<String, Object> claims) {
+        Object loTE = claims.get("LoTE");
+        if (!(loTE instanceof Map<?, ?> wrappedClaims)) {
+            throw new IllegalStateException("Trust list JWT payload must contain top-level LoTE object");
+        }
+        return JsonSerialization.mapper.convertValue((Map<String, Object>) wrappedClaims, TrustListJwt.class);
     }
 
     private static void addEntityCertificates(
