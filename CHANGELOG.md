@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.6.0...v0.6.1) (2026-04-10)
+
+
+### Bug Fixes
+
+* flaky test ([fb96e88](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/fb96e88f49c70da02b65daa382d890a6dac68571))
+
 ## [0.6.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.5.3...v0.6.0) (2026-04-09)
 
 
