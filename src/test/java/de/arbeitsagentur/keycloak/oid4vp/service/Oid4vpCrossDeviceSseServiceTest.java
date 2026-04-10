@@ -66,6 +66,12 @@ class Oid4vpCrossDeviceSseServiceTest {
         singleUseObjects = mock(SingleUseObjectProvider.class);
         realmProvider = mock(RealmProvider.class);
         authenticationSessions = mock(AuthenticationSessionProvider.class);
+        RealmModel requestRealm = mock(RealmModel.class);
+
+        when(session.realms()).thenReturn(realmProvider);
+        when(session.singleUseObjects()).thenReturn(singleUseObjects);
+        when(session.authenticationSessions()).thenReturn(authenticationSessions);
+        when(realmProvider.getRealmByName("test-realm")).thenReturn(requestRealm);
     }
 
     @AfterEach
@@ -86,6 +92,7 @@ class Oid4vpCrossDeviceSseServiceTest {
 
         service.subscribe("test-handle", sink, sse.sse());
 
+        verify(sessionFactory, never()).create();
         verify(sse.builder(), timeout(1000)).name("complete");
         verify(sse.builder(), timeout(1000))
                 .data(
@@ -107,6 +114,7 @@ class Oid4vpCrossDeviceSseServiceTest {
 
         service.subscribe("test-handle", sink, sse.sse());
 
+        verify(sessionFactory, timeout(1000)).create();
         verify(sse.builder(), timeout(2000)).name("ping");
         verify(sse.builder(), timeout(2000)).data(String.class, "{}");
         verify(sink, timeout(2000)).send(any(OutboundSseEvent.class));
@@ -172,6 +180,7 @@ class Oid4vpCrossDeviceSseServiceTest {
         service.subscribe("test-handle", firstSink, sse.sse());
         service.subscribe("test-handle", secondSink, sse.sse());
 
+        verify(sessionFactory, never()).create();
         verify(firstSink, timeout(1000)).send(any(OutboundSseEvent.class));
         verify(firstSink, timeout(1000)).close();
         verify(secondSink, timeout(1000)).send(any(OutboundSseEvent.class));

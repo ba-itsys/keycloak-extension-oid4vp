@@ -212,6 +212,15 @@ class Oid4vpLoginFlowHelper {
     }
 
     void assertLoginSucceeded() {
+        try {
+            page.waitForURL(
+                    url -> url.startsWith(callbackUrl) && url.contains("code="),
+                    new Page.WaitForURLOptions().setTimeout(30000));
+        } catch (Exception e) {
+            String bodyText = safeGetBodyText();
+            throw new AssertionError(
+                    "Should arrive at callback with auth code. URL: " + page.url() + "\nPage content: " + bodyText, e);
+        }
         assertThat(page.url()).as("Should arrive at callback with auth code").contains("code=");
     }
 

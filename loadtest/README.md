@@ -150,6 +150,14 @@ That avoids first-login persistence races and keeps the measured path focused on
   Default: `true`
 - `LOAD_INSECURE_TLS`
   Default: `false`
+- `LOAD_QR_SCAN_DELAY_MS`
+  Delay between QR visibility and wallet submission. Default: `750`
+- `LOAD_WALLET_APPROVAL_DELAY_MS`
+  Simulated user review delay before wallet approval. Default: `500`
+- `LOAD_POST_APPROVAL_BROWSER_DELAY_MS`
+  Delay before the browser starts checking for completion after wallet approval. Default: `250`
+- `LOAD_FIRST_BROKER_SUBMIT_DELAY_MS`
+  Delay before submitting the first-broker-login form. Default: `400`
 
 ## Routing Notes
 
@@ -160,4 +168,4 @@ There are two useful local modes:
 - front-door-only browser traffic
   `LOAD_BROWSER_BASE_URIS=http://host.docker.internal:18080`
 
-Unlike the push-MFA loadtest, the OID4VP wallet callback target is embedded in the generated request object. That means deterministic browser-on-node-1 plus wallet-callback-on-node-2 forcing is not currently available from the outside. The HAProxy mode is still useful because reconnects and callbacks can land on different nodes through the shared front door.
+For this OID4VP flow, the wallet callback target is embedded in the generated request object. That means deterministic browser-on-node-1 plus wallet-callback-on-node-2 forcing is not currently available from the outside. The HAProxy mode is still useful because reconnects and callbacks can land on different nodes through the shared front door.

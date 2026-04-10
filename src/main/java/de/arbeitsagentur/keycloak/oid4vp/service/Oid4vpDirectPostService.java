@@ -167,13 +167,16 @@ public class Oid4vpDirectPostService {
                     Response.Status.BAD_REQUEST,
                     "Authentication session does not match the current browser session. Please restart the login flow.");
         }
+        // Use the current request-bound browser session for the broker callback. The stored
+        // session is only used to recover deferred broker state that was serialized earlier.
+        AuthenticationSessionModel activeAuthSession = currentBrowserSession;
 
         session.singleUseObjects().remove(CROSS_DEVICE_COMPLETE_PREFIX + requestHandle);
         Map<String, String> consumedSignal = session.singleUseObjects().remove(DEFERRED_AUTH_PREFIX + requestHandle);
         if (consumedSignal == null) {
             return ErrorPage.error(
                     session,
-                    currentBrowserSession,
+                    activeAuthSession,
                     Response.Status.BAD_REQUEST,
                     "Authentication session expired. Please try logging in again.");
         }
@@ -184,16 +187,16 @@ public class Oid4vpDirectPostService {
         if (serializedCtx == null) {
             return ErrorPage.error(
                     session,
-                    storedAuthSession,
+                    activeAuthSession,
                     Response.Status.BAD_REQUEST,
                     "Authentication data not found. Please try logging in again.");
         }
 
-        session.getContext().setAuthenticationSession(storedAuthSession);
-        session.getContext().setClient(storedAuthSession.getClient());
+        session.getContext().setAuthenticationSession(activeAuthSession);
+        session.getContext().setClient(activeAuthSession.getClient());
 
         BrokeredIdentityContext context = serializedCtx.deserialize(session, storedAuthSession);
-        context.setAuthenticationSession(storedAuthSession);
+        context.setAuthenticationSession(activeAuthSession);
         context.getContextData().keySet().removeIf(key -> key.startsWith("user.attributes."));
 
         String claimsJson = storedAuthSession.getAuthNote(DEFERRED_CLAIMS_NOTE);

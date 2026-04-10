@@ -42,6 +42,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.sse.Sse;
 import jakarta.ws.rs.sse.SseEventSink;
+import java.util.concurrent.TimeUnit;
 import org.jboss.logging.Logger;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
@@ -75,6 +76,8 @@ import org.keycloak.utils.StringUtil;
 public class Oid4vpIdentityProviderEndpoint {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProviderEndpoint.class);
+    private static final int REQUEST_CONTEXT_LOOKUP_MAX_ATTEMPTS = 5;
+    private static final long REQUEST_CONTEXT_LOOKUP_RETRY_DELAY_MILLIS = 25;
 
     private final KeycloakSession session;
     private final RealmModel realm;
@@ -202,8 +205,6 @@ public class Oid4vpIdentityProviderEndpoint {
         }
     }
 
-    private record ResolvedKid(Oid4vpJwk key, Oid4vpRequestObjectStore.RequestContextEntry requestContext) {}
-
     private record IncomingPost(
             String state,
             String vpToken,
@@ -225,24 +226,45 @@ public class Oid4vpIdentityProviderEndpoint {
             boolean wasEncrypted) {}
 
     private ResolvedRequest resolveRequest(String state, String encryptedResponse) {
-        Oid4vpRequestObjectStore.RequestContextEntry requestContext = null;
-        Oid4vpJwk kidBasedKey = null;
         String resolvedState = state;
+        String kid = StringUtil.isNotBlank(encryptedResponse) ? responseDecryptor.extractKid(encryptedResponse) : null;
 
-        if (StringUtil.isNotBlank(encryptedResponse)) {
-            ResolvedKid resolved = resolveFromKid(encryptedResponse);
-            if (resolved != null) {
-                kidBasedKey = resolved.key();
-                requestContext = resolved.requestContext();
-                resolvedState = resolveState(state, requestContext);
+        // A direct_post.jwt callback can land on a different node immediately after the request
+        // object was created. In that case the KID/state indexes may exist logically but still be
+        // briefly invisible via the shared single-use store, so we retry with a short bounded pause.
+        for (int attempt = 1; attempt <= REQUEST_CONTEXT_LOOKUP_MAX_ATTEMPTS; attempt++) {
+            Oid4vpRequestObjectStore.RequestContextEntry requestContext = null;
+            Oid4vpJwk kidBasedKey = null;
+
+            if (kid != null) {
+                requestContext = requestObjectStore.resolveByKid(session, kid);
+                if (requestContext != null) {
+                    kidBasedKey = parseEncryptionKey(requestContext);
+                    resolvedState = resolveState(state, requestContext);
+                }
             }
+
+            if (requestContext == null) {
+                requestContext = requestObjectStore.resolveByState(session, resolvedState);
+                if (requestContext != null) {
+                    resolvedState = resolveState(state, requestContext);
+                    kidBasedKey = parseEncryptionKey(requestContext);
+                }
+            }
+
+            if (requestContext != null || attempt == REQUEST_CONTEXT_LOOKUP_MAX_ATTEMPTS || kid == null) {
+                if (attempt > 1 && requestContext != null) {
+                    LOG.debugf(
+                            "OID4VP callback request context became visible after %d lookup attempts: state=%s kid=%s",
+                            attempt, resolvedState, kid);
+                }
+                return new ResolvedRequest(resolvedState, requestContext, kidBasedKey);
+            }
+
+            pauseRequestContextLookup();
         }
 
-        if (requestContext == null) {
-            requestContext = requestObjectStore.resolveByState(session, resolvedState);
-        }
-
-        return new ResolvedRequest(resolvedState, requestContext, kidBasedKey);
+        return new ResolvedRequest(resolvedState, null, null);
     }
 
     private String resolveState(String postedState, Oid4vpRequestObjectStore.RequestContextEntry requestContext) {
@@ -323,16 +345,25 @@ public class Oid4vpIdentityProviderEndpoint {
         }
     }
 
-    private ResolvedKid resolveFromKid(String encryptedResponse) {
-        String kid = responseDecryptor.extractKid(encryptedResponse);
-        if (kid == null) return null;
-        Oid4vpRequestObjectStore.RequestContextEntry requestContext = requestObjectStore.resolveByKid(session, kid);
-        if (requestContext == null || requestContext.encryptionKeyJson() == null) return null;
-        try {
-            return new ResolvedKid(Oid4vpJwk.parse(requestContext.encryptionKeyJson()), requestContext);
-        } catch (Exception e) {
-            LOG.warnf("Failed to parse encryption key from KID entry: %s", e.getMessage());
+    private Oid4vpJwk parseEncryptionKey(Oid4vpRequestObjectStore.RequestContextEntry requestContext) {
+        if (requestContext == null || requestContext.encryptionKeyJson() == null) {
             return null;
+        }
+        try {
+            return Oid4vpJwk.parse(requestContext.encryptionKeyJson());
+        } catch (Exception e) {
+            LOG.warnf("Failed to parse encryption key from stored request context: %s", e.getMessage());
+            return null;
+        }
+    }
+
+    private void pauseRequestContextLookup() {
+        try {
+            // Sleeping here is intentional: repeated reads without time passing do not help when
+            // the request-context indexes are still propagating across nodes.
+            TimeUnit.MILLISECONDS.sleep(REQUEST_CONTEXT_LOOKUP_RETRY_DELAY_MILLIS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
         }
     }
 
