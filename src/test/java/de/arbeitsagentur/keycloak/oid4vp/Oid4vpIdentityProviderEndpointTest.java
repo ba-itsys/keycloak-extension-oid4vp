@@ -212,6 +212,47 @@ class Oid4vpIdentityProviderEndpointTest {
     }
 
     @Test
+    void handlePost_withEncryptedResponseAndDelayedKidLookup_retriesUntilContextIsVisible() throws Exception {
+        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("kid-delayed").generate();
+        String encryptedResponse = encryptPayload(
+                key, Map.of("state", "state-1", "error", "access_denied", "error_description", "Wallet rejected"));
+
+        when(store.resolveByKid(session, "kid-delayed"))
+                .thenReturn(null, requestContext("handle-1", "state-1", "nonce-1", key.toJSONString(), "same_device"));
+
+        Response response = endpoint.handlePost(null, null, null, encryptedResponse, null, null);
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat((String) response.getEntity())
+                .contains("\"error\":\"access_denied\"")
+                .contains("Wallet rejected")
+                .doesNotContain("redirect_uri");
+        verify(store, times(2)).resolveByKid(session, "kid-delayed");
+    }
+
+    @Test
+    void handlePost_withEncryptedResponseAndStateFallback_usesStoredEncryptionKey() throws Exception {
+        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("kid-state-fallback").generate();
+        String encryptedResponse = encryptPayload(
+                key,
+                Map.of("state", "state-fallback", "error", "access_denied", "error_description", "Wallet rejected"));
+
+        when(store.resolveByKid(session, "kid-state-fallback")).thenReturn(null);
+        when(store.resolveByState(session, "state-fallback"))
+                .thenReturn(requestContext("handle-1", "state-fallback", "nonce-1", key.toJSONString(), "same_device"));
+
+        Response response = endpoint.handlePost("state-fallback", null, null, encryptedResponse, null, null);
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat((String) response.getEntity())
+                .contains("\"error\":\"access_denied\"")
+                .contains("Wallet rejected")
+                .doesNotContain("redirect_uri");
+        verify(store).resolveByKid(session, "kid-state-fallback");
+        verify(store).resolveByState(session, "state-fallback");
+    }
+
+    @Test
     void handlePost_withEncryptedResponseAndMismatchedPayloadState_returnsError() throws Exception {
         ECKey key =
                 new ECKeyGenerator(Curve.P_256).keyID("kid-payload-mismatch").generate();

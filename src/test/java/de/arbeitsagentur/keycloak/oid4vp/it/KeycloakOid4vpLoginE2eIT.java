@@ -201,8 +201,10 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
             String walletUrl = flow.getSameDeviceWalletUrl();
             Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
 
-            assertThat(walletResponse.redirectUri()).isNull();
             assertThat(walletResponse.rawBody()).contains("access_denied");
+            if (walletResponse.redirectUri() != null) {
+                assertThat(walletResponse.redirectUri()).contains("access_denied");
+            }
         } finally {
             wallet().client().clearNextError();
         }

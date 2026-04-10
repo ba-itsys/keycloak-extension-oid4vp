@@ -28,13 +28,21 @@ import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
+import org.keycloak.broker.provider.IdentityProvider;
 import org.keycloak.broker.provider.IdentityProviderDataMarshaller;
+import org.keycloak.broker.provider.IdentityProviderFactory;
 import org.keycloak.broker.provider.UserAuthenticationIdentityProvider;
+import org.keycloak.broker.social.SocialIdentityProvider;
+import org.keycloak.events.EventBuilder;
+import org.keycloak.events.EventType;
 import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.ClientModel;
+import org.keycloak.models.IdentityProviderStorageProvider;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.KeycloakUriInfo;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.SingleUseObjectProvider;
@@ -198,6 +206,111 @@ class Oid4vpDirectPostServiceTest {
                         eq(300L),
                         eq(Map.of(KEY_COMPLETE_AUTH_URL, completeAuthUrl)));
         verify(store, never()).removeFlowHandle(session, "handle-2");
+    }
+
+    @Test
+    void completeAuth_usesCurrentBrowserSessionForAuthenticatedCallback() {
+        RootAuthenticationSessionModel rootSession = mock(RootAuthenticationSessionModel.class);
+        AuthenticationSessionModel storedAuthSession = mock(AuthenticationSessionModel.class);
+        AuthenticationSessionModel currentAuthSession = mock(AuthenticationSessionModel.class);
+        ClientModel client = mock(ClientModel.class);
+        EventBuilder event = mock(EventBuilder.class, RETURNS_SELF);
+        AbstractIdentityProvider.AuthenticationCallback callback =
+                mock(AbstractIdentityProvider.AuthenticationCallback.class);
+        Map<String, String> authNotes = new HashMap<>();
+        Oid4vpIdentityProviderConfig idpConfig = new Oid4vpIdentityProviderConfig();
+        idpConfig.setAlias("oid4vp");
+        idpConfig.setEnabled(true);
+        idpConfig.setProviderId("oid4vp");
+        BrokeredIdentityContext brokeredIdentityContext = createBrokeredIdentityContext(idpConfig);
+        IdentityProviderStorageProvider identityProviders = mock(IdentityProviderStorageProvider.class);
+        KeycloakSessionFactory sessionFactory = mock(KeycloakSessionFactory.class);
+        @SuppressWarnings("rawtypes")
+        IdentityProviderFactory identityProviderFactory = mock(IdentityProviderFactory.class);
+        @SuppressWarnings("rawtypes")
+        UserAuthenticationIdentityProvider deserializedIdp = mock(UserAuthenticationIdentityProvider.class);
+        IdentityProviderDataMarshaller marshaller = new IdentityProviderDataMarshaller() {
+            @Override
+            public String serialize(Object object) {
+                return object != null ? object.toString() : "";
+            }
+
+            @Override
+            public <T> T deserialize(String value, Class<T> clazz) {
+                return null;
+            }
+        };
+
+        when(authenticationSessions.getRootAuthenticationSession(realm, "root-session"))
+                .thenReturn(rootSession);
+        when(rootSession.getAuthenticationSessions()).thenReturn(Map.of("tab-1", storedAuthSession));
+        when(rootSession.getId()).thenReturn("root-session");
+        when(client.getId()).thenReturn("client-1");
+        when(storedAuthSession.getParentSession()).thenReturn(rootSession);
+        when(currentAuthSession.getParentSession()).thenReturn(rootSession);
+        when(storedAuthSession.getTabId()).thenReturn("tab-1");
+        when(currentAuthSession.getTabId()).thenReturn("tab-1");
+        when(storedAuthSession.getClient()).thenReturn(client);
+        when(currentAuthSession.getClient()).thenReturn(client);
+        when(storedAuthSession.getRealm()).thenReturn(realm);
+        when(currentAuthSession.getRealm()).thenReturn(realm);
+        when(context.getAuthenticationSession()).thenReturn(currentAuthSession);
+        when(realm.isRegistrationEmailAsUsername()).thenReturn(false);
+        when(event.event(EventType.LOGIN)).thenReturn(event);
+        when(session.identityProviders()).thenReturn(identityProviders);
+        when(identityProviders.getByAlias("oid4vp")).thenReturn(idpConfig);
+        when(session.getKeycloakSessionFactory()).thenReturn(sessionFactory);
+        when(sessionFactory.getProviderFactoriesStream(IdentityProvider.class))
+                .thenReturn(java.util.stream.Stream.of(identityProviderFactory));
+        when(sessionFactory.getProviderFactoriesStream(SocialIdentityProvider.class))
+                .thenReturn(java.util.stream.Stream.empty());
+        when(identityProviderFactory.getId()).thenReturn("oid4vp");
+        when(identityProviderFactory.create(session, idpConfig)).thenReturn((IdentityProvider) deserializedIdp);
+        when(deserializedIdp.getMarshaller()).thenReturn(marshaller);
+
+        doAnswer(invocation -> {
+                    authNotes.put(invocation.getArgument(0), invocation.getArgument(1));
+                    return null;
+                })
+                .when(storedAuthSession)
+                .setAuthNote(anyString(), anyString());
+        doAnswer(invocation -> {
+                    authNotes.put(invocation.getArgument(0), invocation.getArgument(1));
+                    return null;
+                })
+                .when(currentAuthSession)
+                .setAuthNote(anyString(), anyString());
+        when(storedAuthSession.getAuthNote(anyString()))
+                .thenAnswer(invocation -> authNotes.get(invocation.getArgument(0)));
+        when(currentAuthSession.getAuthNote(anyString()))
+                .thenAnswer(invocation -> authNotes.get(invocation.getArgument(0)));
+        doAnswer(invocation -> {
+                    authNotes.remove(invocation.getArgument(0));
+                    return null;
+                })
+                .when(storedAuthSession)
+                .removeAuthNote(anyString());
+        doAnswer(invocation -> {
+                    authNotes.remove(invocation.getArgument(0));
+                    return null;
+                })
+                .when(currentAuthSession)
+                .removeAuthNote(anyString());
+
+        service.storeAndSignal(storedAuthSession, "handle-1", brokeredIdentityContext, false);
+        when(callback.authenticated(any(BrokeredIdentityContext.class))).thenAnswer(invocation -> {
+            BrokeredIdentityContext context = invocation.getArgument(0);
+            assertThat(context.getAuthenticationSession()).isSameAs(currentAuthSession);
+            return Response.ok("ok").build();
+        });
+
+        Response response = service.completeAuth("handle-1", callback, event);
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        verify(context).setAuthenticationSession(currentAuthSession);
+        verify(context).setClient(client);
+        verify(callback).authenticated(any(BrokeredIdentityContext.class));
+        verify(store).removeFlowHandle(session, "handle-1");
     }
 
     @SuppressWarnings("unchecked")

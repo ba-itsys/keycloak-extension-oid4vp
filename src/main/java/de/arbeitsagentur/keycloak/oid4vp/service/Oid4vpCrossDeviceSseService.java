@@ -54,6 +54,7 @@ public class Oid4vpCrossDeviceSseService {
     private final int timeoutSeconds;
     private final int pingIntervalSeconds;
     private final int pollIntervalMs;
+    private final KeycloakSession requestSession;
     private final KeycloakSessionFactory sessionFactory;
 
     public Oid4vpCrossDeviceSseService(KeycloakSession session, RealmModel realm, Oid4vpConfigProvider config) {
@@ -61,6 +62,7 @@ public class Oid4vpCrossDeviceSseService {
         this.timeoutSeconds = config.getSseTimeoutSeconds();
         this.pingIntervalSeconds = config.getSsePingIntervalSeconds();
         this.pollIntervalMs = config.getSsePollIntervalMs();
+        this.requestSession = session;
         this.sessionFactory = session.getKeycloakSessionFactory();
     }
 
@@ -82,6 +84,10 @@ public class Oid4vpCrossDeviceSseService {
         if (sessionFactory == null) {
             LOG.warn("Cross-device SSE disabled because no KeycloakSessionFactory is available");
             sendAndCloseError(connection, "error", "sse_unavailable");
+            return;
+        }
+        PollResult immediateResult = pollCurrentRequest(connection);
+        if (immediateResult != null && handlePollResult(connection, immediateResult)) {
             return;
         }
 
@@ -115,33 +121,20 @@ public class Oid4vpCrossDeviceSseService {
                     return;
                 }
 
-                switch (pollResult.status()) {
-                    case COMPLETE -> {
-                        sendAndClose(
-                                connection,
-                                "complete",
-                                toJson(Map.of(OAuth2Constants.REDIRECT_URI, pollResult.completeAuthUrl())));
+                if (handlePollResult(connection, pollResult)) {
+                    return;
+                }
+                if (!now.isBefore(connection.nextPingAt())) {
+                    if (!send(connection, "ping", "{}")) {
                         return;
                     }
-                    case AUTHENTICATION_SESSION_EXPIRED -> {
-                        sendAndCloseError(connection, "expired", "authentication_session_expired");
-                        return;
-                    }
-                    case REALM_NOT_FOUND -> {
-                        sendAndCloseError(connection, "error", "realm_not_found");
-                        return;
-                    }
-                    case PENDING -> {
-                        if (!now.isBefore(connection.nextPingAt())) {
-                            if (!send(connection, "ping", "{}")) {
-                                return;
-                            }
-                            connection.setNextPingAt(now.plusSeconds(pingIntervalSeconds));
-                        }
-                    }
+                    connection.setNextPingAt(now.plusSeconds(pingIntervalSeconds));
                 }
 
                 try {
+                    // This stream is implemented as lightweight polling against shared Keycloak
+                    // state. The sleep keeps idle connections cheap while still reacting quickly
+                    // once the wallet callback stores the completion signal.
                     Thread.sleep(Math.max(10, pollIntervalMs));
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
@@ -154,6 +147,58 @@ public class Oid4vpCrossDeviceSseService {
             closeQuietly(connection.eventSink());
         } finally {
             ACTIVE_WORKERS.remove(Thread.currentThread());
+        }
+    }
+
+    private boolean handlePollResult(PendingConnection connection, PollResult pollResult) {
+        switch (pollResult.status()) {
+            case COMPLETE -> {
+                sendAndClose(
+                        connection,
+                        "complete",
+                        toJson(Map.of(OAuth2Constants.REDIRECT_URI, pollResult.completeAuthUrl())));
+                return true;
+            }
+            case AUTHENTICATION_SESSION_EXPIRED -> {
+                sendAndCloseError(connection, "expired", "authentication_session_expired");
+                return true;
+            }
+            case REALM_NOT_FOUND -> {
+                sendAndCloseError(connection, "error", "realm_not_found");
+                return true;
+            }
+            case PENDING -> {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private PollResult pollCurrentRequest(PendingConnection connection) {
+        if (requestSession == null) {
+            return null;
+        }
+        try {
+            RealmModel realm = requestSession.realms().getRealmByName(realmName);
+            if (realm == null) {
+                return PollResult.realmNotFound();
+            }
+
+            SingleUseObjectProvider store = requestSession.singleUseObjects();
+            Map<String, String> signal = store.get(CROSS_DEVICE_COMPLETE_PREFIX + connection.requestHandle());
+            String completeAuthUrl = signal != null ? signal.get(KEY_COMPLETE_AUTH_URL) : null;
+            if (completeAuthUrl != null) {
+                return PollResult.complete(completeAuthUrl);
+            }
+
+            if (isAuthenticationSessionExpired(requestSession, realm, connection)) {
+                return PollResult.authenticationSessionExpired();
+            }
+
+            return PollResult.pending();
+        } catch (RuntimeException ex) {
+            LOG.debugf(ex, "Immediate cross-device SSE check failed for %s", connection.requestHandle());
+            return null;
         }
     }
 

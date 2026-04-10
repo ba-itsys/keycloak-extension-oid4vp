@@ -23,6 +23,10 @@ const LOGIN_PAGE_TIMEOUT_MS = intEnv('LOAD_LOGIN_PAGE_TIMEOUT_MS', 10000);
 const OID4VP_PAGE_TIMEOUT_MS = intEnv('LOAD_OID4VP_PAGE_TIMEOUT_MS', 10000);
 const POST_WALLET_TIMEOUT_MS = intEnv('LOAD_POST_WALLET_TIMEOUT_MS', 20000);
 const CALLBACK_TIMEOUT_MS = intEnv('LOAD_CALLBACK_TIMEOUT_MS', 20000);
+const QR_SCAN_DELAY_MS = intEnv('LOAD_QR_SCAN_DELAY_MS', 750);
+const WALLET_APPROVAL_DELAY_MS = intEnv('LOAD_WALLET_APPROVAL_DELAY_MS', 500);
+const POST_APPROVAL_BROWSER_DELAY_MS = intEnv('LOAD_POST_APPROVAL_BROWSER_DELAY_MS', 250);
+const FIRST_BROKER_SUBMIT_DELAY_MS = intEnv('LOAD_FIRST_BROKER_SUBMIT_DELAY_MS', 400);
 const CONFIGURE_IDP = boolEnv('LOAD_CONFIGURE_IDP', true);
 const INSECURE_TLS = boolEnv('LOAD_INSECURE_TLS', false);
 
@@ -69,6 +73,10 @@ export function setup() {
     console.log(`Duration: ${DURATION_SECONDS}s`);
     console.log(`Pre-allocated VUs: ${PRE_ALLOCATED_VUS}`);
     console.log(`Max VUs: ${MAX_VUS}`);
+    console.log(`QR scan delay: ${QR_SCAN_DELAY_MS}ms`);
+    console.log(`Wallet approval delay: ${WALLET_APPROVAL_DELAY_MS}ms`);
+    console.log(`Post-approval browser delay: ${POST_APPROVAL_BROWSER_DELAY_MS}ms`);
+    console.log(`First broker submit delay: ${FIRST_BROKER_SUBMIT_DELAY_MS}ms`);
 
     if (!CONFIGURE_IDP) {
         return;
@@ -95,7 +103,8 @@ export async function loginFlow() {
             throw new Error('Cross-device wallet URL missing from login page');
         }
 
-        await acceptPresentationRequest(walletUrl);
+        await waitForDelay(page, QR_SCAN_DELAY_MS);
+        await acceptPresentationRequest(page, walletUrl);
         await waitForWalletCompletion(page, expectedRedirectUri);
 
         if (!(await hasFirstBrokerLoginForm(page))) {
@@ -110,7 +119,8 @@ export async function loginFlow() {
     }
 }
 
-async function acceptPresentationRequest(walletUrl) {
+async function acceptPresentationRequest(page, walletUrl) {
+    await waitForDelay(page, WALLET_APPROVAL_DELAY_MS);
     let response = walletPost('/api/presentations', { uri: walletUrl });
     if (isSessionExpiredResponse(response.body)) {
         response = walletPost('/api/presentations', { uri: walletUrl });
@@ -121,6 +131,7 @@ async function acceptPresentationRequest(walletUrl) {
 }
 
 async function waitForWalletCompletion(page, expectedRedirectUri) {
+    await waitForDelay(page, POST_APPROVAL_BROWSER_DELAY_MS);
     const deadline = Date.now() + POST_WALLET_TIMEOUT_MS;
     while (Date.now() < deadline) {
         if (isExpectedCallback(page.url(), expectedRedirectUri)) {
@@ -140,6 +151,7 @@ async function completeFirstBrokerLogin(page, expectedRedirectUri) {
     await fillIfVisible(page, 'input[name="email"]', `load-oid4vp-${suffix}@example.com`);
     await fillIfVisible(page, 'input[name="firstName"]', 'Load');
     await fillIfVisible(page, 'input[name="lastName"]', 'Tester');
+    await waitForDelay(page, FIRST_BROKER_SUBMIT_DELAY_MS);
     await page.locator('input[type="submit"], button[type="submit"]').first().click();
     await waitForCallbackUrl(page, expectedRedirectUri, CALLBACK_TIMEOUT_MS);
 }
@@ -169,6 +181,13 @@ async function fillIfVisible(page, selector, value) {
         return;
     }
     await locator.first().fill(value);
+}
+
+async function waitForDelay(page, delayMs) {
+    if (delayMs <= 0) {
+        return;
+    }
+    await page.waitForTimeout(delayMs);
 }
 
 function isExpectedCallback(currentUrl, expectedRedirectUri) {

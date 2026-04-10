@@ -299,8 +299,9 @@ public class VpTokenProcessor {
         }
     }
 
-    // Wallets may set the KB-JWT "aud" claim to either client_id or response_uri depending on the flow.
-    // Try client_id first, then fall back to alternateResponseUri (the redirect flow's response_uri).
+    // Wallets in the field are inconsistent here: some bind the KB-JWT to client_id, others to
+    // response_uri. We try the configured client_id first and then one bounded fallback to the
+    // redirect flow's response_uri so interoperability does not depend on a single audience choice.
     private SdJwtVerificationResult verifySdJwtWithFallback(
             String sdJwt,
             String clientId,
