@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.6.1...v0.6.2) (2026-04-16)
+
+
+### Dependencies
+
+* **deps-dev:** bump com.microsoft.playwright:playwright ([103768a](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/103768a16ff6b228b14258b678c57c5fd6a04adb))
+
 ## [0.6.1](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.6.0...v0.6.1) (2026-04-10)
 
 
