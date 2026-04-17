@@ -1,51 +1,92 @@
 # OIDF Conformance Testing
 
-This repo includes an integration test that drives the OpenID Foundation verifier conformance suite against the Keycloak OID4VP verifier flow.
+This repo runs verifier conformance outside the Java test suite.
 
-## What it covers
+- [`scripts/oidf-verifier-conformance.sh`](/Users/dominik/projects/keycloak-extension-oid4vp/scripts/oidf-verifier-conformance.sh) builds the provider, starts Keycloak, opens a public HTTPS URL, and then invokes the Python driver.
+- [`scripts/oidf_verifier_conformance.py`](/Users/dominik/projects/keycloak-extension-oid4vp/scripts/oidf_verifier_conformance.py) configures Keycloak for each scenario, creates private OIDF plans, runs every module in each plan, and writes a JSON report.
 
-`KeycloakOid4vpConformanceIT` runs the current same-device verifier module for this matrix:
-- `sd_jwt_vc` + `x509_san_dns` + `direct_post.jwt`
-- `sd_jwt_vc` + `x509_hash` + `direct_post.jwt`
-- `iso_mdl` + `x509_san_dns` + `direct_post.jwt`
-- `iso_mdl` + `x509_hash` + `direct_post.jwt`
+## Why Not The Official Python Runner
 
-The test creates a fresh signing keypair, publishes a minimal ETSI trust list containing the necessary issuer certificates for each scenario, creates an OIDF plan, starts one module, and then triggers our verifier through Keycloak.
+The official suite still ships `scripts/run-test-plan.py`, and the OpenID Foundation recommends it for CI in general. After reviewing the current upstream runner, this repo does not use it directly for verifier testing:
+
+- the upstream runner only auto-drives `WAITING` modules through `op_test` recursion or bundled sample clients
+- it does not contain a verifier-specific hook that can launch an external OID4VP verifier flow from a module's exported `authorization_endpoint`
+- verifier testing here still needs custom logic to:
+  - reconfigure the Keycloak IdP per scenario
+  - fetch the same-device `openid4vp://` link from the Keycloak login page
+  - forward `client_id` and `request_uri` into the suite's mock-wallet endpoint
+  - keep or delete private OIDF plans based on the local result
+
+So this repo uses the suite HTTP API directly instead of wrapping `run-test-plan.py`.
+
+## Covered Matrix
+
+The standalone runner executes every module in each of these supported verifier scenarios:
+
+- OID4VP Final: `sd_jwt_vc` + `x509_san_dns` + `direct_post.jwt`
+- OID4VP Final: `sd_jwt_vc` + `x509_hash` + `direct_post.jwt`
+- OID4VP Final: `iso_mdl` + `x509_san_dns` + `direct_post.jwt`
+- OID4VP Final: `iso_mdl` + `x509_hash` + `direct_post.jwt`
+- OID4VP Final/HAIP: `sd_jwt_vc` + `x509_hash` + `direct_post.jwt`
+- OID4VP Final/HAIP: `iso_mdl` + `x509_hash` + `direct_post.jwt`
+
+For each scenario the runner:
+
+- generates fresh verifier signing material
+- serves a temporary ETSI trust-list JWT to Keycloak
+- creates a fresh Keycloak IdP alias and mapper set
+- creates a private OIDF plan
+- runs every module returned by that plan
+- prints plan URLs and writes a JSON report with per-module status
 
 ## Configuration
 
-The test reads environment variables first and then `.env` from the repo root. It is skipped when the API key is absent. In CI it is also skipped by default unless `OID4VP_CONFORMANCE_RUN_IN_CI=true`.
+The wrapper loads environment variables first and then `.env` from the repo root.
 
-Supported keys:
-- `OIDF_CONFORMANCE_API_KEY` or `OID4VP_CONFORMANCE_API_KEY`: required OIDF token
-- `OIDF_CONFORMANCE_BASE_URL` or `OID4VP_CONFORMANCE_BASE_URL`: optional, defaults to `https://demo.certification.openid.net`
-- `OID4VP_CONFORMANCE_PLAN_NAME`: optional, defaults to `oid4vp-1final-verifier-test-plan`
-- `OID4VP_CONFORMANCE_TEST_MODULE`: optional explicit module name; otherwise the first module from the plan is used
-- `OID4VP_CONFORMANCE_PUBLIC_BASE_URL`: optional public HTTPS URL for the local Keycloak instance
-- `OID4VP_CONFORMANCE_KEEP_PLANS_ON_SUCCESS`: optional, defaults to `true`; set `false` only if you explicitly want the test to delete successful plans afterwards
-- `OID4VP_CONFORMANCE_RUN_IN_CI`: optional, defaults to `false`
+Required:
 
-If `OID4VP_CONFORMANCE_PUBLIC_BASE_URL` is not set, the test falls back to a local `ngrok` binary on `PATH`.
-The test probes the local ngrok admin API on ports `4040` through `4045`, because ngrok may shift the admin port when `4040` is already in use.
+- `OIDF_CONFORMANCE_API_KEY` or `OID4VP_CONFORMANCE_API_KEY`
+
+Optional:
+
+- `OIDF_CONFORMANCE_BASE_URL` or `OID4VP_CONFORMANCE_BASE_URL`
+  Default: `https://demo.certification.openid.net`
+- `OID4VP_CONFORMANCE_PUBLIC_BASE_URL`
+  Reuse an existing public HTTPS Keycloak URL and skip ngrok
+- `OID4VP_CONFORMANCE_NGROK_DOMAIN`
+  Use a custom ngrok domain when the wrapper starts ngrok
+- `OID4VP_CONFORMANCE_RUN_DIR`
+  Keep logs and reports in a chosen directory instead of a temp dir
 
 ## Running
 
-Build the provider first so the Keycloak test container can mount the current jar:
+```bash
+scripts/oidf-verifier-conformance.sh
+```
+
+Useful options:
+
+- `--public-base-url <url>`: skip ngrok and reuse an existing public Keycloak URL
+- `--suite-base-url <url>`: point at staging or another suite instance
+- `--delete-passing-plans`: delete successful private OIDF plans after the run
+- `--keep-stack`: leave Keycloak running after the script exits
+- `--no-build`: skip `mvn package -DskipTests`
+
+## Plan Retention
+
+By default the runner keeps every OIDF plan on the website.
+
+Nothing is deleted unless you explicitly opt in with:
 
 ```bash
-mvn -q -DskipTests package
-mvn -q -Dit.test=KeycloakOid4vpConformanceIT failsafe:integration-test
+scripts/oidf-verifier-conformance.sh --delete-passing-plans
 ```
+
+Even with that flag, failed scenarios keep their plans for inspection.
 
 ## Notes
 
-- The conformance suite needs a public verifier URL because it fetches our `request_uri` and POSTs to our `response_uri`.
-- Successful runs are kept in the OIDF UI by default so their logs and result pages remain inspectable after the test completes.
-- All conformance scenarios run with `direct_post.jwt`.
-- The `x509_hash` scenarios use `enforceHaip=true`, which overrides the effective `clientIdScheme` to `x509_hash`.
-- The `x509_san_dns` scenarios keep `enforceHaip=false` and configure `responseMode=direct_post.jwt` explicitly.
-- Each scenario uses a fresh Keycloak IdP alias so mapper and verifier config changes cannot leak across runs.
-- The Keycloak login page renders the normal `openid4vp://` same-device deep link. The test reuses the `client_id` and `request_uri` from that link and sends them to the OIDF module's HTTPS `authorization_endpoint`.
-- Before calling the OIDF module, the test fetches the local request object and asserts that `client_id` and DCQL match the scenario. This catches stale local config before a suite failure hides the root cause.
-- In multi-node deployments, conformance callbacks and cross-device completion require a shared Keycloak single-use object store; each node serves only its local SSE connections, and each open watcher polls completion state from that shared store on a virtual thread.
-- If the OIDF demo suite renames plans or modules again, override `OID4VP_CONFORMANCE_PLAN_NAME` and optionally `OID4VP_CONFORMANCE_TEST_MODULE` instead of changing test code first.
+- The suite needs a public verifier URL because it fetches `request_uri` and POSTs to `response_uri`.
+- The Keycloak login page still renders the normal same-device deep link. The runner reuses the generated `client_id` and `request_uri` and sends them to the suite's exported `authorization_endpoint`.
+- Before each module call, the runner fetches the local request object and checks the effective `client_id` and DCQL shape so stale local config fails fast.
+- The trust-list JWT is intentionally served without signature verification; this is acceptable for this local conformance harness because the verifier config does not set a trust-list signing certificate.
