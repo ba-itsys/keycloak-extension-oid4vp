@@ -44,8 +44,6 @@
     <jacoco.version>0.8.13</jacoco.version>
     <surefireArgLine/>
     <failsafeArgLine/>
-    <surefire.conformance.exclude.pattern>**/it/conformance/**</surefire.conformance.exclude.pattern>
-    <failsafe.conformance.exclude.pattern>**/it/conformance/**</failsafe.conformance.exclude.pattern>
   </properties>
 
   <dependencyManagement>
@@ -305,9 +303,6 @@
         <version>3.5.5</version>
         <configuration>
           <argLine>@{surefireArgLine} -javaagent:${settings.localRepository}/net/bytebuddy/byte-buddy-agent/${bytebuddy.version}/byte-buddy-agent-${bytebuddy.version}.jar</argLine>
-          <excludes>
-            <exclude>${surefire.conformance.exclude.pattern}</exclude>
-          </excludes>
         </configuration>
       </plugin>
 
@@ -455,9 +450,6 @@
           <includes>
             <include>**/*IT.java</include>
           </includes>
-          <excludes>
-            <exclude>${failsafe.conformance.exclude.pattern}</exclude>
-          </excludes>
         </configuration>
         <executions>
           <execution>

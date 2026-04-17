@@ -37,7 +37,6 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.keycloak.OAuth2Constants;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.common.crypto.CryptoIntegration;
 import org.keycloak.events.EventBuilder;
@@ -188,8 +187,11 @@ class Oid4vpIdentityProviderEndpointTest {
 
         Response response = endpoint.handlePost("state-actual", null, null, encryptedResponse, null, null);
 
-        assertThat(response.getStatus()).isEqualTo(200);
-        assertThat((String) response.getEntity()).contains("redirect_uri").contains("state+does+not+match");
+        assertThat(response.getStatus()).isEqualTo(400);
+        assertThat((String) response.getEntity())
+                .contains("\"error\":\"identity_provider_error\"")
+                .contains("state does not match")
+                .doesNotContain("redirect_uri");
     }
 
     @Test
@@ -263,8 +265,11 @@ class Oid4vpIdentityProviderEndpointTest {
 
         Response response = endpoint.handlePost(null, null, null, encryptedResponse, null, null);
 
-        assertThat(response.getStatus()).isEqualTo(200);
-        assertThat((String) response.getEntity()).contains("redirect_uri").contains("state+does+not+match");
+        assertThat(response.getStatus()).isEqualTo(400);
+        assertThat((String) response.getEntity())
+                .contains("\"error\":\"identity_provider_error\"")
+                .contains("state does not match")
+                .doesNotContain("redirect_uri");
     }
 
     @Test
@@ -277,8 +282,11 @@ class Oid4vpIdentityProviderEndpointTest {
 
         Response response = endpoint.handlePost("state-expected", null, null, encryptedResponse, null, null);
 
-        assertThat(response.getStatus()).isEqualTo(200);
-        assertThat((String) response.getEntity()).contains("redirect_uri").contains("missing+the+state+parameter");
+        assertThat(response.getStatus()).isEqualTo(400);
+        assertThat((String) response.getEntity())
+                .contains("\"error\":\"identity_provider_error\"")
+                .contains("missing the state parameter")
+                .doesNotContain("redirect_uri");
     }
 
     @Test
@@ -293,21 +301,25 @@ class Oid4vpIdentityProviderEndpointTest {
 
         Response response = endpoint.handlePost(null, null, null, encryptedResponse, null, null);
 
-        assertThat(response.getStatus()).isEqualTo(200);
-        assertThat((String) response.getEntity()).contains("redirect_uri").contains("missing+the+state+parameter");
+        assertThat(response.getStatus()).isEqualTo(400);
+        assertThat((String) response.getEntity())
+                .contains("\"error\":\"identity_provider_error\"")
+                .contains("missing the state parameter")
+                .doesNotContain("redirect_uri");
     }
 
     @Test
-    void handlePost_withPlaintextVpTokenWhenEncryptionIsRequired_returnsErrorRedirect() {
+    void handlePost_withPlaintextVpTokenWhenEncryptionIsRequired_returnsJsonError() {
         when(store.resolveByState(session, "state-plain"))
                 .thenReturn(requestContext("handle-1", "state-plain", "nonce-1", null, "same_device"));
 
         Response response = endpoint.handlePost("state-plain", "vp-token", null, null, null, null);
 
-        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(response.getStatus()).isEqualTo(400);
         assertThat((String) response.getEntity())
-                .contains("redirect_uri")
-                .contains(OAuth2Constants.ERROR + "=identity_provider_error");
+                .contains("\"error\":\"identity_provider_error\"")
+                .contains("Encrypted response expected")
+                .doesNotContain("redirect_uri");
     }
 
     @Test

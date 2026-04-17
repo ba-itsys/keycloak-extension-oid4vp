@@ -443,11 +443,7 @@ public class Oid4vpIdentityProviderEndpoint {
                 .detail(OAuth2Constants.ERROR_DESCRIPTION, errorDescription)
                 .error(Errors.IDENTITY_PROVIDER_ERROR);
 
-        // Return a redirect_uri so the wallet can redirect the browser to the error page.
-        // The GET handler renders the error via callback.error().
-        // Include the state so the GET handler can resolve the auth session for Keycloak's error template.
-        return responseFactory.jsonRedirectResponse(
-                responseFactory.buildErrorRedirectUri(error, errorDescription, state));
+        return responseFactory.jsonErrorResponse(Response.Status.BAD_REQUEST, error, errorDescription);
     }
 
     private Response handleWalletError(String error, String errorDescription) {

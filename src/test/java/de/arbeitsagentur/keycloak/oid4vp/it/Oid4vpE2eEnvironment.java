@@ -80,9 +80,9 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
             .resolve(".m2/repository/org/jacoco/org.jacoco.agent")
             .resolve(JACOCO_AGENT_VERSION)
             .resolve("org.jacoco.agent-" + JACOCO_AGENT_VERSION + "-runtime.jar");
-    private static final Path JACOCO_OUTPUT_DIR =
-            Path.of("target/jacoco-container").toAbsolutePath();
-    private static final String JACOCO_CONTAINER_FILE = "/coverage/keycloak.exec";
+    private static final Path JACOCO_OUTPUT_DIR = Path.of("target").toAbsolutePath();
+    private static final String JACOCO_CONTAINER_FILENAME = "jacoco-keycloak-container.exec";
+    private static final String JACOCO_CONTAINER_FILE = "/coverage/" + JACOCO_CONTAINER_FILENAME;
     private static final Duration KEYCLOAK_STARTUP_TIMEOUT = Duration.ofSeconds(180);
     private static final String SSE_INIT_SCRIPT = """
             const OrigES = window.EventSource;
@@ -339,7 +339,7 @@ public final class Oid4vpE2eEnvironment implements AutoCloseable {
     private static void configureCoverage(GenericContainer<?> keycloak) throws IOException {
         Files.createDirectories(JACOCO_OUTPUT_DIR);
         ensureWritableCoverageDirectory(JACOCO_OUTPUT_DIR);
-        Files.deleteIfExists(JACOCO_OUTPUT_DIR.resolve("keycloak.exec"));
+        Files.deleteIfExists(JACOCO_OUTPUT_DIR.resolve(JACOCO_CONTAINER_FILENAME));
         keycloak.withCopyFileToContainer(
                 MountableFile.forHostPath(JACOCO_AGENT_JAR), "/opt/keycloak/providers/jacoco-agent.jar");
         keycloak.withFileSystemBind(JACOCO_OUTPUT_DIR.toString(), "/coverage", BindMode.READ_WRITE);
