@@ -161,13 +161,21 @@ abstract class AbstractOid4vpE2eTest {
         if (redirectUri != null) {
             page.navigate(redirectUri);
             page.waitForLoadState();
+            String bodyText = normalizedBodyText();
+            assertThat(flow.isCallbackUrl(page.url()))
+                    .as("Login should not succeed")
+                    .isFalse();
+            assertThat(bodyText).as("Expected an error page").containsAnyOf(expectedSnippets);
+            return;
         }
 
-        String bodyText = page.locator("body").textContent().toLowerCase();
         assertThat(flow.isCallbackUrl(page.url()))
                 .as("Login should not succeed")
                 .isFalse();
-        assertThat(bodyText).as("Expected an error page").containsAnyOf(expectedSnippets);
+        String walletResponseText = normalizedWalletResponseText(walletResponse.rawBody());
+        assertThat(walletResponseText)
+                .as("Expected wallet-visible error response when no redirect_uri is returned")
+                .containsAnyOf(expectedSnippets);
     }
 
     protected void assertRevokedCredentialIsRejected(String formatLabel) throws Exception {
@@ -202,18 +210,23 @@ abstract class AbstractOid4vpE2eTest {
             Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
 
             String redirectUri = walletResponse.redirectUri();
+            String renderedFailureText;
             if (redirectUri != null) {
                 page.navigate(redirectUri);
                 page.waitForLoadState();
+                renderedFailureText = waitForErrorPageContent(Duration.ofSeconds(10));
+            } else {
+                renderedFailureText = normalizedWalletResponseText(walletResponse.rawBody());
             }
 
-            String bodyText = waitForErrorPageContent(Duration.ofSeconds(10));
-            boolean hasError = containsErrorSnippet(bodyText);
-
+            boolean hasError = containsErrorSnippet(renderedFailureText);
             assertThat(hasError)
                     .as(
-                            "Revoked %s credential should be rejected. URL: %s, Body: %s",
-                            formatLabel, page.url(), bodyText.substring(0, Math.min(500, bodyText.length())))
+                            "Revoked %s credential should be rejected. URL: %s, Wallet response: %s, Failure text: %s",
+                            formatLabel,
+                            page.url(),
+                            walletResponse.rawBody(),
+                            renderedFailureText.substring(0, Math.min(500, renderedFailureText.length())))
                     .isTrue();
         } finally {
             wallet().client().unrevokeCredential(credentialId);
@@ -236,6 +249,49 @@ abstract class AbstractOid4vpE2eTest {
     private String normalizedBodyText() {
         String bodyText = page.locator("body").textContent();
         return bodyText == null ? "" : bodyText.toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizedWalletResponseText(String rawBody) {
+        if (rawBody == null || rawBody.isBlank()) {
+            return "";
+        }
+        StringBuilder combined = new StringBuilder(rawBody);
+        try {
+            JsonNode root = env.objectMapper().readTree(rawBody);
+            appendTextualFields(root, combined);
+            JsonNode nestedBody = root.path("response").path("body");
+            if (nestedBody.isTextual()) {
+                combined.append('\n').append(nestedBody.asText());
+                try {
+                    JsonNode nestedJson = env.objectMapper().readTree(nestedBody.asText());
+                    appendTextualFields(nestedJson, combined);
+                } catch (Exception ignored) {
+                    // Keep the raw nested response body when it is not JSON.
+                }
+            }
+        } catch (Exception ignored) {
+            // Keep the raw wallet response body when it is not JSON.
+        }
+        return combined.toString().toLowerCase(Locale.ROOT);
+    }
+
+    private void appendTextualFields(JsonNode node, StringBuilder combined) {
+        if (node == null || node.isNull()) {
+            return;
+        }
+        if (node.isTextual()) {
+            combined.append('\n').append(node.asText());
+            return;
+        }
+        if (node.isObject()) {
+            node.fields().forEachRemaining(entry -> appendTextualFields(entry.getValue(), combined));
+            return;
+        }
+        if (node.isArray()) {
+            for (JsonNode child : node) {
+                appendTextualFields(child, combined);
+            }
+        }
     }
 
     private static boolean containsErrorSnippet(String bodyText) {
