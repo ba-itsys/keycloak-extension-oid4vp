@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.2](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.6.1...v0.6.2) (2026-04-20)
+
+
+### Bug Fixes
+
+* extract conformance runner, fix conformance test failures ([cc8a227](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/cc8a227ff268b301fda8160736f440113126b3af))
+* use keycloak provided sd-jwt framework more extensively ([e608d59](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/e608d591bb9504f3118c3b8794d7e9fcee6dd24f))
+
+
+### Dependencies
+
+* **deps-dev:** bump com.microsoft.playwright:playwright ([103768a](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/103768a16ff6b228b14258b678c57c5fd6a04adb))
+
 ## [0.6.1](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.6.0...v0.6.1) (2026-04-10)
 
 
