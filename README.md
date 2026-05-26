@@ -39,10 +39,10 @@ For the full flow, security model, and request/state lifecycle, see [docs/reques
 
 ## Requirements
 
-- Keycloak 26.x
-- Java 21
-- Maven 3.9+
-- Docker for integration tests and local container-based development
+- **Keycloak**: See `pom.xml` for the target version.
+- **JDK**: See `pom.xml` for the required Java version.
+- **Maven**: Used as the build tool.
+- **Docker**: Required for integration tests and local container-based development (see `docker-compose.yml`).
 
 ## Installation
 
@@ -55,17 +55,27 @@ cp target/keycloak-extension-oid4vp.jar /opt/keycloak/providers/
 
 When using the provided `docker-compose.yml`, `target/keycloak-extension-oid4vp.jar` is mounted automatically.
 
-## Development and Testing
+## Local Development
 
-For local wallet setup, sandbox setup, and script usage, see [docs/development.md](docs/development.md).
-
-Common commands:
+For the fastest local setup, use:
 
 ```bash
-mvn test
-mvn verify
-mvn spotless:apply verify
+scripts/dev.sh --local-wallet
 ```
+
+For more details on local wallet setup, sandbox setup, and script usage, see [docs/development.md](docs/development.md).
+
+### Common Commands
+
+- **Formatting**: `mvn spotless:apply` (Ensures consistent code style).
+- **Verification**: `mvn verify` (Runs the full test suite and builds the project).
+- **Run only unit tests:** `mvn test`
+- **Run integration/E2E tests:** `mvn -Dit.test='*E2eIT,*ConformanceIT' failsafe:integration-test`
+
+### Important Local Files
+
+- **Demo realm import:** `src/test/resources/realm-wallet-demo-local.json`
+- **Helper scripts:** `scripts/dev.sh`, `scripts/setup-local-realm.sh`, `scripts/run-keycloak-ngrok.sh`
 
 ## License
 
