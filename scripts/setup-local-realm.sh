@@ -3,13 +3,13 @@ set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 
-REALM_OUT="${ROOT_DIR}/src/test/resources/realm-wallet-demo-local.json"
+REALM_OUT="${ROOT_DIR}/core/src/test/resources/realm-wallet-demo-local.json"
 
 usage() {
   cat <<'EOF'
 Usage: scripts/setup-local-realm.sh <pem-file> <verifier-info-file> [trust-list-url]
 
-Generates src/test/resources/realm-wallet-demo-local.json for local testing
+Generates core/src/test/resources/realm-wallet-demo-local.json for local testing
 with the provided X.509 credentials and verifier info.
 
 Arguments:

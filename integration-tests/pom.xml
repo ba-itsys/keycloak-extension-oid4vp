@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>de.arbeitsagentur.opdt</groupId>
+    <artifactId>keycloak-extension-oid4vp-parent</artifactId>
+    <version>0.6.3-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>keycloak-extension-oid4vp-integration-tests</artifactId>
+  <packaging>jar</packaging>
+
+  <name>keycloak-extension-oid4vp-integration-tests</name>
+  <description>Integration tests for the OID4VP Keycloak extension</description>
+
+  <properties>
+    <integration.tests.skip>true</integration.tests.skip>
+    <testcontainers.version>2.0.3</testcontainers.version>
+    <testcontainers-oid4vc.version>1.6.0</testcontainers-oid4vc.version>
+    <playwright.version>1.59.0</playwright.version>
+    <oid4vc-dev.version>v1.10.11</oid4vc-dev.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.keycloak</groupId>
+        <artifactId>keycloak-parent</artifactId>
+        <version>${keycloak.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.keycloak.testframework</groupId>
+        <artifactId>keycloak-test-framework-bom</artifactId>
+        <version>${keycloak-test-framework.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+
+    <!-- The provider under test -->
+    <dependency>
+      <groupId>de.arbeitsagentur.opdt</groupId>
+      <artifactId>keycloak-extension-oid4vp</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Keycloak Test Framework -->
+    <dependency>
+      <groupId>org.keycloak.testframework</groupId>
+      <artifactId>keycloak-test-framework-core</artifactId>
+      <scope>test</scope>
+      <exclusions>
+        <!-- The FIPS crypto provider registers itself via ServiceLoader but its BC-FIPS
+             dependencies are not on the test classpath -->
+        <exclusion>
+          <groupId>org.keycloak</groupId>
+          <artifactId>keycloak-crypto-fips1402</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.keycloak</groupId>
+      <artifactId>keycloak-admin-client</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.keycloak</groupId>
+      <artifactId>keycloak-server-spi</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.keycloak</groupId>
+      <artifactId>keycloak-services</artifactId>
+      <scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>org.jboss.slf4j</groupId>
+          <artifactId>slf4j-jboss-logmanager</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <version>${assertj.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>ch.qos.logback</groupId>
+      <artifactId>logback-classic</artifactId>
+      <version>${logback.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- oid4vc-dev wallet containers -->
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers</artifactId>
+      <version>${testcontainers.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.github.dominikschlosser</groupId>
+      <artifactId>testcontainers-oid4vc</artifactId>
+      <version>${testcontainers-oid4vc.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Browser automation for E2E tests -->
+    <dependency>
+      <groupId>com.microsoft.playwright</groupId>
+      <artifactId>playwright</artifactId>
+      <version>${playwright.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- JOSE primitives (version managed by keycloak-parent BOM) -->
+    <dependency>
+      <groupId>com.nimbusds</groupId>
+      <artifactId>nimbus-jose-jwt</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Certificate generation in tests -->
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcpkix-jdk18on</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcprov-jdk18on</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <version>3.5.5</version>
+        <configuration>
+          <skipITs>${integration.tests.skip}</skipITs>
+          <!-- The logging manager and fork-join settings are required by the Keycloak Test Framework -->
+          <argLine>-Djava.util.logging.manager=org.jboss.logmanager.LogManager -Djava.util.concurrent.ForkJoinPool.common.threadFactory=io.quarkus.bootstrap.forkjoin.QuarkusForkJoinWorkerThreadFactory</argLine>
+          <redirectTestOutputToFile>false</redirectTestOutputToFile>
+          <includes>
+            <include>**/*IT.java</include>
+          </includes>
+          <systemPropertyVariables>
+            <kc.test.server>distribution</kc.test.server>
+            <!-- Package the core module's class output as a provider jar -->
+            <kc.test.server.hot.deploy>true</kc.test.server.hot.deploy>
+            <kc.test.wallet.image>ghcr.io/dominikschlosser/oid4vc-dev:${oid4vc-dev.version}</kc.test.wallet.image>
+          </systemPropertyVariables>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+    </plugins>
+  </build>
+
+  <profiles>
+    <!-- Integration tests are skipped by default because they start a distribution Keycloak and a
+         wallet container. Activate with -Pintegration-tests to run them. -->
+    <profile>
+      <id>integration-tests</id>
+      <properties>
+        <integration.tests.skip>false</integration.tests.skip>
+      </properties>
+    </profile>
+  </profiles>
+
+</project>
