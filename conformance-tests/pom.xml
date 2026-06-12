@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>de.arbeitsagentur.opdt</groupId>
+    <artifactId>keycloak-extension-oid4vp-parent</artifactId>
+    <version>0.6.3-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>keycloak-extension-oid4vp-conformance-tests</artifactId>
+  <packaging>jar</packaging>
+
+  <name>keycloak-extension-oid4vp-conformance-tests</name>
+  <description>OIDF OID4VP verifier conformance tests for the OID4VP Keycloak extension</description>
+
+  <properties>
+    <!-- Conformance tests run a local OpenID conformance suite and take long; enable explicitly -->
+    <conformance.tests.skip>true</conformance.tests.skip>
+    <conformance.suite.imageTag>release-v5.1.44</conformance.suite.imageTag>
+    <testcontainers.version>2.0.3</testcontainers.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.keycloak</groupId>
+        <artifactId>keycloak-parent</artifactId>
+        <version>${keycloak.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.keycloak.testframework</groupId>
+        <artifactId>keycloak-test-framework-bom</artifactId>
+        <version>${keycloak-test-framework.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+
+    <!-- The provider under test -->
+    <dependency>
+      <groupId>de.arbeitsagentur.opdt</groupId>
+      <artifactId>keycloak-extension-oid4vp</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Keycloak Test Framework -->
+    <dependency>
+      <groupId>org.keycloak.testframework</groupId>
+      <artifactId>keycloak-test-framework-core</artifactId>
+      <scope>test</scope>
+      <exclusions>
+        <!-- The FIPS crypto provider registers itself via ServiceLoader but its BC-FIPS
+             dependencies are not on the test classpath -->
+        <exclusion>
+          <groupId>org.keycloak</groupId>
+          <artifactId>keycloak-crypto-fips1402</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.keycloak</groupId>
+      <artifactId>keycloak-admin-client</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.keycloak</groupId>
+      <artifactId>keycloak-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <version>${assertj.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>ch.qos.logback</groupId>
+      <artifactId>logback-classic</artifactId>
+      <version>${logback.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Conformance suite containers -->
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers</artifactId>
+      <version>${testcontainers.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Verifier signing material -->
+    <dependency>
+      <groupId>com.nimbusds</groupId>
+      <artifactId>nimbus-jose-jwt</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcpkix-jdk18on</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcprov-jdk18on</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.5</version>
+        <configuration>
+          <skipTests>${conformance.tests.skip}</skipTests>
+          <!-- The logging manager and fork-join settings are required by the Keycloak Test Framework;
+               hostname verification is disabled because the test server certificate carries no SAN -->
+          <argLine>-Djava.util.logging.manager=org.jboss.logmanager.LogManager -Djava.util.concurrent.ForkJoinPool.common.threadFactory=io.quarkus.bootstrap.forkjoin.QuarkusForkJoinWorkerThreadFactory -Djdk.internal.httpclient.disableHostnameVerification=true</argLine>
+          <systemPropertyVariables>
+            <kc.test.server>distribution</kc.test.server>
+            <kc.test.server.hot.deploy>true</kc.test.server.hot.deploy>
+            <conformance.suite.imageTag>${conformance.suite.imageTag}</conformance.suite.imageTag>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <!-- Conformance tests are skipped by default because they start a distribution Keycloak and the
+         OpenID conformance suite. Activate with -Pconformance-tests to run them. -->
+    <profile>
+      <id>conformance-tests</id>
+      <properties>
+        <conformance.tests.skip>false</conformance.tests.skip>
+      </properties>
+    </profile>
+  </profiles>
+
+</project>
