@@ -2,7 +2,7 @@
 set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-PROVIDER_JAR="$ROOT_DIR/target/keycloak-extension-oid4vp.jar"
+PROVIDER_JAR="$ROOT_DIR/core/target/keycloak-extension-oid4vp.jar"
 
 usage() {
   cat <<'EOF'

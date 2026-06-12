@@ -81,12 +81,31 @@ Then either:
 ```bash
 mvn test
 mvn verify
-mvn -Pcoverage verify
 mvn spotless:apply verify
 ```
 
-- `mvn verify` runs the unit and integration test suite that lives in this repo.
-- `mvn -Pcoverage verify` generates JaCoCo coverage for the unit and integration tests in this repo.
+- `mvn verify` runs the unit tests. Unit test coverage is reported at `core/target/site/jacoco`
+  and must stay at or above 80% (enforced by the build).
+- The integration and conformance tests are heavyweight (they start a distribution Keycloak,
+  a wallet container, and for conformance the OpenID conformance suite) and are skipped by
+  default. Opt in with the `integration-tests` and `conformance-tests` Maven profiles:
+  `mvn verify -pl integration-tests -am -Pintegration-tests` and
+  `mvn verify -pl conformance-tests -am -Pconformance-tests`. Both run as separate jobs on pull
+  requests.
+
+The build is a multi-module Maven project: `core` contains the extension and its unit tests,
+`integration-tests` contains the integration tests, built on the official
+[Keycloak Test Framework](https://github.com/keycloak/keycloak/tree/main/test-framework).
+
+The framework runs Keycloak as a local distribution (`kc.test.server=distribution`, configured in
+`.env.test` and the failsafe plugin) and deploys the provider from the `core` module's class
+output (`kc.test.server.hot.deploy=true`). The oid4vc-dev test wallet runs as a Docker container
+and is injected into tests with `@InjectTestWallet`. Alternative wallet behaviour is declared with
+a `TestWalletConfig`, and the framework replaces the running wallet when a test class requests an
+incompatible configuration. All wallets share one certificate authority seeded by the test setup,
+which is added to the Keycloak truststore so the server can fetch issuer metadata and status lists
+over HTTPS. The wallet image and ports can be overridden with the `kc.test.wallet.image` and
+`kc.test.wallet.port` properties.
 
 ## Conformance
 

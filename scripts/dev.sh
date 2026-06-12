@@ -2,7 +2,7 @@
 set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-PROVIDER_JAR="$ROOT_DIR/target/keycloak-extension-oid4vp.jar"
+PROVIDER_JAR="$ROOT_DIR/core/target/keycloak-extension-oid4vp.jar"
 
 # Sensible defaults – override via flags or env vars
 DEFAULT_SANDBOX_DIR="${SANDBOX_DIR:-${ROOT_DIR}/sandbox}"
@@ -96,7 +96,7 @@ if [ "$DO_BUILD" = "true" ]; then
   echo "    Build complete."
 else
   if [ ! -f "$PROVIDER_JAR" ]; then
-    echo "Packaged provider jar not found at target/keycloak-extension-oid4vp.jar. Run without --no-build or build manually." >&2
+    echo "Packaged provider jar not found at core/target/keycloak-extension-oid4vp.jar. Run without --no-build or build manually." >&2
     exit 1
   fi
   echo "==> Skipping build (--no-build)"

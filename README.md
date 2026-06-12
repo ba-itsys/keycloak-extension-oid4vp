@@ -50,10 +50,10 @@ Build the extension and copy the shaded provider jar into Keycloak's `providers/
 
 ```bash
 mvn package -DskipTests
-cp target/keycloak-extension-oid4vp.jar /opt/keycloak/providers/
+cp core/target/keycloak-extension-oid4vp.jar /opt/keycloak/providers/
 ```
 
-When using the provided `docker-compose.yml`, `target/keycloak-extension-oid4vp.jar` is mounted automatically.
+When using the provided `docker-compose.yml`, `core/target/keycloak-extension-oid4vp.jar` is mounted automatically.
 
 ## Local Development
 
@@ -70,11 +70,12 @@ For more details on local wallet setup, sandbox setup, and script usage, see [do
 - **Formatting**: `mvn spotless:apply` (Ensures consistent code style).
 - **Verification**: `mvn verify` (Runs the full test suite and builds the project).
 - **Run only unit tests:** `mvn test`
-- **Run integration/E2E tests:** `mvn -Dit.test='*E2eIT,*ConformanceIT' failsafe:integration-test`
+- **Run integration/E2E tests:** skipped by default. Enable with the `integration-tests` profile: `mvn verify -pl integration-tests -am -Pintegration-tests`. A single test class can be selected with `-Dit.test='KeycloakOid4vpLoginE2eIT'`.
+- **Run conformance tests:** skipped by default. Enable with the `conformance-tests` profile: `mvn verify -pl conformance-tests -am -Pconformance-tests`
 
 ### Important Local Files
 
-- **Demo realm import:** `src/test/resources/realm-wallet-demo-local.json`
+- **Demo realm import:** `core/src/test/resources/realm-wallet-demo-local.json`
 - **Helper scripts:** `scripts/dev.sh`, `scripts/setup-local-realm.sh`, `scripts/run-keycloak-ngrok.sh`
 
 ## License

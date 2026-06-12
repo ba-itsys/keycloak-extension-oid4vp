@@ -27,6 +27,7 @@ jobs:
           --batch-mode
           -Dgpg.passphrase="${{ secrets.MAVEN_GPG_PASSPHRASE }}"
           -Ppublish
+          -pl core
           deploy
         env:
           MAVEN_USERNAME: ${{ secrets.MAVEN_TOKEN_USERNAME }}
