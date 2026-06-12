@@ -123,7 +123,7 @@ class Oid4vpRedirectFlowServiceHaipTest {
 
         assertThat(meta).containsKey("vp_formats_supported");
         assertThat(meta.keySet())
-                .containsExactly("jwks", "encrypted_response_enc_values_supported", "vp_formats_supported");
+                .containsExactly("vp_formats_supported", "jwks", "encrypted_response_enc_values_supported");
 
         @SuppressWarnings("unchecked")
         Map<String, Object> jwks = (Map<String, Object>) meta.get("jwks");
@@ -134,11 +134,17 @@ class Oid4vpRedirectFlowServiceHaipTest {
     }
 
     @Test
-    void directPost_clientMetadata_notPresent() throws Exception {
+    void directPost_clientMetadata_hasVpFormatsButNoEncryptionParams() throws Exception {
         SignedRequestObject result = buildRequestObject(Oid4vpResponseMode.DIRECT_POST);
 
         Map<String, Object> claims = parseClaims(result.jwt());
-        assertThat(claims).doesNotContainKey("client_metadata");
+        assertThat(claims).containsKey("client_metadata");
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> meta = (Map<String, Object>) claims.get("client_metadata");
+        assertThat(meta.keySet()).containsExactly("vp_formats_supported");
+        assertThat(meta).doesNotContainKey("jwks");
+        assertThat(meta).doesNotContainKey("encrypted_response_enc_values_supported");
     }
 
     @Test

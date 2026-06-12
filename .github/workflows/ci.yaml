@@ -43,32 +43,11 @@ jobs:
       - name: Integration tests
         run: mvn --batch-mode verify -pl integration-tests -am -Pintegration-tests
 
-  # Conformance runs serialize within one JVM, so we shard each test class to its own runner.
-  # Emits the conformance test classes as a JSON array for the matrix below to fan out over.
-  conformance-matrix:
-    name: Conformance matrix
+  conformance-tests:
+    name: Conformance tests
     runs-on: ubuntu-latest
     needs: build
-    outputs:
-      classes: ${{ steps.list.outputs.classes }}
-    steps:
-      - uses: actions/checkout@v6
-      - id: list
-        run: |
-          classes=$(find conformance-tests/src/test/java -name '*ConformanceTest.java' \
-            ! -name 'Abstract*' -exec basename {} .java \; | sort | jq -R . | jq -cs .)
-          echo "classes=$classes" >> "$GITHUB_OUTPUT"
-
-  conformance-tests:
-    name: Conformance tests (${{ matrix.testClass }})
-    runs-on: ubuntu-latest
-    needs: conformance-matrix
     timeout-minutes: 60
-    strategy:
-      # Run every class even if one fails, so a single failing module does not mask the others.
-      fail-fast: false
-      matrix:
-        testClass: ${{ fromJson(needs.conformance-matrix.outputs.classes) }}
     steps:
       - uses: actions/checkout@v6
 
@@ -78,17 +57,14 @@ jobs:
           java-version: '21'
           cache: maven
 
-      # -Dtest runs one conformance class. core is rebuilt by -am but its tests and coverage already
-      # ran in the build job, so they are skipped here (the -Dtest filter would otherwise fail core).
-      - name: Conformance test ${{ matrix.testClass }}
+      # core is rebuilt by -am but its tests and coverage already ran in the build job, so they
+      # are skipped here.
+      - name: Conformance tests
         run: >-
           mvn --batch-mode verify -pl conformance-tests -am -Pconformance-tests
-          -Dtest=${{ matrix.testClass }}
-          -Dsurefire.failIfNoSpecifiedTests=false
           -Djacoco.skip=true
 
-  # Single required status check that succeeds only when every test job passes. For the sharded
-  # conformance-tests matrix, needs.conformance-tests.result is success only if every shard passed.
+  # Single required status check that succeeds only when every test job passes.
   status-check:
     name: Status check
     runs-on: ubuntu-latest
@@ -96,12 +72,11 @@ jobs:
     needs:
       - build
       - integration-tests
-      - conformance-matrix
       - conformance-tests
     steps:
       - name: Verify all test jobs succeeded
         run: |
-          results="${{ needs.build.result }} ${{ needs.integration-tests.result }} ${{ needs.conformance-matrix.result }} ${{ needs.conformance-tests.result }}"
+          results="${{ needs.build.result }} ${{ needs.integration-tests.result }} ${{ needs.conformance-tests.result }}"
           echo "Job results: $results"
           for result in $results; do
             if [ "$result" != "success" ]; then

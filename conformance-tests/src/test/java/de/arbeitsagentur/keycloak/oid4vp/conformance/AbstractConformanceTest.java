@@ -21,6 +21,7 @@ import de.arbeitsagentur.keycloak.oid4vp.conformance.containers.OpenIdConformanc
 import de.arbeitsagentur.keycloak.oid4vp.conformance.runner.ConformanceModuleResult;
 import de.arbeitsagentur.keycloak.oid4vp.conformance.runner.ConformanceModuleVariant;
 import de.arbeitsagentur.keycloak.oid4vp.conformance.runner.ModuleRun;
+import java.util.stream.Stream;
 import org.jboss.logging.Logger;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.TestInstance;
@@ -48,7 +49,7 @@ public abstract class AbstractConformanceTest {
     @InjectConformanceSuite
     protected OpenIdConformanceSuite suite;
 
-    protected abstract java.util.stream.Stream<ConformanceModuleVariant> moduleVariants();
+    protected abstract Stream<ConformanceModuleVariant> moduleVariants();
 
     protected abstract JsonNode suiteConfig(ConformanceModuleVariant moduleVariant);
 
@@ -64,7 +65,8 @@ public abstract class AbstractConformanceTest {
         prepareModule(moduleVariant);
         ConformanceModuleResult result = suite.client()
                 .run(moduleVariant, suiteConfig(moduleVariant), moduleRun -> interact(moduleVariant, moduleRun));
-        if (!result.finishedWith(moduleVariant.expectedResult())) {
+        boolean passed = result.finishedWith(moduleVariant.expectedResult());
+        if (!passed) {
             LOGGER.errorf(
                     "Full logs of failed conformance module %s:%n%s",
                     result.module(), result.logs().toPrettyString());

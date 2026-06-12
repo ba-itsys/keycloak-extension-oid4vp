@@ -19,6 +19,7 @@ import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.REQUEST_O
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpClientIdScheme;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import org.keycloak.common.util.PemUtils;
@@ -31,7 +32,7 @@ import org.keycloak.jose.jwk.JWKBuilder;
 import org.keycloak.jose.jws.JWSBuilder;
 import org.keycloak.utils.StringUtil;
 
-/** Signs OID4VP request object claims as a compact JWS using Keycloak's key abstractions. */
+// Signs OID4VP request object claims as a compact JWS using Keycloak's key abstractions
 public final class Oid4vpRequestObjectSigner {
 
     public String sign(
@@ -43,7 +44,7 @@ public final class Oid4vpRequestObjectSigner {
 
         if (signingKey.getCertificateChain() != null
                 && !signingKey.getCertificateChain().isEmpty()) {
-            builder = builder.x5c(signingKey.getCertificateChain());
+            builder = builder.x5c(withoutTrustAnchor(signingKey.getCertificateChain()));
         } else if (clientIdScheme.isCertificateBound() && StringUtil.isNotBlank(x509CertPem)) {
             builder = builder.x5c(List.of(decodeFirstCertificate(x509CertPem)));
         } else if (signingKey.getPublicKey() != null) {
@@ -55,6 +56,31 @@ public final class Oid4vpRequestObjectSigner {
 
     public KeyWrapper parseSigningKey(String jwkJson) {
         return Oid4vpSigningKeyParser.parse(jwkJson);
+    }
+
+    /**
+     * Removes a trailing self-signed trust anchor from the chain. HAIP requires that the X.509
+     * trust anchor MUST NOT be included in the {@code x5c} header of the signed request; the wallet
+     * holds it out of band. At least the leaf certificate is always retained.
+     */
+    private static List<X509Certificate> withoutTrustAnchor(List<X509Certificate> chain) {
+        List<X509Certificate> trimmed = new ArrayList<>(chain);
+        while (trimmed.size() > 1 && isSelfSigned(trimmed.get(trimmed.size() - 1))) {
+            trimmed.remove(trimmed.size() - 1);
+        }
+        return trimmed;
+    }
+
+    private static boolean isSelfSigned(X509Certificate certificate) {
+        if (!certificate.getSubjectX500Principal().equals(certificate.getIssuerX500Principal())) {
+            return false;
+        }
+        try {
+            certificate.verify(certificate.getPublicKey());
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private static X509Certificate decodeFirstCertificate(String pem) {

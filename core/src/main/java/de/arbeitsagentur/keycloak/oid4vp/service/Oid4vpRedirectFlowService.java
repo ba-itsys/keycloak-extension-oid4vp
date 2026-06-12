@@ -142,9 +142,9 @@ public class Oid4vpRedirectFlowService {
         if (StringUtil.isNotBlank(params.walletNonce())) {
             claims.put(WALLET_NONCE, params.walletNonce());
         }
-        if (responseEncryptionKey != null) {
-            claims.put(CLIENT_METADATA, buildClientMetadata(responseEncryptionKey));
-        }
+        // client_metadata advertising the supported vp_formats is mandatory in every authorization
+        // request. The response encryption key material is only added for encrypted response modes.
+        claims.put(CLIENT_METADATA, buildClientMetadata(responseEncryptionKey));
         addDcqlAndVerifierInfo(claims, params.dcqlQuery(), params.verifierInfo());
         return claims;
     }
@@ -206,9 +206,6 @@ public class Oid4vpRedirectFlowService {
     }
 
     private Map<String, Object> buildClientMetadata(Oid4vpJwk responseEncryptionKey) {
-        Map<String, Object> jwk =
-                parseJsonObject(responseEncryptionKey.toPublicJwk().toJson());
-
         var vpFormats = new LinkedHashMap<String, Object>();
         vpFormats.put(
                 FORMAT_SD_JWT_VC,
@@ -222,9 +219,14 @@ public class Oid4vpRedirectFlowService {
                         "deviceauth_alg_values", SUPPORTED_MDOC_DEVICEAUTH_ALG_VALUES));
 
         var meta = new LinkedHashMap<String, Object>();
-        meta.put("jwks", Map.of("keys", List.of(jwk)));
-        meta.put("encrypted_response_enc_values_supported", SUPPORTED_VERIFIER_RESPONSE_ENCRYPTION_METHOD_VALUES);
         meta.put("vp_formats_supported", vpFormats);
+        // Encryption key material and methods only apply when an encrypted response mode is used.
+        if (responseEncryptionKey != null) {
+            Map<String, Object> jwk =
+                    parseJsonObject(responseEncryptionKey.toPublicJwk().toJson());
+            meta.put("jwks", Map.of("keys", List.of(jwk)));
+            meta.put("encrypted_response_enc_values_supported", SUPPORTED_VERIFIER_RESPONSE_ENCRYPTION_METHOD_VALUES);
+        }
         return meta;
     }
 

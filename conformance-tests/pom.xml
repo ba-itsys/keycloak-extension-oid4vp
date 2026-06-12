@@ -24,13 +24,6 @@
   <dependencyManagement>
     <dependencies>
       <dependency>
-        <groupId>org.keycloak</groupId>
-        <artifactId>keycloak-parent</artifactId>
-        <version>${keycloak.version}</version>
-        <type>pom</type>
-        <scope>import</scope>
-      </dependency>
-      <dependency>
         <groupId>org.keycloak.testframework</groupId>
         <artifactId>keycloak-test-framework-bom</artifactId>
         <version>${keycloak-test-framework.version}</version>

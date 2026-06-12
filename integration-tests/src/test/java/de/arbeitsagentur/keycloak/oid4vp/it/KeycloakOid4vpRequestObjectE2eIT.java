@@ -166,7 +166,7 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
         Map<String, Object> clientMetadata =
                 (Map<String, Object>) requestObject.getJWTClaimsSet().getClaim("client_metadata");
         assertThat(clientMetadata.keySet())
-                .containsExactly("jwks", "encrypted_response_enc_values_supported", "vp_formats_supported");
+                .containsExactly("vp_formats_supported", "jwks", "encrypted_response_enc_values_supported");
         @SuppressWarnings("unchecked")
         Map<String, Object> jwks = (Map<String, Object>) clientMetadata.get("jwks");
         @SuppressWarnings("unchecked")

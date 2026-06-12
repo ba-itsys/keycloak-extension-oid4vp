@@ -26,6 +26,9 @@ public class Oid4vpServerConfig implements KeycloakServerConfig {
         return config.dependency("de.arbeitsagentur.opdt", "keycloak-extension-oid4vp", true)
                 // Runtime dependency of the provider, shaded into the provider jar for production
                 .dependency("com.authlete", "cbor")
-                .features(Profile.Feature.TRANSIENT_USERS);
+                .features(Profile.Feature.TRANSIENT_USERS)
+                // start-dev binds http to localhost by default. The wallet container reaches Keycloak
+                // on the host through the Docker host gateway, so it must listen on all interfaces.
+                .option("http-host", "0.0.0.0");
     }
 }

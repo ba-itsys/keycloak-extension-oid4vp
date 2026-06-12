@@ -38,6 +38,27 @@ public final class TestWalletConfigBuilder {
 
     private static final String WALLET_STATE_CONTAINER_DIR = "/home/app/.oid4vc-dev";
 
+    /**
+     * Entrypoint wrapper that makes {@code localhost} resolve to the Docker host gateway inside the
+     * wallet container before the wallet starts.
+     *
+     * <p>{@link Oid4vcContainer#withHostAccess()} adds a {@code <gateway> localhost} entry via
+     * {@code --add-host}, but Docker always writes the built-in {@code 127.0.0.1 localhost} (and
+     * {@code ::1 localhost}) lines first, and the wallet's Go HTTP client uses the first match, so it
+     * would dial its own loopback. We strip the loopback {@code localhost} lines (requires root),
+     * leaving only the gateway entry, then drop back to the unprivileged {@code app} user and exec
+     * the original wallet command (passed through as {@code "$*"}, which is space-safe because every
+     * serve flag value is a single token).
+     *
+     * <p>Without this the wallet cannot fetch the {@code request_uri} or POST to the
+     * {@code response_uri} back to Keycloak running on the host, which fails on Linux CI (it happens
+     * to limp along on Docker Desktop via gateway fallthrough).
+     */
+    private static final String LOCALHOST_TO_HOST_GATEWAY_ENTRYPOINT =
+            "grep -vE '^(127\\.0\\.0\\.1|::1)[[:space:]]+localhost([[:space:]]|$)' /etc/hosts > /tmp/hosts "
+                    + "&& cat /tmp/hosts > /etc/hosts; "
+                    + "exec su app -s /bin/sh -c \"HOME=/home/app exec oid4vc-dev $*\"";
+
     private boolean statusList = true;
     private boolean requireEncryptedRequest;
     private String sessionTranscript;
@@ -90,6 +111,10 @@ public final class TestWalletConfigBuilder {
                         }
                         cmd.withCmd(command);
                     }
+                    // Run as root so the entrypoint can rewrite /etc/hosts (Docker bind mount,
+                    // editable in place only), then the wrapper drops back to the 'app' user.
+                    cmd.withUser("0");
+                    cmd.withEntrypoint("/bin/sh", "-c", LOCALHOST_TO_HOST_GATEWAY_ENTRYPOINT, "sh");
                 });
         container.waitingFor(Wait.forHttp("/").forPort(port));
         if (statusList) {
