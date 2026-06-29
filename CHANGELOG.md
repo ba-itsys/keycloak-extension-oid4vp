@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.3](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.6.2...v0.6.3) (2026-06-29)
+
+
+### Bug Fixes
+
+* correct request object x5c trust anchor and client_metadata advertising ([fcc7d3c](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/fcc7d3cfd6b4b8635a146f3e5dd93a67e654fcd2))
+
+
+### Dependencies
+
+* **deps-dev:** bump org.bouncycastle:bcutil-jdk18on from 1.83 to 1.84 ([0a21f6c](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/0a21f6c670984976758317c5e3cd7eac2a475a2a))
+
 ## [0.6.2](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.6.1...v0.6.2) (2026-04-20)
 
 
