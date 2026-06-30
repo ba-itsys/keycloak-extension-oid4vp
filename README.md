@@ -31,7 +31,7 @@ Supported capabilities:
 
 ## How It Works
 
-At login time, Keycloak creates a stable `request_handle` for each enabled browser flow and renders either a same-device deep link, a cross-device QR code, or both. The wallet fetches the `request_uri`, Keycloak generates a fresh signed request object for that fetch, and the wallet posts the resulting presentation to the verifier endpoint. After successful verification, Keycloak generates a single-use `response_code` and the browser completes the login through `/complete-auth`. The browser presents that `response_code`, and the request is bound to the original Keycloak authentication session, so the public `request_handle` alone cannot drive completion.
+At login time, Keycloak allocates a `state` for each enabled browser flow and renders either a same-device deep link, a cross-device QR code, or both. The `state` is carried in the `request_uri`. The wallet fetches the `request_uri`, Keycloak generates a signed request object for that fetch, and the wallet posts the resulting presentation (echoing the `state`) to the verifier endpoint. After successful verification, Keycloak generates a single-use `response_code` and the browser completes the login through `/complete-auth?state=...&response_code=...`. The browser presents that `response_code`, and the request is bound to the original Keycloak authentication session, so the public `state` alone cannot drive completion.
 
 For SD-JWT VC, the verifier prefers `x5c`-based issuer verification. When HAIP is disabled and no usable `x5c` chain is present, it can resolve the issuer signing key from JWT VC issuer metadata at `/.well-known/jwt-vc-issuer`, including `jwks_uri` documents, using the JOSE `kid`.
 

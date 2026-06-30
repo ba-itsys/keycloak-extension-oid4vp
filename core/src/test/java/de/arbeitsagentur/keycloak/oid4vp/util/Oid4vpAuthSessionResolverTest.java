@@ -76,10 +76,9 @@ class Oid4vpAuthSessionResolverTest {
     void resolveFromStore_fallsBackToStatePrefixWhenRequestContextHasNoTabId() {
         when(requestObjectStore.resolveByState(session, "tab-1.random"))
                 .thenReturn(new Oid4vpRequestObjectStore.RequestContextEntry(
-                        "handle-1",
+                        "tab-1.random",
                         "root-1",
                         null,
-                        "tab-1.random",
                         "client",
                         "https://example.com/endpoint",
                         "same_device",
@@ -130,10 +129,9 @@ class Oid4vpAuthSessionResolverTest {
 
     private static Oid4vpRequestObjectStore.RequestContextEntry requestContext(String tabId) {
         return new Oid4vpRequestObjectStore.RequestContextEntry(
-                "handle-1",
+                "state-1",
                 "root-1",
                 tabId,
-                "state-1",
                 "client",
                 "https://example.com/endpoint",
                 "same_device",

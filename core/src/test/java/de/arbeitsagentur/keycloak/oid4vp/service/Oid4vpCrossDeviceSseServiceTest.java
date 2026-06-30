@@ -87,17 +87,14 @@ class Oid4vpCrossDeviceSseServiceTest {
         MockSseContext sse = mockSse();
 
         when(singleUseObjects.get(CROSS_DEVICE_COMPLETE_PREFIX + "test-handle"))
-                .thenReturn(
-                        Map.of("complete_auth_url", "http://localhost:8080/complete-auth?request_handle=test-handle"));
+                .thenReturn(Map.of("complete_auth_url", "http://localhost:8080/complete-auth?state=test-handle"));
 
         service.subscribe("test-handle", sink, sse.sse());
 
         verify(sessionFactory, never()).create();
         verify(sse.builder(), timeout(1000)).name("complete");
         verify(sse.builder(), timeout(1000))
-                .data(
-                        String.class,
-                        "{\"redirect_uri\":\"http://localhost:8080/complete-auth?request_handle=test-handle\"}");
+                .data(String.class, "{\"redirect_uri\":\"http://localhost:8080/complete-auth?state=test-handle\"}");
         verify(sink, timeout(1000)).send(any(OutboundSseEvent.class));
         verify(sink, timeout(1000)).close();
     }
@@ -174,8 +171,7 @@ class Oid4vpCrossDeviceSseServiceTest {
         MockSseContext sse = mockSse();
 
         when(singleUseObjects.get(CROSS_DEVICE_COMPLETE_PREFIX + "test-handle"))
-                .thenReturn(
-                        Map.of("complete_auth_url", "http://localhost:8080/complete-auth?request_handle=test-handle"));
+                .thenReturn(Map.of("complete_auth_url", "http://localhost:8080/complete-auth?state=test-handle"));
 
         service.subscribe("test-handle", firstSink, sse.sse());
         service.subscribe("test-handle", secondSink, sse.sse());

@@ -50,7 +50,7 @@ class Oid4vpLoginFlowHelper {
     private final TestApp app;
     private final String clientId;
     private final String realm;
-    private String lastCrossDeviceRequestHandle;
+    private String lastCrossDeviceState;
 
     Oid4vpLoginFlowHelper(
             Page page,
@@ -99,7 +99,7 @@ class Oid4vpLoginFlowHelper {
         String walletUrl = (String)
                 page.evaluate("() => document.querySelector('#oid4vp-qr-code').getAttribute('data-wallet-url')");
         assertThat(walletUrl).as("Cross-device wallet URL should be present").isNotEmpty();
-        lastCrossDeviceRequestHandle = extractRequestHandleFromRequestUri(extractRequestUri(walletUrl));
+        lastCrossDeviceState = extractStateFromRequestUri(extractRequestUri(walletUrl));
         return walletUrl;
     }
 
@@ -144,17 +144,13 @@ class Oid4vpLoginFlowHelper {
         LOG.info("[Test] Cross-device flow uses durable completion state; skipping pre-wallet SSE readiness wait");
     }
 
-    String getRequestHandle() {
-        String crossDeviceRequestHandle =
-                (String) page.evaluate("() => document.querySelector('#crossDeviceRequestHandle')?.value ?? ''");
-        if (crossDeviceRequestHandle != null && !crossDeviceRequestHandle.isBlank()) {
-            return crossDeviceRequestHandle;
+    String getState() {
+        String state = (String)
+                page.evaluate("() => document.querySelector('#oid4vp-cross-device-sse-config')?.dataset?.state ?? ''");
+        if (state != null && !state.isBlank()) {
+            return state;
         }
-        String requestHandle = (String) page.evaluate("() => document.querySelector('#requestHandle')?.value ?? ''");
-        if (requestHandle != null && !requestHandle.isBlank()) {
-            return requestHandle;
-        }
-        return lastCrossDeviceRequestHandle;
+        return lastCrossDeviceState;
     }
 
     void waitForLoginCompletion(WalletResponse walletResponse) {
@@ -253,11 +249,11 @@ class Oid4vpLoginFlowHelper {
         throw new IllegalArgumentException("No request_uri found in wallet URL: " + walletUrl);
     }
 
-    static String extractRequestHandleFromRequestUri(String requestUri) {
+    static String extractStateFromRequestUri(String requestUri) {
         String path = URI.create(requestUri).getPath();
         int slash = path.lastIndexOf('/');
         if (slash < 0 || slash + 1 >= path.length()) {
-            throw new IllegalArgumentException("No request handle found in request_uri: " + requestUri);
+            throw new IllegalArgumentException("No state found in request_uri: " + requestUri);
         }
         return path.substring(slash + 1);
     }

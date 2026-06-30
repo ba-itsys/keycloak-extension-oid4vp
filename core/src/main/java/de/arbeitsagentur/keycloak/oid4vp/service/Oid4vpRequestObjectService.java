@@ -19,7 +19,6 @@ import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.REQUEST_O
 
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProvider;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpResponseMode;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PreparedDcqlQuery;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestObjectParams;
@@ -29,14 +28,12 @@ import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectEncryptor;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import jakarta.ws.rs.core.Response;
-import java.util.List;
-import java.util.UUID;
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.utils.StringUtil;
 
-/** Creates request objects and persists the request-scoped state bound to a stable flow handle. */
+// Signs request objects on demand from the request context allocated at login-page render.
 public class Oid4vpRequestObjectService {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpRequestObjectService.class);
@@ -60,21 +57,19 @@ public class Oid4vpRequestObjectService {
         this.responseFactory = responseFactory;
     }
 
-    public Response generateRequestObject(String requestHandle, String walletNonce, String walletMetadataJson) {
-        if (StringUtil.isBlank(requestHandle)) {
-            return responseFactory.jsonErrorResponse(
-                    Response.Status.BAD_REQUEST, "invalid_request", "Missing request handle");
+    public Response generateRequestObject(String state, String walletNonce, String walletMetadataJson) {
+        if (StringUtil.isBlank(state)) {
+            return responseFactory.jsonErrorResponse(Response.Status.BAD_REQUEST, "invalid_request", "Missing state");
         }
 
-        Oid4vpRequestObjectStore.FlowContextEntry flowContext =
-                requestObjectStore.resolveFlowHandle(session, requestHandle);
-        if (flowContext == null) {
+        Oid4vpRequestObjectStore.RequestContextEntry requestContext = requestObjectStore.resolveByState(session, state);
+        if (requestContext == null) {
             return responseFactory.jsonErrorResponse(
-                    Response.Status.NOT_FOUND, "not_found", "Request handle not found or expired");
+                    Response.Status.NOT_FOUND, "not_found", "State not found or expired");
         }
 
         AuthenticationSessionModel authSession =
-                authSessionResolver.resolveFromTokenEntry(flowContext.rootSessionId(), flowContext.tabId());
+                authSessionResolver.resolveFromTokenEntry(requestContext.rootSessionId(), requestContext.tabId());
         if (authSession == null) {
             return responseFactory.jsonErrorResponse(
                     Response.Status.BAD_REQUEST,
@@ -82,18 +77,10 @@ public class Oid4vpRequestObjectService {
                     "Authentication session expired. Please restart the login flow.");
         }
 
-        Oid4vpRequestObjectStore.RequestContextEntry requestContext = null;
         try {
             Oid4vpIdentityProviderConfig config = provider.getConfig();
             Oid4vpResponseMode responseMode = config.getResolvedResponseMode();
             PreparedDcqlQuery preparedDcqlQuery = provider.prepareDcqlQueryFromConfig();
-            requestContext = createRequestContext(
-                    requestHandle, flowContext, responseMode, preparedDcqlQuery.configuredCredentialTypes());
-            requestObjectStore.storeRequestContext(session, requestContext);
-            String kid = Oid4vpRequestObjectStore.extractKidFromJwk(requestContext.encryptionKeyJson());
-            if (kid != null) {
-                requestObjectStore.storeKidIndex(session, kid, requestContext);
-            }
 
             SignedRequestObject signedRequest = provider.getRedirectFlowService()
                     .buildSignedRequestObject(new RequestObjectParams(
@@ -115,20 +102,11 @@ public class Oid4vpRequestObjectService {
             String responseJwt = maybeEncryptRequestObject(signedRequest.jwt(), walletMetadataJson);
             return Response.ok(responseJwt).type(REQUEST_OBJECT_CONTENT_TYPE).build();
         } catch (IllegalArgumentException e) {
-            cleanupRequestContext(requestContext);
             return responseFactory.jsonErrorResponse(Response.Status.BAD_REQUEST, "invalid_request", e.getMessage());
         } catch (Exception e) {
-            cleanupRequestContext(requestContext);
             LOG.errorf(e, "Failed to generate request object: %s", e.getMessage());
             return responseFactory.jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", null);
         }
-    }
-
-    private void cleanupRequestContext(Oid4vpRequestObjectStore.RequestContextEntry requestContext) {
-        if (requestContext == null || StringUtil.isBlank(requestContext.state())) {
-            return;
-        }
-        requestObjectStore.removeRequestContext(session, requestContext.state());
     }
 
     private String maybeEncryptRequestObject(String responseJwt, String walletMetadataJson) {
@@ -142,40 +120,5 @@ public class Oid4vpRequestObjectService {
             LOG.warnf("Failed to encrypt request object per wallet_metadata: %s", e.getMessage());
             throw new IllegalArgumentException("Failed to encrypt request object with provided wallet_metadata");
         }
-    }
-
-    private Oid4vpRequestObjectStore.RequestContextEntry createRequestContext(
-            String requestHandle,
-            Oid4vpRequestObjectStore.FlowContextEntry flowContext,
-            Oid4vpResponseMode responseMode,
-            List<String> configuredCredentialTypes) {
-        String state = buildRequestState(flowContext.tabId());
-        String nonce = UUID.randomUUID().toString();
-        String encryptionKeyJson = null;
-        String encryptionJwkThumbprint = null;
-        if (responseMode.requiresEncryption()) {
-            Oid4vpJwk responseEncryptionKey = provider.getRedirectFlowService().createResponseEncryptionKey();
-            encryptionKeyJson = responseEncryptionKey.toJson();
-            encryptionJwkThumbprint = Oid4vpRequestObjectStore.computeEncryptionJwkThumbprint(encryptionKeyJson);
-        }
-        return new Oid4vpRequestObjectStore.RequestContextEntry(
-                requestHandle,
-                flowContext.rootSessionId(),
-                flowContext.tabId(),
-                state,
-                flowContext.effectiveClientId(),
-                flowContext.responseUri(),
-                flowContext.flow(),
-                nonce,
-                encryptionKeyJson,
-                encryptionJwkThumbprint,
-                configuredCredentialTypes);
-    }
-
-    private String buildRequestState(String tabId) {
-        if (StringUtil.isBlank(tabId)) {
-            return UUID.randomUUID().toString();
-        }
-        return tabId + "." + UUID.randomUUID();
     }
 }

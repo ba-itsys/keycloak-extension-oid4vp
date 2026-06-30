@@ -15,18 +15,18 @@ sequenceDiagram
     participant Wallet
 
     Browser->>Keycloak: Open Keycloak login page
-    Keycloak-->>Browser: Render login UI with openid4vp://...?client_id=...&request_uri=https://.../request-object/{request_handle}<br/>QR code for cross-device<br/>SSE URL=/cross-device/status?request_handle={request_handle}
+    Keycloak-->>Browser: Render login UI with openid4vp://...?client_id=...&request_uri=https://.../request-object/{state}<br/>QR code for cross-device<br/>SSE URL=/cross-device/status?state={state}
 
     opt Cross-device browser waiting path
-        Browser->>Keycloak: GET /cross-device/status?request_handle={request_handle}
-        Note over Browser,Keycloak: Browser keeps one SSE connection open.<br/>A virtual-thread SSE worker polls Keycloak's shared single-use-object store<br/>for oid4vp_complete:{request_handle} and emits a complete event when found.
+        Browser->>Keycloak: GET /cross-device/status?state={state}
+        Note over Browser,Keycloak: Browser keeps one SSE connection open.<br/>A virtual-thread SSE worker polls Keycloak's shared single-use-object store<br/>for oid4vp_complete:{state} and emits a complete event when found.
     end
 
-    Wallet->>Keycloak: GET /request-object/{request_handle}
+    Wallet->>Keycloak: GET /request-object/{state}
     Keycloak-->>Wallet: Signed request object JWT
 
     opt Implementation also accepts wallet POST fetch
-        Wallet->>Keycloak: POST /request-object/{request_handle}<br/>wallet_nonce and/or wallet_metadata
+        Wallet->>Keycloak: POST /request-object/{state}<br/>wallet_nonce and/or wallet_metadata
         Keycloak-->>Wallet: Signed request object JWT<br/>(optionally JWE-wrapped for the wallet key from wallet_metadata)
     end
 
@@ -34,13 +34,13 @@ sequenceDiagram
     Note over Keycloak: Verify vp_token, store deferred auth result,<br/>generate single-use response_code,<br/>bind completion to the original browser auth session
 
     alt Same-device
-        Keycloak-->>Wallet: JSON redirect_uri=https://.../complete-auth?request_handle={request_handle}&response_code={response_code}
+        Keycloak-->>Wallet: JSON redirect_uri=https://.../complete-auth?state={state}&response_code={response_code}
         Wallet->>Browser: Open absolute redirect_uri
-        Browser->>Keycloak: GET /complete-auth?request_handle={request_handle}&response_code={response_code}
+        Browser->>Keycloak: GET /complete-auth?state={state}&response_code={response_code}
     else Cross-device
         Keycloak-->>Wallet: 200 OK {}
-        Keycloak-->>Browser: SSE event complete<br/>redirect_uri=https://.../complete-auth?request_handle={request_handle}&response_code={response_code}
-        Browser->>Keycloak: GET /complete-auth?request_handle={request_handle}&response_code={response_code}
+        Keycloak-->>Browser: SSE event complete<br/>redirect_uri=https://.../complete-auth?state={state}&response_code={response_code}
+        Browser->>Keycloak: GET /complete-auth?state={state}&response_code={response_code}
     end
 
     Keycloak-->>Browser: Resume Keycloak login flow / first broker login
@@ -60,14 +60,14 @@ sequenceDiagram
 
     Note over Browser,Keycloak: Keycloak browser login step
     Browser->>Keycloak: GET broker login page
-    Keycloak-->>Browser: openid4vp://...?client_id=...&request_uri=https://.../request-object/{request_handle}
+    Keycloak-->>Browser: openid4vp://...?client_id=...&request_uri=https://.../request-object/{state}
 
     Note over Wallet,Keycloak: OID4VP authorization request by reference
-    Wallet->>Keycloak: GET /request-object/{request_handle}
+    Wallet->>Keycloak: GET /request-object/{state}
     Keycloak-->>Wallet: Request object JWT<br/>client_id, response_uri, response_mode, nonce, state, dcql_query, optional client_metadata
 
     opt Wallet POST fetch supported by implementation
-        Wallet->>Keycloak: POST /request-object/{request_handle}<br/>wallet_nonce and/or wallet_metadata
+        Wallet->>Keycloak: POST /request-object/{state}<br/>wallet_nonce and/or wallet_metadata
         Keycloak-->>Wallet: Request object JWT or nested JWE
     end
 
@@ -92,16 +92,16 @@ sequenceDiagram
     StatusList-->>Keycloak: Status list token
     Note over Keycloak: Decode bitstring, read idx, reject revoked credentials
 
-    Note over Keycloak: Store deferred auth result for request_handle,<br/>generate single-use response_code
+    Note over Keycloak: Store deferred auth result for state,<br/>generate single-use response_code
 
     alt Same-device completion
-        Keycloak-->>Wallet: redirect_uri=https://.../complete-auth?request_handle={request_handle}&response_code={response_code}
+        Keycloak-->>Wallet: redirect_uri=https://.../complete-auth?state={state}&response_code={response_code}
     else Cross-device completion
-        Browser->>Keycloak: GET /cross-device/status?request_handle={request_handle}
+        Browser->>Keycloak: GET /cross-device/status?state={state}
         Keycloak-->>Browser: SSE complete event with absolute redirect_uri (incl. response_code) after polling shared store
     end
 
-    Browser->>Keycloak: GET /complete-auth?request_handle={request_handle}&response_code={response_code}
+    Browser->>Keycloak: GET /complete-auth?state={state}&response_code={response_code}
     Keycloak-->>Browser: Keycloak verifies response_code, authentication completes
 ```
 

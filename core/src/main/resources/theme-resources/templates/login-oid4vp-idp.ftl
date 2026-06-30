@@ -4,18 +4,6 @@
     <#if section = "header">
         ${msg("oid4vpLoginTitle")}
     <#elseif section = "form">
-        <form id="oid4vpForm"
-              action="${formActionUrl!''}"
-              method="post">
-            <input type="hidden" id="state" name="state" value="${state!''}"/>
-            <input type="hidden" id="requestHandle" value="${requestHandle!''}"/>
-            <input type="hidden" id="crossDeviceRequestHandle" value="${crossDeviceRequestHandle!''}"/>
-            <input type="hidden" id="vp_token" name="vp_token"/>
-            <input type="hidden" id="response" name="response"/>
-            <input type="hidden" id="error" name="error"/>
-            <input type="hidden" id="error_description" name="error_description"/>
-        </form>
-
         <#-- Same-device redirect button -->
         <#if (sameDeviceEnabled!false) && (sameDeviceWalletUrl!'')?has_content>
             <div class="${properties.kcFormGroupClass!}">
@@ -78,7 +66,7 @@
         <#if (crossDeviceStatusUrl!'')?has_content && (crossDeviceEnabled!false)>
             <div id="oid4vp-cross-device-sse-config"
                  data-status-url="${crossDeviceStatusUrl!''}"
-                 data-request-handle="${crossDeviceRequestHandle!''}"
+                 data-state="${crossDeviceState!''}"
                  hidden></div>
             <script nonce="${cspNonce!}" src="${url.resourcesPath}/js/oid4vp-cross-device-sse.js"></script>
         </#if>

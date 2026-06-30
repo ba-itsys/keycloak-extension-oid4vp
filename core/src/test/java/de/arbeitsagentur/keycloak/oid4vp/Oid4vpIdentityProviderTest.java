@@ -54,6 +54,9 @@ class Oid4vpIdentityProviderTest {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
+    private static final String MINIMAL_DCQL =
+            "{\"credentials\":[{\"id\":\"pid\",\"format\":\"dc+sd-jwt\",\"claims\":[{\"path\":[\"given_name\"]}]}]}";
+
     private Oid4vpIdentityProvider provider;
     private Oid4vpIdentityProviderConfig config;
     private AuthenticationSessionModel authSession;
@@ -256,9 +259,10 @@ class Oid4vpIdentityProviderTest {
     }
 
     @Test
-    void performLogin_usesSameDeviceHandleForFormAndCrossDeviceHandleForSse() {
+    void performLogin_storesOneStateContextPerFlowAndExposesCrossDeviceState() {
         config.setSameDeviceEnabled(true);
         config.setCrossDeviceEnabled(true);
+        config.setDcqlQuery(MINIMAL_DCQL);
 
         AuthenticationRequest request = mock(AuthenticationRequest.class);
         RealmModel realm = mock(RealmModel.class);
@@ -276,13 +280,14 @@ class Oid4vpIdentityProviderTest {
 
         provider.performLogin(request);
 
-        verify(forms, times(1)).setAttribute(eq("requestHandle"), any());
-        verify(forms, times(1)).setAttribute(eq("crossDeviceRequestHandle"), any());
+        verify(singleUseObjects, times(2)).put(startsWith("oid4vp_state:"), anyLong(), any());
+        verify(forms).setAttribute(eq("crossDeviceState"), any());
     }
 
     @Test
-    void performLogin_usesAuthSessionTabForFlowBindingAndRequestTabForBrowserRouting() {
+    void performLogin_bindsStateToAuthSessionTab() {
         config.setSameDeviceEnabled(true);
+        config.setDcqlQuery(MINIMAL_DCQL);
 
         AuthenticationRequest request = mock(AuthenticationRequest.class);
         RealmModel realm = mock(RealmModel.class);
@@ -294,8 +299,6 @@ class Oid4vpIdentityProviderTest {
 
         MultivaluedHashMap<String, String> queryParams = new MultivaluedHashMap<>();
         queryParams.putSingle("tab_id", "request-tab");
-        queryParams.putSingle("session_code", "session-code");
-        queryParams.putSingle("client_data", "client-data");
 
         KeycloakUriInfo uriInfo = mock(KeycloakUriInfo.class);
         when(uriInfo.getBaseUri()).thenReturn(URI.create("http://localhost:8080/"));
@@ -307,20 +310,13 @@ class Oid4vpIdentityProviderTest {
         provider.performLogin(request);
 
         verify(singleUseObjects)
-                .put(startsWith("oid4vp_request_handle:"), anyLong(), argThat(this::hasStoredFlowContextTabId));
-        verify(forms)
-                .setAttribute(
-                        eq("state"),
-                        argThat(value -> value instanceof String && ((String) value).startsWith("auth-tab.")));
-        verify(forms)
-                .setAttribute(
-                        eq("formActionUrl"),
-                        argThat(value -> value instanceof String && ((String) value).contains("tab_id=request-tab")));
+                .put(startsWith("oid4vp_state:"), anyLong(), argThat(this::hasStoredStateBoundToAuthTab));
     }
 
     @Test
-    void performLogin_storesFlowTypeInFlowHandleAndKeepsResponseUriStable() {
+    void performLogin_storesFlowTypeInStateContextAndKeepsResponseUriStable() {
         config.setCrossDeviceEnabled(true);
+        config.setDcqlQuery(MINIMAL_DCQL);
 
         AuthenticationRequest request = mock(AuthenticationRequest.class);
         RealmModel realm = mock(RealmModel.class);
@@ -340,7 +336,7 @@ class Oid4vpIdentityProviderTest {
         provider.performLogin(request);
 
         verify(singleUseObjects)
-                .put(startsWith("oid4vp_request_handle:"), anyLong(), argThat(this::hasStoredCrossDeviceFlowContext));
+                .put(startsWith("oid4vp_state:"), anyLong(), argThat(this::hasStoredCrossDeviceFlowContext));
     }
 
     @SuppressWarnings("unchecked")
@@ -349,10 +345,11 @@ class Oid4vpIdentityProviderTest {
     }
 
     @SuppressWarnings("unchecked")
-    private boolean hasStoredFlowContextTabId(Map<String, String> values) {
+    private boolean hasStoredStateBoundToAuthTab(Map<String, String> values) {
         try {
-            Map<String, Object> flowContext = OBJECT_MAPPER.readValue(values.get("json"), Map.class);
-            return "auth-tab".equals(flowContext.get("tabId"));
+            Map<String, Object> requestContext = OBJECT_MAPPER.readValue(values.get("json"), Map.class);
+            return "auth-tab".equals(requestContext.get("tabId"))
+                    && String.valueOf(requestContext.get("state")).startsWith("auth-tab.");
         } catch (Exception e) {
             return false;
         }

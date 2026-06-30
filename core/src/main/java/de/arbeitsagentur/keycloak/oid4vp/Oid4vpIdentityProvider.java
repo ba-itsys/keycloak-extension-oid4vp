@@ -21,6 +21,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpClientIdScheme;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PreparedDcqlQuery;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpCallbackProcessor;
@@ -31,7 +32,6 @@ import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import de.arbeitsagentur.keycloak.oid4vp.verification.TrustListProvider;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor;
 import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.UriBuilder;
 import java.net.URI;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
@@ -42,13 +42,10 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.jboss.logging.Logger;
-import org.keycloak.OAuth2Constants;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.broker.provider.AuthenticationRequest;
 import org.keycloak.broker.provider.IdentityBrokerException;
-import org.keycloak.common.util.Base64Url;
 import org.keycloak.common.util.PemUtils;
-import org.keycloak.common.util.SecretGenerator;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.FederatedIdentityModel;
@@ -233,48 +230,20 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
         var uriInfo = request.getUriInfo();
         String requestTabId = uriInfo.getQueryParameters().getFirst(Oid4vpConstants.PARAM_TAB_ID);
-        String clientData = uriInfo.getQueryParameters().getFirst(Oid4vpConstants.PARAM_CLIENT_DATA);
-        String sessionCode = uriInfo.getQueryParameters().getFirst(Oid4vpConstants.PARAM_SESSION_CODE);
         String rootSessionId = authSession.getParentSession() != null
                 ? authSession.getParentSession().getId()
                 : null;
         String authSessionTabId = authSession.getTabId();
         String flowTabId = StringUtil.isNotBlank(authSessionTabId) ? authSessionTabId : requestTabId;
-        String browserTabId = StringUtil.isNotBlank(requestTabId) ? requestTabId : flowTabId;
         if (StringUtil.isNotBlank(requestTabId)
                 && StringUtil.isNotBlank(authSessionTabId)
                 && !requestTabId.equals(authSessionTabId)) {
             LOG.debugf(
-                    "OID4VP login tab_id mismatch, using auth session tab for flow binding and request tab for browser form routing: requestTabId=%s authSessionTabId=%s",
+                    "OID4VP login tab_id mismatch, using auth session tab for flow binding: requestTabId=%s authSessionTabId=%s",
                     requestTabId, authSessionTabId);
         }
 
-        return new LoginContext(
-                rootSessionId,
-                flowTabId,
-                effectiveClientId,
-                request.getRedirectUri(),
-                browserTabId,
-                sessionCode,
-                clientData);
-    }
-
-    private String buildFormActionUrl(
-            String redirectUri, String state, String tabId, String sessionCode, String clientData) {
-        int queryIndex = redirectUri != null ? redirectUri.indexOf('?') : -1;
-        String baseUri = queryIndex >= 0 ? redirectUri.substring(0, queryIndex) : redirectUri;
-        UriBuilder builder = UriBuilder.fromUri(baseUri);
-        builder.queryParam(OAuth2Constants.STATE, state);
-        if (StringUtil.isNotBlank(tabId)) {
-            builder.queryParam(Oid4vpConstants.PARAM_TAB_ID, tabId);
-        }
-        if (StringUtil.isNotBlank(sessionCode)) {
-            builder.queryParam(Oid4vpConstants.PARAM_SESSION_CODE, sessionCode);
-        }
-        if (StringUtil.isNotBlank(clientData)) {
-            builder.queryParam(Oid4vpConstants.PARAM_CLIENT_DATA, clientData);
-        }
-        return builder.build().toString();
+        return new LoginContext(rootSessionId, flowTabId, effectiveClientId);
     }
 
     private RedirectFlowData buildRedirectFlowData(
@@ -322,24 +291,37 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
     private FlowEntry createFlowEntry(
             AuthenticationRequest request, LoginContext loginContext, String flow, String walletScheme) {
-        String requestHandle = UUID.randomUUID().toString();
-        String formState = loginContext.flowTabId() + "." + randomState();
+        String state = StringUtil.isBlank(loginContext.flowTabId())
+                ? UUID.randomUUID().toString()
+                : loginContext.flowTabId() + "." + UUID.randomUUID();
         String responseUri = computeVerifierResponseUri();
-        String formActionUrl = buildFormActionUrl(
-                loginContext.redirectUri(),
-                formState,
-                loginContext.browserRouteTabId(),
-                loginContext.sessionCode(),
-                loginContext.clientData());
-        requestObjectStore.storeFlowHandle(
-                session,
-                requestHandle,
-                new Oid4vpRequestObjectStore.FlowContextEntry(
-                        loginContext.rootSessionId(),
-                        loginContext.flowTabId(),
-                        loginContext.effectiveClientId(),
-                        responseUri,
-                        flow));
+
+        String nonce = UUID.randomUUID().toString();
+        String encryptionKeyJson = null;
+        String encryptionJwkThumbprint = null;
+        if (getConfig().getResolvedResponseMode().requiresEncryption()) {
+            Oid4vpJwk responseEncryptionKey = redirectFlowService.createResponseEncryptionKey();
+            encryptionKeyJson = responseEncryptionKey.toJson();
+            encryptionJwkThumbprint = Oid4vpRequestObjectStore.computeEncryptionJwkThumbprint(encryptionKeyJson);
+        }
+        PreparedDcqlQuery preparedDcqlQuery = prepareDcqlQueryFromConfig();
+
+        Oid4vpRequestObjectStore.RequestContextEntry requestContext = new Oid4vpRequestObjectStore.RequestContextEntry(
+                state,
+                loginContext.rootSessionId(),
+                loginContext.flowTabId(),
+                loginContext.effectiveClientId(),
+                responseUri,
+                flow,
+                nonce,
+                encryptionKeyJson,
+                encryptionJwkThumbprint,
+                preparedDcqlQuery.configuredCredentialTypes());
+        requestObjectStore.storeRequestContext(session, requestContext);
+        String kid = Oid4vpRequestObjectStore.extractKidFromJwk(encryptionKeyJson);
+        if (kid != null) {
+            requestObjectStore.storeKidIndex(session, kid, requestContext);
+        }
 
         URI requestUri = request.getUriInfo()
                 .getBaseUriBuilder()
@@ -349,12 +331,12 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 .path(getConfig().getAlias())
                 .path("endpoint")
                 .path("request-object")
-                .path(requestHandle)
+                .path(state)
                 .build();
         String walletUrl = redirectFlowService
                 .buildWalletAuthorizationUrl(walletScheme, loginContext.effectiveClientId(), requestUri)
                 .toString();
-        return new FlowEntry(requestHandle, formState, formActionUrl, walletUrl);
+        return new FlowEntry(state, walletUrl);
     }
 
     private String computeEffectiveClientId(String clientId) {
@@ -376,27 +358,17 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
             boolean sameDeviceEnabled,
             boolean crossDeviceEnabled) {
 
-        FlowEntry sameDeviceFlow = redirectFlowData.sameDeviceFlow();
         FlowEntry crossDeviceFlow = redirectFlowData.crossDeviceFlow();
-        FlowEntry formFlow = sameDeviceFlow != null ? sameDeviceFlow : crossDeviceFlow;
-        String state = formFlow != null ? formFlow.formState() : null;
-        String requestHandle = formFlow != null ? formFlow.requestHandle() : null;
-        String formActionUrl = formFlow != null ? formFlow.formActionUrl() : null;
+        String crossDeviceState = crossDeviceFlow != null ? crossDeviceFlow.state() : null;
         String sameDeviceWalletUrl = redirectFlowData.sameDeviceFlow() != null
                 ? redirectFlowData.sameDeviceFlow().walletUrl()
                 : null;
-        String crossDeviceWalletUrl = redirectFlowData.crossDeviceFlow() != null
-                ? redirectFlowData.crossDeviceFlow().walletUrl()
-                : null;
-        String crossDeviceRequestHandle = crossDeviceFlow != null ? crossDeviceFlow.requestHandle() : null;
+        String crossDeviceWalletUrl = crossDeviceFlow != null ? crossDeviceFlow.walletUrl() : null;
 
         return session.getProvider(LoginFormsProvider.class)
                 .setAuthenticationSession(authSession)
-                .setAttribute("state", state)
-                .setAttribute("requestHandle", requestHandle)
-                .setAttribute("crossDeviceRequestHandle", crossDeviceRequestHandle)
+                .setAttribute("crossDeviceState", crossDeviceState)
                 .setAttribute("currentBrokerAlias", getConfig().getAlias())
-                .setAttribute("formActionUrl", formActionUrl)
                 .setAttribute("sameDeviceEnabled", sameDeviceEnabled)
                 .setAttribute("crossDeviceEnabled", crossDeviceEnabled)
                 .setAttribute("sameDeviceWalletUrl", sameDeviceWalletUrl)
@@ -439,20 +411,9 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         return null;
     }
 
-    private static String randomState() {
-        return Base64Url.encode(SecretGenerator.getInstance().randomBytes(32));
-    }
+    record LoginContext(String rootSessionId, String flowTabId, String effectiveClientId) {}
 
-    record LoginContext(
-            String rootSessionId,
-            String flowTabId,
-            String effectiveClientId,
-            String redirectUri,
-            String browserRouteTabId,
-            String sessionCode,
-            String clientData) {}
-
-    record FlowEntry(String requestHandle, String formState, String formActionUrl, String walletUrl) {}
+    record FlowEntry(String state, String walletUrl) {}
 
     record RedirectFlowData(FlowEntry sameDeviceFlow, FlowEntry crossDeviceFlow, String qrCodeBase64) {
         static final RedirectFlowData EMPTY = new RedirectFlowData(null, null, null);
