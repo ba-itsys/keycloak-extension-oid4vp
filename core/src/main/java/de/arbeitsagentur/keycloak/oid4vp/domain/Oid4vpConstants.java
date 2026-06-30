@@ -116,6 +116,7 @@ public final class Oid4vpConstants {
     public static final String PARAM_SESSION_CODE = "session_code";
     public static final String PARAM_CLIENT_DATA = "client_data";
     public static final String PARAM_REQUEST_HANDLE = "request_handle";
+    public static final String PARAM_RESPONSE_CODE = "response_code";
 
     // Request object media type
     public static final String REQUEST_OBJECT_CONTENT_TYPE = "application/oauth-authz-req+jwt";

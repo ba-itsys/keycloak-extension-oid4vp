@@ -31,16 +31,16 @@ sequenceDiagram
     end
 
     Wallet->>Keycloak: POST / with direct_post or direct_post.jwt
-    Note over Keycloak: Verify vp_token, store deferred auth result,<br/>bind completion to the original browser auth session
+    Note over Keycloak: Verify vp_token, store deferred auth result,<br/>generate single-use response_code,<br/>bind completion to the original browser auth session
 
     alt Same-device
-        Keycloak-->>Wallet: JSON redirect_uri=https://.../complete-auth?request_handle={request_handle}
+        Keycloak-->>Wallet: JSON redirect_uri=https://.../complete-auth?request_handle={request_handle}&response_code={response_code}
         Wallet->>Browser: Open absolute redirect_uri
-        Browser->>Keycloak: GET /complete-auth?request_handle={request_handle}
+        Browser->>Keycloak: GET /complete-auth?request_handle={request_handle}&response_code={response_code}
     else Cross-device
         Keycloak-->>Wallet: 200 OK {}
-        Keycloak-->>Browser: SSE event complete<br/>redirect_uri=https://.../complete-auth?request_handle={request_handle}
-        Browser->>Keycloak: GET /complete-auth?request_handle={request_handle}
+        Keycloak-->>Browser: SSE event complete<br/>redirect_uri=https://.../complete-auth?request_handle={request_handle}&response_code={response_code}
+        Browser->>Keycloak: GET /complete-auth?request_handle={request_handle}&response_code={response_code}
     end
 
     Keycloak-->>Browser: Resume Keycloak login flow / first broker login
@@ -92,17 +92,17 @@ sequenceDiagram
     StatusList-->>Keycloak: Status list token
     Note over Keycloak: Decode bitstring, read idx, reject revoked credentials
 
-    Note over Keycloak: Store deferred auth result for request_handle
+    Note over Keycloak: Store deferred auth result for request_handle,<br/>generate single-use response_code
 
     alt Same-device completion
-        Keycloak-->>Wallet: redirect_uri=https://.../complete-auth?request_handle={request_handle}
+        Keycloak-->>Wallet: redirect_uri=https://.../complete-auth?request_handle={request_handle}&response_code={response_code}
     else Cross-device completion
         Browser->>Keycloak: GET /cross-device/status?request_handle={request_handle}
-        Keycloak-->>Browser: SSE complete event with absolute redirect_uri after polling shared store
+        Keycloak-->>Browser: SSE complete event with absolute redirect_uri (incl. response_code) after polling shared store
     end
 
-    Browser->>Keycloak: GET /complete-auth?request_handle={request_handle}
-    Keycloak-->>Browser: Keycloak authentication completes
+    Browser->>Keycloak: GET /complete-auth?request_handle={request_handle}&response_code={response_code}
+    Keycloak-->>Browser: Keycloak verifies response_code, authentication completes
 ```
 
 For the full walkthrough, request/state lifecycle, and class-level responsibilities, see [Request Flow Walkthrough](request-flow.md).

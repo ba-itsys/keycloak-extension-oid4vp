@@ -407,12 +407,18 @@ public class Oid4vpIdentityProviderEndpoint {
 
     @GET
     @Path("/complete-auth")
-    public Response completeAuth(@QueryParam(PARAM_REQUEST_HANDLE) String requestHandle) {
+    public Response completeAuth(
+            @QueryParam(PARAM_REQUEST_HANDLE) String requestHandle,
+            @QueryParam(PARAM_RESPONSE_CODE) String responseCode) {
         if (StringUtil.isBlank(requestHandle)) {
             return responseFactory.jsonErrorResponse(
                     Response.Status.BAD_REQUEST, "invalid_request", "Missing request handle parameter");
         }
-        return directPostService.completeAuth(requestHandle, callback, event);
+        if (StringUtil.isBlank(responseCode)) {
+            return responseFactory.jsonErrorResponse(
+                    Response.Status.BAD_REQUEST, "invalid_request", "Missing response code parameter");
+        }
+        return directPostService.completeAuth(requestHandle, responseCode, callback, event);
     }
 
     private Response processVpToken(

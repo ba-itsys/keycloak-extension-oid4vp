@@ -106,18 +106,19 @@ class Oid4vpDirectPostServiceTest {
 
     @Test
     void buildCompleteAuthUrl_constructsCorrectUrl() {
-        String url = service.buildCompleteAuthUrl("handle-1");
+        String url = service.buildCompleteAuthUrl("handle-1", "code-1");
 
         assertThat(url)
                 .isEqualTo(
-                        "http://localhost:8080/realms/test-realm/broker/oid4vp/endpoint/complete-auth?request_handle=handle-1");
+                        "http://localhost:8080/realms/test-realm/broker/oid4vp/endpoint/complete-auth?request_handle=handle-1&response_code=code-1");
     }
 
     @Test
     void buildCompleteAuthUrl_encodesSpecialCharacters() {
-        String url = service.buildCompleteAuthUrl("handle with spaces&special=chars");
+        String url = service.buildCompleteAuthUrl("handle with spaces&special=chars", "code/with+special");
 
-        assertThat(url).contains("handle+with+spaces");
+        assertThat(url).contains("request_handle=handle+with+spaces");
+        assertThat(url).contains("response_code=code%2Fwith%2Bspecial");
         assertThat(url).doesNotContain("&special=chars");
     }
 
@@ -125,10 +126,24 @@ class Oid4vpDirectPostServiceTest {
     void completeAuth_noSignal_returnsBadRequest() {
         when(singleUseObjects.get(DEFERRED_AUTH_PREFIX + "missing-handle")).thenReturn(null);
 
-        Response response = service.completeAuth("missing-handle", null, null);
+        Response response = service.completeAuth("missing-handle", "any-code", null, null);
 
         assertThat(response.getStatus()).isEqualTo(400);
         verify(singleUseObjects, never()).remove(CROSS_DEVICE_COMPLETE_PREFIX + "missing-handle");
+    }
+
+    @Test
+    void completeAuth_wrongResponseCode_returnsBadRequestWithoutConsumingSignal() {
+        when(singleUseObjects.get(DEFERRED_AUTH_PREFIX + "handle-1"))
+                .thenReturn(Map.of(
+                        KEY_ROOT_SESSION_ID, "root-session", KEY_TAB_ID, "tab-1", KEY_RESPONSE_CODE, "correct-code"));
+
+        Response response = service.completeAuth("handle-1", "wrong-code", null, null);
+
+        assertThat(response.getStatus()).isEqualTo(400);
+        verify(singleUseObjects, never()).remove(DEFERRED_AUTH_PREFIX + "handle-1");
+        verify(singleUseObjects, never()).remove(CROSS_DEVICE_COMPLETE_PREFIX + "handle-1");
+        verify(store, never()).removeFlowHandle(session, "handle-1");
     }
 
     @Test
@@ -138,7 +153,8 @@ class Oid4vpDirectPostServiceTest {
         ClientModel client = mock(ClientModel.class);
 
         when(singleUseObjects.get(DEFERRED_AUTH_PREFIX + "handle-1"))
-                .thenReturn(Map.of(KEY_ROOT_SESSION_ID, "root-session", KEY_TAB_ID, "tab-1"));
+                .thenReturn(
+                        Map.of(KEY_ROOT_SESSION_ID, "root-session", KEY_TAB_ID, "tab-1", KEY_RESPONSE_CODE, "code-1"));
         when(authenticationSessions.getRootAuthenticationSession(realm, "root-session"))
                 .thenReturn(storedRootSession);
         when(storedRootSession.getAuthenticationSessions()).thenReturn(Map.of("tab-1", storedAuthSession));
@@ -149,7 +165,7 @@ class Oid4vpDirectPostServiceTest {
         when(client.getId()).thenReturn("client-1");
         when(context.getAuthenticationSession()).thenReturn(null);
 
-        Response response = service.completeAuth("handle-1", null, null);
+        Response response = service.completeAuth("handle-1", "code-1", null, null);
 
         assertThat(response.getStatus()).isEqualTo(400);
         verify(singleUseObjects, never()).remove(DEFERRED_AUTH_PREFIX + "handle-1");
@@ -198,7 +214,10 @@ class Oid4vpDirectPostServiceTest {
         Response response = service.storeAndSignal(authSession, "handle-2", context, true);
 
         assertThat(response.getStatus()).isEqualTo(200);
-        String completeAuthUrl = service.buildCompleteAuthUrl("handle-2");
+        String responseCode =
+                singleUseObjects.get(DEFERRED_AUTH_PREFIX + "handle-2").get(KEY_RESPONSE_CODE);
+        assertThat(responseCode).isNotBlank();
+        String completeAuthUrl = service.buildCompleteAuthUrl("handle-2", responseCode);
         verify(singleUseObjects).put(eq(DEFERRED_AUTH_PREFIX + "handle-2"), eq(600L), anyMap());
         verify(singleUseObjects)
                 .put(
@@ -298,13 +317,15 @@ class Oid4vpDirectPostServiceTest {
                 .removeAuthNote(anyString());
 
         service.storeAndSignal(storedAuthSession, "handle-1", brokeredIdentityContext, false);
+        String responseCode =
+                singleUseObjects.get(DEFERRED_AUTH_PREFIX + "handle-1").get(KEY_RESPONSE_CODE);
         when(callback.authenticated(any(BrokeredIdentityContext.class))).thenAnswer(invocation -> {
             BrokeredIdentityContext context = invocation.getArgument(0);
             assertThat(context.getAuthenticationSession()).isSameAs(currentAuthSession);
             return Response.ok("ok").build();
         });
 
-        Response response = service.completeAuth("handle-1", callback, event);
+        Response response = service.completeAuth("handle-1", responseCode, callback, event);
 
         assertThat(response.getStatus()).isEqualTo(200);
         verify(context).setAuthenticationSession(currentAuthSession);
