@@ -27,30 +27,28 @@ import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Stores three types of session lookup indexes in Keycloak's {@link SingleUseObjectProvider}:
+ * Stores two lookup indexes in Keycloak's {@link SingleUseObjectProvider}:
  *
  * <ul>
- *   <li><b>Request handle → flow context</b>: Maps a random UUID (used in the request_uri path)
- *       to a serialized {@link FlowContextEntry}. The handle identifies the browser-side flow and
- *       remains stable across multiple request-object fetches.
- *   <li><b>State → request context</b>: Maps the OAuth state parameter from a single created
- *       request object to a serialized {@link RequestContextEntry}.
+ *   <li><b>State → request context</b>: Maps the OAuth {@code state} value to a serialized
+ *       {@link RequestContextEntry}. The same {@code state} is allocated when the login page is
+ *       rendered, carried in the {@code request_uri} path, advertised inside the signed request
+ *       object, echoed by the wallet in its {@code direct_post}, and used by the browser for SSE
+ *       polling and {@code /complete-auth}.
  *   <li><b>KID → request context</b>: Maps the HAIP response-encryption JWK key ID directly to the
- *       serialized request context so `direct_post.jwt` callbacks can recover the correct
- *       decryption key even when the wallet omits the `state` form field and state propagation
+ *       serialized request context so {@code direct_post.jwt} callbacks can recover the correct
+ *       decryption key even when the wallet omits the {@code state} form field and state propagation
  *       across nodes lags slightly.
  * </ul>
  *
- * <p>The flow handle is the authoritative liveness check for every state and KID lookup. Once a
- * flow handle is removed after a successful callback, any leftover state/KID entries for that flow
- * are rejected and lazily cleaned up on access.
+ * <p>The state entry is the authoritative liveness check: while it exists the flow is live, and
+ * removing it after a successful callback rejects any leftover KID entry and blocks replay.
  *
  * <p>All entries expire after the configured TTL (typically the Keycloak login timeout).
  */
 public class Oid4vpRequestObjectStore {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpRequestObjectStore.class);
-    private static final String REQUEST_HANDLE_PREFIX = "oid4vp_request_handle:";
     private static final String STATE_INDEX_PREFIX = "oid4vp_state:";
     private static final String KID_INDEX_PREFIX = "oid4vp_kid:";
     private static final String KEY_JSON = "json";
@@ -62,14 +60,10 @@ public class Oid4vpRequestObjectStore {
         this.ttl = ttl;
     }
 
-    public record FlowContextEntry(
-            String rootSessionId, String tabId, String effectiveClientId, String responseUri, String flow) {}
-
     public record RequestContextEntry(
-            String requestHandle,
+            String state,
             String rootSessionId,
             String tabId,
-            String state,
             String effectiveClientId,
             String responseUri,
             String flow,
@@ -78,16 +72,9 @@ public class Oid4vpRequestObjectStore {
             String encryptionJwkThumbprint,
             List<String> configuredCredentialTypes) {}
 
-    /** Stores a request handle → stable flow context mapping. Called when the login page is rendered. */
-    public void storeFlowHandle(KeycloakSession session, String requestHandle, FlowContextEntry entry) {
-        session.singleUseObjects()
-                .put(REQUEST_HANDLE_PREFIX + requestHandle, ttl.toSeconds(), Map.of(KEY_JSON, serializeEntry(entry)));
-        LOG.debugf("Stored flow handle: handle=%s", requestHandle);
-    }
-
-    /** Stores a request-specific state entry for direct_post resolution. */
+    // Stores a state → request context mapping. Called when the login page is rendered.
     public void storeRequestContext(KeycloakSession session, RequestContextEntry entry) {
-        if (entry == null || StringUtil.isBlank(entry.state()) || StringUtil.isBlank(entry.requestHandle())) {
+        if (entry == null || StringUtil.isBlank(entry.state())) {
             return;
         }
         session.singleUseObjects()
@@ -99,9 +86,10 @@ public class Oid4vpRequestObjectStore {
                                 serializeEntry(entry),
                                 KEY_KID,
                                 emptyIfNull(extractKidFromJwk(entry.encryptionKeyJson()))));
+        LOG.debugf("Stored request context: state=%s", entry.state());
     }
 
-    /** Stores a KID → request context mapping for decrypting direct_post.jwt responses. */
+    // Stores a KID → request context mapping for decrypting direct_post.jwt responses.
     public void storeKidIndex(KeycloakSession session, String kid, RequestContextEntry entry) {
         if (StringUtil.isBlank(kid) || entry == null || StringUtil.isBlank(entry.state())) return;
         session.singleUseObjects()
@@ -111,37 +99,22 @@ public class Oid4vpRequestObjectStore {
                         Map.of(KEY_STATE, entry.state(), KEY_JSON, serializeEntry(entry)));
     }
 
-    public FlowContextEntry resolveFlowHandle(KeycloakSession session, String requestHandle) {
-        if (StringUtil.isBlank(requestHandle)) return null;
-        Map<String, String> entry = session.singleUseObjects().get(REQUEST_HANDLE_PREFIX + requestHandle);
-        if (entry == null) return null;
-        return deserializeEntry(entry.get(KEY_JSON), FlowContextEntry.class);
-    }
-
     public RequestContextEntry resolveByState(KeycloakSession session, String state) {
         if (StringUtil.isBlank(state)) return null;
         Map<String, String> entry = session.singleUseObjects().get(STATE_INDEX_PREFIX + state);
         if (entry == null) return null;
-        RequestContextEntry requestContext = deserializeEntry(entry.get(KEY_JSON), RequestContextEntry.class);
-        if (resolveFlowHandle(session, requestContext.requestHandle()) == null) {
-            removeRequestContext(session, state);
-            return null;
-        }
-        return requestContext;
+        return deserializeEntry(entry.get(KEY_JSON), RequestContextEntry.class);
     }
 
     public RequestContextEntry resolveByKid(KeycloakSession session, String kid) {
         if (StringUtil.isBlank(kid)) return null;
         Map<String, String> entry = session.singleUseObjects().get(KID_INDEX_PREFIX + kid);
         if (entry == null) return null;
+        // The KID index and the state index are written together and removed together
+        // (removeRequestContext clears both), so a live KID entry implies a live request context.
         String serializedRequestContext = blankToNull(entry.get(KEY_JSON));
         if (serializedRequestContext != null) {
-            RequestContextEntry requestContext = deserializeEntry(serializedRequestContext, RequestContextEntry.class);
-            if (resolveFlowHandle(session, requestContext.requestHandle()) == null) {
-                removeKidIndex(session, kid, requestContext.state());
-                return null;
-            }
-            return requestContext;
+            return deserializeEntry(serializedRequestContext, RequestContextEntry.class);
         }
         String state = blankToNull(entry.get(KEY_STATE));
         if (state == null) {
@@ -163,24 +136,12 @@ public class Oid4vpRequestObjectStore {
         }
     }
 
-    private void removeKidIndex(KeycloakSession session, String kid, String state) {
-        session.singleUseObjects().remove(KID_INDEX_PREFIX + kid);
-        if (StringUtil.isNotBlank(state)) {
-            session.singleUseObjects().remove(STATE_INDEX_PREFIX + state);
-        }
-    }
-
-    public void removeFlowHandle(KeycloakSession session, String requestHandle) {
-        if (StringUtil.isBlank(requestHandle)) return;
-        session.singleUseObjects().remove(REQUEST_HANDLE_PREFIX + requestHandle);
-    }
-
-    /** Extracts the Key ID from a JWK JSON string, or {@code null} if parsing fails. */
+    // Extracts the Key ID from a JWK JSON string, or null if parsing fails.
     public static String extractKidFromJwk(String jwkJson) {
         return Oid4vpSigningKeyParser.extractKid(jwkJson);
     }
 
-    /** Computes the RFC 7638 SHA-256 JWK thumbprint for the public part of an EC JWK. */
+    // Computes the RFC 7638 SHA-256 JWK thumbprint for the public part of an EC JWK.
     public static String computeEncryptionJwkThumbprint(String jwkJson) {
         try {
             return Oid4vpJwk.computeThumbprint(jwkJson);

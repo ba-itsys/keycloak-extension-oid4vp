@@ -116,7 +116,7 @@ class Oid4vpIdentityProviderEndpointTest {
     @Test
     void handleGet_withResolvedStateRendersCallbackErrorPage() {
         when(store.resolveByState(session, "state-1"))
-                .thenReturn(requestContext("handle-1", "state-1", "nonce-1", null, "same_device"));
+                .thenReturn(requestContext("state-1", "nonce-1", null, "same_device"));
         Response expected = Response.status(400).entity("rendered").build();
         when(callback.error(config, "access_denied: denied")).thenReturn(expected);
 
@@ -162,7 +162,7 @@ class Oid4vpIdentityProviderEndpointTest {
                 key, Map.of("state", "state-1", "error", "access_denied", "error_description", "Wallet rejected"));
 
         when(store.resolveByKid(session, "kid-1"))
-                .thenReturn(requestContext("handle-1", "state-1", "nonce-1", key.toJSONString(), "same_device"));
+                .thenReturn(requestContext("state-1", "nonce-1", key.toJSONString(), "same_device"));
 
         Response response = endpoint.handlePost(
                 "state-1", "plaintext-vp-token", "plaintext-id-token", encryptedResponse, "server_error", "Ignore me");
@@ -183,7 +183,7 @@ class Oid4vpIdentityProviderEndpointTest {
         String encryptedResponse = encryptPayload(key, Map.of("state", "state-expected", "error", "access_denied"));
 
         when(store.resolveByKid(session, "kid-2"))
-                .thenReturn(requestContext("handle-1", "state-expected", "nonce-2", key.toJSONString(), "same_device"));
+                .thenReturn(requestContext("state-expected", "nonce-2", key.toJSONString(), "same_device"));
 
         Response response = endpoint.handlePost("state-actual", null, null, encryptedResponse, null, null);
 
@@ -201,7 +201,7 @@ class Oid4vpIdentityProviderEndpointTest {
                 key, Map.of("state", "state-1", "error", "access_denied", "error_description", "Wallet rejected"));
 
         when(store.resolveByKid(session, "kid-retry"))
-                .thenReturn(requestContext("handle-1", "state-1", "nonce-1", key.toJSONString(), "same_device"));
+                .thenReturn(requestContext("state-1", "nonce-1", key.toJSONString(), "same_device"));
 
         Response response = endpoint.handlePost(null, null, null, encryptedResponse, null, null);
 
@@ -220,7 +220,7 @@ class Oid4vpIdentityProviderEndpointTest {
                 key, Map.of("state", "state-1", "error", "access_denied", "error_description", "Wallet rejected"));
 
         when(store.resolveByKid(session, "kid-delayed"))
-                .thenReturn(null, requestContext("handle-1", "state-1", "nonce-1", key.toJSONString(), "same_device"));
+                .thenReturn(null, requestContext("state-1", "nonce-1", key.toJSONString(), "same_device"));
 
         Response response = endpoint.handlePost(null, null, null, encryptedResponse, null, null);
 
@@ -241,7 +241,7 @@ class Oid4vpIdentityProviderEndpointTest {
 
         when(store.resolveByKid(session, "kid-state-fallback")).thenReturn(null);
         when(store.resolveByState(session, "state-fallback"))
-                .thenReturn(requestContext("handle-1", "state-fallback", "nonce-1", key.toJSONString(), "same_device"));
+                .thenReturn(requestContext("state-fallback", "nonce-1", key.toJSONString(), "same_device"));
 
         Response response = endpoint.handlePost("state-fallback", null, null, encryptedResponse, null, null);
 
@@ -261,7 +261,7 @@ class Oid4vpIdentityProviderEndpointTest {
         String encryptedResponse = encryptPayload(key, Map.of("state", "state-actual", "error", "access_denied"));
 
         when(store.resolveByKid(session, "kid-payload-mismatch"))
-                .thenReturn(requestContext("handle-1", "state-expected", "nonce-1", key.toJSONString(), "same_device"));
+                .thenReturn(requestContext("state-expected", "nonce-1", key.toJSONString(), "same_device"));
 
         Response response = endpoint.handlePost(null, null, null, encryptedResponse, null, null);
 
@@ -278,7 +278,7 @@ class Oid4vpIdentityProviderEndpointTest {
         String encryptedResponse = encryptPayload(key, Map.of("error", "access_denied"));
 
         when(store.resolveByKid(session, "kid-payload-missing"))
-                .thenReturn(requestContext("handle-1", "state-expected", "nonce-1", key.toJSONString(), "same_device"));
+                .thenReturn(requestContext("state-expected", "nonce-1", key.toJSONString(), "same_device"));
 
         Response response = endpoint.handlePost("state-expected", null, null, encryptedResponse, null, null);
 
@@ -297,7 +297,7 @@ class Oid4vpIdentityProviderEndpointTest {
         String encryptedResponse = encryptPayload(key, Map.of("error", "access_denied"));
 
         when(store.resolveByKid(session, "kid-payload-missing-both"))
-                .thenReturn(requestContext("handle-1", "state-expected", "nonce-1", key.toJSONString(), "same_device"));
+                .thenReturn(requestContext("state-expected", "nonce-1", key.toJSONString(), "same_device"));
 
         Response response = endpoint.handlePost(null, null, null, encryptedResponse, null, null);
 
@@ -311,7 +311,7 @@ class Oid4vpIdentityProviderEndpointTest {
     @Test
     void handlePost_withPlaintextVpTokenWhenEncryptionIsRequired_returnsJsonError() {
         when(store.resolveByState(session, "state-plain"))
-                .thenReturn(requestContext("handle-1", "state-plain", "nonce-1", null, "same_device"));
+                .thenReturn(requestContext("state-plain", "nonce-1", null, "same_device"));
 
         Response response = endpoint.handlePost("state-plain", "vp-token", null, null, null, null);
 
@@ -326,7 +326,7 @@ class Oid4vpIdentityProviderEndpointTest {
     void crossDeviceStatus_withoutRequestHandle_throwsBadRequest() {
         assertThatThrownBy(() -> endpoint.crossDeviceStatus(null, null, null))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("Missing request handle");
+                .hasMessageContaining("Missing state");
     }
 
     @Test
@@ -340,9 +340,8 @@ class Oid4vpIdentityProviderEndpointTest {
 
     @Test
     void crossDeviceStatus_withMismatchedBrowserSession_returnsNoContent() {
-        when(store.resolveFlowHandle(session, "handle-1"))
-                .thenReturn(new Oid4vpRequestObjectStore.FlowContextEntry(
-                        "root-session", "tab-1", "effective-client", "https://example.com/endpoint", "cross_device"));
+        when(store.resolveByState(session, "handle-1"))
+                .thenReturn(requestContext("handle-1", "nonce", null, "cross_device"));
         when(context.getAuthenticationSession()).thenReturn(null);
 
         assertThatThrownBy(() -> endpoint.crossDeviceStatus("handle-1", null, null))
@@ -380,12 +379,11 @@ class Oid4vpIdentityProviderEndpointTest {
     }
 
     private Oid4vpRequestObjectStore.RequestContextEntry requestContext(
-            String requestHandle, String state, String nonce, String encryptionKeyJson, String flow) {
+            String state, String nonce, String encryptionKeyJson, String flow) {
         return new Oid4vpRequestObjectStore.RequestContextEntry(
-                requestHandle,
+                state,
                 "root-session",
                 "tab-1",
-                state,
                 "effective-client",
                 "https://example.com/endpoint",
                 flow,

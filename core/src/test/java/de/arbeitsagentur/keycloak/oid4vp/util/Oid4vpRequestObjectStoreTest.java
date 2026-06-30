@@ -30,7 +30,6 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.KeycloakSession;
@@ -65,227 +64,94 @@ class Oid4vpRequestObjectStoreTest {
     }
 
     @Test
-    void resolveByStateAndKid_returnsRequestContextBoundToFlowHandle() {
-        Oid4vpRequestObjectStore.FlowContextEntry flowContext = new Oid4vpRequestObjectStore.FlowContextEntry(
-                "root-session", "tab-1", "client-1", "https://example.com/endpoint", "same_device");
-        Oid4vpRequestObjectStore.RequestContextEntry requestContext = new Oid4vpRequestObjectStore.RequestContextEntry(
-                "handle-1",
-                "root-session",
-                "tab-1",
-                "state-1",
-                "client-1",
-                "https://example.com/endpoint",
-                "same_device",
-                "nonce-1",
-                KEY_JSON_1,
-                "thumbprint-1",
-                List.of());
+    void resolveByStateAndKid_returnsStoredRequestContext() {
+        Oid4vpRequestObjectStore.RequestContextEntry requestContext = requestContext("state-1", "nonce-1", KEY_JSON_1);
 
-        store.storeFlowHandle(session, "handle-1", flowContext);
         store.storeRequestContext(session, requestContext);
         store.storeKidIndex(session, "kid-1", requestContext);
 
-        assertThat(store.resolveFlowHandle(session, "handle-1")).isEqualTo(flowContext);
-        assertThat(store.resolveByState(session, requestContext.state())).isEqualTo(requestContext);
+        assertThat(store.resolveByState(session, "state-1")).isEqualTo(requestContext);
         assertThat(store.resolveByKid(session, "kid-1")).isEqualTo(requestContext);
     }
 
     @Test
-    void removeFlowHandle_invalidatesAllOutstandingRequestContextsForThatFlow() {
-        Oid4vpRequestObjectStore.FlowContextEntry flowContext = new Oid4vpRequestObjectStore.FlowContextEntry(
-                "root-session", "tab-1", "client-1", "https://example.com/endpoint", "same_device");
-        Oid4vpRequestObjectStore.RequestContextEntry firstRequest = new Oid4vpRequestObjectStore.RequestContextEntry(
-                "handle-1",
-                "root-session",
-                "tab-1",
-                "state-1",
-                "client-1",
-                "https://example.com/endpoint",
-                "same_device",
-                "nonce-1",
-                KEY_JSON_1,
-                "thumbprint-1",
-                List.of());
-        Oid4vpRequestObjectStore.RequestContextEntry secondRequest = new Oid4vpRequestObjectStore.RequestContextEntry(
-                "handle-1",
-                "root-session",
-                "tab-1",
-                "state-2",
-                "client-1",
-                "https://example.com/endpoint",
-                "same_device",
-                "nonce-2",
-                KEY_JSON_2,
-                "thumbprint-2",
-                List.of());
+    void removeRequestContext_removesStateAndAssociatedKid() {
+        Oid4vpRequestObjectStore.RequestContextEntry requestContext = requestContext("state-1", "nonce-1", KEY_JSON_1);
 
-        store.storeFlowHandle(session, "handle-1", flowContext);
-        store.storeRequestContext(session, firstRequest);
-        store.storeRequestContext(session, secondRequest);
-        store.storeKidIndex(session, "kid-1", firstRequest);
-        store.storeKidIndex(session, "kid-2", secondRequest);
+        store.storeRequestContext(session, requestContext);
+        store.storeKidIndex(session, "kid-1", requestContext);
 
-        store.removeFlowHandle(session, "handle-1");
+        store.removeRequestContext(session, "state-1");
 
-        assertThat(store.resolveFlowHandle(session, "handle-1")).isNull();
-        assertThat(store.resolveByState(session, firstRequest.state())).isNull();
-        assertThat(store.resolveByState(session, secondRequest.state())).isNull();
+        assertThat(store.resolveByState(session, "state-1")).isNull();
         assertThat(store.resolveByKid(session, "kid-1")).isNull();
-        assertThat(store.resolveByKid(session, "kid-2")).isNull();
-        assertThat(entries)
-                .doesNotContainKeys(
-                        "oid4vp_request_handle:handle-1",
-                        "oid4vp_state:state-1",
-                        "oid4vp_state:state-2",
-                        "oid4vp_kid:kid-1",
-                        "oid4vp_kid:kid-2");
+        assertThat(entries).doesNotContainKeys("oid4vp_state:state-1", "oid4vp_kid:kid-1");
     }
 
     @Test
     void removeRequestContext_cleansOnlyTargetedStateAndKid() {
-        Oid4vpRequestObjectStore.FlowContextEntry flowContext = new Oid4vpRequestObjectStore.FlowContextEntry(
-                "root-session", "tab-1", "client-1", "https://example.com/endpoint", "same_device");
-        Oid4vpRequestObjectStore.RequestContextEntry firstRequest = new Oid4vpRequestObjectStore.RequestContextEntry(
-                "handle-1",
-                "root-session",
-                "tab-1",
-                "state-1",
-                "client-1",
-                "https://example.com/endpoint",
-                "same_device",
-                "nonce-1",
-                KEY_JSON_1,
-                "thumbprint-1",
-                List.of());
-        Oid4vpRequestObjectStore.RequestContextEntry secondRequest = new Oid4vpRequestObjectStore.RequestContextEntry(
-                "handle-1",
-                "root-session",
-                "tab-1",
-                "state-2",
-                "client-1",
-                "https://example.com/endpoint",
-                "same_device",
-                "nonce-2",
-                KEY_JSON_2,
-                "thumbprint-2",
-                List.of());
+        Oid4vpRequestObjectStore.RequestContextEntry firstRequest = requestContext("state-1", "nonce-1", KEY_JSON_1);
+        Oid4vpRequestObjectStore.RequestContextEntry secondRequest = requestContext("state-2", "nonce-2", KEY_JSON_2);
 
-        store.storeFlowHandle(session, "handle-1", flowContext);
         store.storeRequestContext(session, firstRequest);
         store.storeRequestContext(session, secondRequest);
         store.storeKidIndex(session, "kid-1", firstRequest);
         store.storeKidIndex(session, "kid-2", secondRequest);
 
-        store.removeRequestContext(session, firstRequest.state());
+        store.removeRequestContext(session, "state-1");
 
-        assertThat(store.resolveByState(session, firstRequest.state())).isNull();
+        assertThat(store.resolveByState(session, "state-1")).isNull();
         assertThat(store.resolveByKid(session, "kid-1")).isNull();
-        assertThat(store.resolveByState(session, secondRequest.state())).isEqualTo(secondRequest);
+        assertThat(store.resolveByState(session, "state-2")).isEqualTo(secondRequest);
         assertThat(store.resolveByKid(session, "kid-2")).isEqualTo(secondRequest);
         assertThat(entries).doesNotContainKeys("oid4vp_state:state-1", "oid4vp_kid:kid-1");
-        assertThat(entries).containsKeys("oid4vp_request_handle:handle-1", "oid4vp_state:state-2", "oid4vp_kid:kid-2");
+        assertThat(entries).containsKeys("oid4vp_state:state-2", "oid4vp_kid:kid-2");
     }
 
     @Test
-    void resolveByStateAndKid_lazilyCleansOrphanedEntriesWhenFlowHandleIsGone() {
-        Oid4vpRequestObjectStore.RequestContextEntry requestContext = new Oid4vpRequestObjectStore.RequestContextEntry(
-                "handle-missing",
-                "root-session",
-                "tab-1",
-                "state-orphan",
-                "client-1",
-                "https://example.com/endpoint",
-                "same_device",
-                "nonce-1",
-                KEY_JSON_1,
-                "thumbprint-1",
-                List.of());
+    void resolveByKid_returnsNullAndCleansWhenKidEntryHasNoContextAndNoState() {
+        store.storeRequestContext(session, requestContext("state-1", "nonce-1", KEY_JSON_1));
+        // A KID entry that carries neither the serialized context nor a state pointer is unusable.
+        entries.put("oid4vp_kid:kid-empty", Map.of());
 
-        store.storeRequestContext(session, requestContext);
-        store.storeKidIndex(session, "kid-1", requestContext);
-
-        assertThat(store.resolveByState(session, requestContext.state())).isNull();
-        assertThat(store.resolveByKid(session, "kid-1")).isNull();
-        assertThat(entries).doesNotContainKeys("oid4vp_state:state-orphan", "oid4vp_kid:kid-1");
+        assertThat(store.resolveByKid(session, "kid-empty")).isNull();
+        assertThat(entries).doesNotContainKey("oid4vp_kid:kid-empty");
     }
 
     @Test
-    void resolveByKid_usesEmbeddedRequestContextWhenStateEntryIsNotVisibleYet() {
-        AtomicInteger stateReads = new AtomicInteger();
-        when(session.singleUseObjects().get("oid4vp_state:state-1")).thenAnswer(invocation -> {
-            if (stateReads.incrementAndGet() == 1) {
-                return null;
-            }
-            return entries.get(invocation.getArgument(0));
-        });
-
-        Oid4vpRequestObjectStore.FlowContextEntry flowContext = new Oid4vpRequestObjectStore.FlowContextEntry(
-                "root-session", "tab-1", "client-1", "https://example.com/endpoint", "same_device");
-        Oid4vpRequestObjectStore.RequestContextEntry requestContext = new Oid4vpRequestObjectStore.RequestContextEntry(
-                "handle-1",
-                "root-session",
-                "tab-1",
-                "state-1",
-                "client-1",
-                "https://example.com/endpoint",
-                "same_device",
-                "nonce-1",
-                KEY_JSON_1,
-                "thumbprint-1",
-                List.of());
-
-        store.storeFlowHandle(session, "handle-1", flowContext);
-        store.storeRequestContext(session, requestContext);
+    void resolveByKid_returnsEmbeddedContextEvenIfStateEntryNotVisibleYet() {
+        // A direct_post.jwt callback can land on a node where the state index has not propagated yet.
+        // The KID entry embeds the full context, so resolution still succeeds during that lag.
+        Oid4vpRequestObjectStore.RequestContextEntry requestContext = requestContext("state-1", "nonce-1", KEY_JSON_1);
         store.storeKidIndex(session, "kid-1", requestContext);
+        // storeRequestContext intentionally not called: the state index is absent (propagation lag).
 
         assertThat(store.resolveByKid(session, "kid-1")).isEqualTo(requestContext);
-        assertThat(entries).containsKey("oid4vp_kid:kid-1");
     }
 
     @Test
-    void removeFlowHandle_leavesNoValidSiblingStatesEvenIfTheyWereNotExplicitlyTracked() {
-        Oid4vpRequestObjectStore.FlowContextEntry flowContext = new Oid4vpRequestObjectStore.FlowContextEntry(
-                "root-session", "tab-1", "client-1", "https://example.com/endpoint", "same_device");
-        Oid4vpRequestObjectStore.RequestContextEntry firstRequest = new Oid4vpRequestObjectStore.RequestContextEntry(
-                "handle-1",
+    void resolveByKid_fallsBackToStatePointerWhenContextNotEmbedded() {
+        store.storeRequestContext(session, requestContext("state-1", "nonce-1", KEY_JSON_1));
+        // Simulate a legacy KID entry that only points at the state index.
+        entries.put("oid4vp_kid:kid-pointer", Map.of("state", "state-1"));
+
+        assertThat(store.resolveByKid(session, "kid-pointer"))
+                .isEqualTo(requestContext("state-1", "nonce-1", KEY_JSON_1));
+    }
+
+    private static Oid4vpRequestObjectStore.RequestContextEntry requestContext(
+            String state, String nonce, String encryptionKeyJson) {
+        return new Oid4vpRequestObjectStore.RequestContextEntry(
+                state,
                 "root-session",
                 "tab-1",
-                "state-1",
                 "client-1",
                 "https://example.com/endpoint",
                 "same_device",
-                "nonce-1",
-                KEY_JSON_1,
-                "thumbprint-1",
+                nonce,
+                encryptionKeyJson,
+                "thumbprint",
                 List.of());
-        Oid4vpRequestObjectStore.RequestContextEntry secondRequest = new Oid4vpRequestObjectStore.RequestContextEntry(
-                "handle-1",
-                "root-session",
-                "tab-1",
-                "state-2",
-                "client-1",
-                "https://example.com/endpoint",
-                "same_device",
-                "nonce-2",
-                KEY_JSON_2,
-                "thumbprint-2",
-                List.of());
-
-        store.storeFlowHandle(session, "handle-1", flowContext);
-        store.storeRequestContext(session, firstRequest);
-        store.storeRequestContext(session, secondRequest);
-        store.storeKidIndex(session, "kid-1", firstRequest);
-        store.storeKidIndex(session, "kid-2", secondRequest);
-
-        store.removeFlowHandle(session, "handle-1");
-
-        assertThat(entries)
-                .containsKeys("oid4vp_state:state-1", "oid4vp_state:state-2", "oid4vp_kid:kid-1", "oid4vp_kid:kid-2");
-        assertThat(store.resolveByState(session, firstRequest.state())).isNull();
-        assertThat(store.resolveByKid(session, "kid-2")).isNull();
-        assertThat(entries)
-                .doesNotContainKeys(
-                        "oid4vp_state:state-1", "oid4vp_state:state-2", "oid4vp_kid:kid-1", "oid4vp_kid:kid-2");
     }
 
     private static String createKey(String kid) {

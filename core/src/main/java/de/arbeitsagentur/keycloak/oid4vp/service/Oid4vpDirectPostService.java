@@ -99,7 +99,7 @@ public class Oid4vpDirectPostService {
      */
     public Response storeAndSignal(
             AuthenticationSessionModel authSession,
-            String requestHandle,
+            String state,
             BrokeredIdentityContext context,
             boolean isCrossDevice) {
 
@@ -125,13 +125,13 @@ public class Oid4vpDirectPostService {
         }
 
         // Fresh, unguessable secret bound to this direct_post submission. The browser must present
-        // it back at /complete-auth, so the public request_handle alone is not sufficient to drive
+        // it back at /complete-auth, so the public state alone is not sufficient to drive
         // completion (OID4VP 1.0 §8.2 response_code).
         String responseCode = Base64Url.encode(SecretGenerator.getInstance().randomBytes(RESPONSE_CODE_BYTES));
-        String completeAuthUrl = buildCompleteAuthUrl(requestHandle, responseCode);
+        String completeAuthUrl = buildCompleteAuthUrl(state, responseCode);
         session.singleUseObjects()
                 .put(
-                        DEFERRED_AUTH_PREFIX + requestHandle,
+                        DEFERRED_AUTH_PREFIX + state,
                         deferredAuthTtlSeconds,
                         Map.of(
                                 KEY_ROOT_SESSION_ID,
@@ -143,7 +143,7 @@ public class Oid4vpDirectPostService {
         if (isCrossDevice) {
             session.singleUseObjects()
                     .put(
-                            CROSS_DEVICE_COMPLETE_PREFIX + requestHandle,
+                            CROSS_DEVICE_COMPLETE_PREFIX + state,
                             crossDeviceCompleteTtlSeconds,
                             Map.of(KEY_COMPLETE_AUTH_URL, completeAuthUrl));
         }
@@ -160,14 +160,14 @@ public class Oid4vpDirectPostService {
      * has been processed.
      */
     public Response completeAuth(
-            String requestHandle,
+            String state,
             String responseCode,
             AbstractIdentityProvider.AuthenticationCallback callback,
             EventBuilder event) {
 
-        // Verify the response_code before consuming anything: the request_handle is public, so a
-        // wrong code must neither complete the flow nor burn the legitimate user's single-use signal.
-        Map<String, String> deferredSignal = session.singleUseObjects().get(DEFERRED_AUTH_PREFIX + requestHandle);
+        // Verify the response_code before consuming anything: the state is public, so a wrong code
+        // must neither complete the flow nor burn the legitimate user's single-use signal.
+        Map<String, String> deferredSignal = session.singleUseObjects().get(DEFERRED_AUTH_PREFIX + state);
         if (deferredSignal == null || !responseCodeMatches(deferredSignal.get(KEY_RESPONSE_CODE), responseCode)) {
             return ErrorPage.error(
                     session,
@@ -176,7 +176,7 @@ public class Oid4vpDirectPostService {
                     "Invalid or expired authentication response. Please try logging in again.");
         }
 
-        AuthenticationSessionModel storedAuthSession = resolveExpectedAuthSession(requestHandle);
+        AuthenticationSessionModel storedAuthSession = resolveExpectedAuthSession(state);
         if (storedAuthSession == null) {
             return ErrorPage.error(
                     session,
@@ -198,8 +198,8 @@ public class Oid4vpDirectPostService {
         // session is only used to recover deferred broker state that was serialized earlier.
         AuthenticationSessionModel activeAuthSession = currentBrowserSession;
 
-        session.singleUseObjects().remove(CROSS_DEVICE_COMPLETE_PREFIX + requestHandle);
-        Map<String, String> consumedSignal = session.singleUseObjects().remove(DEFERRED_AUTH_PREFIX + requestHandle);
+        session.singleUseObjects().remove(CROSS_DEVICE_COMPLETE_PREFIX + state);
+        Map<String, String> consumedSignal = session.singleUseObjects().remove(DEFERRED_AUTH_PREFIX + state);
         if (consumedSignal == null) {
             return ErrorPage.error(
                     session,
@@ -242,7 +242,7 @@ public class Oid4vpDirectPostService {
 
         event.event(EventType.LOGIN);
         Response response = callback.authenticated(context);
-        requestObjectStore.removeFlowHandle(session, requestHandle);
+        requestObjectStore.removeRequestContext(session, state);
         return response;
     }
 
@@ -254,8 +254,8 @@ public class Oid4vpDirectPostService {
                 expected.getBytes(StandardCharsets.UTF_8), provided.getBytes(StandardCharsets.UTF_8));
     }
 
-    public AuthenticationSessionModel resolveExpectedAuthSession(String requestHandle) {
-        Map<String, String> signal = session.singleUseObjects().get(DEFERRED_AUTH_PREFIX + requestHandle);
+    public AuthenticationSessionModel resolveExpectedAuthSession(String state) {
+        Map<String, String> signal = session.singleUseObjects().get(DEFERRED_AUTH_PREFIX + state);
         if (signal != null) {
             AuthenticationSessionModel authSession =
                     authSessionResolver.resolveFromTokenEntry(signal.get(KEY_ROOT_SESSION_ID), signal.get(KEY_TAB_ID));
@@ -264,19 +264,18 @@ public class Oid4vpDirectPostService {
             }
         }
 
-        Oid4vpRequestObjectStore.FlowContextEntry flowContext =
-                requestObjectStore.resolveFlowHandle(session, requestHandle);
-        if (flowContext == null) {
+        Oid4vpRequestObjectStore.RequestContextEntry requestContext = requestObjectStore.resolveByState(session, state);
+        if (requestContext == null) {
             return null;
         }
-        return authSessionResolver.resolveFromTokenEntry(flowContext.rootSessionId(), flowContext.tabId());
+        return authSessionResolver.resolveFromTokenEntry(requestContext.rootSessionId(), requestContext.tabId());
     }
 
-    public String buildCompleteAuthUrl(String requestHandle, String responseCode) {
+    public String buildCompleteAuthUrl(String state, String responseCode) {
         return Oid4vpConstants.buildEndpointBaseUrl(
                         session.getContext().getUri().getBaseUri(), realm.getName(), config.getAlias())
                 + "/complete-auth?"
-                + Oid4vpConstants.PARAM_REQUEST_HANDLE + "=" + URLEncoder.encode(requestHandle, StandardCharsets.UTF_8)
+                + Oid4vpConstants.PARAM_STATE + "=" + URLEncoder.encode(state, StandardCharsets.UTF_8)
                 + "&"
                 + Oid4vpConstants.PARAM_RESPONSE_CODE + "=" + URLEncoder.encode(responseCode, StandardCharsets.UTF_8);
     }

@@ -66,14 +66,13 @@ public class Oid4vpCrossDeviceSseService {
         this.sessionFactory = session.getKeycloakSessionFactory();
     }
 
-    public void subscribe(String requestHandle, SseEventSink eventSink, Sse sse) {
-        subscribe(requestHandle, eventSink, sse, null);
+    public void subscribe(String state, SseEventSink eventSink, Sse sse) {
+        subscribe(state, eventSink, sse, null);
     }
 
-    public void subscribe(
-            String requestHandle, SseEventSink eventSink, Sse sse, AuthenticationSessionModel authSession) {
+    public void subscribe(String state, SseEventSink eventSink, Sse sse, AuthenticationSessionModel authSession) {
         PendingConnection connection = new PendingConnection(
-                requestHandle,
+                state,
                 eventSink,
                 sse,
                 Instant.now().plusSeconds(timeoutSeconds),
@@ -92,7 +91,7 @@ public class Oid4vpCrossDeviceSseService {
         }
 
         Thread worker = Thread.ofVirtual()
-                .name(WORKER_NAME_PREFIX + requestHandle, 0)
+                .name(WORKER_NAME_PREFIX + state, 0)
                 .inheritInheritableThreadLocals(false)
                 .unstarted(() -> run(connection));
         ACTIVE_WORKERS.add(worker);
@@ -143,7 +142,7 @@ public class Oid4vpCrossDeviceSseService {
                 }
             }
         } catch (RuntimeException ex) {
-            LOG.warnf(ex, "Cross-device SSE stream failed for %s", connection.requestHandle());
+            LOG.warnf(ex, "Cross-device SSE stream failed for %s", connection.state());
             closeQuietly(connection.eventSink());
         } finally {
             ACTIVE_WORKERS.remove(Thread.currentThread());
@@ -185,7 +184,7 @@ public class Oid4vpCrossDeviceSseService {
             }
 
             SingleUseObjectProvider store = requestSession.singleUseObjects();
-            Map<String, String> signal = store.get(CROSS_DEVICE_COMPLETE_PREFIX + connection.requestHandle());
+            Map<String, String> signal = store.get(CROSS_DEVICE_COMPLETE_PREFIX + connection.state());
             String completeAuthUrl = signal != null ? signal.get(KEY_COMPLETE_AUTH_URL) : null;
             if (completeAuthUrl != null) {
                 return PollResult.complete(completeAuthUrl);
@@ -197,7 +196,7 @@ public class Oid4vpCrossDeviceSseService {
 
             return PollResult.pending();
         } catch (RuntimeException ex) {
-            LOG.debugf(ex, "Immediate cross-device SSE check failed for %s", connection.requestHandle());
+            LOG.debugf(ex, "Immediate cross-device SSE check failed for %s", connection.state());
             return null;
         }
     }
@@ -213,7 +212,7 @@ public class Oid4vpCrossDeviceSseService {
                 }
 
                 SingleUseObjectProvider store = pollingSession.singleUseObjects();
-                Map<String, String> signal = store.get(CROSS_DEVICE_COMPLETE_PREFIX + connection.requestHandle());
+                Map<String, String> signal = store.get(CROSS_DEVICE_COMPLETE_PREFIX + connection.state());
                 String completeAuthUrl = signal != null ? signal.get(KEY_COMPLETE_AUTH_URL) : null;
                 if (completeAuthUrl != null) {
                     pollingSession.getTransactionManager().commit();
@@ -288,7 +287,7 @@ public class Oid4vpCrossDeviceSseService {
             connection.eventSink().send(event);
             return true;
         } catch (Exception ex) {
-            LOG.debugf(ex, "Failed to send SSE event '%s' for %s", eventType, connection.requestHandle());
+            LOG.debugf(ex, "Failed to send SSE event '%s' for %s", eventType, connection.state());
             closeQuietly(connection.eventSink());
             return false;
         }
@@ -335,7 +334,7 @@ public class Oid4vpCrossDeviceSseService {
     }
 
     private static final class PendingConnection {
-        private final String requestHandle;
+        private final String state;
         private final SseEventSink eventSink;
         private final Sse sse;
         private final Instant deadline;
@@ -345,7 +344,7 @@ public class Oid4vpCrossDeviceSseService {
         private volatile Instant nextPingAt;
 
         private PendingConnection(
-                String requestHandle,
+                String state,
                 SseEventSink eventSink,
                 Sse sse,
                 Instant deadline,
@@ -353,7 +352,7 @@ public class Oid4vpCrossDeviceSseService {
                 String rootSessionId,
                 String tabId,
                 String clientId) {
-            this.requestHandle = requestHandle;
+            this.state = state;
             this.eventSink = eventSink;
             this.sse = sse;
             this.deadline = deadline;
@@ -363,8 +362,8 @@ public class Oid4vpCrossDeviceSseService {
             this.clientId = clientId;
         }
 
-        private String requestHandle() {
-            return requestHandle;
+        private String state() {
+            return state;
         }
 
         private SseEventSink eventSink() {

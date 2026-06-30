@@ -51,10 +51,9 @@ class Oid4vpCallbackProcessorTest {
 
     private static final Oid4vpRequestObjectStore.RequestContextEntry DEFAULT_REQUEST_CONTEXT =
             new Oid4vpRequestObjectStore.RequestContextEntry(
-                    "handle-1",
+                    "test-state",
                     "root-session",
                     "tab-1",
-                    "test-state",
                     "test-client",
                     "https://example.com/callback",
                     "same_device",
@@ -181,7 +180,7 @@ class Oid4vpCallbackProcessorTest {
 
         BrokeredIdentityContext result = processor.process(requestContext("state", "nonce"), vpToken, null, null);
 
-        assertThat(result.getUsername()).startsWith("transient-handle-1-");
+        assertThat(result.getUsername()).startsWith("transient-state-");
         assertThat(result.getId()).isNotBlank();
         assertThat(result.getId()).isNotEqualTo(result.getUsername());
         assertThat(result.getContextData().get(Oid4vpMapperUtils.CONTEXT_SUBJECT_KEY))
@@ -205,7 +204,7 @@ class Oid4vpCallbackProcessorTest {
 
         BrokeredIdentityContext result = processor.process(requestContext("state", "nonce"), vpToken, null, null);
 
-        assertThat(result.getUsername()).startsWith("transient-handle-1-");
+        assertThat(result.getUsername()).startsWith("transient-state-");
         assertThat(result.getContextData().get(Oid4vpMapperUtils.CONTEXT_SUBJECT_KEY))
                 .isEqualTo(result.getUsername());
     }
@@ -351,10 +350,9 @@ class Oid4vpCallbackProcessorTest {
     private Oid4vpRequestObjectStore.RequestContextEntry requestContext(
             String state, String nonce, String... configuredCredentialTypes) {
         return new Oid4vpRequestObjectStore.RequestContextEntry(
-                "handle-1",
+                state,
                 "root-session",
                 "tab-1",
-                state,
                 "test-client",
                 "https://example.com/callback",
                 "same_device",

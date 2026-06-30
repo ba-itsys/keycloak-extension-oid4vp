@@ -29,7 +29,7 @@ public final class Oid4vpConstants {
 
     private Oid4vpConstants() {}
 
-    /** Builds the base URL for the IdP endpoint: {@code {baseUri}/realms/{realm}/broker/{alias}/endpoint}. */
+    // Builds the base URL for the IdP endpoint: {baseUri}/realms/{realm}/broker/{alias}/endpoint
     public static String buildEndpointBaseUrl(URI baseUri, String realmName, String idpAlias) {
         String base = baseUri.toString();
         if (!base.endsWith("/")) {
@@ -113,9 +113,7 @@ public final class Oid4vpConstants {
 
     // Query/form parameter names
     public static final String PARAM_TAB_ID = "tab_id";
-    public static final String PARAM_SESSION_CODE = "session_code";
-    public static final String PARAM_CLIENT_DATA = "client_data";
-    public static final String PARAM_REQUEST_HANDLE = "request_handle";
+    public static final String PARAM_STATE = "state";
     public static final String PARAM_RESPONSE_CODE = "response_code";
 
     // Request object media type

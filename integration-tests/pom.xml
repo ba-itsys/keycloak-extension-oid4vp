@@ -38,6 +38,17 @@
         <type>pom</type>
         <scope>import</scope>
       </dependency>
+      <!-- Pin the Keycloak server distribution the test framework boots. It is resolved by
+           org.keycloak.it.utils.Maven without an explicit version, which otherwise walks the
+           dependency graph and can pick up a stray Keycloak version present in the local Maven
+           repository (e.g. a 999.0.0-SNAPSHOT source build). A managed dependency is matched
+           first, so this forces the supported version deterministically. -->
+      <dependency>
+        <groupId>org.keycloak</groupId>
+        <artifactId>keycloak-quarkus-dist</artifactId>
+        <version>${keycloak.version}</version>
+        <type>zip</type>
+      </dependency>
     </dependencies>
   </dependencyManagement>
 

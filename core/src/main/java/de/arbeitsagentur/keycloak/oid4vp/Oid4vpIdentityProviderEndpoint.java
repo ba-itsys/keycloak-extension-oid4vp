@@ -368,32 +368,32 @@ public class Oid4vpIdentityProviderEndpoint {
     }
 
     @GET
-    @Path("/request-object/{request_handle}")
+    @Path("/request-object/{state}")
     @Produces(REQUEST_OBJECT_CONTENT_TYPE)
-    public Response getRequestObject(@PathParam(PARAM_REQUEST_HANDLE) String requestHandle) {
-        return requestObjectService.generateRequestObject(requestHandle, null, null);
+    public Response getRequestObject(@PathParam(PARAM_STATE) String state) {
+        return requestObjectService.generateRequestObject(state, null, null);
     }
 
     @POST
-    @Path("/request-object/{request_handle}")
+    @Path("/request-object/{state}")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Produces(REQUEST_OBJECT_CONTENT_TYPE)
     public Response postRequestObject(
-            @PathParam(PARAM_REQUEST_HANDLE) String requestHandle,
+            @PathParam(PARAM_STATE) String state,
             @FormParam(WALLET_NONCE) String walletNonce,
             @FormParam(WALLET_METADATA) String walletMetadata) {
-        return requestObjectService.generateRequestObject(requestHandle, walletNonce, walletMetadata);
+        return requestObjectService.generateRequestObject(state, walletNonce, walletMetadata);
     }
 
     @GET
     @Path("/cross-device/status")
     @Produces("text/event-stream")
     public void crossDeviceStatus(
-            @QueryParam(PARAM_REQUEST_HANDLE) String requestHandle, @Context SseEventSink eventSink, @Context Sse sse) {
-        if (StringUtil.isBlank(requestHandle)) {
-            throw new BadRequestException("Missing request handle parameter");
+            @QueryParam(PARAM_STATE) String state, @Context SseEventSink eventSink, @Context Sse sse) {
+        if (StringUtil.isBlank(state)) {
+            throw new BadRequestException("Missing state parameter");
         }
-        AuthenticationSessionModel expectedAuthSession = directPostService.resolveExpectedAuthSession(requestHandle);
+        AuthenticationSessionModel expectedAuthSession = directPostService.resolveExpectedAuthSession(state);
         if (expectedAuthSession == null) {
             throw stopSseReconnects();
         }
@@ -402,23 +402,22 @@ public class Oid4vpIdentityProviderEndpoint {
         if (!authSessionResolver.sameAuthenticationSession(currentBrowserSession, expectedAuthSession)) {
             throw stopSseReconnects();
         }
-        sseService.subscribe(requestHandle, eventSink, sse, expectedAuthSession);
+        sseService.subscribe(state, eventSink, sse, expectedAuthSession);
     }
 
     @GET
     @Path("/complete-auth")
     public Response completeAuth(
-            @QueryParam(PARAM_REQUEST_HANDLE) String requestHandle,
-            @QueryParam(PARAM_RESPONSE_CODE) String responseCode) {
-        if (StringUtil.isBlank(requestHandle)) {
+            @QueryParam(PARAM_STATE) String state, @QueryParam(PARAM_RESPONSE_CODE) String responseCode) {
+        if (StringUtil.isBlank(state)) {
             return responseFactory.jsonErrorResponse(
-                    Response.Status.BAD_REQUEST, "invalid_request", "Missing request handle parameter");
+                    Response.Status.BAD_REQUEST, "invalid_request", "Missing state parameter");
         }
         if (StringUtil.isBlank(responseCode)) {
             return responseFactory.jsonErrorResponse(
                     Response.Status.BAD_REQUEST, "invalid_request", "Missing response code parameter");
         }
-        return directPostService.completeAuth(requestHandle, responseCode, callback, event);
+        return directPostService.completeAuth(state, responseCode, callback, event);
     }
 
     private Response processVpToken(
@@ -433,8 +432,7 @@ public class Oid4vpIdentityProviderEndpoint {
         try {
             BrokeredIdentityContext context =
                     provider.getCallbackProcessor().process(requestContext, vpToken, idToken, mdocGeneratedNonce);
-            return directPostService.storeAndSignal(
-                    authSession, requestContext.requestHandle(), context, isCrossDeviceFlow);
+            return directPostService.storeAndSignal(authSession, requestContext.state(), context, isCrossDeviceFlow);
         } catch (IdentityBrokerException e) {
             return handleError("identity_provider_error", e.getMessage(), state);
         } catch (Exception e) {

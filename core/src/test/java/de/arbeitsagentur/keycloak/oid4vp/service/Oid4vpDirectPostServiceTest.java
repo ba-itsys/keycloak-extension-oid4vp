@@ -110,14 +110,14 @@ class Oid4vpDirectPostServiceTest {
 
         assertThat(url)
                 .isEqualTo(
-                        "http://localhost:8080/realms/test-realm/broker/oid4vp/endpoint/complete-auth?request_handle=handle-1&response_code=code-1");
+                        "http://localhost:8080/realms/test-realm/broker/oid4vp/endpoint/complete-auth?state=handle-1&response_code=code-1");
     }
 
     @Test
     void buildCompleteAuthUrl_encodesSpecialCharacters() {
         String url = service.buildCompleteAuthUrl("handle with spaces&special=chars", "code/with+special");
 
-        assertThat(url).contains("request_handle=handle+with+spaces");
+        assertThat(url).contains("state=handle+with+spaces");
         assertThat(url).contains("response_code=code%2Fwith%2Bspecial");
         assertThat(url).doesNotContain("&special=chars");
     }
@@ -143,7 +143,7 @@ class Oid4vpDirectPostServiceTest {
         assertThat(response.getStatus()).isEqualTo(400);
         verify(singleUseObjects, never()).remove(DEFERRED_AUTH_PREFIX + "handle-1");
         verify(singleUseObjects, never()).remove(CROSS_DEVICE_COMPLETE_PREFIX + "handle-1");
-        verify(store, never()).removeFlowHandle(session, "handle-1");
+        verify(store, never()).removeRequestContext(session, "handle-1");
     }
 
     @Test
@@ -170,7 +170,7 @@ class Oid4vpDirectPostServiceTest {
         assertThat(response.getStatus()).isEqualTo(400);
         verify(singleUseObjects, never()).remove(DEFERRED_AUTH_PREFIX + "handle-1");
         verify(singleUseObjects, never()).remove(CROSS_DEVICE_COMPLETE_PREFIX + "handle-1");
-        verify(store, never()).removeFlowHandle(session, "handle-1");
+        verify(store, never()).removeRequestContext(session, "handle-1");
     }
 
     @Test
@@ -193,7 +193,7 @@ class Oid4vpDirectPostServiceTest {
         assertThat(response.getStatus()).isEqualTo(200);
         verify(singleUseObjects).put(eq(DEFERRED_AUTH_PREFIX + "handle-1"), eq(600L), anyMap());
         verify(singleUseObjects, never()).put(eq(CROSS_DEVICE_COMPLETE_PREFIX + "handle-1"), anyLong(), anyMap());
-        verify(store, never()).removeFlowHandle(session, "handle-1");
+        verify(store, never()).removeRequestContext(session, "handle-1");
     }
 
     @Test
@@ -224,7 +224,7 @@ class Oid4vpDirectPostServiceTest {
                         eq(CROSS_DEVICE_COMPLETE_PREFIX + "handle-2"),
                         eq(300L),
                         eq(Map.of(KEY_COMPLETE_AUTH_URL, completeAuthUrl)));
-        verify(store, never()).removeFlowHandle(session, "handle-2");
+        verify(store, never()).removeRequestContext(session, "handle-2");
     }
 
     @Test
@@ -331,7 +331,7 @@ class Oid4vpDirectPostServiceTest {
         verify(context).setAuthenticationSession(currentAuthSession);
         verify(context).setClient(client);
         verify(callback).authenticated(any(BrokeredIdentityContext.class));
-        verify(store).removeFlowHandle(session, "handle-1");
+        verify(store).removeRequestContext(session, "handle-1");
     }
 
     @SuppressWarnings("unchecked")

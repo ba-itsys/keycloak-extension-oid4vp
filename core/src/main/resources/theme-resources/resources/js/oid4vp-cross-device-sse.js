@@ -5,23 +5,23 @@
         }
 
         var statusUrl = root.dataset.statusUrl || "";
-        var requestHandle = root.dataset.requestHandle || "";
-        if (!statusUrl || !requestHandle) {
+        var state = root.dataset.state || "";
+        if (!statusUrl || !state) {
             return null;
         }
 
         return {
             statusUrl: statusUrl,
-            requestHandle: requestHandle
+            state: state
         };
     }
 
     function buildStatusUrl(config) {
-        return config.statusUrl + "?request_handle=" + encodeURIComponent(config.requestHandle);
+        return config.statusUrl + "?state=" + encodeURIComponent(config.state);
     }
 
     function initOid4vpCrossDeviceSse(config) {
-        if (!config || !config.statusUrl || !config.requestHandle) {
+        if (!config || !config.statusUrl || !config.state) {
             return null;
         }
 

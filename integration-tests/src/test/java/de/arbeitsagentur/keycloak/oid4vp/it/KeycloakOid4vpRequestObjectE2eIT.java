@@ -82,10 +82,11 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
         assertThat(kid1).isNotNull();
         assertThat(kid2).isNotNull();
         assertThat(kid3).isNotNull();
-        assertThat(kid1).isNotEqualTo(kid2).isNotEqualTo(kid3);
-        assertThat(kid2).isNotEqualTo(kid3);
-        assertThat(nonce1).isNotEqualTo(nonce2).isNotEqualTo(nonce3);
-        assertThat(state1).isNotEqualTo(state2).isNotEqualTo(state3);
+        // State, nonce, and the response-encryption key are allocated once per flow at login-page
+        // render and stay stable across repeated request-object fetches for the same request_uri.
+        assertThat(kid1).isEqualTo(kid2).isEqualTo(kid3);
+        assertThat(nonce1).isEqualTo(nonce2).isEqualTo(nonce3);
+        assertThat(state1).isEqualTo(state2).isEqualTo(state3);
     }
 
     @Test
@@ -141,7 +142,7 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
                         HttpResponse.BodyHandlers.ofString());
 
         assertThat(postLoginFetch.statusCode()).isEqualTo(404);
-        assertThat(postLoginFetch.body()).contains("Request handle not found or expired");
+        assertThat(postLoginFetch.body()).contains("State not found or expired");
     }
 
     @Test

@@ -68,7 +68,7 @@ public class Oid4vpCallbackProcessor {
         this.vpTokenProcessor = vpTokenProcessor;
     }
 
-    /** Validates the VP token (and optionally a Self-Issued ID Token) and builds a brokered identity context. */
+    // Validates the VP token (and optionally a Self-Issued ID Token) and builds a brokered identity context.
     public BrokeredIdentityContext process(
             Oid4vpRequestObjectStore.RequestContextEntry requestContext,
             String vpToken,
@@ -176,12 +176,9 @@ public class Oid4vpCallbackProcessor {
     }
 
     private String buildTransientSubject(Oid4vpRequestObjectStore.RequestContextEntry requestContext) {
-        String requestHandle =
-                StringUtil.isNotBlank(requestContext.requestHandle()) ? requestContext.requestHandle() : "unknown";
-        LOG.debugf(
-                "OID4VP IdP '%s': generating transient subject for request handle '%s'",
-                idpModel.getAlias(), requestHandle);
-        return "transient-" + requestHandle + "-" + UUID.randomUUID();
+        String state = StringUtil.isNotBlank(requestContext.state()) ? requestContext.state() : "unknown";
+        LOG.debugf("OID4VP IdP '%s': generating transient subject for state '%s'", idpModel.getAlias(), state);
+        return "transient-" + state + "-" + UUID.randomUUID();
     }
 
     private void enforceConfiguredCredentialTypes(
