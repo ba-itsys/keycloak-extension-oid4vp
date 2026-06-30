@@ -103,6 +103,19 @@ public class Oid4vpDirectPostService {
             BrokeredIdentityContext context,
             boolean isCrossDevice) {
 
+        // Single-completion: the first verified presentation for a state wins. If a verified result is
+        // already recorded (its deferred signal is still present, i.e. /complete-auth has not consumed
+        // it yet), do not overwrite it; return the existing completion idempotently. This stops a later
+        // presentation submitted to a known state (e.g. an attacker's own credential) from replacing the
+        // identity the first wallet established, while still letting a wallet safely retry its own
+        // direct_post. Only a successfully verified presentation reaches this method, so a failed
+        // presentation never locks the flow and can be retried.
+        Map<String, String> existing = session.singleUseObjects().get(DEFERRED_AUTH_PREFIX + state);
+        if (existing != null && StringUtil.isNotBlank(existing.get(KEY_RESPONSE_CODE))) {
+            LOG.debugf("Ignoring repeated direct_post for already-completed state=%s", state);
+            return completionResponse(buildCompleteAuthUrl(state, existing.get(KEY_RESPONSE_CODE)), isCrossDevice);
+        }
+
         String rootSessionId = authSession.getParentSession() != null
                 ? authSession.getParentSession().getId()
                 : null;
@@ -148,6 +161,10 @@ public class Oid4vpDirectPostService {
                             Map.of(KEY_COMPLETE_AUTH_URL, completeAuthUrl));
         }
 
+        return completionResponse(completeAuthUrl, isCrossDevice);
+    }
+
+    private Response completionResponse(String completeAuthUrl, boolean isCrossDevice) {
         if (isCrossDevice) {
             return Response.ok("{}").type(MediaType.APPLICATION_JSON).build();
         }
