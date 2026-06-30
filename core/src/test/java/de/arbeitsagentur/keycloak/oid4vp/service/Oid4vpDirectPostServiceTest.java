@@ -228,6 +228,71 @@ class Oid4vpDirectPostServiceTest {
     }
 
     @Test
+    void storeAndSignal_sameDevice_secondPresentationIsIdempotentAndDoesNotOverwrite() {
+        AuthenticationSessionModel authSession = configuredAuthSession();
+        BrokeredIdentityContext first = createBrokeredIdentityContext(brokerConfig());
+        BrokeredIdentityContext second = createBrokeredIdentityContext(brokerConfig());
+
+        Response firstResponse = service.storeAndSignal(authSession, "state-1", first, false);
+        String firstResponseCode =
+                singleUseObjects.get(DEFERRED_AUTH_PREFIX + "state-1").get(KEY_RESPONSE_CODE);
+
+        Response secondResponse = service.storeAndSignal(authSession, "state-1", second, false);
+
+        assertThat(secondResponse.getStatus()).isEqualTo(200);
+        // The deferred signal is written exactly once: the second presentation did not overwrite the first.
+        verify(singleUseObjects, times(1)).put(eq(DEFERRED_AUTH_PREFIX + "state-1"), anyLong(), anyMap());
+        // The stored response_code is unchanged.
+        assertThat(singleUseObjects.get(DEFERRED_AUTH_PREFIX + "state-1").get(KEY_RESPONSE_CODE))
+                .isEqualTo(firstResponseCode);
+        // The idempotent response equals the first (same redirect carrying the original response_code).
+        assertThat((String) secondResponse.getEntity()).isEqualTo((String) firstResponse.getEntity());
+        assertThat((String) secondResponse.getEntity()).contains(firstResponseCode);
+        // The first wallet's identity stays in the auth session: the note is saved only once.
+        verify(authSession, times(1)).setAuthNote(eq(DEFERRED_IDENTITY_NOTE), anyString());
+    }
+
+    @Test
+    void storeAndSignal_crossDevice_secondPresentationIsIdempotentAndDoesNotOverwrite() {
+        AuthenticationSessionModel authSession = configuredAuthSession();
+        BrokeredIdentityContext first = createBrokeredIdentityContext(brokerConfig());
+        BrokeredIdentityContext second = createBrokeredIdentityContext(brokerConfig());
+
+        service.storeAndSignal(authSession, "state-cd", first, true);
+        String firstResponseCode =
+                singleUseObjects.get(DEFERRED_AUTH_PREFIX + "state-cd").get(KEY_RESPONSE_CODE);
+        Map<String, String> firstCompleteMarker = singleUseObjects.get(CROSS_DEVICE_COMPLETE_PREFIX + "state-cd");
+
+        Response secondResponse = service.storeAndSignal(authSession, "state-cd", second, true);
+
+        assertThat(secondResponse.getStatus()).isEqualTo(200);
+        assertThat((String) secondResponse.getEntity()).isEqualTo("{}");
+        // Neither single-use object is rewritten by the second presentation.
+        verify(singleUseObjects, times(1)).put(eq(DEFERRED_AUTH_PREFIX + "state-cd"), anyLong(), anyMap());
+        verify(singleUseObjects, times(1)).put(eq(CROSS_DEVICE_COMPLETE_PREFIX + "state-cd"), anyLong(), anyMap());
+        assertThat(singleUseObjects.get(DEFERRED_AUTH_PREFIX + "state-cd").get(KEY_RESPONSE_CODE))
+                .isEqualTo(firstResponseCode);
+        assertThat(singleUseObjects.get(CROSS_DEVICE_COMPLETE_PREFIX + "state-cd"))
+                .isEqualTo(firstCompleteMarker);
+        verify(authSession, times(1)).setAuthNote(eq(DEFERRED_IDENTITY_NOTE), anyString());
+    }
+
+    @Test
+    void storeAndSignal_completionOfOneStateDoesNotBlockAnother() {
+        service.storeAndSignal(
+                configuredAuthSession(), "state-A", createBrokeredIdentityContext(brokerConfig()), false);
+        service.storeAndSignal(
+                configuredAuthSession(), "state-B", createBrokeredIdentityContext(brokerConfig()), false);
+
+        verify(singleUseObjects, times(1)).put(eq(DEFERRED_AUTH_PREFIX + "state-A"), anyLong(), anyMap());
+        verify(singleUseObjects, times(1)).put(eq(DEFERRED_AUTH_PREFIX + "state-B"), anyLong(), anyMap());
+        // Independent flows get independent response codes.
+        assertThat(singleUseObjects.get(DEFERRED_AUTH_PREFIX + "state-A").get(KEY_RESPONSE_CODE))
+                .isNotEqualTo(
+                        singleUseObjects.get(DEFERRED_AUTH_PREFIX + "state-B").get(KEY_RESPONSE_CODE));
+    }
+
+    @Test
     void completeAuth_usesCurrentBrowserSessionForAuthenticatedCallback() {
         RootAuthenticationSessionModel rootSession = mock(RootAuthenticationSessionModel.class);
         AuthenticationSessionModel storedAuthSession = mock(AuthenticationSessionModel.class);
@@ -332,6 +397,24 @@ class Oid4vpDirectPostServiceTest {
         verify(context).setClient(client);
         verify(callback).authenticated(any(BrokeredIdentityContext.class));
         verify(store).removeRequestContext(session, "handle-1");
+    }
+
+    private AuthenticationSessionModel configuredAuthSession() {
+        AuthenticationSessionModel authSession = mock(AuthenticationSessionModel.class);
+        RootAuthenticationSessionModel rootSession = mock(RootAuthenticationSessionModel.class);
+        when(authSession.getParentSession()).thenReturn(rootSession);
+        when(authSession.getRealm()).thenReturn(realm);
+        when(rootSession.getId()).thenReturn("root-session");
+        when(authSession.getTabId()).thenReturn("tab-1");
+        when(realm.isRegistrationEmailAsUsername()).thenReturn(false);
+        return authSession;
+    }
+
+    private Oid4vpIdentityProviderConfig brokerConfig() {
+        Oid4vpIdentityProviderConfig idpConfig = new Oid4vpIdentityProviderConfig();
+        idpConfig.setAlias("oid4vp");
+        idpConfig.setEnabled(true);
+        return idpConfig;
     }
 
     @SuppressWarnings("unchecked")

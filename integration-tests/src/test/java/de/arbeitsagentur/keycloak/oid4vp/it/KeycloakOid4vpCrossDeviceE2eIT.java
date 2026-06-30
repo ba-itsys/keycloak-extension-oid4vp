@@ -261,7 +261,8 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
 
         // A foreign party can only observe the public state (in the request_uri / SSE URL), not the
         // single-use response_code generated during direct_post. Without it, /complete-auth is
-        // rejected at the response_code gate before any browser-session check.
+        // rejected at the response_code gate before any browser-session check, so the foreign browser
+        // never completes the login.
         String completeAuthUrl = keycloakUrls.getBase() + "/realms/" + REALM
                 + "/broker/oid4vp/endpoint/complete-auth?state="
                 + URLEncoder.encode(state, StandardCharsets.UTF_8);
@@ -271,8 +272,12 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
         try {
             otherPage.navigate(completeAuthUrl);
             otherPage.waitForLoadState();
-            assertThat(otherPage.locator("body").textContent().toLowerCase())
-                    .contains("invalid or expired authentication response");
+            String body = otherPage.locator("body").textContent().toLowerCase();
+            assertThat(body).contains("invalid_request");
+            assertThat(body).contains("response code");
+            assertThat(flow.isCallbackUrl(otherPage.url()))
+                    .as("Foreign browser must not complete the login")
+                    .isFalse();
         } finally {
             otherPage.close();
             otherContext.close();
