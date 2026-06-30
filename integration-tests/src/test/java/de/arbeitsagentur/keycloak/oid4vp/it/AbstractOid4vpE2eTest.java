@@ -195,14 +195,10 @@ abstract class AbstractOid4vpE2eTest {
                             || flow.isCallbackUrl(url),
                     new Page.WaitForURLOptions().setTimeout(30000));
         } catch (Exception e) {
-            String requestHandle = flow.getRequestHandle();
-            if (requestHandle == null || requestHandle.isBlank()) {
-                throw new AssertionError("Cross-device: SSE did not navigate browser. URL: " + page.url(), e);
-            }
-            String completeAuthUrl = keycloakUrls.getBase() + "/realms/" + REALM
-                    + "/broker/oid4vp/endpoint/complete-auth?request_handle="
-                    + URLEncoder.encode(requestHandle, StandardCharsets.UTF_8);
-            page.navigate(completeAuthUrl);
+            // The complete-auth URL carries a single-use response_code that is delivered to the
+            // browser only via the SSE 'complete' event, so it cannot be reconstructed manually.
+            // If the SSE never navigated the browser, the cross-device login genuinely cannot complete.
+            throw new AssertionError("Cross-device: SSE did not navigate browser. URL: " + page.url(), e);
         }
         page.waitForLoadState();
     }

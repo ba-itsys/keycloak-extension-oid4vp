@@ -15,7 +15,17 @@ The `request_handle` is a unique, unguessable token generated once per rendered 
 
 **Lifecycle:** Generated during login page rendering → embedded in the `request_uri` path and, for cross-device, in the SSE status subscription → reused across multiple request-object fetches for the same browser flow → removed after the first successful callback consumes the flow.
 
-**Security note:** The `request_handle` is not enough on its own to observe or finish the flow. Both `/cross-device/status` and `/complete-auth` use the stored `{rootSessionId, tabId}` from the single-use store to recover the original Keycloak authentication session and require the current browser request to be attached to that same auth session. In practice, security relies on both: a live one-time handle and the matching browser auth-session cookie.
+**Security note:** The `request_handle` is *public*. It appears in the `request_uri` path, in the rendered login page, and in the cross-device SSE subscription URL, so it is not sufficient on its own to finish the flow. Two layers guard `/complete-auth`: (1) the single-use **`response_code`** generated during `direct_post` (see below), which the browser must present, and (2) the stored `{rootSessionId, tabId}` browser-session check that requires the current browser auth-session cookie to match the Keycloak login attempt. `/cross-device/status` relies on the browser-session check.
+
+### The `response_code`
+
+The `response_code` is a fresh, unguessable single-use secret generated in `Oid4vpDirectPostService.storeAndSignal` once the wallet's `direct_post` has been verified, per [OID4VP 1.0 §8.2](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html). It binds completion to the specific verified submission and prevents anyone holding only the public `request_handle` from driving `/complete-auth` (a session-fixation vector).
+
+**Format:** 32 random bytes, Base64url-encoded (`SecretGenerator`). Generated once per `direct_post` completion.
+
+**Lifecycle:** Generated during `storeAndSignal` → stored inside the `oid4vp_deferred:{requestHandle}` single-use object → embedded in the `complete-auth` URL that is delivered to the browser (same-device: the `direct_post` JSON `redirect_uri`; cross-device: the SSE `complete` event's `redirect_uri`) → presented back as the `response_code` query parameter at `/complete-auth`, where it is compared in constant time before any single-use object is consumed → discarded when the flow is consumed.
+
+**Difference from `request_handle`:** the `request_handle` is the public, stable correlator for the browser flow; the `response_code` is the confidential, per-submission secret that authorizes completion. The browser learns it only from the server (via the wallet redirect or SSE), never from the request object.
 
 ### The `state` Parameter
 
@@ -160,28 +170,28 @@ Both flows go through `Oid4vpDirectPostService.storeAndSignal`, which:
 
 1. Serializes the `BrokeredIdentityContext` into the auth session (`DEFERRED_IDENTITY_NOTE`)
 2. Also stores claims JSON separately (`DEFERRED_CLAIMS_NOTE`) because Keycloak's serializer loses nested Map types
-3. Stores the deferred auth single-use object for both flows using the realm login timeout and, for cross-device only, stores a separate completion marker using `crossDeviceCompleteTtlSeconds`:
-   - `oid4vp_deferred:{requestHandle}` → `{rootSessionId, tabId}` — used by `/complete-auth`
-   - `oid4vp_complete:{requestHandle}` → `{completeAuthUrl}` — read by SSE polling until `/complete-auth` removes it
+3. Generates a fresh single-use `response_code` and stores the deferred auth single-use object for both flows using the realm login timeout and, for cross-device only, stores a separate completion marker using `crossDeviceCompleteTtlSeconds`:
+   - `oid4vp_deferred:{requestHandle}` → `{rootSessionId, tabId, response_code}`, used and verified by `/complete-auth`
+   - `oid4vp_complete:{requestHandle}` → `{completeAuthUrl}`, read by SSE polling until `/complete-auth` removes it. The `completeAuthUrl` carries the `response_code`
 4. Removes the stable `requestHandle` entry. That flow-handle entry is the authoritative liveness check for all later `state` / `kid` lookups, so any leftover request-specific entries are rejected and lazily removed on access, which invalidates every outstanding request context for that flow and blocks replay after the first successful callback
 
 The difference is in the response:
 
-- **Same-device:** Returns `{"redirect_uri": "/complete-auth?request_handle=..."}`. The wallet opens this URL in the browser, which triggers `completeAuth`.
-- **Cross-device:** Returns `200 OK` with `{}` body. The browser's SSE connection picks up the completion signal and navigates to `/complete-auth`.
+- **Same-device:** Returns `{"redirect_uri": "/complete-auth?request_handle=...&response_code=..."}`. The wallet opens this URL in the browser, which triggers `completeAuth`.
+- **Cross-device:** Returns `200 OK` with `{}` body. The browser's SSE connection picks up the completion signal and navigates to `/complete-auth?request_handle=...&response_code=...`.
 
 ### Completion: `/complete-auth`
 
 Both flows converge at:
 
 ```
-Oid4vpIdentityProviderEndpoint.completeAuth(requestHandle)
-    → Oid4vpDirectPostService.completeAuth(requestHandle, callback, event)
+Oid4vpIdentityProviderEndpoint.completeAuth(requestHandle, responseCode)
+    → Oid4vpDirectPostService.completeAuth(requestHandle, responseCode, callback, event)
 ```
 
 `completeAuth`:
 
-1. Reads `oid4vp_deferred:{requestHandle}` without consuming it yet → gets `{rootSessionId, tabId}`
+1. Reads `oid4vp_deferred:{requestHandle}` without consuming it yet → gets `{rootSessionId, tabId, response_code}`, and **verifies the supplied `response_code` matches the stored one in constant time, rejecting before consuming anything** (so a known public `request_handle` plus a wrong code cannot burn the legitimate single-use signal)
 2. Resolves the stored auth session from `rootSessionId` + `tabId`
 3. Resolves the current browser auth session from Keycloak's auth-session cookie and requires it to match the stored session
 4. Consumes `oid4vp_deferred:{requestHandle}` and the cross-device completion marker
@@ -199,10 +209,10 @@ Oid4vpIdentityProviderEndpoint.crossDeviceStatus(requestHandle)
 ```
 
 Before accepting the subscription, the endpoint resolves the auth session for the `requestHandle` and requires the current browser auth-session cookie to match it. The SSE service then polls `singleUseObjects` for `oid4vp_complete:{requestHandle}`. When found:
-- Sends `event: complete` with `{"redirect_uri": "/complete-auth?request_handle=..."}` to the browser
+- Sends `event: complete` with `{"redirect_uri": "/complete-auth?request_handle=...&response_code=..."}` to the browser
 - Leaves the completion marker in place so a reconnecting SSE client can observe the same completion event until `/complete-auth` consumes it
 
-The browser JavaScript receives this and navigates to `/complete-auth?request_handle=...`, triggering the completion flow above.
+The browser JavaScript receives this and navigates to `/complete-auth?request_handle=...&response_code=...`, triggering the completion flow above.
 
 The SSE implementation is node-local but state-shared: each browser SSE connection runs on its own virtual thread and polls Keycloak's shared single-use object store until the flow completes, expires, or times out. No cluster notification channel is required, but the single-use store itself must be shared across nodes so reconnects can resume on any node.
 

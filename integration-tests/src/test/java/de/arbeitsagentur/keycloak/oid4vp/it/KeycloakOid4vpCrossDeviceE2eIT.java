@@ -259,6 +259,9 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
         Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
         assertThat(walletResponse.redirectUri()).isNull();
 
+        // A foreign party can only observe the public request_handle (in the request_uri / SSE URL),
+        // not the single-use response_code minted during direct_post. Without it, /complete-auth is
+        // rejected at the response_code gate before any browser-session check.
         String completeAuthUrl = keycloakUrls.getBase() + "/realms/" + REALM
                 + "/broker/oid4vp/endpoint/complete-auth?request_handle="
                 + URLEncoder.encode(requestHandle, StandardCharsets.UTF_8);
@@ -269,7 +272,7 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
             otherPage.navigate(completeAuthUrl);
             otherPage.waitForLoadState();
             assertThat(otherPage.locator("body").textContent().toLowerCase())
-                    .contains("authentication session does not match");
+                    .contains("invalid or expired authentication response");
         } finally {
             otherPage.close();
             otherContext.close();

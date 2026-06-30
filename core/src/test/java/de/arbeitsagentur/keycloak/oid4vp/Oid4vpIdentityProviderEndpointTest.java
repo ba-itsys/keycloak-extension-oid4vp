@@ -354,7 +354,15 @@ class Oid4vpIdentityProviderEndpointTest {
 
     @Test
     void completeAuth_withoutRequestHandle_returnsInvalidRequest() {
-        Response response = endpoint.completeAuth(null);
+        Response response = endpoint.completeAuth(null, "code-1");
+
+        assertThat(response.getStatus()).isEqualTo(400);
+        assertThat((String) response.getEntity()).contains("invalid_request");
+    }
+
+    @Test
+    void completeAuth_withoutResponseCode_returnsInvalidRequest() {
+        Response response = endpoint.completeAuth("handle-1", null);
 
         assertThat(response.getStatus()).isEqualTo(400);
         assertThat((String) response.getEntity()).contains("invalid_request");
