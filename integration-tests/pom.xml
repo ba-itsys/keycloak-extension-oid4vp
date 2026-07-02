@@ -165,7 +165,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-failsafe-plugin</artifactId>
-        <version>3.5.5</version>
+        <version>3.5.6</version>
         <configuration>
           <skipITs>${integration.tests.skip}</skipITs>
           <!-- The logging manager and fork-join settings are required by the Keycloak Test Framework -->
