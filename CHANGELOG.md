@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.6.4](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.6.3...v0.6.4) (2026-07-02)
+
+
+### Bug Fixes
+
+* harden direct_post-Endpoint by only allowing one successful credential presentation ([5383a18](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/5383a18914c71d94b4b489183d47a57941990350))
+* introduce response_code to prevent session fixation attacks ([acb7d07](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/acb7d076946de825a3dc71b8e3215d0b8d89ac70))
+* remove useless waiting on conformance suite populating auth endpoint ([e2637a2](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/e2637a2fe119888b95420628d2d4a59bf9a105ad))
+* simplify flow by removing request_handle und use oid4vp state instead ([344ac54](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/344ac54690c4de3fe935196a3534d9181cae8101))
+
+
+### Dependencies
+
+* **deps-dev:** bump com.microsoft.playwright:playwright ([f3094a2](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/f3094a2d7e68c9ffabe9cfccbcc021e22a05218d))
+* **deps-dev:** bump org.apache.maven.plugins:maven-failsafe-plugin ([cc9c18f](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/cc9c18f975c412e1554b0a479443baec4711aa03))
+* **deps-dev:** bump org.jacoco:jacoco-maven-plugin ([a5dd05e](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/a5dd05eda689cb3d667f14f413dd8fa51f20cbaf))
+* **deps:** bump com.diffplug.spotless:spotless-maven-plugin ([0486ced](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/0486ced202923218ac6baa3aa99b868e934e0b59))
+* **deps:** bump keycloak.version from 26.6.3 to 26.6.4 ([819b75f](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/819b75f44213bb286a2d43f74b0b9ded93155ce1))
+* **deps:** bump org.junit.jupiter:junit-jupiter from 6.0.3 to 6.1.1 ([dc23ca1](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/dc23ca1c2d0fb227c7d52573db60275043b39f07))
+* **deps:** bump org.keycloak.testframework:keycloak-test-framework-bom ([8809619](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/88096196b183f6c7d189d69a91914b0cf5a9402f))
+
 ## [0.6.3](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.6.2...v0.6.3) (2026-06-29)
 
 
