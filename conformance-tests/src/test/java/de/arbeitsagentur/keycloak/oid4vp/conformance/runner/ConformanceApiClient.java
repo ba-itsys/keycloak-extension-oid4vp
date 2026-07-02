@@ -122,7 +122,6 @@ public final class ConformanceApiClient {
             info = waitForState(moduleId, List.of("WAITING", "FINISHED"), Duration.ofMinutes(4));
         }
         if ("WAITING".equals(info.path("status").asText())) {
-            info = waitForExportedAuthorizationEndpoint(moduleId, info);
             interaction.trigger(new ModuleRun(moduleNode, info));
         }
         info = waitForState(moduleId, List.of("FINISHED"), Duration.ofMinutes(8));
@@ -213,20 +212,6 @@ public final class ConformanceApiClient {
                 "Timed out waiting for conformance module " + moduleId + " to reach " + states + ". Last info: "
                         + lastInfo,
                 lastFailure);
-    }
-
-    // The module exports its authorization endpoint shortly after it starts waiting
-    private JsonNode waitForExportedAuthorizationEndpoint(String moduleId, JsonNode lastInfo) {
-        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
-        JsonNode info = lastInfo;
-        while (System.nanoTime() < deadline) {
-            if (!info.path("exported").path("authorization_endpoint").asText("").isBlank()) {
-                return info;
-            }
-            sleep(Duration.ofMillis(500));
-            info = getInfo(moduleId);
-        }
-        return info;
     }
 
     private JsonNode getInfo(String moduleId) {
