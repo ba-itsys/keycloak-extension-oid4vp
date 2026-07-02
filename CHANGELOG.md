@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.4](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.6.3...v0.6.4) (2026-07-02)
+
+
+### Bug Fixes
+
+* harden direct_post-Endpoint by only allowing one successful credential presentation ([5383a18](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/5383a18914c71d94b4b489183d47a57941990350))
+* introduce response_code to prevent session fixation attacks ([acb7d07](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/acb7d076946de825a3dc71b8e3215d0b8d89ac70))
+* simplify flow by removing request_handle und use oid4vp state instead ([344ac54](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/344ac54690c4de3fe935196a3534d9181cae8101))
+
+
+### Dependencies
+
+* **deps:** bump keycloak.version from 26.6.3 to 26.6.4 ([819b75f](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/819b75f44213bb286a2d43f74b0b9ded93155ce1))
+
 ## [0.6.3](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.6.2...v0.6.3) (2026-06-29)
 
 
