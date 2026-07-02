@@ -46,7 +46,7 @@
     <!-- The provider module is published standalone and manages its own versions; keep
          keycloak.version aligned with core/pom.xml -->
     <keycloak.version>26.6.4</keycloak.version>
-    <keycloak-test-framework.version>26.6.3</keycloak-test-framework.version>
+    <keycloak-test-framework.version>26.6.4</keycloak-test-framework.version>
     <junit.version>6.0.3</junit.version>
     <assertj.version>3.27.7</assertj.version>
     <logback.version>1.5.32</logback.version>
