@@ -18,7 +18,7 @@
     <integration.tests.skip>true</integration.tests.skip>
     <testcontainers.version>2.0.3</testcontainers.version>
     <testcontainers-oid4vc.version>1.6.1</testcontainers-oid4vc.version>
-    <playwright.version>1.59.0</playwright.version>
+    <playwright.version>1.61.0</playwright.version>
     <oid4vc-dev.version>v1.10.11</oid4vc-dev.version>
   </properties>
 
