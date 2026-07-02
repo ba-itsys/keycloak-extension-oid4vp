@@ -39,7 +39,7 @@
 
     <keycloak.version>26.6.4</keycloak.version>
     <bytebuddy.version>1.18.8</bytebuddy.version>
-    <jacoco.version>0.8.13</jacoco.version>
+    <jacoco.version>0.8.15</jacoco.version>
     <surefireArgLine/>
   </properties>
 
