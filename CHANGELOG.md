@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.5](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.6.4...v0.6.5) (2026-07-22)
+
+
+### Dependencies
+
+* **deps-dev:** bump net.bytebuddy:byte-buddy-agent ([ee10f2a](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/ee10f2a665264564dcb81f3fecfc822848d10309))
+* **deps-dev:** bump org.apache.httpcomponents.client5:httpclient5 ([9b64468](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/9b644686448f47afbd818d9db483d349e2a9bdb8))
+* **deps-dev:** bump org.bouncycastle:bctls-jdk18on from 1.83 to 1.84 ([86adb30](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/86adb3040da71be03b56d9c54473c5e088abec79))
+* **deps-dev:** bump org.bouncycastle:bctls-jdk18on from 1.84 to 1.85 ([df6f21f](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/df6f21ff7fac41d1140f1f0e7ad5e18efb0ddff1))
+* **deps:** bump ch.qos.logback:logback-classic from 1.5.32 to 1.5.37 ([d3381d0](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/d3381d07a2e944f45ce2d6f99ff49bfd0f1d2feb))
+* **deps:** bump org.apache.maven.plugins:maven-surefire-plugin ([c21ca66](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/c21ca6625e8e378bfb01cda4ac4fd87d73131204))
+* **deps:** bump org.sonatype.central:central-publishing-maven-plugin ([13b1bb6](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/13b1bb617ee7a6a8cbb27fb4224d64cccfe06cb1))
+
 ## [0.6.4](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.6.3...v0.6.4) (2026-07-02)
 
 
