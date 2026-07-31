@@ -72,21 +72,44 @@ public class Oid4vpRedirectFlowService {
         this.requestObjectSigner = new Oid4vpRequestObjectSigner();
     }
 
-    /** Builds the wallet authorization URL with {@code client_id} and {@code request_uri} parameters. */
+    /**
+     * Builds the wallet authorization URL with {@code client_id} and {@code request_uri} parameters.
+     *
+     * <p>{@code walletScheme} is either a custom URL scheme (e.g. {@code openid4vp://}) or a full
+     * {@code http(s)} wallet authorization endpoint URL (e.g. {@code http://localhost:8085/authorize})
+     * for wallets reachable at a web URL — both forms receive the same query parameters.
+     */
     public URI buildWalletAuthorizationUrl(String walletScheme, String clientId, URI requestUri) {
         String scheme = StringUtil.isNotBlank(walletScheme) ? walletScheme : DEFAULT_WALLET_SCHEME;
-        if (!scheme.endsWith("://")) {
+        String separator = "?";
+        if (isWalletEndpointUrl(scheme)) {
+            if (scheme.contains("?")) {
+                separator = scheme.endsWith("?") || scheme.endsWith("&") ? "" : "&";
+            }
+        } else if (!scheme.endsWith("://")) {
             scheme = scheme + "://";
         }
 
         StringBuilder url = new StringBuilder();
-        url.append(scheme).append("?");
+        url.append(scheme).append(separator);
         url.append(OAuth2Constants.CLIENT_ID).append("=").append(URLEncoder.encode(clientId, StandardCharsets.UTF_8));
         url.append("&")
                 .append(REQUEST_URI)
                 .append("=")
                 .append(URLEncoder.encode(requestUri.toString(), StandardCharsets.UTF_8));
         return URI.create(url.toString());
+    }
+
+    /** A wallet target counts as a web URL when it has an http(s) scheme and a host, not just a bare scheme. */
+    private static boolean isWalletEndpointUrl(String walletScheme) {
+        String lower = walletScheme.toLowerCase();
+        if (lower.startsWith("http://")) {
+            return walletScheme.length() > "http://".length();
+        }
+        if (lower.startsWith("https://")) {
+            return walletScheme.length() > "https://".length();
+        }
+        return false;
     }
 
     /**
