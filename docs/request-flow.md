@@ -26,7 +26,7 @@ The `state` is the single identifier for a browser login flow. It is allocated o
 
 **Lifecycle:** Allocated when the login page is rendered → carried in the `request_uri` path (`/endpoint/request-object/{state}`) and advertised inside the signed request object → echoed back by the wallet in its `direct_post` `state` parameter → used by the browser for SSE polling (`/cross-device/status?state=...`) and `/complete-auth?state=...&response_code=...` → removed by `Oid4vpDirectPostService.completeAuth` after the first successful callback.
 
-At render the flow also allocates the `nonce` and, for `direct_post.jwt`, the ephemeral response-encryption key, and stores one `RequestContextEntry` keyed by `oid4vp_state:{state}` (plus a `oid4vp_kid:{kid}` index). Because `state`, `nonce`, and the encryption key are allocated once at render, repeated `request_uri` fetches return the same `state`, `nonce`, and encryption key (stable per flow, not fresh per fetch). The signed request object is still built lazily on each fetch, so it can embed wallet-supplied `wallet_nonce` and `wallet_metadata`.
+At render the flow also allocates the `nonce` and, for `direct_post.jwt`, the ephemeral response-encryption key, and stores one `RequestContextEntry` keyed by `oid4vp_state:{state}`. The encryption key's `kid` is set to the `state`, so the cleartext JWE header of an encrypted callback identifies the request context without a separate index. Because `state`, `nonce`, and the encryption key are allocated once at render, repeated `request_uri` fetches return the same `state`, `nonce`, and encryption key (stable per flow, not fresh per fetch). The signed request object is still built lazily on each fetch, so it can embed wallet-supplied `wallet_nonce` and `wallet_metadata`.
 
 The `state` entry is the liveness anchor: while it exists the flow is live, and `Oid4vpDirectPostService.completeAuth` removes it (`removeRequestContext`) after a successful callback, which blocks replay.
 
@@ -106,7 +106,7 @@ Oid4vpIdentityProviderEndpoint.handlePost(state, vpToken, encryptedResponse, err
 `handlePost`:
 
 1. **Reads form parameters** — `state`, `vp_token`, `id_token`, `response`, `error`, and `error_description`
-2. **KID-based resolution** (encrypted responses only) — whenever the `response` form parameter is present, extracts the KID from the JWE header and resolves the full request context from `Oid4vpRequestObjectStore`
+2. **Request-context resolution** — resolves the full request context from `Oid4vpRequestObjectStore` by the posted `state`; when an encrypted response omits the `state` form parameter, the KID from the JWE header is used instead, because the response-encryption key's `kid` equals the flow `state`
 3. **Resolves auth session** from the request context's `{rootSessionId, tabId}`
 4. **Decrypts and validates state** (when `response_mode=direct_post.jwt`) — decrypts the JWT/JWE from the `response` form parameter using the request context's stored private key, extracts `vp_token`, `id_token`, `state`, `error`, `error_description`, and `mdocGeneratedNonce`, requires the decrypted `state` to match the stored request context, and also rejects the callback if a separate posted `state` form parameter is present but differs from the decrypted `state`
 5. **Error handling** — if the wallet sent an OAuth error (for example `access_denied`), returns a JSON body containing `error` and optional `error_description` without a `redirect_uri`, so the browser can remain on the login page and retry
@@ -235,7 +235,7 @@ Errors can occur at multiple points:
 | `X5cChainValidator` | x5c certificate chain validation (shared by SD-JWT, mDoc, status list, trust list) |
 | `Oid4vpDirectPostService` | Deferred auth storage for both flows, session restoration at `/complete-auth` |
 | `Oid4vpCrossDeviceSseService` | Node-local SSE subscription handling for cross-device completion |
-| `Oid4vpRequestObjectStore` | Transient storage for the per-flow request context keyed by `oid4vp_state:{state}`, plus a `oid4vp_kid:{kid}` index. The `state` entry is the liveness anchor: removing it invalidates the flow and blocks replay after the first successful callback |
+| `Oid4vpRequestObjectStore` | Transient storage for the per-flow request context keyed by `oid4vp_state:{state}`. The response-encryption key's `kid` equals the `state`, so encrypted callbacks resolve through the same entry. The `state` entry is the liveness anchor: removing it invalidates the flow and blocks replay after the first successful callback |
 | `Oid4vpAuthSessionResolver` | Auth session lookup from request object store (state→session, rootSessionId→tabId) |
 | `Oid4vpResponseDecryptor` | JWE decryption for direct_post.jwt responses |
 | `Oid4vpRequestObjectEncryptor` | JWE encryption for request objects when wallet sends wallet_metadata |

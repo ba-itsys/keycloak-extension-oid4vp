@@ -90,6 +90,49 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
+    void distinctLoginFlowsAdvertiseDistinctEncryptionKeys() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        Map<String, Object> firstJwk = fetchEncryptionJwk(flow.getSameDeviceWalletUrl());
+
+        flow.clearBrowserSession();
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        Map<String, Object> secondJwk = fetchEncryptionJwk(flow.getSameDeviceWalletUrl());
+
+        // OID4VP 1.0 section 8.3 (HAIP 5-5): the response-encryption key is ephemeral and specific
+        // to one authorization request. The conformance suite enforces this across requests since
+        // release-v5.2.1 (VP1FinalCheckEncryptionKeyNotReused), so two flows never share key
+        // material, and with kid derived from the flow state the kid differs as well.
+        assertThat(secondJwk.get("x")).isNotEqualTo(firstJwk.get("x"));
+        assertThat(secondJwk.get("kid")).isNotEqualTo(firstJwk.get("kid"));
+    }
+
+    private Map<String, Object> fetchEncryptionJwk(String walletUrl) throws Exception {
+        String requestUri = Oid4vpLoginFlowHelper.extractRequestUri(walletUrl);
+        HttpResponse<String> response = HttpClient.newHttpClient()
+                .send(
+                        HttpRequest.newBuilder()
+                                .uri(URI.create(requestUri))
+                                .GET()
+                                .build(),
+                        HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(200);
+        SignedJWT requestObject = SignedJWT.parse(response.body());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> clientMetadata =
+                (Map<String, Object>) requestObject.getJWTClaimsSet().getClaim("client_metadata");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> jwks = (Map<String, Object>) clientMetadata.get("jwks");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> keys = (List<Map<String, Object>>) jwks.get("keys");
+        return keys.get(0);
+    }
+
+    @Test
     void loginSucceedsAfterMultipleRequestObjectFetches() throws Exception {
         testApp().reset();
         flow.clearBrowserSession();

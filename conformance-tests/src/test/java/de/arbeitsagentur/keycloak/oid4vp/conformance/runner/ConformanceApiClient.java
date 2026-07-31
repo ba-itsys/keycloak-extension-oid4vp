@@ -30,10 +30,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import javax.net.ssl.SSLContext;
+import org.jboss.logging.Logger;
 import org.keycloak.util.JsonSerialization;
 
 // Client for the conformance suite REST API, driving plans and test modules
 public final class ConformanceApiClient {
+
+    private static final Logger LOG = Logger.getLogger(ConformanceApiClient.class);
 
     private final URI baseUri;
     private final HttpClient httpClient;
@@ -85,6 +88,7 @@ public final class ConformanceApiClient {
             plan = getOrCreatePlan(planName, suiteConfig, planVariant);
         } catch (RuntimeException e) {
             // The suite rejects plan variants with no applicable modules
+            LOG.warnf("Plan creation failed for %s %s: %s", planName, planVariant, e.getMessage());
             return List.of();
         }
         List<DiscoveredModule> modules = new ArrayList<>();

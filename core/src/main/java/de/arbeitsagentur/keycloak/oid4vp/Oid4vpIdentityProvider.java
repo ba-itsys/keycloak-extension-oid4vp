@@ -300,7 +300,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         String encryptionKeyJson = null;
         String encryptionJwkThumbprint = null;
         if (getConfig().getResolvedResponseMode().requiresEncryption()) {
-            Oid4vpJwk responseEncryptionKey = redirectFlowService.createResponseEncryptionKey();
+            Oid4vpJwk responseEncryptionKey = redirectFlowService.createResponseEncryptionKey(state);
             encryptionKeyJson = responseEncryptionKey.toJson();
             encryptionJwkThumbprint = Oid4vpRequestObjectStore.computeEncryptionJwkThumbprint(encryptionKeyJson);
         }
@@ -318,10 +318,6 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 encryptionJwkThumbprint,
                 preparedDcqlQuery.configuredCredentialTypes());
         requestObjectStore.storeRequestContext(session, requestContext);
-        String kid = Oid4vpRequestObjectStore.extractKidFromJwk(encryptionKeyJson);
-        if (kid != null) {
-            requestObjectStore.storeKidIndex(session, kid, requestContext);
-        }
 
         URI requestUri = request.getUriInfo()
                 .getBaseUriBuilder()

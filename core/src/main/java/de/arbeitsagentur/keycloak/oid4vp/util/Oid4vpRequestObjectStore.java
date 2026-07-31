@@ -20,29 +20,24 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.jboss.logging.Logger;
-import org.keycloak.jose.jwk.JWK;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.SingleUseObjectProvider;
 import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Stores two lookup indexes in Keycloak's {@link SingleUseObjectProvider}:
+ * Stores a single state → request context index in Keycloak's {@link SingleUseObjectProvider}:
+ * the OAuth {@code state} value maps to a serialized {@link RequestContextEntry}. The same
+ * {@code state} is allocated when the login page is rendered, carried in the {@code request_uri}
+ * path, advertised inside the signed request object, echoed by the wallet in its
+ * {@code direct_post}, and used by the browser for SSE polling and {@code /complete-auth}.
  *
- * <ul>
- *   <li><b>State → request context</b>: Maps the OAuth {@code state} value to a serialized
- *       {@link RequestContextEntry}. The same {@code state} is allocated when the login page is
- *       rendered, carried in the {@code request_uri} path, advertised inside the signed request
- *       object, echoed by the wallet in its {@code direct_post}, and used by the browser for SSE
- *       polling and {@code /complete-auth}.
- *   <li><b>KID → request context</b>: Maps the HAIP response-encryption JWK key ID directly to the
- *       serialized request context so {@code direct_post.jwt} callbacks can recover the correct
- *       decryption key even when the wallet omits the {@code state} form field and state propagation
- *       across nodes lags slightly.
- * </ul>
+ * <p>The response-encryption JWK is created with {@code kid == state}, so an encrypted
+ * {@code direct_post.jwt} callback that omits the {@code state} form field still resolves through
+ * this index via the cleartext JWE header kid.
  *
  * <p>The state entry is the authoritative liveness check: while it exists the flow is live, and
- * removing it after a successful callback rejects any leftover KID entry and blocks replay.
+ * removing it after a successful callback blocks replay.
  *
  * <p>All entries expire after the configured TTL (typically the Keycloak login timeout).
  */
@@ -50,10 +45,7 @@ public class Oid4vpRequestObjectStore {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpRequestObjectStore.class);
     private static final String STATE_INDEX_PREFIX = "oid4vp_state:";
-    private static final String KID_INDEX_PREFIX = "oid4vp_kid:";
     private static final String KEY_JSON = "json";
-    private static final String KEY_STATE = "state";
-    private static final String KEY_KID = JWK.KEY_ID;
     private final Duration ttl;
 
     public Oid4vpRequestObjectStore(Duration ttl) {
@@ -78,25 +70,8 @@ public class Oid4vpRequestObjectStore {
             return;
         }
         session.singleUseObjects()
-                .put(
-                        STATE_INDEX_PREFIX + entry.state(),
-                        ttl.toSeconds(),
-                        Map.of(
-                                KEY_JSON,
-                                serializeEntry(entry),
-                                KEY_KID,
-                                emptyIfNull(extractKidFromJwk(entry.encryptionKeyJson()))));
+                .put(STATE_INDEX_PREFIX + entry.state(), ttl.toSeconds(), Map.of(KEY_JSON, serializeEntry(entry)));
         LOG.debugf("Stored request context: state=%s", entry.state());
-    }
-
-    // Stores a KID → request context mapping for decrypting direct_post.jwt responses.
-    public void storeKidIndex(KeycloakSession session, String kid, RequestContextEntry entry) {
-        if (StringUtil.isBlank(kid) || entry == null || StringUtil.isBlank(entry.state())) return;
-        session.singleUseObjects()
-                .put(
-                        KID_INDEX_PREFIX + kid,
-                        ttl.toSeconds(),
-                        Map.of(KEY_STATE, entry.state(), KEY_JSON, serializeEntry(entry)));
     }
 
     public RequestContextEntry resolveByState(KeycloakSession session, String state) {
@@ -106,39 +81,9 @@ public class Oid4vpRequestObjectStore {
         return deserializeEntry(entry.get(KEY_JSON), RequestContextEntry.class);
     }
 
-    public RequestContextEntry resolveByKid(KeycloakSession session, String kid) {
-        if (StringUtil.isBlank(kid)) return null;
-        Map<String, String> entry = session.singleUseObjects().get(KID_INDEX_PREFIX + kid);
-        if (entry == null) return null;
-        // The KID index and the state index are written together and removed together
-        // (removeRequestContext clears both), so a live KID entry implies a live request context.
-        String serializedRequestContext = blankToNull(entry.get(KEY_JSON));
-        if (serializedRequestContext != null) {
-            return deserializeEntry(serializedRequestContext, RequestContextEntry.class);
-        }
-        String state = blankToNull(entry.get(KEY_STATE));
-        if (state == null) {
-            session.singleUseObjects().remove(KID_INDEX_PREFIX + kid);
-            return null;
-        }
-        return resolveByState(session, state);
-    }
-
     public void removeRequestContext(KeycloakSession session, String state) {
         if (StringUtil.isBlank(state)) return;
-        SingleUseObjectProvider store = session.singleUseObjects();
-        Map<String, String> stateEntry = store.remove(STATE_INDEX_PREFIX + state);
-        if (stateEntry == null) return;
-
-        String kid = blankToNull(stateEntry.get(KEY_KID));
-        if (kid != null) {
-            store.remove(KID_INDEX_PREFIX + kid);
-        }
-    }
-
-    // Extracts the Key ID from a JWK JSON string, or null if parsing fails.
-    public static String extractKidFromJwk(String jwkJson) {
-        return Oid4vpSigningKeyParser.extractKid(jwkJson);
+        session.singleUseObjects().remove(STATE_INDEX_PREFIX + state);
     }
 
     // Computes the RFC 7638 SHA-256 JWK thumbprint for the public part of an EC JWK.
@@ -148,14 +93,6 @@ public class Oid4vpRequestObjectStore {
         } catch (Exception e) {
             throw new IllegalArgumentException("Failed to compute JWK thumbprint", e);
         }
-    }
-
-    private static String emptyIfNull(String value) {
-        return value == null ? "" : value;
-    }
-
-    private static String blankToNull(String value) {
-        return StringUtil.isBlank(value) ? null : value;
     }
 
     private static String serializeEntry(Object entry) {

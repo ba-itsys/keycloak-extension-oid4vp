@@ -157,11 +157,11 @@ class Oid4vpIdentityProviderEndpointTest {
 
     @Test
     void handlePost_withEncryptedResponseAndPostedState_decryptsErrorPayload() throws Exception {
-        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("kid-1").generate();
+        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("state-1").generate();
         String encryptedResponse = encryptPayload(
                 key, Map.of("state", "state-1", "error", "access_denied", "error_description", "Wallet rejected"));
 
-        when(store.resolveByKid(session, "kid-1"))
+        when(store.resolveByState(session, "state-1"))
                 .thenReturn(requestContext("state-1", "nonce-1", key.toJSONString(), "same_device"));
 
         Response response = endpoint.handlePost(
@@ -178,29 +178,29 @@ class Oid4vpIdentityProviderEndpointTest {
     }
 
     @Test
-    void handlePost_withEncryptedResponseAndMismatchedPostedState_returnsError() throws Exception {
-        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("kid-2").generate();
+    void handlePost_withEncryptedResponseAndUnknownPostedState_returnsSessionExpired() throws Exception {
+        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("state-expected").generate();
         String encryptedResponse = encryptPayload(key, Map.of("state", "state-expected", "error", "access_denied"));
 
-        when(store.resolveByKid(session, "kid-2"))
+        // The posted state takes precedence over the JWE header kid, so a state that resolves no
+        // request context rejects the callback even though the kid would match a live flow.
+        when(store.resolveByState(session, "state-expected"))
                 .thenReturn(requestContext("state-expected", "nonce-2", key.toJSONString(), "same_device"));
 
         Response response = endpoint.handlePost("state-actual", null, null, encryptedResponse, null, null);
 
         assertThat(response.getStatus()).isEqualTo(400);
-        assertThat((String) response.getEntity())
-                .contains("\"error\":\"identity_provider_error\"")
-                .contains("state does not match")
-                .doesNotContain("redirect_uri");
+        assertThat((String) response.getEntity()).contains("session_expired").doesNotContain("redirect_uri");
+        verify(store, never()).resolveByState(session, "state-expected");
     }
 
     @Test
-    void handlePost_withEncryptedResponseAndMissingPostedState_recoversStateFromKidContext() throws Exception {
-        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("kid-retry").generate();
+    void handlePost_withEncryptedResponseAndMissingPostedState_recoversStateFromJweHeaderKid() throws Exception {
+        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("state-1").generate();
         String encryptedResponse = encryptPayload(
                 key, Map.of("state", "state-1", "error", "access_denied", "error_description", "Wallet rejected"));
 
-        when(store.resolveByKid(session, "kid-retry"))
+        when(store.resolveByState(session, "state-1"))
                 .thenReturn(requestContext("state-1", "nonce-1", key.toJSONString(), "same_device"));
 
         Response response = endpoint.handlePost(null, null, null, encryptedResponse, null, null);
@@ -210,16 +210,16 @@ class Oid4vpIdentityProviderEndpointTest {
                 .contains("\"error\":\"access_denied\"")
                 .contains("Wallet rejected")
                 .doesNotContain("redirect_uri");
-        verify(store).resolveByKid(session, "kid-retry");
+        verify(store).resolveByState(session, "state-1");
     }
 
     @Test
-    void handlePost_withEncryptedResponseAndDelayedKidLookup_retriesUntilContextIsVisible() throws Exception {
-        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("kid-delayed").generate();
+    void handlePost_withEncryptedResponseAndDelayedStateLookup_retriesUntilContextIsVisible() throws Exception {
+        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("state-1").generate();
         String encryptedResponse = encryptPayload(
                 key, Map.of("state", "state-1", "error", "access_denied", "error_description", "Wallet rejected"));
 
-        when(store.resolveByKid(session, "kid-delayed"))
+        when(store.resolveByState(session, "state-1"))
                 .thenReturn(null, requestContext("state-1", "nonce-1", key.toJSONString(), "same_device"));
 
         Response response = endpoint.handlePost(null, null, null, encryptedResponse, null, null);
@@ -229,17 +229,16 @@ class Oid4vpIdentityProviderEndpointTest {
                 .contains("\"error\":\"access_denied\"")
                 .contains("Wallet rejected")
                 .doesNotContain("redirect_uri");
-        verify(store, times(2)).resolveByKid(session, "kid-delayed");
+        verify(store, times(2)).resolveByState(session, "state-1");
     }
 
     @Test
-    void handlePost_withEncryptedResponseAndStateFallback_usesStoredEncryptionKey() throws Exception {
-        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("kid-state-fallback").generate();
+    void handlePost_withEncryptedResponseAndUnknownJweKid_resolvesThroughPostedState() throws Exception {
+        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("kid-not-a-state").generate();
         String encryptedResponse = encryptPayload(
                 key,
                 Map.of("state", "state-fallback", "error", "access_denied", "error_description", "Wallet rejected"));
 
-        when(store.resolveByKid(session, "kid-state-fallback")).thenReturn(null);
         when(store.resolveByState(session, "state-fallback"))
                 .thenReturn(requestContext("state-fallback", "nonce-1", key.toJSONString(), "same_device"));
 
@@ -250,17 +249,15 @@ class Oid4vpIdentityProviderEndpointTest {
                 .contains("\"error\":\"access_denied\"")
                 .contains("Wallet rejected")
                 .doesNotContain("redirect_uri");
-        verify(store).resolveByKid(session, "kid-state-fallback");
         verify(store).resolveByState(session, "state-fallback");
     }
 
     @Test
     void handlePost_withEncryptedResponseAndMismatchedPayloadState_returnsError() throws Exception {
-        ECKey key =
-                new ECKeyGenerator(Curve.P_256).keyID("kid-payload-mismatch").generate();
+        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("state-expected").generate();
         String encryptedResponse = encryptPayload(key, Map.of("state", "state-actual", "error", "access_denied"));
 
-        when(store.resolveByKid(session, "kid-payload-mismatch"))
+        when(store.resolveByState(session, "state-expected"))
                 .thenReturn(requestContext("state-expected", "nonce-1", key.toJSONString(), "same_device"));
 
         Response response = endpoint.handlePost(null, null, null, encryptedResponse, null, null);
@@ -274,10 +271,10 @@ class Oid4vpIdentityProviderEndpointTest {
 
     @Test
     void handlePost_withEncryptedResponseAndMissingPayloadStateButMatchingFormState_returnsError() throws Exception {
-        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("kid-payload-missing").generate();
+        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("state-expected").generate();
         String encryptedResponse = encryptPayload(key, Map.of("error", "access_denied"));
 
-        when(store.resolveByKid(session, "kid-payload-missing"))
+        when(store.resolveByState(session, "state-expected"))
                 .thenReturn(requestContext("state-expected", "nonce-1", key.toJSONString(), "same_device"));
 
         Response response = endpoint.handlePost("state-expected", null, null, encryptedResponse, null, null);
@@ -291,12 +288,10 @@ class Oid4vpIdentityProviderEndpointTest {
 
     @Test
     void handlePost_withEncryptedResponseAndMissingPayloadAndFormState_returnsError() throws Exception {
-        ECKey key = new ECKeyGenerator(Curve.P_256)
-                .keyID("kid-payload-missing-both")
-                .generate();
+        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("state-expected").generate();
         String encryptedResponse = encryptPayload(key, Map.of("error", "access_denied"));
 
-        when(store.resolveByKid(session, "kid-payload-missing-both"))
+        when(store.resolveByState(session, "state-expected"))
                 .thenReturn(requestContext("state-expected", "nonce-1", key.toJSONString(), "same_device"));
 
         Response response = endpoint.handlePost(null, null, null, encryptedResponse, null, null);

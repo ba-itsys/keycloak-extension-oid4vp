@@ -105,7 +105,7 @@ class Oid4vpRequestObjectServiceTest {
         assertThat(params.responseEncryptionKeyJson()).isEqualTo("{\"kid\":\"enc-key\"}");
         // The request context is allocated at render time, not on fetch.
         verify(store, never()).storeRequestContext(any(), any());
-        verify(redirectFlowService, never()).createResponseEncryptionKey();
+        verify(redirectFlowService, never()).createResponseEncryptionKey(any());
     }
 
     @Test
