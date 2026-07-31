@@ -226,58 +226,34 @@ public class Oid4vpIdentityProviderEndpoint {
             boolean wasEncrypted) {}
 
     private ResolvedRequest resolveRequest(String state, String encryptedResponse) {
-        String resolvedState = state;
+        // The response-encryption JWK is created with kid == state, so an encrypted callback that
+        // omits the state form field still resolves through the cleartext JWE header kid.
         String kid = StringUtil.isNotBlank(encryptedResponse) ? responseDecryptor.extractKid(encryptedResponse) : null;
 
+        String lookupState = StringUtil.isNotBlank(state) ? state : kid;
+
         // A direct_post.jwt callback can land on a different node immediately after the request
-        // object was created. In that case the KID/state indexes may exist logically but still be
+        // object was created. In that case the state index may exist logically but still be
         // briefly invisible via the shared single-use store, so we retry with a short bounded pause.
         for (int attempt = 1; attempt <= REQUEST_CONTEXT_LOOKUP_MAX_ATTEMPTS; attempt++) {
-            Oid4vpRequestObjectStore.RequestContextEntry requestContext = null;
-            Oid4vpJwk kidBasedKey = null;
-
-            if (kid != null) {
-                requestContext = requestObjectStore.resolveByKid(session, kid);
-                if (requestContext != null) {
-                    kidBasedKey = parseEncryptionKey(requestContext);
-                    resolvedState = resolveState(state, requestContext);
-                }
-            }
-
-            if (requestContext == null) {
-                requestContext = requestObjectStore.resolveByState(session, resolvedState);
-                if (requestContext != null) {
-                    resolvedState = resolveState(state, requestContext);
-                    kidBasedKey = parseEncryptionKey(requestContext);
-                }
-            }
+            Oid4vpRequestObjectStore.RequestContextEntry requestContext =
+                    requestObjectStore.resolveByState(session, lookupState);
 
             if (requestContext != null || attempt == REQUEST_CONTEXT_LOOKUP_MAX_ATTEMPTS || kid == null) {
                 if (attempt > 1 && requestContext != null) {
                     LOG.debugf(
                             "OID4VP callback request context became visible after %d lookup attempts: state=%s kid=%s",
-                            attempt, resolvedState, kid);
+                            attempt, requestContext.state(), kid);
                 }
+                String resolvedState = requestContext != null ? requestContext.state() : state;
+                Oid4vpJwk kidBasedKey = parseEncryptionKey(requestContext);
                 return new ResolvedRequest(resolvedState, requestContext, kidBasedKey);
             }
 
             pauseRequestContextLookup();
         }
 
-        return new ResolvedRequest(resolvedState, null, null);
-    }
-
-    private String resolveState(String postedState, Oid4vpRequestObjectStore.RequestContextEntry requestContext) {
-        if (requestContext == null) {
-            return postedState;
-        }
-        if (StringUtil.isBlank(postedState)) {
-            return requestContext.state();
-        }
-        if (StringUtil.isNotBlank(requestContext.state()) && !postedState.equals(requestContext.state())) {
-            throw new IdentityBrokerException("Encrypted response state does not match the request state.");
-        }
-        return postedState;
+        return new ResolvedRequest(state, null, null);
     }
 
     private Response sessionExpiredResponse(

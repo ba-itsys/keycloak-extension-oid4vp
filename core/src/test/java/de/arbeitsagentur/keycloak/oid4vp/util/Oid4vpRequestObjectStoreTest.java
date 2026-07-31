@@ -37,8 +37,8 @@ import org.keycloak.models.SingleUseObjectProvider;
 
 class Oid4vpRequestObjectStoreTest {
 
-    private static final String KEY_JSON_1 = createKey("kid-1");
-    private static final String KEY_JSON_2 = createKey("kid-2");
+    private static final String KEY_JSON_1 = createKey("state-1");
+    private static final String KEY_JSON_2 = createKey("state-2");
 
     private final Map<String, Map<String, String>> entries = new HashMap<>();
 
@@ -64,79 +64,53 @@ class Oid4vpRequestObjectStoreTest {
     }
 
     @Test
-    void resolveByStateAndKid_returnsStoredRequestContext() {
+    void resolveByState_returnsStoredRequestContext() {
         Oid4vpRequestObjectStore.RequestContextEntry requestContext = requestContext("state-1", "nonce-1", KEY_JSON_1);
 
         store.storeRequestContext(session, requestContext);
-        store.storeKidIndex(session, "kid-1", requestContext);
 
         assertThat(store.resolveByState(session, "state-1")).isEqualTo(requestContext);
-        assertThat(store.resolveByKid(session, "kid-1")).isEqualTo(requestContext);
     }
 
     @Test
-    void removeRequestContext_removesStateAndAssociatedKid() {
+    void resolveByState_withEncryptionKeyKid_returnsRequestContext() {
+        // The response-encryption JWK is minted with kid == state, so the JWE header kid of an
+        // encrypted callback resolves the request context through the plain state index.
         Oid4vpRequestObjectStore.RequestContextEntry requestContext = requestContext("state-1", "nonce-1", KEY_JSON_1);
 
         store.storeRequestContext(session, requestContext);
-        store.storeKidIndex(session, "kid-1", requestContext);
+        String kid = Oid4vpSigningKeyParser.extractKid(requestContext.encryptionKeyJson());
+
+        assertThat(kid).isEqualTo("state-1");
+        assertThat(store.resolveByState(session, kid)).isEqualTo(requestContext);
+    }
+
+    @Test
+    void removeRequestContext_removesStateEntry() {
+        Oid4vpRequestObjectStore.RequestContextEntry requestContext = requestContext("state-1", "nonce-1", KEY_JSON_1);
+
+        store.storeRequestContext(session, requestContext);
 
         store.removeRequestContext(session, "state-1");
 
         assertThat(store.resolveByState(session, "state-1")).isNull();
-        assertThat(store.resolveByKid(session, "kid-1")).isNull();
-        assertThat(entries).doesNotContainKeys("oid4vp_state:state-1", "oid4vp_kid:kid-1");
+        assertThat(entries).doesNotContainKey("oid4vp_state:state-1");
     }
 
     @Test
-    void removeRequestContext_cleansOnlyTargetedStateAndKid() {
+    void removeRequestContext_cleansOnlyTargetedState() {
         Oid4vpRequestObjectStore.RequestContextEntry firstRequest = requestContext("state-1", "nonce-1", KEY_JSON_1);
         Oid4vpRequestObjectStore.RequestContextEntry secondRequest = requestContext("state-2", "nonce-2", KEY_JSON_2);
 
         store.storeRequestContext(session, firstRequest);
         store.storeRequestContext(session, secondRequest);
-        store.storeKidIndex(session, "kid-1", firstRequest);
-        store.storeKidIndex(session, "kid-2", secondRequest);
 
         store.removeRequestContext(session, "state-1");
 
         assertThat(store.resolveByState(session, "state-1")).isNull();
-        assertThat(store.resolveByKid(session, "kid-1")).isNull();
         assertThat(store.resolveByState(session, "state-2")).isEqualTo(secondRequest);
-        assertThat(store.resolveByKid(session, "kid-2")).isEqualTo(secondRequest);
-        assertThat(entries).doesNotContainKeys("oid4vp_state:state-1", "oid4vp_kid:kid-1");
-        assertThat(entries).containsKeys("oid4vp_state:state-2", "oid4vp_kid:kid-2");
-    }
-
-    @Test
-    void resolveByKid_returnsNullAndCleansWhenKidEntryHasNoContextAndNoState() {
-        store.storeRequestContext(session, requestContext("state-1", "nonce-1", KEY_JSON_1));
-        // A KID entry that carries neither the serialized context nor a state pointer is unusable.
-        entries.put("oid4vp_kid:kid-empty", Map.of());
-
-        assertThat(store.resolveByKid(session, "kid-empty")).isNull();
-        assertThat(entries).doesNotContainKey("oid4vp_kid:kid-empty");
-    }
-
-    @Test
-    void resolveByKid_returnsEmbeddedContextEvenIfStateEntryNotVisibleYet() {
-        // A direct_post.jwt callback can land on a node where the state index has not propagated yet.
-        // The KID entry embeds the full context, so resolution still succeeds during that lag.
-        Oid4vpRequestObjectStore.RequestContextEntry requestContext = requestContext("state-1", "nonce-1", KEY_JSON_1);
-        store.storeKidIndex(session, "kid-1", requestContext);
-        // storeRequestContext intentionally not called: the state index is absent (propagation lag).
-
-        assertThat(store.resolveByKid(session, "kid-1")).isEqualTo(requestContext);
-    }
-
-    @Test
-    void resolveByKid_fallsBackToStatePointerWhenContextNotEmbedded() {
-        store.storeRequestContext(session, requestContext("state-1", "nonce-1", KEY_JSON_1));
-        // Simulate a legacy KID entry that only points at the state index.
-        entries.put("oid4vp_kid:kid-pointer", Map.of("state", "state-1"));
-
-        assertThat(store.resolveByKid(session, "kid-pointer"))
-                .isEqualTo(requestContext("state-1", "nonce-1", KEY_JSON_1));
+        assertThat(entries).doesNotContainKey("oid4vp_state:state-1");
+        assertThat(entries).containsKey("oid4vp_state:state-2");
     }
 
     private static Oid4vpRequestObjectStore.RequestContextEntry requestContext(

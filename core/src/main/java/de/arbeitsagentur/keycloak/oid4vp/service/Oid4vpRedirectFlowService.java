@@ -137,7 +137,7 @@ public class Oid4vpRedirectFlowService {
                 throw new IllegalStateException("Failed to parse request handle encryption key", e);
             }
         }
-        return createResponseEncryptionKey();
+        return createResponseEncryptionKey(params.state());
     }
 
     private LinkedHashMap<String, Object> buildRequestObjectClaims(
@@ -218,9 +218,14 @@ public class Oid4vpRedirectFlowService {
         return key;
     }
 
-    public Oid4vpJwk createResponseEncryptionKey() {
+    /**
+     * The kid is set to the flow state so an encrypted {@code direct_post.jwt} callback resolves
+     * its request context from the cleartext JWE header alone, without a separate kid index.
+     */
+    public Oid4vpJwk createResponseEncryptionKey(String kid) {
         try {
             Oid4vpJwk key = Oid4vpJwk.generate("P-256", "ECDH-ES", "enc");
+            key.setKeyId(kid);
             LOG.tracef("Generated ephemeral encryption key: kid=%s, jwk=\n%s", key.keyId(), key.toJson());
             return key;
         } catch (Exception e) {
