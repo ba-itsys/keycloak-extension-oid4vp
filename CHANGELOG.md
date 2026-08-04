@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.6](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.6.5...v0.6.6) (2026-08-04)
+
+
+### Bug Fixes
+
+* update testcontainers-oid4vc/eudi to 2.0.1 ([86c1ab5](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/86c1ab5301b0e526f968ad44075c12b6ffe4bf3e))
+
 ## [0.6.5](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.6.4...v0.6.5) (2026-08-03)
 
 
