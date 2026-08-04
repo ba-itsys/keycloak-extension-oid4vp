@@ -15,7 +15,7 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.it.framework;
 
-// Custom configuration for an injected oid4vc-dev wallet
+// Custom configuration for an injected eudi-dev wallet
 public interface TestWalletConfig {
 
     TestWalletConfigBuilder configure(TestWalletConfigBuilder wallet);

@@ -19,7 +19,7 @@ import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestCertificates;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
-import io.github.dominikschlosser.oid4vc.CredentialFormat;
+import io.github.dominikschlosser.eudi.CredentialFormat;
 import java.security.KeyPair;
 import java.security.cert.X509Certificate;
 import java.util.Map;

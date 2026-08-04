@@ -15,14 +15,14 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.it.framework;
 
-import io.github.dominikschlosser.oid4vc.Oid4vcContainer;
+import io.github.dominikschlosser.eudi.EudiWalletContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * {@link Oid4vcContainer} that serves the wallet on a custom port instead of the default, so the
- * tests do not collide with a locally running oid4vc-dev instance.
+ * {@link EudiWalletContainer} that serves the wallet on a custom port instead of the default, so the
+ * tests do not collide with a locally running eudi-dev instance.
  */
-final class TestWalletContainer extends Oid4vcContainer {
+final class TestWalletContainer extends EudiWalletContainer {
 
     private final int port;
 

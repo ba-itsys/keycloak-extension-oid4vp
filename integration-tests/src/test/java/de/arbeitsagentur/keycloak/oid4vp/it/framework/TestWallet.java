@@ -15,14 +15,14 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.it.framework;
 
-import io.github.dominikschlosser.oid4vc.Oid4vcContainer;
-import io.github.dominikschlosser.oid4vc.PresentationResponse;
-import io.github.dominikschlosser.oid4vc.TrustListIndexEntry;
-import io.github.dominikschlosser.oid4vc.WalletClient;
+import io.github.dominikschlosser.eudi.EudiWalletContainer;
+import io.github.dominikschlosser.eudi.PresentationResponse;
+import io.github.dominikschlosser.eudi.TrustListIndexEntry;
+import io.github.dominikschlosser.eudi.WalletClient;
 import java.net.URI;
 
 /**
- * An oid4vc-dev wallet managed by the test framework. The wallet runs in a Docker container with
+ * An eudi-dev wallet managed by the test framework. The wallet runs in a Docker container with
  * fixed port bindings and advertises {@code localhost} URLs that resolve both from the test JVM
  * (including the embedded Keycloak server) and from within the wallet container itself.
  */
@@ -30,15 +30,15 @@ public final class TestWallet implements AutoCloseable {
 
     public static final String PID_PROVIDERS_LOTE_TYPE = "http://uri.etsi.org/19602/LoTEType/EUPIDProvidersList";
 
-    private final Oid4vcContainer container;
+    private final EudiWalletContainer container;
     private final String baseUrl;
 
-    TestWallet(Oid4vcContainer container, String baseUrl) {
+    TestWallet(EudiWalletContainer container, String baseUrl) {
         this.container = container;
         this.baseUrl = baseUrl;
     }
 
-    public Oid4vcContainer container() {
+    public EudiWalletContainer container() {
         return container;
     }
 

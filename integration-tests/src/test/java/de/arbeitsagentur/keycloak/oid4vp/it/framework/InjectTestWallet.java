@@ -22,7 +22,7 @@ import java.lang.annotation.Target;
 import org.keycloak.testframework.injection.LifeCycle;
 
 /**
- * Injects an oid4vc-dev wallet into a test. The wallet binds fixed host ports, so a test class
+ * Injects an eudi-dev wallet into a test. The wallet binds fixed host ports, so a test class
  * uses exactly one wallet. Classes requesting a different wallet configuration get a fresh
  * wallet container.
  */
