@@ -17,9 +17,9 @@
   <properties>
     <integration.tests.skip>true</integration.tests.skip>
     <testcontainers.version>2.0.3</testcontainers.version>
-    <testcontainers-oid4vc.version>1.6.1</testcontainers-oid4vc.version>
+    <testcontainers-eudi.version>2.0.1</testcontainers-eudi.version>
     <playwright.version>1.61.0</playwright.version>
-    <oid4vc-dev.version>v1.10.11</oid4vc-dev.version>
+    <eudi-dev.version>v1.18.4</eudi-dev.version>
   </properties>
 
   <dependencyManagement>
@@ -117,7 +117,7 @@
       <scope>test</scope>
     </dependency>
 
-    <!-- oid4vc-dev wallet containers -->
+    <!-- eudi-dev wallet containers -->
     <dependency>
       <groupId>org.testcontainers</groupId>
       <artifactId>testcontainers</artifactId>
@@ -126,8 +126,8 @@
     </dependency>
     <dependency>
       <groupId>io.github.dominikschlosser</groupId>
-      <artifactId>testcontainers-oid4vc</artifactId>
-      <version>${testcontainers-oid4vc.version}</version>
+      <artifactId>testcontainers-eudi</artifactId>
+      <version>${testcontainers-eudi.version}</version>
       <scope>test</scope>
     </dependency>
 
@@ -178,7 +178,7 @@
             <kc.test.server>distribution</kc.test.server>
             <!-- Package the core module's class output as a provider jar -->
             <kc.test.server.hot.deploy>true</kc.test.server.hot.deploy>
-            <kc.test.wallet.image>ghcr.io/dominikschlosser/oid4vc-dev:${oid4vc-dev.version}</kc.test.wallet.image>
+            <kc.test.wallet.image>ghcr.io/dominikschlosser/eudi-dev:${eudi-dev.version}</kc.test.wallet.image>
           </systemPropertyVariables>
         </configuration>
         <executions>

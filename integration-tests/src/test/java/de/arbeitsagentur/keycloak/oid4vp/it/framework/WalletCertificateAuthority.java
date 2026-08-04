@@ -25,7 +25,7 @@ import java.util.EnumSet;
 
 /**
  * Certificate authority shared by all test wallets. The wallet loads its CA from
- * {@code ~/.oid4vc-dev/wallet-ca-key.pem} / {@code wallet-ca-cert.pem} if present, so seeding
+ * {@code ~/.eudi-dev/wallet-ca-key.pem} / {@code wallet-ca-cert.pem} if present, so seeding
  * these files gives every wallet container the same, stable CA. The Keycloak test server trusts
  * the CA certificate via {@code truststore-paths}, which stays valid across wallet restarts.
  */

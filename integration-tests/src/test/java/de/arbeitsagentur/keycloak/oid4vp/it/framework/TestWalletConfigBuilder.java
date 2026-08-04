@@ -18,7 +18,7 @@ package de.arbeitsagentur.keycloak.oid4vp.it.framework;
 import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.PortBinding;
 import com.github.dockerjava.api.model.Ports;
-import io.github.dominikschlosser.oid4vc.Oid4vcContainer;
+import io.github.dominikschlosser.eudi.EudiWalletContainer;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -36,13 +36,13 @@ import org.testcontainers.utility.DockerImageName;
  */
 public final class TestWalletConfigBuilder {
 
-    private static final String WALLET_STATE_CONTAINER_DIR = "/home/app/.oid4vc-dev";
+    private static final String WALLET_STATE_CONTAINER_DIR = "/home/app/.eudi-dev";
 
     /**
      * Entrypoint wrapper that makes {@code localhost} resolve to the Docker host gateway inside the
      * wallet container before the wallet starts.
      *
-     * <p>{@link Oid4vcContainer#withHostAccess()} adds a {@code <gateway> localhost} entry via
+     * <p>{@link EudiWalletContainer#withHostAccess()} adds a {@code <gateway> localhost} entry via
      * {@code --add-host}, but Docker always writes the built-in {@code 127.0.0.1 localhost} (and
      * {@code ::1 localhost}) lines first, and the wallet's Go HTTP client uses the first match, so it
      * would dial its own loopback. We strip the loopback {@code localhost} lines (requires root),
@@ -57,12 +57,12 @@ public final class TestWalletConfigBuilder {
     private static final String LOCALHOST_TO_HOST_GATEWAY_ENTRYPOINT =
             "grep -vE '^(127\\.0\\.0\\.1|::1)[[:space:]]+localhost([[:space:]]|$)' /etc/hosts > /tmp/hosts "
                     + "&& cat /tmp/hosts > /etc/hosts; "
-                    + "exec su app -s /bin/sh -c \"HOME=/home/app exec oid4vc-dev $*\"";
+                    + "exec su app -s /bin/sh -c \"HOME=/home/app exec eudi $*\"";
 
     private boolean statusList = true;
     private boolean requireEncryptedRequest;
     private String sessionTranscript;
-    private final List<UnaryOperator<Oid4vcContainer>> customizers = new ArrayList<>();
+    private final List<UnaryOperator<EudiWalletContainer>> customizers = new ArrayList<>();
 
     // Whether the wallet embeds status list references in generated credentials (default on)
     public TestWalletConfigBuilder statusList(boolean statusList) {
@@ -83,14 +83,14 @@ public final class TestWalletConfigBuilder {
     }
 
     // Escape hatch for container settings not covered by this builder
-    public TestWalletConfigBuilder customize(UnaryOperator<Oid4vcContainer> customizer) {
+    public TestWalletConfigBuilder customize(UnaryOperator<EudiWalletContainer> customizer) {
         customizers.add(customizer);
         return this;
     }
 
-    Oid4vcContainer build(DockerImageName image, Path walletStateDir, int port) {
+    EudiWalletContainer build(DockerImageName image, Path walletStateDir, int port) {
         int tlsPort = port + 1;
-        Oid4vcContainer container = new TestWalletContainer(image, port)
+        EudiWalletContainer container = new TestWalletContainer(image, port)
                 .withHostAccess()
                 .withBaseUrl("http://localhost:" + port)
                 .withFileSystemBind(walletStateDir.toString(), WALLET_STATE_CONTAINER_DIR, BindMode.READ_WRITE)
@@ -126,7 +126,7 @@ public final class TestWalletConfigBuilder {
         if (sessionTranscript != null) {
             container = container.withSessionTranscript(sessionTranscript);
         }
-        for (UnaryOperator<Oid4vcContainer> customizer : customizers) {
+        for (UnaryOperator<EudiWalletContainer> customizer : customizers) {
             container = customizer.apply(container);
         }
         return container;

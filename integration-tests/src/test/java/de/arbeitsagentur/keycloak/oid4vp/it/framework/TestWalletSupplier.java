@@ -15,7 +15,7 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.it.framework;
 
-import io.github.dominikschlosser.oid4vc.Oid4vcContainer;
+import io.github.dominikschlosser.eudi.EudiWalletContainer;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.keycloak.testframework.injection.InstanceContext;
 import org.keycloak.testframework.injection.LifeCycle;
@@ -28,7 +28,7 @@ import org.keycloak.testframework.server.KeycloakServerConfigInterceptor;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * Supplies oid4vc-dev wallet containers. All wallets share one stable certificate authority
+ * Supplies eudi-dev wallet containers. All wallets share one stable certificate authority
  * (seeded into the container, see {@link WalletCertificateAuthority}), which this supplier
  * registers in the Keycloak server's truststore so the server can fetch issuer metadata and
  * status lists from any wallet over HTTPS, including wallets started later.
@@ -37,7 +37,7 @@ public class TestWalletSupplier
         implements Supplier<TestWallet, InjectTestWallet>,
                 KeycloakServerConfigInterceptor<TestWallet, InjectTestWallet> {
 
-    @ConfigProperty(name = "image", defaultValue = "ghcr.io/dominikschlosser/oid4vc-dev:v1.10.11")
+    @ConfigProperty(name = "image", defaultValue = "ghcr.io/dominikschlosser/eudi-dev:v1.18.4")
     String image;
 
     @ConfigProperty(name = "port", defaultValue = "18085")
@@ -49,7 +49,7 @@ public class TestWalletSupplier
                 SupplierHelpers.getInstance(instanceContext.getAnnotation().config());
         TestWalletConfigBuilder builder = config.configure(new TestWalletConfigBuilder());
 
-        Oid4vcContainer container = builder.build(
+        EudiWalletContainer container = builder.build(
                 DockerImageName.parse(image),
                 WalletCertificateAuthority.instance().createSeededWalletStateDir(),
                 port);
