@@ -12,15 +12,15 @@ services:
       retries: 20
 
   oid4vc-dev:
-    image: ghcr.io/dominikschlosser/oid4vc-dev:v1.8.0
+    image: ghcr.io/dominikschlosser/eudi-dev:v1.21.6
     user: "0:0"
     entrypoint:
       - /bin/sh
       - -lc
     command:
       - >
-        oid4vc-dev issue --wallet-dir /wallet sdjwt --wallet --pid --status-list-uri= --iss https://oid4vc-dev:8086 >/tmp/oid4vc-dev-seed.log 2>&1
-        && exec oid4vc-dev wallet --wallet-dir /wallet serve --port 8085 --base-url http://oid4vc-dev:8085 --auto-accept --preferred-format dc+sd-jwt
+        eudi issue --wallet-dir /wallet sdjwt --wallet --pid --status-list-uri= --iss https://oid4vc-dev:8086 >/tmp/eudi-dev-seed.log 2>&1
+        && exec eudi wallet --wallet-dir /wallet serve --port 8085 --base-url http://oid4vc-dev:8085 --auto-accept --preferred-format dc+sd-jwt
     ports:
       - "${WALLET_PORT:-18085}:8085"
       - "${WALLET_UI_PORT:-18086}:8086"

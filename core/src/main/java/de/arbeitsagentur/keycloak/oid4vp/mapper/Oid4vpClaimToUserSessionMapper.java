@@ -136,7 +136,8 @@ public class Oid4vpClaimToUserSessionMapper extends AbstractIdentityProviderMapp
 
         String claimPath = mapperModel.getConfig().get(CLAIM_PATH);
         String sessionNote = mapperModel.getConfig().get(SESSION_NOTE);
-        boolean isOptional = Boolean.parseBoolean(mapperModel.getConfig().getOrDefault(OPTIONAL, "false"));
+        // A claim scoped to claim sets may legitimately be absent from the presentation.
+        boolean inClaimSets = StringUtil.isNotBlank(mapperModel.getConfig().get(CLAIM_SET_IDS));
         boolean isMultivalued = Boolean.parseBoolean(mapperModel.getConfig().getOrDefault(MULTIVALUED, "false"));
 
         if (StringUtil.isBlank(claimPath) || StringUtil.isBlank(sessionNote)) {
@@ -145,7 +146,7 @@ public class Oid4vpClaimToUserSessionMapper extends AbstractIdentityProviderMapp
 
         Object claimValue = Oid4vpMapperUtils.getClaimValue(context, claimPath);
         if (claimValue == null) {
-            if (!isOptional) {
+            if (!inClaimSets) {
                 LOG.warnf("Required claim '%s' not found in credential", claimPath);
             }
             return;

@@ -58,12 +58,11 @@ class Oid4vpMapperConfigPropertiesTest {
     }
 
     @Test
-    void optional_hasCorrectConfig() {
-        ProviderConfigProperty prop = Oid4vpMapperConfigProperties.optional();
+    void claimSetIds_hasCorrectConfig() {
+        ProviderConfigProperty prop = Oid4vpMapperConfigProperties.claimSetIds();
 
-        assertThat(prop.getName()).isEqualTo("optional");
-        assertThat(prop.getType()).isEqualTo(ProviderConfigProperty.BOOLEAN_TYPE);
-        assertThat(prop.getDefaultValue()).isEqualTo("false");
+        assertThat(prop.getName()).isEqualTo("claimset.ids");
+        assertThat(prop.getType()).isEqualTo(ProviderConfigProperty.STRING_TYPE);
     }
 
     @Test
@@ -74,6 +73,6 @@ class Oid4vpMapperConfigPropertiesTest {
 
         assertThat(properties).hasSize(5);
         assertThat(properties.stream().map(ProviderConfigProperty::getName))
-                .containsExactly("credential.format", "credential.type", "claim", "multivalued", "optional");
+                .containsExactly("credential.format", "credential.type", "claim", "multivalued", "claimset.ids");
     }
 }

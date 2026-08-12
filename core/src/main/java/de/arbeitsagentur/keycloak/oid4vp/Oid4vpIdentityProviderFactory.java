@@ -97,14 +97,6 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
-                .name(Oid4vpIdentityProviderConfig.DCQL_QUERY)
-                .label("DCQL Query (JSON)")
-                .helpText(
-                        "Explicit DCQL query JSON. Priority: (1) this if set, (2) auto-generated from mappers, (3) default. "
-                                + "Leave empty to auto-generate from mappers. Missing credential metadata is normalized automatically.")
-                .type(ProviderConfigProperty.TEXT_TYPE)
-                .add()
-                .property()
                 .name(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM)
                 .label("User Identifier Claim (SD-JWT)")
                 .helpText("Claim name used to identify the user from SD-JWT credentials (e.g., 'sub'). "

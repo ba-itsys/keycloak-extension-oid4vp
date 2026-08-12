@@ -137,7 +137,7 @@ That avoids first-login persistence races and keeps the measured path focused on
 - `LOAD_BROWSER_REDIRECT_URI`
   Optional fixed redirect URI. Default: browser target base URI + `/wallet-mock/callback`
 - `LOAD_SD_JWT_VCT`
-  Default: `urn:eudi:pid:de:1`
+  Default: `urn:eudi:pid:1`
 - `LOAD_RATE_PER_SECOND`
   Default: `10`
 - `LOAD_DURATION_SECONDS`

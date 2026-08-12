@@ -30,6 +30,7 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
+import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
@@ -60,7 +61,8 @@ class Oid4vpCallbackProcessorTest {
                     "test-nonce",
                     null,
                     null,
-                    List.of("IdentityCredential"));
+                    List.of("IdentityCredential"),
+                    null);
 
     private Oid4vpCallbackProcessor processor;
     private Oid4vpIdentityProviderConfig config;
@@ -324,6 +326,79 @@ class Oid4vpCallbackProcessorTest {
                 .hasMessageContaining("no id_token received");
     }
 
+    @Test
+    void process_rejectsPresentationMissingRequestedClaims() throws Exception {
+        VerifiedCredential credential = new VerifiedCredential(
+                "cred-1",
+                "https://issuer.example",
+                "IdentityCredential",
+                Map.of("sub", "user1"),
+                PresentationType.SD_JWT);
+        when(vpTokenProcessor.process(any(VpTokenProcessor.Request.class)))
+                .thenReturn(new VpTokenResult(Map.of("cred-1", credential), Map.of()));
+
+        RequestedCredential requested = new RequestedCredential(
+                FORMAT_SD_JWT_VC, "IdentityCredential", List.of("sub", "given_name"), List.of());
+
+        assertThatThrownBy(() -> processor.process(
+                        requestContext("state", "nonce", List.of(requested), "IdentityCredential"),
+                        "vp-token",
+                        null,
+                        null))
+                .isInstanceOf(IdentityBrokerException.class)
+                .hasMessageContaining("requested claims")
+                .hasMessageContaining("given_name");
+    }
+
+    @Test
+    void process_acceptsPresentationSatisfyingFallbackClaimSet() throws Exception {
+        VerifiedCredential credential = new VerifiedCredential(
+                "cred-1",
+                "https://issuer.example",
+                "IdentityCredential",
+                Map.of("sub", "user1"),
+                PresentationType.SD_JWT);
+        when(vpTokenProcessor.process(any(VpTokenProcessor.Request.class)))
+                .thenReturn(new VpTokenResult(Map.of("cred-1", credential), Map.of()));
+
+        RequestedCredential requested = new RequestedCredential(
+                FORMAT_SD_JWT_VC,
+                "IdentityCredential",
+                List.of("sub", "given_name"),
+                List.of(List.of("sub", "given_name"), List.of("sub")));
+
+        BrokeredIdentityContext result = processor.process(
+                requestContext("state", "nonce", List.of(requested), "IdentityCredential"), "vp-token", null, null);
+
+        assertThat(result.getUsername()).isEqualTo("user1");
+    }
+
+    @Test
+    void process_rejectsPresentationSatisfyingNoClaimSet() throws Exception {
+        VerifiedCredential credential = new VerifiedCredential(
+                "cred-1",
+                "https://issuer.example",
+                "IdentityCredential",
+                Map.of("email", "a@example.org", "sub", "user1"),
+                PresentationType.SD_JWT);
+        when(vpTokenProcessor.process(any(VpTokenProcessor.Request.class)))
+                .thenReturn(new VpTokenResult(Map.of("cred-1", credential), Map.of()));
+
+        RequestedCredential requested = new RequestedCredential(
+                FORMAT_SD_JWT_VC,
+                "IdentityCredential",
+                List.of("sub", "given_name", "family_name"),
+                List.of(List.of("sub", "given_name"), List.of("sub", "family_name")));
+
+        assertThatThrownBy(() -> processor.process(
+                        requestContext("state", "nonce", List.of(requested), "IdentityCredential"),
+                        "vp-token",
+                        null,
+                        null))
+                .isInstanceOf(IdentityBrokerException.class)
+                .hasMessageContaining("requested claims");
+    }
+
     // ===== Helper Methods =====
 
     private String buildSelfIssuedIdToken(ECKey walletKey, String audience, String nonce) throws Exception {
@@ -349,6 +424,14 @@ class Oid4vpCallbackProcessorTest {
 
     private Oid4vpRequestObjectStore.RequestContextEntry requestContext(
             String state, String nonce, String... configuredCredentialTypes) {
+        return requestContext(state, nonce, null, configuredCredentialTypes);
+    }
+
+    private Oid4vpRequestObjectStore.RequestContextEntry requestContext(
+            String state,
+            String nonce,
+            List<RequestedCredential> requestedCredentials,
+            String... configuredCredentialTypes) {
         return new Oid4vpRequestObjectStore.RequestContextEntry(
                 state,
                 "root-session",
@@ -359,7 +442,8 @@ class Oid4vpCallbackProcessorTest {
                 nonce,
                 null,
                 null,
-                List.of(configuredCredentialTypes));
+                List.of(configuredCredentialTypes),
+                requestedCredentials);
     }
 
     private static VpTokenProcessor.Request request(

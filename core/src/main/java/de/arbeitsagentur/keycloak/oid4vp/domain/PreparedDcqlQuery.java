@@ -15,12 +15,26 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.stream.Collectors;
+import org.keycloak.utils.StringUtil;
 
-public record PreparedDcqlQuery(String dcqlQuery, List<String> configuredCredentialTypes) {
+/**
+ * A DCQL query generated from the IdP mappers, together with the requested-claims model used to
+ * validate the wallet's presentation against what was requested.
+ */
+public record PreparedDcqlQuery(String dcqlQuery, List<RequestedCredential> requestedCredentials) {
 
     public PreparedDcqlQuery {
-        configuredCredentialTypes =
-                configuredCredentialTypes != null ? List.copyOf(configuredCredentialTypes) : List.of();
+        requestedCredentials = requestedCredentials != null ? List.copyOf(requestedCredentials) : List.of();
+    }
+
+    /** The distinct credential type identifiers of the query, used as the trusted-type allow-list. */
+    public List<String> configuredCredentialTypes() {
+        return requestedCredentials.stream()
+                .map(RequestedCredential::type)
+                .filter(StringUtil::isNotBlank)
+                .collect(Collectors.collectingAndThen(Collectors.toCollection(LinkedHashSet::new), List::copyOf));
     }
 }

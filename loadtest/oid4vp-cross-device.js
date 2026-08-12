@@ -14,7 +14,7 @@ const ADMIN_CLIENT_ID = env('LOAD_ADMIN_CLIENT_ID', 'admin-cli');
 const IDP_ALIAS = env('LOAD_IDP_ALIAS', 'oid4vp');
 const BROWSER_CLIENT_ID = env('LOAD_BROWSER_CLIENT_ID', 'wallet-mock');
 const BROWSER_REDIRECT_URI = env('LOAD_BROWSER_REDIRECT_URI', '');
-const SD_JWT_VCT = env('LOAD_SD_JWT_VCT', 'urn:eudi:pid:de:1');
+const SD_JWT_VCT = env('LOAD_SD_JWT_VCT', 'urn:eudi:pid:1');
 const RATE_PER_SECOND = intEnv('LOAD_RATE_PER_SECOND', 10);
 const DURATION_SECONDS = intEnv('LOAD_DURATION_SECONDS', 30);
 const PRE_ALLOCATED_VUS = intEnv('LOAD_PRE_ALLOCATED_VUS', 40);
@@ -31,16 +31,18 @@ const CONFIGURE_IDP = boolEnv('LOAD_CONFIGURE_IDP', true);
 const INSECURE_TLS = boolEnv('LOAD_INSECURE_TLS', false);
 
 const PKCE_CHALLENGE = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
-const SD_JWT_ONLY_DCQL = JSON.stringify({
-    credentials: [
-        {
-            id: 'pid_sd_jwt',
-            format: 'dc+sd-jwt',
-            meta: { vct_values: [SD_JWT_VCT] },
-            claims: [{ path: ['given_name'] }, { path: ['family_name'] }, { path: ['birthdate'] }],
-        },
-    ],
-});
+// Mappers that make Keycloak generate an SD-JWT-only DCQL query for the load test realm
+const SD_JWT_DCQL_MAPPERS = ['given_name', 'family_name', 'birthdate'].map((claim) => ({
+    name: `load-sd-jwt-${claim}`,
+    identityProviderAlias: IDP_ALIAS,
+    identityProviderMapper: 'oid4vp-user-session-mapper',
+    config: {
+        'credential.format': 'dc+sd-jwt',
+        'credential.type': SD_JWT_VCT,
+        claim,
+        'session.note': `load_${claim}`,
+    },
+}));
 
 export const options = {
     insecureSkipTLSVerify: INSECURE_TLS,
@@ -240,7 +242,6 @@ class AdminApi {
         config.enforceHaip = 'false';
         config.clientIdScheme = 'plain';
         config.responseMode = 'direct_post.jwt';
-        config.dcqlQuery = SD_JWT_ONLY_DCQL;
         config.trustListUrl = `${trimTrailingSlash(WALLET_INTERNAL_BASE_URI)}/api/trustlist?vct=${encodeURIComponent(SD_JWT_VCT)}`;
         config.trustListSigningCertPem = '';
         config.trustListLoTEType = '';
@@ -253,6 +254,21 @@ class AdminApi {
         idp.config = config;
 
         this.putJson(idpPath, idp);
+        this.replaceDcqlMappers(idpPath);
+    }
+
+    // Replaces DCQL-driving mappers (those with a credential type) with the SD-JWT-only set
+    replaceDcqlMappers(idpPath) {
+        const mappersPath = `${idpPath}/mappers`;
+        for (const mapper of this.getJson(mappersPath)) {
+            const credentialType = mapper.config && mapper.config['credential.type'];
+            if (credentialType && String(credentialType).trim() !== '') {
+                this.delete(`${mappersPath}/${encodeURIComponent(mapper.id)}`);
+            }
+        }
+        for (const mapper of SD_JWT_DCQL_MAPPERS) {
+            this.postJson(mappersPath, mapper);
+        }
     }
 
     requestToken() {
@@ -286,6 +302,29 @@ class AdminApi {
             throw new Error(`GET ${path} failed: ${response.status} ${response.body}`);
         }
         return JSON.parse(response.body);
+    }
+
+    postJson(path, body) {
+        const response = request(
+            this.resolve(path),
+            'POST',
+            JSON.stringify(body),
+            {
+                ...this.authHeaders(),
+                'Content-Type': 'application/json',
+            },
+            false,
+        );
+        if (response.status !== 201 && response.status !== 204) {
+            throw new Error(`POST ${path} failed: ${response.status} ${response.body}`);
+        }
+    }
+
+    delete(path) {
+        const response = request(this.resolve(path), 'DELETE', null, this.authHeaders(), false);
+        if (response.status !== 204 && response.status !== 200) {
+            throw new Error(`DELETE ${path} failed: ${response.status} ${response.body}`);
+        }
     }
 
     putJson(path, body) {

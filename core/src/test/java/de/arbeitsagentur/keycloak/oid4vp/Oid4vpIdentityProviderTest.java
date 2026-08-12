@@ -16,6 +16,7 @@
 package de.arbeitsagentur.keycloak.oid4vp;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -41,6 +42,7 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.broker.provider.AuthenticationRequest;
+import org.keycloak.broker.provider.IdentityBrokerException;
 import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.IdentityProviderMapperModel;
 import org.keycloak.models.KeycloakContext;
@@ -53,9 +55,6 @@ import org.keycloak.sessions.AuthenticationSessionModel;
 class Oid4vpIdentityProviderTest {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-
-    private static final String MINIMAL_DCQL =
-            "{\"credentials\":[{\"id\":\"pid\",\"format\":\"dc+sd-jwt\",\"claims\":[{\"path\":[\"given_name\"]}]}]}";
 
     private Oid4vpIdentityProvider provider;
     private Oid4vpIdentityProviderConfig config;
@@ -115,20 +114,14 @@ class Oid4vpIdentityProviderTest {
     }
 
     @Test
-    void buildDcqlQueryFromConfig_manualSdJwtBackfillsMetaAndTrustedAuthorities() throws Exception {
-        config.setDcqlQuery("""
-                {
-                  "credentials": [
-                    {
-                      "id": "pid",
-                      "format": "dc+sd-jwt",
-                      "claims": [
-                        { "path": ["given_name"] }
-                      ]
-                    }
-                  ]
-                }
-                """);
+    void buildDcqlQueryFromConfig_mapperGenerated_includesTrustedAuthorities() throws Exception {
+        IdentityProviderMapperModel mapper = new IdentityProviderMapperModel();
+        mapper.setConfig(new LinkedHashMap<>());
+        mapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_TYPE, "pid");
+        mapper.getConfig().put(Oid4vpMapperConfigProperties.CLAIM_PATH, "given_name");
+        when(realm.getIdentityProviderMappersByAliasStream("oid4vp")).thenReturn(java.util.stream.Stream.of(mapper));
+
+        config.setTransientUsersEnabled(true);
         config.setTrustListUrl("https://trust-list.example.com/tl.jwt");
         config.setTrustedAuthoritiesMode("etsi_tl");
 
@@ -145,74 +138,12 @@ class Oid4vpIdentityProviderTest {
     }
 
     @Test
-    void buildDcqlQueryFromConfig_manualMdocBackfillsDoctype() throws Exception {
-        config.setDcqlQuery("""
-                {
-                  "credentials": [
-                    {
-                      "id": "org.iso.18013.5.1.mDL",
-                      "format": "mso_mdoc",
-                      "claims": [
-                        { "path": ["org.iso.18013.5.1", "given_name"] }
-                      ]
-                    }
-                  ]
-                }
-                """);
+    void buildDcqlQueryFromConfig_noMappers_throws() {
+        when(realm.getIdentityProviderMappersByAliasStream("oid4vp")).thenReturn(java.util.stream.Stream.of());
 
-        Map<String, Object> dcql = parseDcql(provider.buildDcqlQueryFromConfig());
-        @SuppressWarnings("unchecked")
-        Map<String, Object> credential = ((List<Map<String, Object>>) dcql.get("credentials")).get(0);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> meta = (Map<String, Object>) credential.get("meta");
-
-        assertThat(meta.get("doctype_value")).isEqualTo("org.iso.18013.5.1.mDL");
-    }
-
-    @Test
-    void prepareDcqlQueryFromConfig_manualQuery_extractsConfiguredCredentialTypesFromNormalizedQuery() {
-        config.setDcqlQuery("""
-                {
-                  "credentials": [
-                    {
-                      "id": "pid",
-                      "format": "dc+sd-jwt",
-                      "claims": [
-                        { "path": ["given_name"] }
-                      ]
-                    }
-                  ]
-                }
-                """);
-
-        PreparedDcqlQuery prepared = provider.prepareDcqlQueryFromConfig();
-
-        assertThat(prepared.configuredCredentialTypes()).containsExactly("pid");
-    }
-
-    @Test
-    void buildDcqlQueryFromConfig_manualQueryWithoutTrustedAuthoritiesFlags_doesNotInjectThem() throws Exception {
-        config.setDcqlQuery("""
-                {
-                  "credentials": [
-                    {
-                      "id": "pid",
-                      "format": "dc+sd-jwt",
-                      "claims": [
-                        { "path": ["given_name"] }
-                      ]
-                    }
-                  ]
-                }
-                """);
-        config.setTrustListUrl("https://trust-list.example.com/tl.jwt");
-        config.setTrustedAuthoritiesMode("none");
-
-        Map<String, Object> dcql = parseDcql(provider.buildDcqlQueryFromConfig());
-        @SuppressWarnings("unchecked")
-        Map<String, Object> credential = ((List<Map<String, Object>>) dcql.get("credentials")).get(0);
-
-        assertThat(credential).doesNotContainKey("trusted_authorities");
+        assertThatThrownBy(() -> provider.buildDcqlQueryFromConfig())
+                .isInstanceOf(IdentityBrokerException.class)
+                .hasMessageContaining("No DCQL query configured");
     }
 
     @Test
@@ -262,7 +193,7 @@ class Oid4vpIdentityProviderTest {
     void performLogin_storesOneStateContextPerFlowAndExposesCrossDeviceState() {
         config.setSameDeviceEnabled(true);
         config.setCrossDeviceEnabled(true);
-        config.setDcqlQuery(MINIMAL_DCQL);
+        stubMinimalPidMapper();
 
         AuthenticationRequest request = mock(AuthenticationRequest.class);
         RealmModel realm = mock(RealmModel.class);
@@ -287,7 +218,7 @@ class Oid4vpIdentityProviderTest {
     @Test
     void performLogin_bindsStateToAuthSessionTab() {
         config.setSameDeviceEnabled(true);
-        config.setDcqlQuery(MINIMAL_DCQL);
+        stubMinimalPidMapper();
 
         AuthenticationRequest request = mock(AuthenticationRequest.class);
         RealmModel realm = mock(RealmModel.class);
@@ -316,7 +247,7 @@ class Oid4vpIdentityProviderTest {
     @Test
     void performLogin_storesFlowTypeInStateContextAndKeepsResponseUriStable() {
         config.setCrossDeviceEnabled(true);
-        config.setDcqlQuery(MINIMAL_DCQL);
+        stubMinimalPidMapper();
 
         AuthenticationRequest request = mock(AuthenticationRequest.class);
         RealmModel realm = mock(RealmModel.class);
@@ -337,6 +268,15 @@ class Oid4vpIdentityProviderTest {
 
         verify(singleUseObjects)
                 .put(startsWith("oid4vp_state:"), anyLong(), argThat(this::hasStoredCrossDeviceFlowContext));
+    }
+
+    private void stubMinimalPidMapper() {
+        IdentityProviderMapperModel mapper = new IdentityProviderMapperModel();
+        mapper.setConfig(new LinkedHashMap<>());
+        mapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_TYPE, "pid");
+        mapper.getConfig().put(Oid4vpMapperConfigProperties.CLAIM_PATH, "given_name");
+        when(realm.getIdentityProviderMappersByAliasStream("oid4vp"))
+                .thenAnswer(invocation -> java.util.stream.Stream.of(mapper));
     }
 
     @SuppressWarnings("unchecked")

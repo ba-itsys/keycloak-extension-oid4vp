@@ -31,38 +31,8 @@ public final class Oid4vpTestKeycloakSetup {
 
     public static final String IDP_ALIAS = "oid4vp";
 
-    static final String DEFAULT_DCQL_QUERY = """
-            {
-              "credentials": [
-                {
-                  "id": "pid_sd_jwt",
-                  "format": "dc+sd-jwt",
-                  "meta": { "vct_values": ["urn:eudi:pid:de:1"] },
-                  "claims": [
-                    { "path": ["family_name"] },
-                    { "path": ["given_name"] },
-                    { "path": ["birthdate"] }
-                  ]
-                },
-                {
-                  "id": "pid_mdoc",
-                  "format": "mso_mdoc",
-                  "meta": { "doctype_value": "eu.europa.ec.eudi.pid.1" },
-                  "claims": [
-                    { "path": ["eu.europa.ec.eudi.pid.1", "family_name"] },
-                    { "path": ["eu.europa.ec.eudi.pid.1", "given_name"] },
-                    { "path": ["eu.europa.ec.eudi.pid.1", "birth_date"] }
-                  ]
-                }
-              ],
-              "credential_sets": [
-                {
-                  "options": [["pid_sd_jwt"], ["pid_mdoc"]],
-                  "required": true
-                }
-              ]
-            }
-            """;
+    public static final String SD_JWT_PID_VCT = "urn:eudi:pid:1";
+    public static final String MDOC_PID_DOCTYPE = "eu.europa.ec.eudi.pid.1";
 
     private Oid4vpTestKeycloakSetup() {}
 
@@ -83,9 +53,8 @@ public final class Oid4vpTestKeycloakSetup {
         Map<String, String> config = new LinkedHashMap<>();
         config.put("clientId", "not-used");
         config.put("clientSecret", "not-used");
-        config.put(Oid4vpIdentityProviderConfig.DCQL_QUERY, DEFAULT_DCQL_QUERY);
         config.put(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM, "family_name");
-        config.put(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM_MDOC, "eu.europa.ec.eudi.pid.1/family_name");
+        config.put(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM_MDOC, MDOC_PID_DOCTYPE + "/family_name");
         config.put(Oid4vpIdentityProviderConfig.TRUST_LIST_URL, trustListUrl);
         config.put(Oid4vpIdentityProviderConfig.TRUSTED_AUTHORITIES_MODE, "none");
         config.put(Oid4vpIdentityProviderConfig.STATUS_LIST_MAX_CACHE_TTL_SECONDS, "0");
@@ -103,8 +72,90 @@ public final class Oid4vpTestKeycloakSetup {
         mapper.setIdentityProviderMapper("oid4vp-user-session-mapper");
         mapper.setConfig(Map.of(
                 "claim", "family_name",
-                "session.note", "credentialFamilyName",
-                "optional", "false"));
+                "session.note", "credentialFamilyName"));
+        return mapper;
+    }
+
+    /**
+     * Mappers that drive the auto-generated DCQL query: SD-JWT PID and mDoc PID with the claims
+     * the wallet's default credentials carry. Credential set mode 'optional' (the default) lets
+     * the wallet present either credential.
+     */
+    public static List<IdentityProviderMapperRepresentation> defaultDcqlMappers() {
+        List<IdentityProviderMapperRepresentation> mappers = new ArrayList<>(sdJwtPidMappers());
+        mappers.addAll(mdocPidMappers());
+        return mappers;
+    }
+
+    public static List<IdentityProviderMapperRepresentation> sdJwtPidMappers() {
+        return List.of(
+                sessionNoteMapper(
+                        "pid-sd-jwt-family-name", "dc+sd-jwt", SD_JWT_PID_VCT, "family_name", "sdJwtFamilyName"),
+                sessionNoteMapper("pid-sd-jwt-given-name", "dc+sd-jwt", SD_JWT_PID_VCT, "given_name", "sdJwtGivenName"),
+                sessionNoteMapper("pid-sd-jwt-birthdate", "dc+sd-jwt", SD_JWT_PID_VCT, "birthdate", "sdJwtBirthdate"));
+    }
+
+    public static List<IdentityProviderMapperRepresentation> mdocPidMappers() {
+        return List.of(
+                sessionNoteMapper(
+                        "pid-mdoc-family-name",
+                        "mso_mdoc",
+                        MDOC_PID_DOCTYPE,
+                        MDOC_PID_DOCTYPE + "/family_name",
+                        "mdocFamilyName"),
+                sessionNoteMapper(
+                        "pid-mdoc-given-name",
+                        "mso_mdoc",
+                        MDOC_PID_DOCTYPE,
+                        MDOC_PID_DOCTYPE + "/given_name",
+                        "mdocGivenName"),
+                sessionNoteMapper(
+                        "pid-mdoc-birth-date",
+                        "mso_mdoc",
+                        MDOC_PID_DOCTYPE,
+                        MDOC_PID_DOCTYPE + "/birth_date",
+                        "mdocBirthDate"));
+    }
+
+    public static IdentityProviderMapperRepresentation sessionNoteMapper(
+            String name, String format, String credentialType, String claim, String sessionNote) {
+        return sessionNoteMapper(name, format, credentialType, claim, sessionNote, null);
+    }
+
+    public static IdentityProviderMapperRepresentation sessionNoteMapper(
+            String name, String format, String credentialType, String claim, String sessionNote, String claimSetIds) {
+        IdentityProviderMapperRepresentation mapper = new IdentityProviderMapperRepresentation();
+        mapper.setName(name);
+        mapper.setIdentityProviderAlias(IDP_ALIAS);
+        mapper.setIdentityProviderMapper("oid4vp-user-session-mapper");
+        Map<String, String> config = new LinkedHashMap<>();
+        config.put("credential.format", format);
+        config.put("credential.type", credentialType);
+        config.put("claim", claim);
+        config.put("session.note", sessionNote);
+        if (claimSetIds != null) {
+            config.put("claimset.ids", claimSetIds);
+        }
+        mapper.setConfig(config);
+        return mapper;
+    }
+
+    public static IdentityProviderMapperRepresentation attributeMapper(
+            String name, String format, String credentialType, String claim, String userAttribute, String claimSetIds) {
+        IdentityProviderMapperRepresentation mapper = new IdentityProviderMapperRepresentation();
+        mapper.setName(name);
+        mapper.setIdentityProviderAlias(IDP_ALIAS);
+        mapper.setIdentityProviderMapper("oid4vp-user-attribute-mapper");
+        Map<String, String> config = new LinkedHashMap<>();
+        config.put("syncMode", "INHERIT");
+        config.put("credential.format", format);
+        config.put("credential.type", credentialType);
+        config.put("claim", claim);
+        config.put("user.attribute", userAttribute);
+        if (claimSetIds != null) {
+            config.put("claimset.ids", claimSetIds);
+        }
+        mapper.setConfig(config);
         return mapper;
     }
 

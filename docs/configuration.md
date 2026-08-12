@@ -26,8 +26,7 @@ Example realm import fragment:
         "responseMode": "direct_post.jwt",
         "x509CertificatePem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
         "walletScheme": "openid4vp://",
-        "enforceHaip": "false",
-        "dcqlQuery": "{...}"
+        "enforceHaip": "false"
       }
     }
   ]
@@ -38,9 +37,10 @@ Example realm import fragment:
 
 ### Credential Request
 
+The DCQL query is generated from the configured OID4VP mappers. Each mapper contributes its credential format, credential type, and claim path; the [IdP mappers](#idp-mappers) section describes how claim sets are formed. At least one mapper with a credential type is required.
+
 | Key | Description | Default |
 |-----|-------------|---------|
-| `dcqlQuery` | DCQL query JSON defining which credentials to request. If omitted, Keycloak derives the query from configured OID4VP mappers. Manual queries are normalized by filling in missing format metadata and, when enabled, `trusted_authorities`. | *(auto-generated)* |
 | `credentialSetMode` | How credential sets are combined: `optional` or `all`. | `optional` |
 | `credentialSetPurpose` | Human-readable purpose string included in the DCQL credential set. | *(none)* |
 | `requestObjectLifespanSeconds` | Lifespan of the signed request object JWT used by the wallet fetch. | `10` |
@@ -116,10 +116,7 @@ For SD-JWT VC verification, the verifier tries issuer-key resolution in this ord
 
 When `enforceHaip=true`, only the `x5c` path is attempted.
 
-By default, the verifier only trusts the credential types this IdP actually requested in its DCQL query. Those types come from:
-
-- the configured `dcqlQuery`, or
-- mapper-derived credential types when `dcqlQuery` is empty
+By default, the verifier only trusts the credential types this IdP actually requested in its DCQL query. Those types come from the credential types declared on the configured OID4VP mappers.
 
 Use one OID4VP IdP instance per trust domain. If `trustListLoTEType` is configured, it must match the fetched trust list's `ListAndSchemeInformation.LoTEType`. If it is left empty, all LoTE types from that trust list are accepted and the provider logs a warning.
 Within the accepted trust list, credential signature verification uses only `.../SvcType/.../Issuance` services. Status-list JWT verification uses only `.../SvcType/.../Revocation` services.
@@ -151,7 +148,22 @@ The extension provides two mapper types:
 - `OID4VP Claim to User Attribute`
 - `OID4VP Claim to User Session Note`
 
-Each mapper declares a credential format, credential type, and claim path. When `dcqlQuery` is not set manually, these mappers drive the generated DCQL request.
+Each mapper declares a credential format, credential type, and claim path. These mappers drive the generated DCQL request: every credential type present in the mappers becomes a DCQL credential entry, and every claim path becomes a requested claim. The response is validated against this query, so all requested claims are known to the verifier.
+
+For mDoc credentials, a claim path with a dotted first segment selects an explicit namespace (`org.iso.18013.5.1/given_name`); otherwise the credential type (doctype) is used as the namespace.
+
+### Claim Sets
+
+The `Claim Set IDs` mapper option controls the DCQL `claim_sets` for a credential. It holds a comma-separated list of identifiers:
+
+- A mapper without claim set ids marks its claim as always requested. It is part of every claim set.
+- When at least one mapper of a credential defines claim set ids, the generated credential entry contains one `claim_sets` option per distinct id.
+- Options are ordered lexicographically by id. The order expresses the verifier's preference; wallets use the first option they can satisfy. Use a naming convention such as `1-full`, `2-minimal` to control the order.
+- A claim that belongs to several sets lists all of their ids.
+
+Example: three mappers for `given_name` (ids `1-full`), `family_name` (ids `1-full,2-min`), and `birthdate` (no ids) produce two claim set options: `given_name, family_name, birthdate` preferred, `family_name, birthdate` as fallback.
+
+The verifier validates the wallet's response against the request: a presented credential must contain every requested claim, or, when claim sets are defined, all claims of at least one claim set option. Presentations that satisfy no option are rejected.
 
 ## Multi-Node Behavior
 

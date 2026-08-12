@@ -53,7 +53,7 @@ class Oid4vpClaimToUserAttributeMapperTest {
                         "credential.type",
                         "claim",
                         "multivalued",
-                        "optional",
+                        "claimset.ids",
                         Oid4vpClaimToUserAttributeMapper.USER_ATTRIBUTE);
     }
 
@@ -239,17 +239,19 @@ class Oid4vpClaimToUserAttributeMapperTest {
         return context;
     }
 
-    private static IdentityProviderMapperModel mapperModel(String claimPath, String attribute, boolean optional) {
-        return mapperModel(claimPath, attribute, optional, false);
+    private static IdentityProviderMapperModel mapperModel(String claimPath, String attribute, boolean inClaimSets) {
+        return mapperModel(claimPath, attribute, inClaimSets, false);
     }
 
     private static IdentityProviderMapperModel mapperModel(
-            String claimPath, String attribute, boolean optional, boolean multivalued) {
+            String claimPath, String attribute, boolean inClaimSets, boolean multivalued) {
         IdentityProviderMapperModel mapperModel = new IdentityProviderMapperModel();
         Map<String, String> config = new HashMap<>();
         config.put("claim", claimPath);
         config.put(Oid4vpClaimToUserAttributeMapper.USER_ATTRIBUTE, attribute);
-        config.put("optional", String.valueOf(optional));
+        if (inClaimSets) {
+            config.put("claimset.ids", "min");
+        }
         config.put("multivalued", String.valueOf(multivalued));
         mapperModel.setConfig(config);
         return mapperModel;

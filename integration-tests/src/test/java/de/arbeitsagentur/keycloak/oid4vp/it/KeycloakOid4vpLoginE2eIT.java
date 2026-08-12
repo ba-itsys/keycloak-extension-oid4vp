@@ -68,27 +68,10 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
 
-        String germanPidOnlyDcqlQuery = """
-                {
-                  "credentials": [
-                    {
-                      "id": "pid_sd_jwt",
-                      "format": "dc+sd-jwt",
-                      "meta": { "vct_values": ["urn:eudi:pid:de:1"] },
-                      "claims": [
-                        { "path": ["given_name"] },
-                        { "path": ["family_name"] },
-                        { "path": ["birthdate"] }
-                      ]
-                    }
-                  ]
-                }
-                """;
-
+        replaceDcqlMappers(Oid4vpTestKeycloakSetup.sdJwtPidMappers());
         setIdpConfig(Map.of(
                 IdentityProviderModel.DO_NOT_STORE_USERS, "true",
-                Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM, "missing_identifier",
-                Oid4vpIdentityProviderConfig.DCQL_QUERY, germanPidOnlyDcqlQuery));
+                Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM, "missing_identifier"));
 
         performSameDeviceLogin("transient-wallet-user");
         flow.assertLoginSucceeded();
@@ -129,23 +112,7 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
 
-        String mdocDcqlQuery = """
-                {
-                  "credentials": [
-                    {
-                      "id": "pid",
-                      "format": "mso_mdoc",
-                      "meta": { "doctype_value": "eu.europa.ec.eudi.pid.1" },
-                      "claims": [
-                        { "path": ["eu.europa.ec.eudi.pid.1", "family_name"] },
-                        { "path": ["eu.europa.ec.eudi.pid.1", "given_name"] },
-                        { "path": ["eu.europa.ec.eudi.pid.1", "birth_date"] }
-                      ]
-                    }
-                  ]
-                }
-                """;
-        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.DCQL_QUERY, mdocDcqlQuery));
+        replaceDcqlMappers(Oid4vpTestKeycloakSetup.mdocPidMappers());
 
         performSameDeviceLogin("mdoc-wallet-user");
         flow.assertLoginSucceeded();
@@ -156,37 +123,7 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
         testApp().reset();
         flow.clearBrowserSession();
 
-        String credentialSetsDcqlQuery = """
-                {
-                  "credentials": [
-                    {
-                      "id": "pid_sd_jwt",
-                      "format": "dc+sd-jwt",
-                      "meta": { "vct_values": ["urn:eudi:pid:de:1"] },
-                      "claims": [
-                        { "path": ["family_name"] },
-                        { "path": ["given_name"] }
-                      ]
-                    },
-                    {
-                      "id": "pid_mdoc",
-                      "format": "mso_mdoc",
-                      "meta": { "doctype_value": "eu.europa.ec.eudi.pid.1" },
-                      "claims": [
-                        { "path": ["eu.europa.ec.eudi.pid.1", "family_name"] },
-                        { "path": ["eu.europa.ec.eudi.pid.1", "given_name"] }
-                      ]
-                    }
-                  ],
-                  "credential_sets": [
-                    {
-                      "options": [["pid_sd_jwt"], ["pid_mdoc"]],
-                      "required": true
-                    }
-                  ]
-                }
-                """;
-        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.DCQL_QUERY, credentialSetsDcqlQuery));
+        // The default mappers request SD-JWT PID or mDoc PID as alternative credential set options.
         wallet().client().setPreferredFormat(CredentialFormat.MSO_MDOC);
 
         try {

@@ -232,7 +232,7 @@ cat > "$REALM_OUT" <<REALMEOF
       "config": {
         "syncMode": "INHERIT",
         "credential.format": "dc+sd-jwt",
-        "credential.type": "urn:eudi:pid:de:1",
+        "credential.type": "urn:eudi:pid:1",
         "claim": "family_name",
         "user.attribute": "lastName"
       }
@@ -244,7 +244,7 @@ cat > "$REALM_OUT" <<REALMEOF
       "config": {
         "syncMode": "INHERIT",
         "credential.format": "dc+sd-jwt",
-        "credential.type": "urn:eudi:pid:de:1",
+        "credential.type": "urn:eudi:pid:1",
         "claim": "given_name",
         "user.attribute": "firstName"
       }
@@ -256,7 +256,7 @@ cat > "$REALM_OUT" <<REALMEOF
       "config": {
         "syncMode": "INHERIT",
         "credential.format": "dc+sd-jwt",
-        "credential.type": "urn:eudi:pid:de:1",
+        "credential.type": "urn:eudi:pid:1",
         "claim": "birthdate",
         "user.attribute": "birthdate"
       }
@@ -304,7 +304,7 @@ cat > "$REALM_OUT" <<REALMEOF
       "config": {
         "syncMode": "INHERIT",
         "credential.format": "dc+sd-jwt",
-        "credential.type": "urn:eudi:pid:de:1",
+        "credential.type": "urn:eudi:pid:1",
         "claim": "address/street_address",
         "user.attribute": "address.street_address"
       }
@@ -316,7 +316,7 @@ cat > "$REALM_OUT" <<REALMEOF
       "config": {
         "syncMode": "INHERIT",
         "credential.format": "dc+sd-jwt",
-        "credential.type": "urn:eudi:pid:de:1",
+        "credential.type": "urn:eudi:pid:1",
         "claim": "address/locality",
         "user.attribute": "address.locality"
       }
@@ -328,7 +328,7 @@ cat > "$REALM_OUT" <<REALMEOF
       "config": {
         "syncMode": "INHERIT",
         "credential.format": "dc+sd-jwt",
-        "credential.type": "urn:eudi:pid:de:1",
+        "credential.type": "urn:eudi:pid:1",
         "claim": "address/country",
         "user.attribute": "address.country"
       }
@@ -340,7 +340,7 @@ cat > "$REALM_OUT" <<REALMEOF
       "config": {
         "syncMode": "INHERIT",
         "credential.format": "dc+sd-jwt",
-        "credential.type": "urn:eudi:pid:de:1",
+        "credential.type": "urn:eudi:pid:1",
         "claim": "address/region",
         "user.attribute": "address.region"
       }
@@ -352,7 +352,7 @@ cat > "$REALM_OUT" <<REALMEOF
       "config": {
         "syncMode": "INHERIT",
         "credential.format": "dc+sd-jwt",
-        "credential.type": "urn:eudi:pid:de:1",
+        "credential.type": "urn:eudi:pid:1",
         "claim": "address/postal_code",
         "user.attribute": "address.postal_code"
       }
@@ -364,7 +364,7 @@ cat > "$REALM_OUT" <<REALMEOF
       "config": {
         "syncMode": "INHERIT",
         "credential.format": "dc+sd-jwt",
-        "credential.type": "urn:eudi:pid:de:1",
+        "credential.type": "urn:eudi:pid:1",
         "claim": "place_of_birth/locality",
         "user.attribute": "place_of_birth"
       }
@@ -376,7 +376,7 @@ cat > "$REALM_OUT" <<REALMEOF
       "config": {
         "syncMode": "INHERIT",
         "credential.format": "dc+sd-jwt",
-        "credential.type": "urn:eudi:pid:de:1",
+        "credential.type": "urn:eudi:pid:1",
         "claim": "date_of_expiry",
         "user.attribute": "date_of_expiry"
       }
@@ -388,7 +388,7 @@ cat > "$REALM_OUT" <<REALMEOF
       "config": {
         "syncMode": "INHERIT",
         "credential.format": "dc+sd-jwt",
-        "credential.type": "urn:eudi:pid:de:1",
+        "credential.type": "urn:eudi:pid:1",
         "claim": "issuing_authority",
         "user.attribute": "issuing_authority"
       }
@@ -400,7 +400,7 @@ cat > "$REALM_OUT" <<REALMEOF
       "config": {
         "syncMode": "INHERIT",
         "credential.format": "dc+sd-jwt",
-        "credential.type": "urn:eudi:pid:de:1",
+        "credential.type": "urn:eudi:pid:1",
         "claim": "issuing_country",
         "user.attribute": "issuing_country"
       }
@@ -448,7 +448,7 @@ cat > "$REALM_OUT" <<REALMEOF
       "config": {
         "syncMode": "INHERIT",
         "credential.format": "dc+sd-jwt",
-        "credential.type": "urn:eudi:pid:de:1",
+        "credential.type": "urn:eudi:pid:1",
         "claim": "nationalities/null",
         "multivalued": "true",
         "user.attribute": "nationality"

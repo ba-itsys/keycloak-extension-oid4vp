@@ -44,23 +44,7 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
 
     @Test
     void revokedMdocCredentialIsRejected() throws Exception {
-        String mdocDcqlQuery = """
-                {
-                  "credentials": [
-                    {
-                      "id": "pid",
-                      "format": "mso_mdoc",
-                      "meta": { "doctype_value": "eu.europa.ec.eudi.pid.1" },
-                      "claims": [
-                        { "path": ["eu.europa.ec.eudi.pid.1", "family_name"] },
-                        { "path": ["eu.europa.ec.eudi.pid.1", "given_name"] },
-                        { "path": ["eu.europa.ec.eudi.pid.1", "birth_date"] }
-                      ]
-                    }
-                  ]
-                }
-                """;
-        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.DCQL_QUERY, mdocDcqlQuery));
+        replaceDcqlMappers(Oid4vpTestKeycloakSetup.mdocPidMappers());
         wallet().client().setPreferredFormat(CredentialFormat.MSO_MDOC);
 
         try {
