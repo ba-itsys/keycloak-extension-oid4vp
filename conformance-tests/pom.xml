@@ -17,7 +17,7 @@
   <properties>
     <!-- Conformance tests run a local OpenID conformance suite and take long; enable explicitly -->
     <conformance.tests.skip>true</conformance.tests.skip>
-    <conformance.suite.imageTag>release-v5.2.1</conformance.suite.imageTag>
+    <conformance.suite.imageTag>release-v5.2.2</conformance.suite.imageTag>
     <testcontainers.version>2.0.3</testcontainers.version>
   </properties>
 
