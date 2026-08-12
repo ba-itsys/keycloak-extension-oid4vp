@@ -19,6 +19,7 @@ import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
+import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
@@ -114,6 +115,7 @@ public class Oid4vpCallbackProcessor {
             throw new IdentityBrokerException("Issuer not allowed: " + issuer);
         }
         enforceConfiguredCredentialTypes(requestContext, vpResult);
+        enforceRequestedClaims(requestContext, vpResult);
 
         Map<String, Object> claims = Oid4vpMapperUtils.toMutableClaims(
                 vpResult.isMultiCredential() ? vpResult.mergedClaims() : primary.claims());
@@ -179,6 +181,34 @@ public class Oid4vpCallbackProcessor {
         String state = StringUtil.isNotBlank(requestContext.state()) ? requestContext.state() : "unknown";
         LOG.debugf("OID4VP IdP '%s': generating transient subject for state '%s'", idpModel.getAlias(), state);
         return "transient-" + state + "-" + UUID.randomUUID();
+    }
+
+    /**
+     * Validates that every verified credential contains the claims its DCQL credential entry
+     * requested: all claims when no claim sets are defined, otherwise at least one complete
+     * claim_sets option.
+     */
+    private void enforceRequestedClaims(
+            Oid4vpRequestObjectStore.RequestContextEntry requestContext, VpTokenResult vpResult) {
+        List<RequestedCredential> requestedCredentials = requestContext.requestedCredentials();
+        if (requestedCredentials == null || requestedCredentials.isEmpty()) {
+            return;
+        }
+        for (VerifiedCredential credential : vpResult.credentials().values()) {
+            RequestedCredential requested = requestedCredentials.stream()
+                    .filter(candidate -> candidate.matches(credential))
+                    .findFirst()
+                    .orElse(null);
+            if (requested == null) {
+                continue;
+            }
+            List<String> missing = requested.missingClaims(credential.claims());
+            if (!missing.isEmpty()) {
+                throw new IdentityBrokerException("Presentation for credential type '"
+                        + credential.credentialType() + "' does not contain all requested claims. Missing: "
+                        + String.join(", ", missing));
+            }
+        }
     }
 
     private void enforceConfiguredCredentialTypes(

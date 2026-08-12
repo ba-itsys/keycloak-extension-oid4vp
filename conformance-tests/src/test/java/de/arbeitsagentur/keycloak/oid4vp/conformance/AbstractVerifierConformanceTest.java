@@ -263,7 +263,6 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
         config.put(
                 Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM_MDOC,
                 scenario.profile().userMappingClaimMdoc());
-        config.put(Oid4vpIdentityProviderConfig.DCQL_QUERY, scenario.profile().dcqlQuery());
         idp.setConfig(config);
         return idp;
     }

@@ -1,0 +1,120 @@
+/*
+ * Copyright 2026 Bundesagentur für Arbeit
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package de.arbeitsagentur.keycloak.oid4vp.it;
+
+import static de.arbeitsagentur.keycloak.oid4vp.it.Oid4vpTestKeycloakSetup.SD_JWT_PID_VCT;
+import static de.arbeitsagentur.keycloak.oid4vp.it.Oid4vpTestKeycloakSetup.attributeMapper;
+import static de.arbeitsagentur.keycloak.oid4vp.it.Oid4vpTestKeycloakSetup.sessionNoteMapper;
+import static org.assertj.core.api.Assertions.assertThat;
+
+import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
+import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.keycloak.representations.idm.UserRepresentation;
+import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
+
+/**
+ * End-to-end tests for DCQL claim_sets generated from mapper claim set ids: the wallet discloses
+ * the most-preferred satisfiable claim set, and the verifier accepts only presentations that
+ * satisfy one of the requested claim sets.
+ */
+@KeycloakIntegrationTest(config = Oid4vpServerConfig.class)
+class KeycloakOid4vpClaimSetsE2eIT extends AbstractOid4vpE2eTest {
+
+    @InjectTestWallet
+    TestWallet wallet;
+
+    @Override
+    protected TestWallet wallet() {
+        return wallet;
+    }
+
+    @Test
+    void walletDisclosesPreferredClaimSet() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        deleteAllOid4vpUsers();
+
+        // Options: 1-full = family_name, given_name, birthdate; 2-min = family_name, birthdate.
+        // The wallet's PID carries all claims, so the preferred option must be disclosed.
+        replaceDcqlMappers(List.of(
+                attributeMapper("cs-family-name", "dc+sd-jwt", SD_JWT_PID_VCT, "family_name", "lastName", null),
+                attributeMapper("cs-given-name", "dc+sd-jwt", SD_JWT_PID_VCT, "given_name", "firstName", "1-full"),
+                sessionNoteMapper(
+                        "cs-birthdate",
+                        "dc+sd-jwt",
+                        SD_JWT_PID_VCT,
+                        "birthdate",
+                        "credentialBirthdate",
+                        "1-full,2-min")));
+
+        performSameDeviceLogin("claimset-full-user");
+        flow.assertLoginSucceeded();
+
+        UserRepresentation user = singleOid4vpUser();
+        assertThat(user.getFirstName())
+                .as("given_name from the preferred claim set must be disclosed and mapped")
+                .isEqualTo(walletPidClaim("given_name"));
+        assertThat(user.getLastName()).isEqualTo(walletPidClaim("family_name"));
+    }
+
+    @Test
+    void walletFallsBackToSatisfiableClaimSet() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        deleteAllOid4vpUsers();
+
+        // Options: 1-full = family_name, email, given_name; 2-min = family_name, given_name.
+        // The wallet's PID has no email claim, so only the fallback option is satisfiable.
+        replaceDcqlMappers(List.of(
+                attributeMapper("cs-family-name", "dc+sd-jwt", SD_JWT_PID_VCT, "family_name", "lastName", null),
+                attributeMapper("cs-email", "dc+sd-jwt", SD_JWT_PID_VCT, "email", "email", "1-full"),
+                attributeMapper(
+                        "cs-given-name", "dc+sd-jwt", SD_JWT_PID_VCT, "given_name", "firstName", "1-full,2-min")));
+
+        performSameDeviceLogin("claimset-fallback-user");
+        flow.assertLoginSucceeded();
+
+        UserRepresentation user = singleOid4vpUser();
+        assertThat(user.getFirstName())
+                .as("given_name from the fallback claim set must be disclosed and mapped")
+                .isEqualTo(walletPidClaim("given_name"));
+        assertThat(user.getLastName()).isEqualTo(walletPidClaim("family_name"));
+        // The first-broker-login form fills the email field only when the mappers left it empty,
+        // so a form-generated address proves no email claim was disclosed by the wallet.
+        assertThat(user.getEmail())
+                .as("email is not part of the satisfied claim set and must not come from the credential")
+                .startsWith("claimset-fallback-user");
+    }
+
+    private UserRepresentation singleOid4vpUser() {
+        assertThat(countOid4vpUsers()).isEqualTo(1);
+        return realm.admin().users().list(0, 100).stream()
+                .filter(user -> !"admin".equals(user.getUsername()) && !"test".equals(user.getUsername()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("No brokered OID4VP user found"));
+    }
+
+    private String walletPidClaim(String claim) {
+        return wallet().client().getCredentialsByType(SD_JWT_PID_VCT).stream()
+                .map(credential -> credential.claims().get(claim))
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Wallet PID has no claim " + claim));
+    }
+}

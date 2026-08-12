@@ -19,47 +19,19 @@ import java.util.List;
 import java.util.Map;
 import org.keycloak.representations.idm.IdentityProviderMapperRepresentation;
 
-// The credential format profile a verifier conformance scenario runs with
+// The credential format profile a verifier conformance scenario runs with. The mappers drive
+// both the generated DCQL query and the claim-to-attribute mapping.
 public enum CredentialProfile {
     SD_JWT_VC(
             "given_name",
             "given_name",
-            """
-            {
-              "credentials": [
-                {
-                  "id": "pid_sd_jwt",
-                  "format": "dc+sd-jwt",
-                  "meta": { "vct_values": ["urn:eudi:pid:1"] },
-                  "claims": [{ "path": ["given_name"] }, { "path": ["family_name"] }]
-                }
-              ],
-              "credential_sets": [{ "options": [["pid_sd_jwt"]], "required": true }]
-            }
-            """,
             false,
             List.of(
-                    attributeMapper("sd-jwt-given_name", "dc+sd-jwt", "pid", "given_name", "firstName"),
-                    attributeMapper("sd-jwt-family_name", "dc+sd-jwt", "pid", "family_name", "lastName"))),
+                    attributeMapper("sd-jwt-given_name", "dc+sd-jwt", "urn:eudi:pid:1", "given_name", "firstName"),
+                    attributeMapper("sd-jwt-family_name", "dc+sd-jwt", "urn:eudi:pid:1", "family_name", "lastName"))),
     ISO_MDL(
             "given_name",
             "org.iso.18013.5.1/given_name",
-            """
-            {
-              "credentials": [
-                {
-                  "id": "pid_mdoc",
-                  "format": "mso_mdoc",
-                  "meta": { "doctype_value": "org.iso.18013.5.1.mDL" },
-                  "claims": [
-                    { "path": ["org.iso.18013.5.1", "given_name"] },
-                    { "path": ["org.iso.18013.5.1", "family_name"] }
-                  ]
-                }
-              ],
-              "credential_sets": [{ "options": [["pid_mdoc"]], "required": true }]
-            }
-            """,
             true,
             List.of(
                     attributeMapper(
@@ -98,19 +70,16 @@ public enum CredentialProfile {
 
     private final String userMappingClaim;
     private final String userMappingClaimMdoc;
-    private final String dcqlQuery;
     private final boolean includeMdlIssuer;
     private final List<IdentityProviderMapperRepresentation> mappers;
 
     CredentialProfile(
             String userMappingClaim,
             String userMappingClaimMdoc,
-            String dcqlQuery,
             boolean includeMdlIssuer,
             List<IdentityProviderMapperRepresentation> mappers) {
         this.userMappingClaim = userMappingClaim;
         this.userMappingClaimMdoc = userMappingClaimMdoc;
-        this.dcqlQuery = dcqlQuery;
         this.includeMdlIssuer = includeMdlIssuer;
         this.mappers = mappers;
     }
@@ -121,10 +90,6 @@ public enum CredentialProfile {
 
     public String userMappingClaimMdoc() {
         return userMappingClaimMdoc;
-    }
-
-    public String dcqlQuery() {
-        return dcqlQuery;
     }
 
     public boolean includeMdlIssuer() {

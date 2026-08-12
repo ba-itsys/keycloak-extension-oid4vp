@@ -288,10 +288,12 @@ class KeycloakOid4vpProtocolConfigE2eIT extends AbstractOid4vpE2eTest {
         wallet().client().setPreferredFormat(CredentialFormat.SD_JWT);
 
         try {
+            replaceDcqlMappers(Oid4vpTestKeycloakSetup.sdJwtPidMappers());
             setIdpConfig(Map.of(
-                    Oid4vpIdentityProviderConfig.TRUST_LIST_URL, wallet().pidTrustListUrl(),
-                    Oid4vpIdentityProviderConfig.ENFORCE_HAIP, "false",
-                    Oid4vpIdentityProviderConfig.DCQL_QUERY, buildDefaultDcqlQuery()));
+                    Oid4vpIdentityProviderConfig.TRUST_LIST_URL,
+                    wallet().pidTrustListUrl(),
+                    Oid4vpIdentityProviderConfig.ENFORCE_HAIP,
+                    "false"));
 
             flow.navigateToLoginPage();
             flow.clickOid4vpIdpButton();

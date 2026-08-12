@@ -42,11 +42,14 @@ import java.net.URLEncoder;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.keycloak.admin.client.resource.IdentityProviderResource;
+import org.keycloak.representations.idm.IdentityProviderMapperRepresentation;
 import org.keycloak.testframework.annotations.InjectKeycloakUrls;
 import org.keycloak.testframework.annotations.InjectRealm;
 import org.keycloak.testframework.realm.ManagedRealm;
@@ -103,29 +106,66 @@ abstract class AbstractOid4vpE2eTest {
 
     /**
      * Creates the OID4VP identity provider pointing at the injected wallet's trust list. The
-     * realm has CLASS lifecycle, so this runs once per test class.
+     * realm has CLASS lifecycle, so the provider is created once per test class while the mappers
+     * are reset to the defaults before every test (mapper changes are not restored by the
+     * framework, unlike identity provider config changes).
      */
     private void ensureIdentityProviderConfigured() {
         boolean exists = realm.admin().identityProviders().findAll().stream()
                 .anyMatch(idp -> Oid4vpTestKeycloakSetup.IDP_ALIAS.equals(idp.getAlias()));
-        if (exists) {
-            return;
+        if (!exists) {
+            String haipCertPem = TestCertificates.generateHaipCertificateChainPem();
+            try (Response response = realm.admin()
+                    .identityProviders()
+                    .create(Oid4vpTestKeycloakSetup.defaultIdentityProvider(wallet().pidTrustListUrl(), haipCertPem))) {
+                assertThat(response.getStatus())
+                        .as("Creating the OID4VP identity provider failed: %s", response.readEntity(String.class))
+                        .isEqualTo(201);
+            }
         }
-        String haipCertPem = TestCertificates.generateHaipCertificateChainPem();
-        try (Response response = realm.admin()
-                .identityProviders()
-                .create(Oid4vpTestKeycloakSetup.defaultIdentityProvider(wallet().pidTrustListUrl(), haipCertPem))) {
-            assertThat(response.getStatus())
-                    .as("Creating the OID4VP identity provider failed: %s", response.readEntity(String.class))
-                    .isEqualTo(201);
+        resetIdpMappersToDefault();
+    }
+
+    private void resetIdpMappersToDefault() {
+        List<IdentityProviderMapperRepresentation> defaults = new ArrayList<>();
+        defaults.add(Oid4vpTestKeycloakSetup.defaultSessionNoteMapper());
+        defaults.addAll(Oid4vpTestKeycloakSetup.defaultDcqlMappers());
+        replaceIdpMappers(defaults);
+    }
+
+    /**
+     * Replaces the DCQL-driving identity provider mappers (those with a credential type) while
+     * keeping untyped mappers. The next test starts from the default mapper set again.
+     */
+    protected void replaceDcqlMappers(List<IdentityProviderMapperRepresentation> mappers) {
+        IdentityProviderResource idp = realm.admin().identityProviders().get(Oid4vpTestKeycloakSetup.IDP_ALIAS);
+        for (IdentityProviderMapperRepresentation existing : idp.getMappers()) {
+            String credentialType =
+                    existing.getConfig() != null ? existing.getConfig().get("credential.type") : null;
+            if (credentialType != null && !credentialType.isBlank()) {
+                idp.delete(existing.getId());
+            }
         }
-        try (Response response = realm.admin()
-                .identityProviders()
-                .get(Oid4vpTestKeycloakSetup.IDP_ALIAS)
-                .addMapper(Oid4vpTestKeycloakSetup.defaultSessionNoteMapper())) {
-            assertThat(response.getStatus())
-                    .as("Creating the OID4VP identity provider mapper failed: %s", response.readEntity(String.class))
-                    .isEqualTo(201);
+        addIdpMappers(idp, mappers);
+    }
+
+    private void replaceIdpMappers(List<IdentityProviderMapperRepresentation> mappers) {
+        IdentityProviderResource idp = realm.admin().identityProviders().get(Oid4vpTestKeycloakSetup.IDP_ALIAS);
+        for (IdentityProviderMapperRepresentation existing : idp.getMappers()) {
+            idp.delete(existing.getId());
+        }
+        addIdpMappers(idp, mappers);
+    }
+
+    private void addIdpMappers(IdentityProviderResource idp, List<IdentityProviderMapperRepresentation> mappers) {
+        for (IdentityProviderMapperRepresentation mapper : mappers) {
+            try (Response response = idp.addMapper(mapper)) {
+                assertThat(response.getStatus())
+                        .as(
+                                "Creating identity provider mapper '%s' failed: %s",
+                                mapper.getName(), response.readEntity(String.class))
+                        .isEqualTo(201);
+            }
         }
     }
 
@@ -383,24 +423,6 @@ abstract class AbstractOid4vpE2eTest {
             }
         }
         throw new IllegalArgumentException("No query parameter named " + name + " found in " + uri);
-    }
-
-    protected static String buildDefaultDcqlQuery() {
-        return """
-                {
-                  "credentials": [
-                    {
-                      "id": "pid",
-                      "format": "dc+sd-jwt",
-                      "meta": { "vct_values": ["urn:eudi:pid:de:1"] },
-                      "claims": [
-                        { "path": ["family_name"] },
-                        { "path": ["given_name"] }
-                      ]
-                    }
-                  ]
-                }
-                """;
     }
 
     protected JsonNode exchangeAuthorizationCode() throws Exception {

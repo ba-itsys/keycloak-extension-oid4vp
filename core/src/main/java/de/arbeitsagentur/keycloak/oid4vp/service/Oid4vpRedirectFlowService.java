@@ -19,10 +19,8 @@ import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpClientIdScheme;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestObjectParams;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SignedRequestObject;
-import de.arbeitsagentur.keycloak.oid4vp.util.DcqlQueryBuilder;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectSigner;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -174,7 +172,7 @@ public class Oid4vpRedirectFlowService {
 
     private void addDcqlAndVerifierInfo(LinkedHashMap<String, Object> claims, String dcqlQuery, String verifierInfo) {
         if (StringUtil.isNotBlank(dcqlQuery)) {
-            claims.put(DCQL_QUERY, parseDcqlQueryClaim(dcqlQuery));
+            claims.put(DCQL_QUERY, parseJsonClaim(dcqlQuery));
         }
         if (StringUtil.isNotBlank(verifierInfo)) {
             Object parsed = parseJsonClaim(verifierInfo);
@@ -265,14 +263,6 @@ public class Oid4vpRedirectFlowService {
         } catch (Exception e) {
             throw new IllegalStateException("Failed to parse generated JWK JSON", e);
         }
-    }
-
-    private Object parseDcqlQueryClaim(String json) {
-        Object parsed = parseJsonClaim(json);
-        if (parsed instanceof Map<?, ?> dcqlQuery) {
-            DcqlQueryBuilder.normalizeParsedQuery(dcqlQuery, Oid4vpTrustedAuthoritiesMode.NONE, null, List.of());
-        }
-        return parsed;
     }
 
     private Object parseJsonClaim(String json) {

@@ -15,12 +15,10 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.it;
 
-import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWalletConfig;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWalletConfigBuilder;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
@@ -49,22 +47,7 @@ class KeycloakOid4vpIsoSessionTranscriptE2eIT extends AbstractOid4vpE2eTest {
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
 
-        String mdocDcqlQuery = """
-                {
-                  "credentials": [
-                    {
-                      "id": "pid",
-                      "format": "mso_mdoc",
-                      "meta": { "doctype_value": "eu.europa.ec.eudi.pid.1" },
-                      "claims": [
-                        { "path": ["eu.europa.ec.eudi.pid.1", "family_name"] },
-                        { "path": ["eu.europa.ec.eudi.pid.1", "given_name"] }
-                      ]
-                    }
-                  ]
-                }
-                """;
-        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.DCQL_QUERY, mdocDcqlQuery));
+        replaceDcqlMappers(Oid4vpTestKeycloakSetup.mdocPidMappers());
 
         performSameDeviceLogin("iso-transcript-user");
         flow.assertLoginSucceeded();

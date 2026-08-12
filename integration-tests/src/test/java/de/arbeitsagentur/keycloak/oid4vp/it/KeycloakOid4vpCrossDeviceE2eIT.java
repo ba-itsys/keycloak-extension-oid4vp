@@ -93,26 +93,8 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
 
-        String mdocDcqlQuery = """
-                {
-                  "credentials": [
-                    {
-                      "id": "pid",
-                      "format": "mso_mdoc",
-                      "meta": { "doctype_value": "eu.europa.ec.eudi.pid.1" },
-                      "claims": [
-                        { "path": ["eu.europa.ec.eudi.pid.1", "family_name"] },
-                        { "path": ["eu.europa.ec.eudi.pid.1", "given_name"] }
-                      ]
-                    }
-                  ]
-                }
-                """;
-        setIdpConfig(Map.of(
-                Oid4vpIdentityProviderConfig.CROSS_DEVICE_ENABLED,
-                "true",
-                Oid4vpIdentityProviderConfig.DCQL_QUERY,
-                mdocDcqlQuery));
+        replaceDcqlMappers(Oid4vpTestKeycloakSetup.mdocPidMappers());
+        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.CROSS_DEVICE_ENABLED, "true"));
 
         flow.navigateToLoginPage();
         flow.clickOid4vpIdpButton();

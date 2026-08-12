@@ -24,6 +24,7 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PreparedDcqlQuery;
+import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpCallbackProcessor;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpRedirectFlowService;
 import de.arbeitsagentur.keycloak.oid4vp.util.DcqlQueryBuilder;
@@ -36,11 +37,9 @@ import java.net.URI;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.broker.provider.AuthenticationRequest;
@@ -159,39 +158,25 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     }
 
     public PreparedDcqlQuery prepareDcqlQueryFromConfig() {
-        String manual = getConfig().getDcqlQuery();
-        if (StringUtil.isNotBlank(manual)) {
-            String normalized = DcqlQueryBuilder.normalizeManualQuery(
-                    OBJECT_MAPPER,
-                    manual,
-                    getConfig().getTrustedAuthoritiesMode(),
-                    getConfig().getTrustListUrl(),
-                    resolveAuthorityKeyIdentifiers());
-            return new PreparedDcqlQuery(
-                    normalized, DcqlQueryBuilder.extractCredentialTypes(OBJECT_MAPPER, normalized));
-        }
-
         Map<String, CredentialTypeSpec> credentialTypes = DcqlQueryBuilder.aggregateFromMappers(session, getConfig());
 
-        if (!credentialTypes.isEmpty()) {
-            String dcqlQuery = DcqlQueryBuilder.fromMapperSpecs(
-                            OBJECT_MAPPER,
-                            credentialTypes,
-                            getConfig().isAllCredentialsRequired(),
-                            getConfig().getCredentialSetPurpose(),
-                            getConfig().getTrustedAuthoritiesMode(),
-                            getConfig().getTrustListUrl(),
-                            resolveAuthorityKeyIdentifiers())
-                    .build();
-            List<String> configuredCredentialTypes = credentialTypes.values().stream()
-                    .map(CredentialTypeSpec::type)
-                    .filter(StringUtil::isNotBlank)
-                    .collect(Collectors.collectingAndThen(Collectors.toCollection(LinkedHashSet::new), List::copyOf));
-            return new PreparedDcqlQuery(dcqlQuery, configuredCredentialTypes);
+        if (credentialTypes.isEmpty()) {
+            throw new IdentityBrokerException(
+                    "No DCQL query configured. Add at least one OID4VP mapper with a credential type to the identity provider.");
         }
 
-        throw new IdentityBrokerException(
-                "No DCQL query configured. Set dcqlQuery or add credential mappers to the OID4VP identity provider.");
+        String dcqlQuery = DcqlQueryBuilder.fromMapperSpecs(
+                        OBJECT_MAPPER,
+                        credentialTypes,
+                        getConfig().isAllCredentialsRequired(),
+                        getConfig().getCredentialSetPurpose(),
+                        getConfig().getTrustedAuthoritiesMode(),
+                        getConfig().getTrustListUrl(),
+                        resolveAuthorityKeyIdentifiers())
+                .build();
+        List<RequestedCredential> requestedCredentials =
+                credentialTypes.values().stream().map(RequestedCredential::of).toList();
+        return new PreparedDcqlQuery(dcqlQuery, requestedCredentials);
     }
 
     private List<String> resolveAuthorityKeyIdentifiers() {
@@ -316,7 +301,8 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 nonce,
                 encryptionKeyJson,
                 encryptionJwkThumbprint,
-                preparedDcqlQuery.configuredCredentialTypes());
+                preparedDcqlQuery.configuredCredentialTypes(),
+                preparedDcqlQuery.requestedCredentials());
         requestObjectStore.storeRequestContext(session, requestContext);
 
         URI requestUri = request.getUriInfo()

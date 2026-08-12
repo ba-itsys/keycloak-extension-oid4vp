@@ -34,7 +34,6 @@ import org.keycloak.utils.StringUtil;
  */
 public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implements Oid4vpConfigProvider {
 
-    public static final String DCQL_QUERY = "dcqlQuery";
     public static final String USER_MAPPING_CLAIM = "userMappingClaim";
     public static final String USER_MAPPING_CLAIM_MDOC = "userMappingClaimMdoc";
     public static final String TRANSIENT_USERS = IdentityProviderModel.DO_NOT_STORE_USERS;
@@ -96,14 +95,6 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public Oid4vpIdentityProviderConfig(IdentityProviderModel model) {
         super(model);
-    }
-
-    public String getDcqlQuery() {
-        return getConfig().get(DCQL_QUERY);
-    }
-
-    public void setDcqlQuery(String dcqlQuery) {
-        getConfig().put(DCQL_QUERY, dcqlQuery);
     }
 
     public String getUserMappingClaim() {

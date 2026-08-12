@@ -246,23 +246,7 @@ class Oid4vpRedirectFlowServiceHaipTest {
     }
 
     @Test
-    void requestObject_manualSdJwtDcqlWithoutMeta_addsVctMetadata() throws Exception {
-        SignedRequestObject result = buildRequestObject("""
-                {"credentials":[{"id":"pid","format":"dc+sd-jwt","claims":[{"path":["given_name"]}]}]}
-                """, Oid4vpResponseMode.DIRECT_POST, false, true);
-
-        Map<String, Object> claims = parseClaims(result.jwt());
-        @SuppressWarnings("unchecked")
-        Map<String, Object> dcql = (Map<String, Object>) claims.get("dcql_query");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> credential = ((List<Map<String, Object>>) dcql.get("credentials")).get(0);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> meta = (Map<String, Object>) credential.get("meta");
-        assertThat(meta.get("vct_values")).isEqualTo(List.of("pid"));
-    }
-
-    @Test
-    void requestObject_manualSdJwtDcqlPreservesExistingMeta() throws Exception {
+    void requestObject_includesDcqlQueryAsJsonObject() throws Exception {
         SignedRequestObject result = buildRequestObject("""
                 {"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{"vct_values":["custom-vct"]},"claims":[{"path":["given_name"]}]}]}
                 """, Oid4vpResponseMode.DIRECT_POST, false, true);

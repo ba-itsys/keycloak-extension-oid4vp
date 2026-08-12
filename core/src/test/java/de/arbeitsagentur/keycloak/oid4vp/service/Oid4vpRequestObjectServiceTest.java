@@ -145,7 +145,8 @@ class Oid4vpRequestObjectServiceTest {
                 "nonce-1",
                 "{\"kid\":\"enc-key\"}",
                 "thumbprint",
-                List.of());
+                List.of(),
+                null);
         when(store.resolveByState(session, "tab-1.abc")).thenReturn(entry);
 
         Response response = service.generateRequestObject("tab-1.abc", null, null);
@@ -176,6 +177,7 @@ class Oid4vpRequestObjectServiceTest {
                 nonce,
                 "{\"kid\":\"enc-key\"}",
                 "thumbprint",
-                List.of());
+                List.of(),
+                null);
     }
 }

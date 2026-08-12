@@ -125,7 +125,8 @@ class Oid4vpRequestObjectStoreTest {
                 nonce,
                 encryptionKeyJson,
                 "thumbprint",
-                List.of());
+                List.of(),
+                null);
     }
 
     private static String createKey(String kid) {

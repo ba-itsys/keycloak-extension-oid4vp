@@ -118,19 +118,61 @@ class DcqlQueryBuilderTest {
     }
 
     @Test
-    void build_optionalClaims_generatesClaimSets() throws Exception {
+    void build_claimSetIds_generatesOneOptionPerIdInLexicographicOrder() throws Exception {
         builder.addCredentialType(
                 "dc+sd-jwt",
                 "IdentityCredential",
-                List.of(new ClaimSpec("given_name", false), new ClaimSpec("email", true)));
+                List.of(
+                        new ClaimSpec("given_name", List.of("1-full")),
+                        new ClaimSpec("family_name", List.of("2-min", "1-full")),
+                        new ClaimSpec("birthdate")));
+
+        Map<String, Object> credential = firstCredential(builder.build());
+
+        assertThat(credential.get("claim_sets"))
+                .isEqualTo(List.of(List.of("claim1", "claim2", "claim3"), List.of("claim2", "claim3")));
+    }
+
+    @Test
+    void build_claimSetIds_untaggedClaimsJoinEveryOption() throws Exception {
+        builder.addCredentialType(
+                "dc+sd-jwt",
+                "IdentityCredential",
+                List.of(
+                        new ClaimSpec("email", List.of("contact")),
+                        new ClaimSpec("phone", List.of("phone-only")),
+                        new ClaimSpec("sub")));
+
+        Map<String, Object> credential = firstCredential(builder.build());
+
+        assertThat(credential.get("claim_sets"))
+                .isEqualTo(List.of(List.of("claim1", "claim3"), List.of("claim2", "claim3")));
+    }
+
+    @Test
+    void build_noClaimSetIds_omitsClaimSets() throws Exception {
+        builder.addCredentialType(
+                "dc+sd-jwt", "IdentityCredential", List.of(new ClaimSpec("given_name"), new ClaimSpec("email")));
+
+        Map<String, Object> credential = firstCredential(builder.build());
+
+        assertThat(credential).doesNotContainKey("claim_sets");
+    }
+
+    @Test
+    void build_claimSetIds_onlyAffectCredentialDefiningThem() throws Exception {
+        builder.addCredentialType(
+                "dc+sd-jwt", "IdentityCredential", List.of(new ClaimSpec("given_name", List.of("min"))));
+        builder.addCredentialType("mso_mdoc", "eu.europa.ec.eudi.pid.1", List.of(new ClaimSpec("family_name")));
 
         String json = builder.build();
-
         @SuppressWarnings("unchecked")
         Map<String, Object> result = objectMapper.readValue(json, Map.class);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> credentials = (List<Map<String, Object>>) result.get("credentials");
+
         assertThat(credentials.get(0)).containsKey("claim_sets");
+        assertThat(credentials.get(1)).doesNotContainKey("claim_sets");
     }
 
     @Test
@@ -164,24 +206,43 @@ class DcqlQueryBuilderTest {
     }
 
     @Test
+    void toDcqlPath_mdocExplicitNamespacePath_usesNamespaceInsteadOfDoctype() {
+        List<Object> path =
+                new ClaimSpec("org.iso.18013.5.1/given_name").toDcqlPath("mso_mdoc", "org.iso.18013.5.1.mDL");
+        assertThat(path).containsExactly("org.iso.18013.5.1", "given_name");
+    }
+
+    @Test
+    void toDcqlPath_mdocExplicitNamespaceMatchingDoctype_isSameAsBareElementPath() {
+        List<Object> explicit =
+                new ClaimSpec("eu.europa.ec.eudi.pid.1/family_name").toDcqlPath("mso_mdoc", "eu.europa.ec.eudi.pid.1");
+        List<Object> bare = new ClaimSpec("family_name").toDcqlPath("mso_mdoc", "eu.europa.ec.eudi.pid.1");
+
+        assertThat(explicit).containsExactly("eu.europa.ec.eudi.pid.1", "family_name");
+        assertThat(bare).isEqualTo(explicit);
+    }
+
+    @Test
     void toDcqlPath_multivalued_appendsArraySelector() {
-        List<Object> sdJwt = new ClaimSpec("nationalities", false, true).toDcqlPath("dc+sd-jwt", "PID");
+        List<Object> sdJwt = new ClaimSpec("nationalities", List.of(), true).toDcqlPath("dc+sd-jwt", "PID");
         assertThat(sdJwt).containsExactly("nationalities", null);
 
-        List<Object> mdoc = new ClaimSpec("nationality", false, true).toDcqlPath("mso_mdoc", "eu.europa.ec.eudi.pid.1");
+        List<Object> mdoc =
+                new ClaimSpec("nationality", List.of(), true).toDcqlPath("mso_mdoc", "eu.europa.ec.eudi.pid.1");
         assertThat(mdoc).containsExactly("eu.europa.ec.eudi.pid.1", "nationality");
     }
 
     @Test
     void toDcqlPath_multivaluedPathWithArraySelector_doesNotAppendDuplicateNull() {
-        List<Object> sdJwt = new ClaimSpec("nationalities/null", false, true).toDcqlPath("dc+sd-jwt", "PID");
+        List<Object> sdJwt = new ClaimSpec("nationalities/null", List.of(), true).toDcqlPath("dc+sd-jwt", "PID");
         assertThat(sdJwt).containsExactly("nationalities", null);
     }
 
     @Test
     void toDcqlPath_sdJwtMultivaluedPath_isSameWithOrWithoutExplicitArraySelector() {
-        List<Object> implicitSelector = new ClaimSpec("nationalities", false, true).toDcqlPath("dc+sd-jwt", "PID");
-        List<Object> explicitSelector = new ClaimSpec("nationalities/null", false, true).toDcqlPath("dc+sd-jwt", "PID");
+        List<Object> implicitSelector = new ClaimSpec("nationalities", List.of(), true).toDcqlPath("dc+sd-jwt", "PID");
+        List<Object> explicitSelector =
+                new ClaimSpec("nationalities/null", List.of(), true).toDcqlPath("dc+sd-jwt", "PID");
 
         assertThat(implicitSelector).containsExactly("nationalities", null);
         assertThat(explicitSelector).isEqualTo(implicitSelector);
@@ -189,8 +250,8 @@ class DcqlQueryBuilderTest {
 
     @Test
     void toDcqlPath_mdocNestedMultivaluedPath_requestsOnlyBaseClaim() {
-        List<Object> path =
-                new ClaimSpec("birth_place/locality", false, true).toDcqlPath("mso_mdoc", "eu.europa.ec.eudi.pid.1");
+        List<Object> path = new ClaimSpec("birth_place/locality", List.of(), true)
+                .toDcqlPath("mso_mdoc", "eu.europa.ec.eudi.pid.1");
         assertThat(path).containsExactly("eu.europa.ec.eudi.pid.1", "birth_place");
     }
 
@@ -304,102 +365,6 @@ class DcqlQueryBuilderTest {
     }
 
     @Test
-    void normalizeManualQuery_addsMissingMetaAndTrustedAuthorities() throws Exception {
-        String manualQuery = """
-                {
-                  "credentials": [
-                    { "id": "urn:eudi:pid:de:1", "format": "dc+sd-jwt" },
-                    { "id": "eu.europa.ec.eudi.pid.1", "format": "mso_mdoc" }
-                  ]
-                }
-                """;
-
-        String normalized = DcqlQueryBuilder.normalizeManualQuery(
-                objectMapper,
-                manualQuery,
-                Oid4vpTrustedAuthoritiesMode.AKI,
-                "https://trust.example/tl.jwt",
-                List.of("aki-1"));
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> parsed = objectMapper.readValue(normalized, Map.class);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> credentials = (List<Map<String, Object>>) parsed.get("credentials");
-
-        assertThat(((Map<String, Object>) credentials.get(0).get("meta")).get("vct_values"))
-                .isEqualTo(List.of("urn:eudi:pid:de:1"));
-        assertThat(((Map<String, Object>) credentials.get(1).get("meta")).get("doctype_value"))
-                .isEqualTo("eu.europa.ec.eudi.pid.1");
-        assertThat(credentials.get(0).get("trusted_authorities"))
-                .isEqualTo(List.of(Map.of("type", "aki", "values", List.of("aki-1"))));
-    }
-
-    @Test
-    void normalizeManualQuery_preservesExistingMetaAndTrustedAuthorities() throws Exception {
-        String manualQuery = """
-                {
-                  "credentials": [
-                    {
-                      "id": "urn:eudi:pid:de:1",
-                      "format": "dc+sd-jwt",
-                      "meta": { "vct_values": ["custom-vct"] },
-                      "trusted_authorities": [{ "type": "etsi_tl", "values": ["https://already.example/tl.jwt"] }]
-                    }
-                  ]
-                }
-                """;
-
-        String normalized = DcqlQueryBuilder.normalizeManualQuery(
-                objectMapper,
-                manualQuery,
-                Oid4vpTrustedAuthoritiesMode.ETSI_TL,
-                "https://ignored.example/tl.jwt",
-                List.of());
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> parsed = objectMapper.readValue(normalized, Map.class);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> credentials = (List<Map<String, Object>>) parsed.get("credentials");
-        Map<String, Object> credential = credentials.get(0);
-
-        assertThat(((Map<String, Object>) credential.get("meta")).get("vct_values"))
-                .isEqualTo(List.of("custom-vct"));
-        assertThat(credential.get("trusted_authorities"))
-                .isEqualTo(List.of(Map.of("type", "etsi_tl", "values", List.of("https://already.example/tl.jwt"))));
-    }
-
-    @Test
-    void normalizeManualQuery_invalidJson_returnsOriginalString() {
-        String invalid = "{not-json";
-
-        assertThat(DcqlQueryBuilder.normalizeManualQuery(objectMapper, invalid, "https://trust.example/tl.jwt"))
-                .isEqualTo(invalid);
-    }
-
-    @Test
-    void extractCredentialTypes_readsSdJwtAndMdocTypes() {
-        String dcqlQuery = """
-                {
-                  "credentials": [
-                    {
-                      "id": "pid_sd_jwt",
-                      "format": "dc+sd-jwt",
-                      "meta": { "vct_values": ["urn:eudi:pid:de:1", "urn:eudi:pid:eu:1"] }
-                    },
-                    {
-                      "id": "pid_mdoc",
-                      "format": "mso_mdoc",
-                      "meta": { "doctype_value": "eu.europa.ec.eudi.pid.1" }
-                    }
-                  ]
-                }
-                """;
-
-        assertThat(DcqlQueryBuilder.extractCredentialTypes(objectMapper, dcqlQuery))
-                .containsExactly("urn:eudi:pid:de:1", "urn:eudi:pid:eu:1", "eu.europa.ec.eudi.pid.1");
-    }
-
-    @Test
     void aggregateFromMappers_withoutRealm_returnsEmpty() {
         KeycloakSession session = mock(KeycloakSession.class);
         KeycloakContext context = mock(KeycloakContext.class);
@@ -419,7 +384,7 @@ class DcqlQueryBuilderTest {
         mapper.setConfig(new LinkedHashMap<>());
         mapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_TYPE, "IdentityCredential");
         mapper.getConfig().put(Oid4vpMapperConfigProperties.CLAIM_PATH, "given_name");
-        mapper.getConfig().put(Oid4vpMapperConfigProperties.OPTIONAL, "true");
+        mapper.getConfig().put(Oid4vpMapperConfigProperties.CLAIM_SET_IDS, " 1-full , 2-min ");
         mapper.getConfig().put(Oid4vpMapperConfigProperties.MULTIVALUED, "true");
         when(session.getContext()).thenReturn(context);
         when(context.getRealm()).thenReturn(realm);
@@ -433,8 +398,40 @@ class DcqlQueryBuilderTest {
         assertThat(type.format()).isEqualTo("dc+sd-jwt");
         assertThat(type.type()).isEqualTo("IdentityCredential");
         assertThat(type.claimSpecs()).extracting(ClaimSpec::path).containsExactly("given_name", "sub");
-        assertThat(type.claimSpecs().get(0).optional()).isTrue();
+        assertThat(type.claimSpecs().get(0).claimSetIds()).containsExactly("1-full", "2-min");
         assertThat(type.claimSpecs().get(0).multivalued()).isTrue();
+        assertThat(type.claimSpecs().get(1).claimSetIds())
+                .as("auto-added user mapping claim must be part of every claim set")
+                .isEmpty();
+    }
+
+    @Test
+    void aggregateFromMappers_ordersCredentialTypesByFormatAndType() {
+        KeycloakSession session = mock(KeycloakSession.class);
+        KeycloakContext context = mock(KeycloakContext.class);
+        RealmModel realm = mock(RealmModel.class);
+        IdentityProviderMapperModel mdocMapper = new IdentityProviderMapperModel();
+        mdocMapper.setConfig(new LinkedHashMap<>());
+        mdocMapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_FORMAT, "mso_mdoc");
+        mdocMapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_TYPE, "eu.europa.ec.eudi.pid.1");
+        mdocMapper.getConfig().put(Oid4vpMapperConfigProperties.CLAIM_PATH, "family_name");
+        IdentityProviderMapperModel sdJwtMapper = new IdentityProviderMapperModel();
+        sdJwtMapper.setConfig(new LinkedHashMap<>());
+        sdJwtMapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_FORMAT, "dc+sd-jwt");
+        sdJwtMapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_TYPE, "urn:eudi:pid:1");
+        sdJwtMapper.getConfig().put(Oid4vpMapperConfigProperties.CLAIM_PATH, "family_name");
+        when(session.getContext()).thenReturn(context);
+        when(context.getRealm()).thenReturn(realm);
+        when(realm.getIdentityProviderMappersByAliasStream("oid4vp"))
+                .thenReturn(java.util.stream.Stream.of(mdocMapper, sdJwtMapper));
+        Oid4vpConfigProvider config = config("oid4vp", false, "sub", "family_name");
+
+        Map<String, CredentialTypeSpec> result = DcqlQueryBuilder.aggregateFromMappers(session, config);
+
+        assertThat(result.values())
+                .as("credential order must not depend on mapper enumeration order")
+                .extracting(CredentialTypeSpec::format)
+                .containsExactly("dc+sd-jwt", "mso_mdoc");
     }
 
     @Test
@@ -517,6 +514,12 @@ class DcqlQueryBuilderTest {
 
         assertThat(DcqlQueryBuilder.aggregateFromMappers(session, config)).isEmpty();
         assertThat(DcqlQueryBuilder.aggregateFromMappers(session, config)).isEmpty();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> firstCredential(String dcqlJson) throws Exception {
+        Map<String, Object> result = objectMapper.readValue(dcqlJson, Map.class);
+        return ((List<Map<String, Object>>) result.get("credentials")).get(0);
     }
 
     private static Oid4vpConfigProvider config(

@@ -25,20 +25,41 @@ import org.keycloak.utils.StringUtil;
  * Specification of a single claim to request within a DCQL credential query.
  *
  * <p>The {@code path} uses {@code /} as separator for nested claims (e.g. {@code address/street}).
- * For mDoc credentials, the namespace is automatically prepended when building DCQL paths.
+ * For mDoc credentials, a dotted first segment is treated as an explicit namespace (e.g.
+ * {@code org.iso.18013.5.1/given_name}); otherwise the doctype is used as namespace.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.4">OID4VP 1.0 §5.4 — DCQL Query</a>
+ * <p>{@code claimSetIds} lists the DCQL claim sets this claim belongs to. A claim without ids is
+ * part of every generated claim set and therefore always requested.
+ *
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.4">OID4VP 1.0 §6.4 — Claims Query</a>
  */
-public record ClaimSpec(String path, boolean optional, boolean multivalued) {
+public record ClaimSpec(String path, List<String> claimSetIds, boolean multivalued) {
 
     private static final String PATH_SEPARATOR = "/";
+    private static final String CLAIM_SET_ID_SEPARATOR = ",";
 
-    public ClaimSpec(String path) {
-        this(path, false, false);
+    public ClaimSpec {
+        claimSetIds = claimSetIds != null ? List.copyOf(claimSetIds) : List.of();
     }
 
-    public ClaimSpec(String path, boolean optional) {
-        this(path, optional, false);
+    public ClaimSpec(String path) {
+        this(path, List.of(), false);
+    }
+
+    public ClaimSpec(String path, List<String> claimSetIds) {
+        this(path, claimSetIds, false);
+    }
+
+    /** Parses a comma-separated mapper config value into a list of claim set ids. */
+    public static List<String> parseClaimSetIds(String rawClaimSetIds) {
+        if (StringUtil.isBlank(rawClaimSetIds)) {
+            return List.of();
+        }
+        return Arrays.stream(rawClaimSetIds.split(CLAIM_SET_ID_SEPARATOR))
+                .map(String::trim)
+                .filter(StringUtil::isNotBlank)
+                .distinct()
+                .toList();
     }
 
     /** Converts this claim path to a DCQL {@code claims[].path} array for the given credential format and type. */
@@ -47,9 +68,7 @@ public record ClaimSpec(String path, boolean optional, boolean multivalued) {
             return List.of();
         }
         if (Oid4vpConstants.FORMAT_MSO_MDOC.equals(format) && type != null) {
-            String requestedPath =
-                    path.contains(PATH_SEPARATOR) ? path.substring(0, path.indexOf(PATH_SEPARATOR)) : path;
-            return List.of(type, parsePathSegment(requestedPath));
+            return toMdocPath(type);
         }
         if (path.contains(PATH_SEPARATOR)) {
             List<Object> segments = Arrays.stream(path.split(PATH_SEPARATOR))
@@ -64,6 +83,26 @@ public record ClaimSpec(String path, boolean optional, boolean multivalued) {
             return listWithNullableEntries(path, null);
         }
         return List.of(path);
+    }
+
+    /**
+     * Builds the two-element mDoc path {@code [namespace, element]}. mDoc namespaces are
+     * reverse-domain identifiers, so a dotted first path segment selects an explicit namespace;
+     * otherwise the doctype serves as namespace and only the first segment of a nested path is
+     * requested (mDoc claims cannot be requested below element level).
+     */
+    private List<Object> toMdocPath(String doctype) {
+        String namespace = doctype;
+        String elementPath = path;
+        int separatorIndex = path.indexOf(PATH_SEPARATOR);
+        if (separatorIndex >= 0 && path.substring(0, separatorIndex).contains(".")) {
+            namespace = path.substring(0, separatorIndex);
+            elementPath = path.substring(separatorIndex + 1);
+        }
+        String element = elementPath.contains(PATH_SEPARATOR)
+                ? elementPath.substring(0, elementPath.indexOf(PATH_SEPARATOR))
+                : elementPath;
+        return List.of(namespace, parsePathSegment(element));
     }
 
     private static boolean endsWithArraySelector(List<Object> segments) {

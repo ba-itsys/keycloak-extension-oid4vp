@@ -34,7 +34,7 @@ public final class Oid4vpMapperConfigProperties {
     public static final String CREDENTIAL_TYPE = "credential.type";
     public static final String CLAIM_PATH = "claim";
     public static final String MULTIVALUED = "multivalued";
-    public static final String OPTIONAL = "optional";
+    public static final String CLAIM_SET_IDS = "claimset.ids";
 
     private Oid4vpMapperConfigProperties() {}
 
@@ -85,13 +85,15 @@ public final class Oid4vpMapperConfigProperties {
         return prop;
     }
 
-    public static ProviderConfigProperty optional() {
+    public static ProviderConfigProperty claimSetIds() {
         ProviderConfigProperty prop = new ProviderConfigProperty();
-        prop.setName(OPTIONAL);
-        prop.setLabel("Optional Claim");
-        prop.setHelpText("If enabled, this claim is optional and triggers claim_set generation in DCQL.");
-        prop.setType(ProviderConfigProperty.BOOLEAN_TYPE);
-        prop.setDefaultValue("false");
+        prop.setName(CLAIM_SET_IDS);
+        prop.setLabel("Claim Set IDs");
+        prop.setHelpText("Comma-separated claim set identifiers. When any claim of the same credential defines "
+                + "claim set ids, the generated DCQL query contains one claim_sets option per id, ordered "
+                + "lexicographically by id. Claims without ids are part of every option and are always requested. "
+                + "Leave empty to always request this claim.");
+        prop.setType(ProviderConfigProperty.STRING_TYPE);
         return prop;
     }
 
@@ -100,6 +102,6 @@ public final class Oid4vpMapperConfigProperties {
         properties.add(credentialType());
         properties.add(claimPath());
         properties.add(multivalued());
-        properties.add(optional());
+        properties.add(claimSetIds());
     }
 }
