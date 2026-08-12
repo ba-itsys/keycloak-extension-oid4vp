@@ -47,24 +47,26 @@ public enum CredentialProfile {
                             "org.iso.18013.5.1/family_name",
                             "lastName")));
 
-    // The mDL issuer certificate of the conformance suite, trusted for mdoc scenarios
+    // The mDL issuer certificate of the conformance suite, trusted for mdoc scenarios.
+    // Matches the document signer certificate in the suite's TestAppUtils/VciMdocUtils
+    // (regenerated upstream 2026-08-03, valid until 2027-08-03).
     public static final String MDL_ISSUER_CERTIFICATE_PEM = """
             -----BEGIN CERTIFICATE-----
-            MIICqTCCAlCgAwIBAgIUEmctHgzxSGqk6Z8Eb+0s97VZdpowCgYIKoZIzj0EAwIw
+            MIICqzCCAlCgAwIBAgIULSsWFZgeqNOj8G3xd228JGgWiOUwCgYIKoZIzj0EAwIw
             gYcxCzAJBgNVBAYTAlVTMRgwFgYDVQQIDA9TdGF0ZSBvZiBVdG9waWExEjAQBgNV
             BAcMCVNhbiBSYW1vbjEaMBgGA1UECgwRT3BlbklEIEZvdW5kYXRpb24xCzAJBgNV
-            BAsMAklUMSEwHwYDVQQDDBhjZXJ0aWZpY2F0aW9uLm9wZW5pZC5uZXQwHhcNMjUw
-            NzMwMDc0NzIyWhcNMjYwNzMwMDc0NzIyWjCBhzELMAkGA1UEBhMCVVMxGDAWBgNV
+            BAsMAklUMSEwHwYDVQQDDBhjZXJ0aWZpY2F0aW9uLm9wZW5pZC5uZXQwHhcNMjYw
+            ODAzMTYxMjAxWhcNMjcwODAzMTYxMjAxWjCBhzELMAkGA1UEBhMCVVMxGDAWBgNV
             BAgMD1N0YXRlIG9mIFV0b3BpYTESMBAGA1UEBwwJU2FuIFJhbW9uMRowGAYDVQQK
             DBFPcGVuSUQgRm91bmRhdGlvbjELMAkGA1UECwwCSVQxITAfBgNVBAMMGGNlcnRp
             ZmljYXRpb24ub3BlbmlkLm5ldDBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABJ5o
             lgDBiHqNhN7rFkSy/xD34dQcOSR4KvEWMyb62jI+UGUofeAi/55RIt74pBsQz9+B
-            48WXI8xhIphoNN7AejajgZcwgZQwEgYDVR0TAQH/BAgwBgEB/wIBADAOBgNVHQ8B
-            Af8EBAMCAQYwIQYDVR0SBBowGIEWY2VydGlmaWNhdGlvbkBvaWRmLm9yZzAsBgNV
-            HR8EJTAjMCGgH6AdhhtodHRwOi8vZXhhbXBsZS5jb20vbXljYS5jcmwwHQYDVR0O
-            BBYEFHhk9LVVH8Gt9ZgfxgyhSl921XOhMAoGCCqGSM49BAMCA0cAMEQCICBxjCq9
-            efAwMKREK+k0OXBtiQCbFD7QdpyH42LVYfdvAiAurlZwp9PtmQZzoSYDUvXpZM5v
-            TvFLVc4ESGy3AtdC+g==
+            48WXI8xhIphoNN7AejajgZcwgZQwHQYDVR0OBBYEFHhk9LVVH8Gt9ZgfxgyhSl92
+            1XOhMBIGA1UdEwEB/wQIMAYBAf8CAQAwDgYDVR0PAQH/BAQDAgEGMCEGA1UdEgQa
+            MBiBFmNlcnRpZmljYXRpb25Ab2lkZi5vcmcwLAYDVR0fBCUwIzAhoB+gHYYbaHR0
+            cDovL2V4YW1wbGUuY29tL215Y2EuY3JsMAoGCCqGSM49BAMCA0kAMEYCIQCB7MlD
+            X8n8PDNoXfVpnHwQRfLC3bZzAs3zkGrHt7X2LwIhAJPQaIyvIb4LJIa0R4HQSvk0
+            4OnujikkVHszNwSbyFlZ
             -----END CERTIFICATE-----
             """;
 

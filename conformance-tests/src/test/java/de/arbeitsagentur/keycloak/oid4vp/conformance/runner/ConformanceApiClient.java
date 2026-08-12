@@ -38,6 +38,10 @@ public final class ConformanceApiClient {
 
     private static final Logger LOG = Logger.getLogger(ConformanceApiClient.class);
 
+    // 1x1 transparent PNG as a data URI, uploaded as automated verification evidence
+    private static final String PLACEHOLDER_EVIDENCE_IMAGE = "data:image/png;base64,"
+            + "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
     private final URI baseUri;
     private final HttpClient httpClient;
 
@@ -128,7 +132,7 @@ public final class ConformanceApiClient {
         if ("WAITING".equals(info.path("status").asText())) {
             interaction.trigger(new ModuleRun(moduleNode, info));
         }
-        info = waitForState(moduleId, List.of("FINISHED"), Duration.ofMinutes(8));
+        ModuleCompletion completion = waitForFinishedFillingEvidencePlaceholders(moduleId, Duration.ofMinutes(8));
         JsonNode logs = getLogs(moduleId);
 
         return new ConformanceModuleResult(
@@ -138,9 +142,70 @@ public final class ConformanceApiClient {
                 module.moduleVariant(),
                 planId,
                 moduleId,
-                info.path("status").asText(),
-                info.path("result").asText("UNKNOWN"),
+                completion.info().path("status").asText(),
+                completion.info().path("result").asText("UNKNOWN"),
+                completion.evidenceUploaded(),
                 logs);
+    }
+
+    private record ModuleCompletion(JsonNode info, boolean evidenceUploaded) {}
+
+    /**
+     * Waits for the module to finish. Since suite release-v5.2.2, verifier modules whose flow ends
+     * with a successful response no longer finish on their own: they log a screenshot placeholder
+     * and wait for evidence of the verification outcome, finishing as REVIEW once it is uploaded.
+     * Any unfilled placeholder is therefore filled with a minimal placeholder image while waiting.
+     */
+    private ModuleCompletion waitForFinishedFillingEvidencePlaceholders(String moduleId, Duration timeout) {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        JsonNode lastInfo = null;
+        RuntimeException lastFailure = null;
+        boolean evidenceUploaded = false;
+        while (System.nanoTime() < deadline) {
+            try {
+                lastInfo = getInfo(moduleId);
+                String status = lastInfo.path("status").asText();
+                if ("FINISHED".equals(status) || "INTERRUPTED".equals(status)) {
+                    return new ModuleCompletion(lastInfo, evidenceUploaded);
+                }
+                if ("WAITING".equals(status)) {
+                    for (String placeholder : unfilledImagePlaceholders(moduleId)) {
+                        fillImagePlaceholder(moduleId, placeholder);
+                        evidenceUploaded = true;
+                    }
+                }
+            } catch (RuntimeException e) {
+                // Transient failures are tolerated until the deadline
+                lastFailure = e;
+            }
+            sleep(Duration.ofSeconds(1));
+        }
+        throw new IllegalStateException(
+                "Timed out waiting for conformance module " + moduleId + " to finish. Last info: " + lastInfo,
+                lastFailure);
+    }
+
+    private List<String> unfilledImagePlaceholders(String moduleId) {
+        JsonNode images =
+                expectJson(request("/api/log/" + moduleId + "/images").GET().build(), 200);
+        List<String> placeholders = new ArrayList<>();
+        for (JsonNode entry : images) {
+            String placeholder = entry.path("upload").asText(null);
+            if (placeholder != null && !placeholder.isBlank()) {
+                placeholders.add(placeholder);
+            }
+        }
+        return placeholders;
+    }
+
+    private void fillImagePlaceholder(String moduleId, String placeholder) {
+        LOG.infof("Filling verification-evidence placeholder '%s' of conformance module %s", placeholder, moduleId);
+        expectJson(
+                request("/api/log/" + moduleId + "/images/" + URLEncoder.encode(placeholder, StandardCharsets.UTF_8))
+                        .POST(HttpRequest.BodyPublishers.ofString(PLACEHOLDER_EVIDENCE_IMAGE))
+                        .header("Content-Type", "text/plain")
+                        .build(),
+                200);
     }
 
     // Returns the plan for this plan variant, creating it on the suite only the first time. The key

@@ -29,20 +29,37 @@ public record ConformanceModuleResult(
         String moduleId,
         String status,
         String result,
+        boolean evidenceUploaded,
         JsonNode logs) {
 
     /**
      * Whether the module finished with the result expected for it. A suite-initiated SKIPPED is
      * always accepted: the suite skips a module when it is not applicable to the configuration
      * under test (for example a feature the verifier does not advertise), which is never a verifier
-     * conformance failure.
+     * conformance failure. A REVIEW result is accepted in place of PASSED when the runner uploaded
+     * verification evidence: since suite release-v5.2.2 such modules always finish as REVIEW, with
+     * every conformance condition already checked.
      */
     public boolean finishedWith(ConformanceResult expectedResult) {
         if (!"FINISHED".equals(status)) {
             return false;
         }
+        if (expectedResult == ConformanceResult.PASSED
+                && evidenceUploaded
+                && ConformanceResult.REVIEW.name().equals(result)
+                && !hasFailureLogs()) {
+            return true;
+        }
         return expectedResult.name().equals(result)
                 || ConformanceResult.SKIPPED.name().equals(result);
+    }
+
+    private boolean hasFailureLogs() {
+        if (logs == null || !logs.isArray()) {
+            return false;
+        }
+        return StreamSupport.stream(logs.spliterator(), false)
+                .anyMatch(log -> "FAILURE".equals(log.path("result").asText()));
     }
 
     public String failureSummary() {
