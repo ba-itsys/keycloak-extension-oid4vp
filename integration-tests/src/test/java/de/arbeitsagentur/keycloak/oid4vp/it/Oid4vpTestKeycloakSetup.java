@@ -37,7 +37,7 @@ public final class Oid4vpTestKeycloakSetup {
                 {
                   "id": "pid_sd_jwt",
                   "format": "dc+sd-jwt",
-                  "meta": { "vct_values": ["urn:eudi:pid:de:1"] },
+                  "meta": { "vct_values": ["urn:eudi:pid:1"] },
                   "claims": [
                     { "path": ["family_name"] },
                     { "path": ["given_name"] },
