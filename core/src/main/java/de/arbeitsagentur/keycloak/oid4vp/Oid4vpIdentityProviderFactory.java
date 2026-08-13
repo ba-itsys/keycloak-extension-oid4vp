@@ -50,9 +50,8 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProviderFactory.class);
 
     private static final Map<String, String> RESOLVED_KEY_CACHE = new ConcurrentHashMap<>();
-    private static final Set<String> WARNED_UNCHECKED_TRUST_LISTS = ConcurrentHashMap.newKeySet();
     private static final Set<String> WARNED_MISSING_CERTIFICATE_BINDINGS = ConcurrentHashMap.newKeySet();
-    private static final Set<String> WARNED_MISSING_LOTE_TYPES = ConcurrentHashMap.newKeySet();
+    private static final Set<String> WARNED_MISSING_TRUST_MATERIAL_IDPS = ConcurrentHashMap.newKeySet();
 
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES;
 
@@ -155,19 +154,12 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .type(ProviderConfigProperty.TEXT_TYPE)
                 .add()
                 .property()
-                .name(Oid4vpIdentityProviderConfig.TRUST_LIST_URL)
-                .label("Trust List URL")
-                .helpText("URL of the ETSI TS 119 612 trust list JWT. "
-                        + "Used to verify issuer signatures on credentials (SD-JWT x5c chains and mDoc COSE_Sign1). "
-                        + "If empty, credential signature verification is skipped.")
-                .type(ProviderConfigProperty.STRING_TYPE)
-                .add()
-                .property()
-                .name(Oid4vpIdentityProviderConfig.TRUST_LIST_LOTE_TYPE)
-                .label("Trust List LoTE Type")
-                .helpText("Expected List of Trusted Entities (LoTE) type for this IdP's trust list. "
-                        + "Keep one trust domain per OID4VP IdP instance. "
-                        + "Leave empty only to accept all LoTE types from the configured trust list.")
+                .name(Oid4vpIdentityProviderConfig.TRUST_MATERIAL_IDPS)
+                .label("Trust Material Identity Providers")
+                .helpText("Comma separated aliases of trust material identity providers (e.g. an ETSI Trust List "
+                        + "provider) used to verify issuer signatures on credentials (SD-JWT x5c chains and mDoc "
+                        + "COSE_Sign1) and status lists. If empty, credential signature verification has no trust "
+                        + "anchors and relies on issuer metadata resolution where allowed.")
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
@@ -184,21 +176,6 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                         Oid4vpTrustedAuthoritiesMode.AKI.configValue()))
                 .add()
                 .property()
-                .name(Oid4vpIdentityProviderConfig.TRUST_LIST_SIGNING_CERT_PEM)
-                .label("Trust List Signing Certificate (PEM)")
-                .helpText("PEM-encoded X.509 certificate used to verify the trust list JWT signature. "
-                        + "If not configured, the trust list JWT signature is not verified and the fetched trust list is trusted as-is. "
-                        + "This is acceptable for local testing only.")
-                .type(ProviderConfigProperty.TEXT_TYPE)
-                .add()
-                .property()
-                .name(Oid4vpIdentityProviderConfig.TRUST_LIST_MAX_CACHE_TTL_SECONDS)
-                .label("Trust List Cache TTL (seconds)")
-                .helpText("Maximum time to cache the trust list. "
-                        + "Leave empty to use ETSI NextUpdate and HTTP cache headers.")
-                .type(ProviderConfigProperty.STRING_TYPE)
-                .add()
-                .property()
                 .name(Oid4vpIdentityProviderConfig.ISSUER_METADATA_MAX_CACHE_TTL_SECONDS)
                 .label("Issuer Metadata Cache TTL (seconds)")
                 .helpText("Maximum time to cache JWT VC Issuer Metadata and resolved issuer JWKS. "
@@ -207,15 +184,6 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .defaultValue(
                         String.valueOf(Oid4vpIdentityProviderConfig.DEFAULT_ISSUER_METADATA_MAX_CACHE_TTL_SECONDS))
-                .add()
-                .property()
-                .name(Oid4vpIdentityProviderConfig.TRUST_LIST_MAX_STALE_AGE_SECONDS)
-                .label("Trust List Max Stale Age (seconds)")
-                .helpText("Maximum age of a stale (expired) trust list cache entry that can be used as fallback "
-                        + "when a trust list refresh fails (e.g., network timeout). "
-                        + "Set to 0 to disable stale cache usage entirely.")
-                .type(ProviderConfigProperty.STRING_TYPE)
-                .defaultValue(String.valueOf(Oid4vpIdentityProviderConfig.DEFAULT_TRUST_LIST_MAX_STALE_AGE_SECONDS))
                 .add()
                 .property()
                 .name(Oid4vpIdentityProviderConfig.USE_ID_TOKEN_SUBJECT)
@@ -263,8 +231,7 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
 
         resolveX509SigningKey(config);
         validateHaipConfig(config);
-        warnIfTrustListSignatureIsUnchecked(config);
-        warnIfTrustListLoTETypeIsMissing(config);
+        warnIfTrustMaterialIdpsAreMissing(config);
 
         return new Oid4vpIdentityProvider(session, config);
     }
@@ -301,29 +268,15 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .validateCertificateBinding(config.getX509CertificatePem(), config.isEnforceHaip());
     }
 
-    private static void warnIfTrustListSignatureIsUnchecked(Oid4vpIdentityProviderConfig config) {
-        if (StringUtil.isBlank(config.getTrustListUrl())
-                || StringUtil.isNotBlank(config.getTrustListSigningCertPem())) {
+    private static void warnIfTrustMaterialIdpsAreMissing(Oid4vpIdentityProviderConfig config) {
+        if (StringUtil.isNotBlank(config.getTrustMaterialIdps())) {
             return;
         }
-        String warningKey = config.getAlias() + "|" + config.getTrustListUrl();
-        if (WARNED_UNCHECKED_TRUST_LISTS.add(warningKey)) {
+        if (WARNED_MISSING_TRUST_MATERIAL_IDPS.add(config.getAlias())) {
             LOG.warnf(
-                    "OID4VP IdP '%s': trustListUrl is configured but trustListSigningCertPem is empty. "
-                            + "The trust list JWT signature will not be verified and fetched trust anchors will be trusted as-is.",
+                    "OID4VP IdP '%s': trustMaterialIdps is empty. Credential signature verification has no trust "
+                            + "anchors; configure a trust material identity provider (e.g. etsi-trust-list).",
                     config.getAlias());
-        }
-    }
-
-    private static void warnIfTrustListLoTETypeIsMissing(Oid4vpIdentityProviderConfig config) {
-        if (StringUtil.isBlank(config.getTrustListUrl()) || StringUtil.isNotBlank(config.getTrustListLoTEType())) {
-            return;
-        }
-        String warningKey = config.getAlias() + "|" + config.getTrustListUrl();
-        if (WARNED_MISSING_LOTE_TYPES.add(warningKey)) {
-            LOG.warnf(
-                    "OID4VP IdP '%s': trustListLoTEType is empty. All LoTE types from trust list %s will be accepted.",
-                    config.getAlias(), config.getTrustListUrl());
         }
     }
 

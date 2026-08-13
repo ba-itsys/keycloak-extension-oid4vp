@@ -17,6 +17,8 @@ package de.arbeitsagentur.keycloak.oid4vp.it;
 
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
+import de.arbeitsagentur.keycloak.oid4vp.trust.EtsiTrustListIdentityProviderConfig;
+import de.arbeitsagentur.keycloak.oid4vp.trust.EtsiTrustListIdentityProviderFactory;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -30,14 +32,29 @@ import org.keycloak.representations.idm.UserRepresentation;
 public final class Oid4vpTestKeycloakSetup {
 
     public static final String IDP_ALIAS = "oid4vp";
+    public static final String TRUST_IDP_ALIAS = "etsi-trust-list";
 
     public static final String SD_JWT_PID_VCT = "urn:eudi:pid:1";
     public static final String MDOC_PID_DOCTYPE = "eu.europa.ec.eudi.pid.1";
 
     private Oid4vpTestKeycloakSetup() {}
 
+    // Default ETSI trust list identity provider serving the wallet's trust list
+    public static IdentityProviderRepresentation defaultTrustListIdentityProvider(String trustListUrl) {
+        IdentityProviderRepresentation idp = new IdentityProviderRepresentation();
+        idp.setAlias(TRUST_IDP_ALIAS);
+        idp.setDisplayName("ETSI Trust List");
+        idp.setProviderId(EtsiTrustListIdentityProviderFactory.PROVIDER_ID);
+        idp.setEnabled(true);
+
+        Map<String, String> config = new LinkedHashMap<>();
+        config.put(EtsiTrustListIdentityProviderConfig.TRUST_LIST_URL, trustListUrl);
+        idp.setConfig(config);
+        return idp;
+    }
+
     // Default OID4VP identity provider used to provision the test realm
-    public static IdentityProviderRepresentation defaultIdentityProvider(String trustListUrl, String x509CertPem) {
+    public static IdentityProviderRepresentation defaultIdentityProvider(String x509CertPem) {
         IdentityProviderRepresentation idp = new IdentityProviderRepresentation();
         idp.setAlias(IDP_ALIAS);
         idp.setDisplayName("Sign in with Wallet");
@@ -54,7 +71,7 @@ public final class Oid4vpTestKeycloakSetup {
         config.put("clientId", "not-used");
         config.put("clientSecret", "not-used");
         config.put(Oid4vpIdentityProviderConfig.PRINCIPAL_ATTRIBUTE, "family_name");
-        config.put(Oid4vpIdentityProviderConfig.TRUST_LIST_URL, trustListUrl);
+        config.put(Oid4vpIdentityProviderConfig.TRUST_MATERIAL_IDPS, TRUST_IDP_ALIAS);
         config.put(Oid4vpIdentityProviderConfig.TRUSTED_AUTHORITIES_MODE, "none");
         config.put(Oid4vpIdentityProviderConfig.STATUS_LIST_MAX_CACHE_TTL_SECONDS, "0");
         config.put(Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM, x509CertPem);

@@ -36,8 +36,6 @@ public interface Oid4vpConfigProvider {
      */
     boolean isIssuerAllowed(String issuer);
 
-    String getTrustListLoTEType();
-
     /**
      * Dot notation claim path of the claim that becomes the brokered subject. For mDoc
      * presentations the path addresses a data element, resolved against each presented namespace.

@@ -200,6 +200,16 @@ cat > "$REALM_OUT" <<REALMEOF
   ],
   "identityProviders": [
     {
+      "alias": "etsi-trust-list",
+      "displayName": "ETSI Trust List",
+      "providerId": "etsi-trust-list",
+      "enabled": true,
+      "config": {
+        "trustListUrl": "${TRUST_LIST_URL}",
+        "trustListLoTEType": "http://uri.etsi.org/19602/LoTEType/EUPIDProvidersList"
+      }
+    },
+    {
       "alias": "oid4vp",
       "displayName": "Sign in with Wallet",
       "providerId": "oid4vp",
@@ -214,11 +224,10 @@ cat > "$REALM_OUT" <<REALMEOF
         "clientId": "not-used",
         "clientSecret": "not-used",
         "enforceHaip": "true",
-        "trustListUrl": "${TRUST_LIST_URL}",
+        "trustMaterialIdps": "etsi-trust-list",
         "clientIdScheme": "x509_san_dns",
         "walletScheme": "openid4vp://",
         "principalAttribute": "family_name",
-        "trustListLoTEType": "http://uri.etsi.org/19602/LoTEType/EUPIDProvidersList",
         "x509CertificatePem": "${PEM_CONTENT}",
         "verifierInfo": "${VERIFIER_INFO_CONTENT}"
       }

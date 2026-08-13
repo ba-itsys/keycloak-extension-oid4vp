@@ -114,7 +114,7 @@ During `setup()`, the k6 script updates the OID4VP IdP to keep the loadtest pred
 - uses `clientIdScheme=plain`
 - keeps `responseMode=direct_post.jwt`
 - reduces DCQL to one SD-JWT PID credential
-- points `trustListUrl` at the local `oid4vc-dev` wallet container
+- creates an `etsi-trust-list` trust material IdP pointing at the local `oid4vc-dev` wallet container and references it via `trustMaterialIdps`
 
 That avoids first-login persistence races and keeps the measured path focused on the browser SSE flow.
 

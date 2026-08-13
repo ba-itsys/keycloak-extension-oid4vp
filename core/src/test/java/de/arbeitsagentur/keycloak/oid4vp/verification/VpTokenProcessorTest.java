@@ -32,6 +32,7 @@ import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
+import de.arbeitsagentur.keycloak.oid4vp.trust.TestTrust;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -72,8 +73,8 @@ class VpTokenProcessorTest {
         signingKey = new ECKeyGenerator(Curve.P_256).generate();
         holderKey = new ECKeyGenerator(Curve.P_256).generate();
         signingCert = generateSelfSignedCert(signingKey);
-        TrustListProvider trustListProvider = new TrustListProvider(List.of(signingCert));
-        processor = new VpTokenProcessor(objectMapper, new StatusListVerifier(), trustListProvider);
+        processor = new VpTokenProcessor(
+                objectMapper, new StatusListVerifier(), () -> TestTrust.ofCertificates(signingCert));
     }
 
     @Test

@@ -15,15 +15,12 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
-import java.io.ByteArrayInputStream;
+import de.arbeitsagentur.keycloak.oid4vp.trust.X509CertificateChainValidator;
 import java.nio.charset.StandardCharsets;
 import java.security.PublicKey;
 import java.security.cert.CertificateExpiredException;
-import java.security.cert.CertificateFactory;
 import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.X509Certificate;
-import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import org.jboss.logging.Logger;
@@ -36,11 +33,13 @@ import org.keycloak.util.JsonSerialization;
 import org.keycloak.util.KeyWrapperUtil;
 
 /**
- * Validates x5c certificate chains against a set of trusted CA certificates.
- * Shared by SD-JWT, mDoc, status list, and trust list signature verification.
+ * JWT signature verification against pinned trusted certificates, used for trust list and status
+ * list JWTs.
  *
- * <p>Performs both signature chain validation and certificate validity period checks
- * ({@link X509Certificate#checkValidity()}) on all certificates in the presented chain.
+ * <p>A presented x5c chain is accepted when its leaf is one of the trusted certificates (pinned)
+ * or when it builds a PKIX path to a trusted CA certificate via
+ * {@link X509CertificateChainValidator}. Without a usable x5c chain, the signature is verified
+ * directly against each trusted certificate's key.
  */
 public final class X5cChainValidator {
 
@@ -78,71 +77,38 @@ public final class X5cChainValidator {
         }
     }
 
+    /**
+     * Returns the leaf key of an x5c chain whose leaf is pinned in the trusted certificates or
+     * that builds a PKIX path to a trusted CA certificate.
+     */
     static PublicKey validateChain(List<String> x5c, List<X509Certificate> trustedCertificates) throws Exception {
-        CertificateFactory cf = CertificateFactory.getInstance("X.509");
-        List<X509Certificate> chain = new ArrayList<>();
-        for (String certB64 : x5c) {
-            byte[] certDer = Base64.getMimeDecoder().decode(certB64);
-            chain.add((X509Certificate) cf.generateCertificate(new ByteArrayInputStream(certDer)));
-        }
-        return validateCertChain(chain, trustedCertificates);
-    }
-
-    static PublicKey validateCertChain(List<X509Certificate> chain, List<X509Certificate> trustedCertificates)
-            throws Exception {
-        if (chain.isEmpty()) {
-            throw new IllegalStateException("Empty x5c chain");
-        }
-
+        List<X509Certificate> chain = X509CertificateChainValidator.decodeCertificateChain(x5c);
         X509Certificate leaf = chain.get(0);
         LOG.debugf("x5c leaf certificate: %s", leaf.getSubjectX500Principal().getName());
 
-        for (int i = 0; i < chain.size(); i++) {
-            try {
-                chain.get(i).checkValidity();
-            } catch (CertificateExpiredException e) {
-                throw new IllegalStateException(
-                        "x5c certificate at position " + i + " has expired: "
-                                + chain.get(i).getSubjectX500Principal().getName(),
-                        e);
-            } catch (CertificateNotYetValidException e) {
-                throw new IllegalStateException(
-                        "x5c certificate at position " + i + " is not yet valid: "
-                                + chain.get(i).getSubjectX500Principal().getName(),
-                        e);
-            }
+        if (trustedCertificates.contains(leaf)) {
+            leaf.checkValidity();
+            LOG.debug("x5c leaf certificate is a pinned trusted certificate");
+            return leaf.getPublicKey();
         }
 
-        if (chain.size() > 1 && leaf.getBasicConstraints() >= 0) {
-            throw new IllegalStateException("x5c leaf certificate must not be a CA certificate");
+        List<X509Certificate> anchors = trustedCertificates.stream()
+                .filter(X5cChainValidator::isCaCertificate)
+                .toList();
+        if (anchors.isEmpty()) {
+            throw new IllegalStateException("x5c chain not anchored by any trusted certificate");
         }
+        X509CertificateChainValidator.validateCertificateChain(chain, anchors, List.of());
+        return leaf.getPublicKey();
+    }
 
-        for (int i = 0; i < chain.size() - 1; i++) {
-            X509Certificate certificate = chain.get(i);
-            X509Certificate issuer = chain.get(i + 1);
-            if (issuer.getBasicConstraints() < 0) {
-                throw new IllegalStateException(
-                        "x5c issuer certificate at position " + (i + 1) + " is not a CA certificate");
-            }
-            certificate.verify(issuer.getPublicKey());
+    /** Returns whether the certificate is a CA certificate usable for certificate signing. */
+    public static boolean isCaCertificate(X509Certificate certificate) {
+        if (certificate.getBasicConstraints() < 0) {
+            return false;
         }
-
-        X509Certificate topOfChain = chain.get(chain.size() - 1);
-        if (chain.size() > 1 && topOfChain.getBasicConstraints() < 0) {
-            throw new IllegalStateException("x5c top certificate must be a CA certificate");
-        }
-        for (X509Certificate trusted : trustedCertificates) {
-            try {
-                topOfChain.verify(trusted.getPublicKey());
-                LOG.debugf(
-                        "x5c chain anchored by trusted certificate: %s",
-                        trusted.getSubjectX500Principal().getName());
-                return leaf.getPublicKey();
-            } catch (Exception ignored) {
-            }
-        }
-
-        throw new IllegalStateException("x5c chain not anchored by any trusted certificate");
+        boolean[] keyUsage = certificate.getKeyUsage();
+        return keyUsage == null || (keyUsage.length > 5 && keyUsage[5]);
     }
 
     public static void validateConfiguredVerifierChain(List<X509Certificate> chain) throws Exception {

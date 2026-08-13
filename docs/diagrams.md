@@ -78,7 +78,7 @@ sequenceDiagram
     Note over Keycloak: SD-JWT VC: issuer signature + KB-JWT checks<br/>mDoc: issuer signature + device authentication checks
 
     Note over Keycloak,TrustList: Trust-chain validation
-    Keycloak->>TrustList: GET trustListUrl
+    Keycloak->>TrustList: GET trust list URL (etsi-trust-list IdP)
     TrustList-->>Keycloak: ETSI TS 119 602 trust list JWT
     Note over Keycloak: Used for x5c / mDoc issuer trust and for status-list signer trust
 

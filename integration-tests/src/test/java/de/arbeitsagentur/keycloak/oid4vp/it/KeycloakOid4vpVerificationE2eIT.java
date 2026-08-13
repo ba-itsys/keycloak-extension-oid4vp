@@ -15,10 +15,10 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.it;
 
-import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestCertificates;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
+import de.arbeitsagentur.keycloak.oid4vp.trust.EtsiTrustListIdentityProviderConfig;
 import io.github.dominikschlosser.eudi.CredentialFormat;
 import java.security.KeyPair;
 import java.security.cert.X509Certificate;
@@ -66,7 +66,7 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
         KeyPair wrongKeyPair = TestCertificates.generateEcKeyPair();
         X509Certificate wrongCert = TestCertificates.generateCaCert(wrongKeyPair);
         String wrongCertPem = TestCertificates.toPem("CERTIFICATE", wrongCert.getEncoded());
-        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.TRUST_LIST_SIGNING_CERT_PEM, wrongCertPem));
+        setTrustIdpConfig(Map.of(EtsiTrustListIdentityProviderConfig.TRUST_LIST_SIGNING_CERT_PEM, wrongCertPem));
 
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
@@ -81,8 +81,8 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
 
     @Test
     void trustListLoTETypeMismatchIsRejected() throws Exception {
-        setIdpConfig(Map.of(
-                Oid4vpIdentityProviderConfig.TRUST_LIST_LOTE_TYPE,
+        setTrustIdpConfig(Map.of(
+                EtsiTrustListIdentityProviderConfig.TRUST_LIST_LOTE_TYPE,
                 "http://uri.etsi.org/19602/LoTEType/EUWalletProvidersList"));
 
         flow.clearBrowserSession();

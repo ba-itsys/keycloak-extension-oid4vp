@@ -27,15 +27,15 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.PreparedDcqlQuery;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpCallbackProcessor;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpRedirectFlowService;
+import de.arbeitsagentur.keycloak.oid4vp.trust.Oid4vpTrustMaterialResolver;
+import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
 import de.arbeitsagentur.keycloak.oid4vp.util.DcqlQueryBuilder;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpQrCodeService;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
-import de.arbeitsagentur.keycloak.oid4vp.verification.TrustListProvider;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor;
 import jakarta.ws.rs.core.Response;
 import java.net.URI;
 import java.security.SecureRandom;
-import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -44,7 +44,6 @@ import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.broker.provider.AuthenticationRequest;
 import org.keycloak.broker.provider.IdentityBrokerException;
-import org.keycloak.common.util.PemUtils;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.FederatedIdentityModel;
@@ -76,13 +75,12 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     private final Oid4vpQrCodeService qrCodeService;
     private final Oid4vpCallbackProcessor callbackProcessor;
     private final Oid4vpRequestObjectStore requestObjectStore;
+    private final Oid4vpTrustMaterialResolver trustMaterialResolver = new Oid4vpTrustMaterialResolver();
 
     public Oid4vpIdentityProvider(KeycloakSession session, Oid4vpIdentityProviderConfig config) {
         super(session, config);
         this.redirectFlowService = new Oid4vpRedirectFlowService(session, config.getRequestObjectLifespanSeconds());
         this.qrCodeService = new Oid4vpQrCodeService();
-
-        List<X509Certificate> trustListSigningCerts = parseTrustListSigningCerts(config.getTrustListSigningCertPem());
 
         this.callbackProcessor = new Oid4vpCallbackProcessor(
                 config,
@@ -92,16 +90,12 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                         OBJECT_MAPPER,
                         new VpTokenProcessor.Config(
                                 session,
-                                config.getTrustListUrl(),
+                                this::resolveTrust,
                                 config.getStatusListMaxCacheTtl(),
-                                config.getTrustListMaxCacheTtl(),
                                 config.getIssuerMetadataMaxCacheTtl(),
                                 config.isEnforceHaip(),
                                 config.getClockSkewSeconds(),
-                                config.getKbJwtMaxAgeSeconds(),
-                                trustListSigningCerts,
-                                config.getTrustListMaxStaleAge(),
-                                config.getTrustListLoTEType())));
+                                config.getKbJwtMaxAgeSeconds())));
 
         RealmModel realm = session.getContext().getRealm();
         int loginTimeoutSeconds = realm != null ? realm.getAccessCodeLifespanLogin() : DEFAULT_LOGIN_TIMEOUT_SECONDS;
@@ -171,47 +165,35 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                     "No DCQL query configured. Add at least one OID4VP mapper with a credential type to the identity provider.");
         }
 
+        Oid4vpTrustedAuthoritiesMode trustedAuthoritiesMode = getConfig().getTrustedAuthoritiesMode();
+        ResolvedTrust trustedAuthoritiesTrust =
+                trustedAuthoritiesMode.isEnabled() ? resolveTrust() : ResolvedTrust.empty();
+        warnIfAuthorityKeyIdentifiersMissing(trustedAuthoritiesMode, trustedAuthoritiesTrust);
         String dcqlQuery = DcqlQueryBuilder.fromMapperSpecs(
                         OBJECT_MAPPER,
                         credentialTypes,
                         getConfig().isAllCredentialsRequired(),
                         getConfig().getCredentialSetPurpose(),
-                        getConfig().getTrustedAuthoritiesMode(),
-                        getConfig().getTrustListUrl(),
-                        resolveAuthorityKeyIdentifiers())
+                        trustedAuthoritiesMode,
+                        trustedAuthoritiesTrust.trustListUrls(),
+                        trustedAuthoritiesTrust.authorityKeyIdentifiers())
                 .build();
         List<RequestedCredential> requestedCredentials =
                 credentialTypes.values().stream().map(RequestedCredential::of).toList();
         return new PreparedDcqlQuery(dcqlQuery, requestedCredentials);
     }
 
-    private List<String> resolveAuthorityKeyIdentifiers() {
-        if (StringUtil.isBlank(getConfig().getTrustListUrl())
-                || getConfig().getTrustedAuthoritiesMode() != Oid4vpTrustedAuthoritiesMode.AKI) {
-            return List.of();
-        }
-        List<X509Certificate> trustListSigningCerts =
-                parseTrustListSigningCerts(getConfig().getTrustListSigningCertPem());
-        TrustListProvider trustListProvider = new TrustListProvider(
-                session,
-                getConfig().getTrustListUrl(),
-                getConfig().getTrustListMaxCacheTtl(),
-                getConfig().getTrustListMaxStaleAge(),
-                trustListSigningCerts);
-        try {
-            List<String> authorityKeyIdentifiers = trustListProvider.getTrustedAuthorityKeyIdentifiers();
-            if (authorityKeyIdentifiers.isEmpty()) {
-                LOG.warnf(
-                        "OID4VP IdP '%s': trusted_authorities type 'aki' is enabled, but no certificate key identifiers could be extracted from trust list %s",
-                        getConfig().getAlias(), getConfig().getTrustListUrl());
-                return List.of();
-            }
-            return authorityKeyIdentifiers;
-        } catch (Exception e) {
+    /** Resolves the aggregated trust material of the configured trust material identity providers. */
+    public ResolvedTrust resolveTrust() {
+        return trustMaterialResolver.resolveTrust(session, getConfig().getTrustMaterialIdps());
+    }
+
+    private void warnIfAuthorityKeyIdentifiersMissing(Oid4vpTrustedAuthoritiesMode mode, ResolvedTrust trust) {
+        if (mode == Oid4vpTrustedAuthoritiesMode.AKI
+                && trust.authorityKeyIdentifiers().isEmpty()) {
             LOG.warnf(
-                    "OID4VP IdP '%s': failed to derive trusted_authorities type 'aki' values from trust list %s: %s",
-                    getConfig().getAlias(), getConfig().getTrustListUrl(), e.getMessage());
-            return List.of();
+                    "OID4VP IdP '%s': trusted_authorities type 'aki' is enabled, but the trust material identity providers '%s' expose no certificate key identifiers",
+                    getConfig().getAlias(), getConfig().getTrustMaterialIdps());
         }
     }
 
@@ -382,21 +364,6 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 .build();
         String value = realmBase.toString();
         return value.endsWith("/") ? value : value + "/";
-    }
-
-    private static List<X509Certificate> parseTrustListSigningCerts(String pem) {
-        if (pem == null || pem.isBlank()) {
-            return null;
-        }
-        try {
-            X509Certificate[] certs = PemUtils.decodeCertificates(pem);
-            if (certs != null && certs.length > 0) {
-                return List.of(certs);
-            }
-        } catch (Exception e) {
-            LOG.warnf("Failed to parse trust list signing certificate(s): %s", e.getMessage());
-        }
-        return null;
     }
 
     record LoginContext(String rootSessionId, String flowTabId, String effectiveClientId) {}

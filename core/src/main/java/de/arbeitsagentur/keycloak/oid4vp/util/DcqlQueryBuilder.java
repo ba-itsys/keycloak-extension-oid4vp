@@ -59,7 +59,7 @@ public class DcqlQueryBuilder {
     private boolean allCredentialsRequired = false;
     private String purpose;
     private Oid4vpTrustedAuthoritiesMode trustedAuthoritiesMode = Oid4vpTrustedAuthoritiesMode.NONE;
-    private String trustedAuthoritiesTrustListUrl;
+    private List<String> trustedAuthoritiesTrustListUrls = List.of();
     private List<String> trustedAuthoritiesAuthorityKeyIdentifiers = List.of();
 
     public DcqlQueryBuilder(ObjectMapper objectMapper) {
@@ -82,31 +82,31 @@ public class DcqlQueryBuilder {
     }
 
     /**
-     * Sets the ETSI Trusted List URL to include as a {@code trusted_authorities} constraint
+     * Sets the ETSI Trusted List URLs to include as a {@code trusted_authorities} constraint
      * on each credential entry. When set, each credential in the DCQL query will contain
-     * {@code "trusted_authorities": [{"type": "etsi_tl", "values": ["<url>"]}]}.
+     * {@code "trusted_authorities": [{"type": "etsi_tl", "values": ["<url>", ...]}]}.
      *
      * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1.1">OID4VP 1.0 §6.1.1 — Trusted Authorities Query</a>
      */
-    public DcqlQueryBuilder setTrustListUrl(String trustListUrl) {
+    public DcqlQueryBuilder setTrustListUrls(List<String> trustListUrls) {
         this.trustedAuthoritiesMode = Oid4vpTrustedAuthoritiesMode.ETSI_TL;
-        this.trustedAuthoritiesTrustListUrl = trustListUrl;
+        this.trustedAuthoritiesTrustListUrls = trustListUrls != null ? List.copyOf(trustListUrls) : List.of();
         this.trustedAuthoritiesAuthorityKeyIdentifiers = List.of();
         return this;
     }
 
-    public DcqlQueryBuilder setTrustedAuthorities(String trustListUrl, List<String> authorityKeyIdentifiers) {
+    public DcqlQueryBuilder setTrustedAuthorities(List<String> trustListUrls, List<String> authorityKeyIdentifiers) {
         this.trustedAuthoritiesMode = Oid4vpTrustedAuthoritiesMode.AKI;
-        this.trustedAuthoritiesTrustListUrl = trustListUrl;
+        this.trustedAuthoritiesTrustListUrls = trustListUrls != null ? List.copyOf(trustListUrls) : List.of();
         this.trustedAuthoritiesAuthorityKeyIdentifiers =
                 authorityKeyIdentifiers != null ? List.copyOf(authorityKeyIdentifiers) : List.of();
         return this;
     }
 
     public DcqlQueryBuilder setTrustedAuthoritiesMode(
-            Oid4vpTrustedAuthoritiesMode mode, String trustListUrl, List<String> authorityKeyIdentifiers) {
+            Oid4vpTrustedAuthoritiesMode mode, List<String> trustListUrls, List<String> authorityKeyIdentifiers) {
         this.trustedAuthoritiesMode = mode != null ? mode : Oid4vpTrustedAuthoritiesMode.NONE;
-        this.trustedAuthoritiesTrustListUrl = trustListUrl;
+        this.trustedAuthoritiesTrustListUrls = trustListUrls != null ? List.copyOf(trustListUrls) : List.of();
         this.trustedAuthoritiesAuthorityKeyIdentifiers =
                 authorityKeyIdentifiers != null ? List.copyOf(authorityKeyIdentifiers) : List.of();
         return this;
@@ -149,14 +149,14 @@ public class DcqlQueryBuilder {
             Map<String, CredentialTypeSpec> credentialTypes,
             boolean allCredentialsRequired,
             String purpose,
-            String trustListUrl) {
+            List<String> trustListUrls) {
         return fromMapperSpecs(
                 objectMapper,
                 credentialTypes,
                 allCredentialsRequired,
                 purpose,
                 Oid4vpTrustedAuthoritiesMode.ETSI_TL,
-                trustListUrl,
+                trustListUrls,
                 List.of());
     }
 
@@ -166,12 +166,12 @@ public class DcqlQueryBuilder {
             boolean allCredentialsRequired,
             String purpose,
             Oid4vpTrustedAuthoritiesMode trustedAuthoritiesMode,
-            String trustListUrl,
+            List<String> trustListUrls,
             List<String> authorityKeyIdentifiers) {
         DcqlQueryBuilder builder = new DcqlQueryBuilder(objectMapper);
         builder.setAllCredentialsRequired(allCredentialsRequired);
         builder.setPurpose(purpose);
-        builder.setTrustedAuthoritiesMode(trustedAuthoritiesMode, trustListUrl, authorityKeyIdentifiers);
+        builder.setTrustedAuthoritiesMode(trustedAuthoritiesMode, trustListUrls, authorityKeyIdentifiers);
         builder.credentialTypes.addAll(credentialTypes.values());
         return builder;
     }
@@ -287,7 +287,7 @@ public class DcqlQueryBuilder {
         credential.put(DCQL_META, buildMetaConstraint(typeSpec));
 
         List<Map<String, Object>> trustedAuthorities = trustedAuthoritiesMode.toDcqlEntries(
-                trustedAuthoritiesTrustListUrl, trustedAuthoritiesAuthorityKeyIdentifiers);
+                trustedAuthoritiesTrustListUrls, trustedAuthoritiesAuthorityKeyIdentifiers);
         if (!trustedAuthorities.isEmpty()) {
             credential.put(DCQL_TRUSTED_AUTHORITIES, trustedAuthorities);
         }

@@ -99,36 +99,48 @@ This mode is intended for credentials that do not carry a stable account identif
 | Key | Description | Default |
 |-----|-------------|---------|
 | `enforceHaip` | Enables the HAIP-oriented effective configuration (`direct_post.jwt` and `x509_hash`). | `true` |
-| `trustListUrl` | URL of an ETSI TS 119 602 trust list JWT. | *(none)* |
-| `trustListLoTEType` | Expected trust-list LoTE type for this IdP. Keep one trust domain per OID4VP IdP instance. Leave empty only to accept all LoTE types from the configured trust list. | empty |
-| `trustedAuthoritiesMode` | DCQL `trusted_authorities` mode: `none`, `etsi_tl`, or `aki`. | `none` |
-| `trustListSigningCertPem` | PEM-encoded certificate chain used to verify the trust list JWT signature. If omitted, the trust list JWT is not signature-verified. | *(none)* |
+| `trustMaterialIdps` | Comma-separated aliases of trust material identity providers (see below). All referenced providers contribute trust anchors, directly trusted issuer certificates, and revocation trust. | *(none)* |
+| `trustedAuthoritiesMode` | DCQL `trusted_authorities` mode: `none`, `etsi_tl`, or `aki`. The advertised values come from the referenced trust material identity providers. | `none` |
 | `allowedIssuers` | Comma-separated list of allowed SD-JWT issuer (`iss`) values, or `*`. mDoc credentials are not checked against this list because mDoc does not define a standard canonical credential-issuer string equivalent to SD-JWT `iss`. | `*` |
 | `clockSkewSeconds` | Clock skew tolerance for credential verification. | `60` |
 | `kbJwtMaxAgeSeconds` | Maximum accepted age of the SD-JWT KB-JWT `iat` claim. | `300` |
 
+Trust configuration lives on separate trust material identity providers, referenced by alias. This matches the trust material delegation model of upstream Keycloak's OID4VP work.
+
+### ETSI Trust List Identity Provider (`etsi-trust-list`)
+
+A dedicated identity provider type carries the trust material. It never authenticates users and is hidden from login pages; OID4VP identity providers reference it through `trustMaterialIdps`. Trust anchors come from an ETSI TS 119 602 trust list URL (fetched, cached, and refreshed automatically), from a pasted PEM certificate bundle, or both. CA certificates become X.509 trust anchors for credential certificate chains, end entity certificates are trusted directly (pinned leaf or chainless credentials).
+
+| Key | Description | Default |
+|-----|-------------|---------|
+| `trustListUrl` | URL of an ETSI TS 119 602 trust list JWT. | *(none)* |
+| `trustListSigningCertPem` | PEM-encoded certificate chain used to verify the trust list JWT signature. If omitted, the trust list JWT is not signature-verified. | *(none)* |
+| `trustListLoTEType` | Expected trust-list LoTE type. Keep one trust domain per provider instance. Leave empty only to accept all LoTE types from the configured trust list. | empty |
+| `trustListMaxCacheTtlSeconds` | Optional maximum cache TTL for the trust list. The effective lifetime is capped earlier by ETSI `NextUpdate` and HTTP cache headers. | *(use trust-list freshness metadata)* |
+| `trustListMaxStaleAgeSeconds` | Maximum age of an expired trust-list cache entry that may be reused when refresh fails. Set `0` to disable stale fallback. | `86400` |
+| `trustedCertificates` | PEM-encoded X.509 certificate bundle of trusted issuers, used instead of or in addition to the trust list URL. | *(none)* |
+| `requiredExtendedKeyUsages` | Comma-separated extended key usage OIDs. When set, credential signing certificates must contain at least one of them (e.g. `1.0.18013.5.1.2` for mDL document signers). | *(none)* |
+
 For SD-JWT VC verification, the verifier tries issuer-key resolution in this order:
 
-1. `x5c` certificate-chain validation against the trust list
+1. `x5c` certificate-chain validation: a pinned trusted leaf certificate or a PKIX path to the trust anchors
 2. When HAIP is disabled, JWT VC issuer metadata lookup via `iss` + JOSE `kid` from `/.well-known/jwt-vc-issuer`, including `jwks_uri`
-3. Final direct trusted-certificate fallback for non-HAIP deployments
+3. Final fallback to directly trusted issuer certificates and trusted issuer JWKs for non-HAIP deployments
 
 When `enforceHaip=true`, only the `x5c` path is attempted.
 
 By default, the verifier only trusts the credential types this IdP actually requested in its DCQL query. Those types come from the credential types declared on the configured OID4VP mappers.
 
-Use one OID4VP IdP instance per trust domain. If `trustListLoTEType` is configured, it must match the fetched trust list's `ListAndSchemeInformation.LoTEType`. If it is left empty, all LoTE types from that trust list are accepted and the provider logs a warning.
+Use one trust material identity provider instance per trust domain. If `trustListLoTEType` is configured, it must match the fetched trust list's `ListAndSchemeInformation.LoTEType`. If it is left empty, all LoTE types from that trust list are accepted.
 Within the accepted trust list, credential signature verification uses only `.../SvcType/.../Issuance` services. Status-list JWT verification uses only `.../SvcType/.../Revocation` services.
 
 ### Caching
 
-Trust lists are cached until the earliest of ETSI `ListAndSchemeInformation.NextUpdate`, HTTP cache headers, and `trustListMaxCacheTtlSeconds` when configured. A trust list whose `NextUpdate` is already in the past is discarded as expired. Trust-list responses without `NextUpdate` are not cached and are not reused as stale fallback. Status lists are cached according to their `ttl` claim when present, capped by `exp` if present; if `ttl` is absent they fall back to `exp`. Status-list responses without both `ttl` and `exp` are treated as immediately expired. JWT VC issuer metadata caching is bounded by HTTP cache headers, `issuerMetadataMaxCacheTtlSeconds`, and each JWK's optional `exp`, whichever expires first.
+Trust lists are cached until the earliest of ETSI `ListAndSchemeInformation.NextUpdate`, HTTP cache headers, and the trust material identity provider's `trustListMaxCacheTtlSeconds` when configured. A trust list whose `NextUpdate` is already in the past is discarded as expired. Trust-list responses without `NextUpdate` are not cached and are not reused as stale fallback. Status lists are cached according to their `ttl` claim when present, capped by `exp` if present; if `ttl` is absent they fall back to `exp`. Status-list responses without both `ttl` and `exp` are treated as immediately expired. JWT VC issuer metadata caching is bounded by HTTP cache headers, `issuerMetadataMaxCacheTtlSeconds`, and each JWK's optional `exp`, whichever expires first.
 
 | Key | Description | Default |
 |-----|-------------|---------|
 | `statusListMaxCacheTtlSeconds` | Optional maximum cache TTL for token status lists. The effective lifetime uses status-list `ttl` when present, capped by `exp`; otherwise it falls back to `exp`. | *(use status-list ttl / exp)* |
-| `trustListMaxCacheTtlSeconds` | Optional maximum cache TTL for trust lists. The effective lifetime is capped earlier by ETSI `NextUpdate` and HTTP cache headers. | *(use trust-list freshness metadata)* |
-| `trustListMaxStaleAgeSeconds` | Maximum age of an expired trust-list cache entry that may be reused when refresh fails. Set `0` to disable stale fallback. | `86400` |
 | `issuerMetadataMaxCacheTtlSeconds` | Optional maximum cache TTL for JWT VC issuer metadata and resolved issuer JWKS. The effective lifetime is capped earlier by HTTP `Cache-Control` and any JWK `exp`. Set `0` to disable issuer-metadata caching. | `86400` |
 
 ### Cross-Device SSE

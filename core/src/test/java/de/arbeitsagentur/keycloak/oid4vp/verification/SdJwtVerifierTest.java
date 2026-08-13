@@ -30,6 +30,8 @@ import com.nimbusds.jose.util.Base64URL;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SdJwtVerificationResult;
+import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
+import de.arbeitsagentur.keycloak.oid4vp.trust.TestTrust;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -92,7 +94,7 @@ class SdJwtVerifierTest {
                 buildSignedJwt(Map.of("iss", "https://issuer.example", "vct", "IdentityCredential", "sub", "user123"));
         String sdJwt = jwt + "~";
 
-        SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, List.of(signingCert));
+        SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, TestTrust.ofCertificates(signingCert));
 
         assertThat(result.issuer()).isEqualTo("https://issuer.example");
         assertThat(result.credentialType()).isEqualTo("IdentityCredential");
@@ -111,7 +113,7 @@ class SdJwtVerifierTest {
         signedJWT.sign(new ECDSASigner(signingKey));
         String sdJwt = signedJWT.serialize() + "~";
 
-        assertThatThrownBy(() -> verifier.verify(sdJwt, null, null, List.of(signingCert)))
+        assertThatThrownBy(() -> verifier.verify(sdJwt, null, null, TestTrust.ofCertificates(signingCert)))
                 .isInstanceOf(IllegalStateException.class);
     }
 
@@ -120,7 +122,7 @@ class SdJwtVerifierTest {
         String jwt = buildSignedJwt(Map.of("iss", "test"));
         String sdJwt = jwt + "~";
 
-        assertThatThrownBy(() -> verifier.verify(sdJwt, null, null, List.of()))
+        assertThatThrownBy(() -> verifier.verify(sdJwt, null, null, ResolvedTrust.empty()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("No trusted keys available");
     }
@@ -142,7 +144,7 @@ class SdJwtVerifierTest {
                 "_sd_alg", "sha-256"));
         String sdJwt = jwt + "~" + disclosureB64 + "~";
 
-        SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, List.of(signingCert));
+        SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, TestTrust.ofCertificates(signingCert));
 
         assertThat(result.claims()).containsEntry("given_name", "John");
         assertThat(result.claims()).doesNotContainKey("_sd");
@@ -162,7 +164,7 @@ class SdJwtVerifierTest {
                 "_sd_alg", "sha-256"));
         String sdJwt = jwt + "~" + disclosureB64 + "~";
 
-        assertThatThrownBy(() -> verifier.verify(sdJwt, null, null, List.of(signingCert)))
+        assertThatThrownBy(() -> verifier.verify(sdJwt, null, null, TestTrust.ofCertificates(signingCert)))
                 .isInstanceOf(IllegalStateException.class);
     }
 
@@ -202,7 +204,7 @@ class SdJwtVerifierTest {
 
         String sdJwt = jwt + "~" + givenNameB64 + "~" + addressB64 + "~" + localityB64 + "~" + streetB64 + "~";
 
-        SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, List.of(signingCert));
+        SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, TestTrust.ofCertificates(signingCert));
 
         assertThat(result.claims()).containsEntry("given_name", "ERIKA");
         assertThat(result.claims()).containsKey("address");
@@ -230,7 +232,7 @@ class SdJwtVerifierTest {
                 buildSdJwtVpWithKbJwt(credJwt, holderKey, "https://verifier.example", "test-nonce", Instant.now());
 
         SdJwtVerificationResult result =
-                verifier.verify(sdJwt, "https://verifier.example", "test-nonce", List.of(signingCert));
+                verifier.verify(sdJwt, "https://verifier.example", "test-nonce", TestTrust.ofCertificates(signingCert));
 
         assertThat(result.issuer()).isEqualTo("https://issuer.example");
         assertThat(result.claims()).containsEntry("sub", "user123");
@@ -249,7 +251,7 @@ class SdJwtVerifierTest {
                 buildSdJwtVpWithKbJwt(credJwt, holderKey, "https://verifier.example", "test-nonce", Instant.now());
 
         SdJwtVerificationResult result =
-                verifier.verify(sdJwt, "https://verifier.example", "test-nonce", List.of(signingCert));
+                verifier.verify(sdJwt, "https://verifier.example", "test-nonce", TestTrust.ofCertificates(signingCert));
 
         assertThat(result.issuer()).isEqualTo("https://issuer.example");
     }
@@ -268,7 +270,8 @@ class SdJwtVerifierTest {
         Instant staleIat = Instant.now().minusSeconds(600);
         String sdJwt = buildSdJwtVpWithKbJwt(credJwt, holderKey, "https://verifier.example", "test-nonce", staleIat);
 
-        assertThatThrownBy(() -> verifier.verify(sdJwt, "https://verifier.example", "test-nonce", List.of(signingCert)))
+        assertThatThrownBy(() -> verifier.verify(
+                        sdJwt, "https://verifier.example", "test-nonce", TestTrust.ofCertificates(signingCert)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("expired by iat");
     }
@@ -282,7 +285,8 @@ class SdJwtVerifierTest {
         String sdJwt =
                 buildSdJwtVpWithKbJwt(credJwt, holderKey, "https://verifier.example", "test-nonce", Instant.now());
 
-        assertThatThrownBy(() -> verifier.verify(sdJwt, "https://verifier.example", "test-nonce", List.of(signingCert)))
+        assertThatThrownBy(() -> verifier.verify(
+                        sdJwt, "https://verifier.example", "test-nonce", TestTrust.ofCertificates(signingCert)))
                 .isInstanceOf(IllegalStateException.class);
     }
 
@@ -299,7 +303,8 @@ class SdJwtVerifierTest {
         String sdJwt = buildSdJwtVpWithKbJwt(
                 credJwt, holderKey, "https://wrong-audience.example", "test-nonce", Instant.now());
 
-        assertThatThrownBy(() -> verifier.verify(sdJwt, "https://verifier.example", "test-nonce", List.of(signingCert)))
+        assertThatThrownBy(() -> verifier.verify(
+                        sdJwt, "https://verifier.example", "test-nonce", TestTrust.ofCertificates(signingCert)))
                 .isInstanceOf(IllegalStateException.class);
     }
 
@@ -316,7 +321,8 @@ class SdJwtVerifierTest {
         String sdJwt =
                 buildSdJwtVpWithKbJwt(credJwt, holderKey, "https://verifier.example", "wrong-nonce", Instant.now());
 
-        assertThatThrownBy(() -> verifier.verify(sdJwt, "https://verifier.example", "test-nonce", List.of(signingCert)))
+        assertThatThrownBy(() -> verifier.verify(
+                        sdJwt, "https://verifier.example", "test-nonce", TestTrust.ofCertificates(signingCert)))
                 .isInstanceOf(IllegalStateException.class);
     }
 
@@ -336,7 +342,7 @@ class SdJwtVerifierTest {
         String sdJwt = jwt + "~";
 
         // Trust list only has the CA cert
-        SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, List.of(caCert));
+        SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, TestTrust.ofCertificates(caCert));
 
         assertThat(result.issuer()).isEqualTo("https://issuer.example");
         assertThat(result.credentialType()).isEqualTo("PID");
@@ -358,7 +364,7 @@ class SdJwtVerifierTest {
         String sdJwt = jwt + "~";
 
         // Trust list only has the CA cert
-        SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, List.of(caCert));
+        SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, TestTrust.ofCertificates(caCert));
 
         assertThat(result.issuer()).isEqualTo("https://issuer.example");
     }
@@ -382,7 +388,7 @@ class SdJwtVerifierTest {
         String sdJwt = jwt + "~";
 
         // Neither the x5c chain nor direct key matching should work
-        assertThatThrownBy(() -> verifier.verify(sdJwt, null, null, List.of(trustedCaCert)))
+        assertThatThrownBy(() -> verifier.verify(sdJwt, null, null, TestTrust.ofCertificates(trustedCaCert)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Signature could not be verified");
     }
@@ -404,7 +410,7 @@ class SdJwtVerifierTest {
                 Map.of("iss", "https://issuer.example", "vct", "PID"), metadataKey, "issuer-key");
         String sdJwt = jwt + "~";
 
-        SdJwtVerificationResult result = verifierWithFallback.verify(sdJwt, null, null, List.of());
+        SdJwtVerificationResult result = verifierWithFallback.verify(sdJwt, null, null, ResolvedTrust.empty());
 
         assertThat(result.issuer()).isEqualTo("https://issuer.example");
         assertThat(result.credentialType()).isEqualTo("PID");
@@ -427,7 +433,7 @@ class SdJwtVerifierTest {
                 Map.of("iss", "https://issuer.example", "vct", "PID"), unsignedX5cKey, "issuer-key");
         String sdJwt = jwt + "~";
 
-        assertThatThrownBy(() -> strictVerifier.verify(sdJwt, null, null, List.of()))
+        assertThatThrownBy(() -> strictVerifier.verify(sdJwt, null, null, ResolvedTrust.empty()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("HAIP requires SD-JWT issuer certificates in the x5c header");
     }
@@ -438,7 +444,8 @@ class SdJwtVerifierTest {
         String jwt = buildSignedJwt(Map.of("iss", "https://issuer.example", "vct", "PID"));
         String sdJwt = jwt + "~";
 
-        SdJwtVerificationResult result = verifierWithFallback.verify(sdJwt, null, null, List.of(signingCert));
+        SdJwtVerificationResult result =
+                verifierWithFallback.verify(sdJwt, null, null, TestTrust.ofCertificates(signingCert));
 
         assertThat(result.issuer()).isEqualTo("https://issuer.example");
         assertThat(result.credentialType()).isEqualTo("PID");

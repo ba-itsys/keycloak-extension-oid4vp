@@ -32,6 +32,7 @@ import com.authlete.cose.COSEKey;
 import com.authlete.cose.COSESign1;
 import com.authlete.cose.COSEVerifier;
 import de.arbeitsagentur.keycloak.oid4vp.domain.MdocVerificationResult;
+import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
 import java.io.IOException;
 import java.security.PublicKey;
 import java.security.cert.X509Certificate;
@@ -69,9 +70,8 @@ public class MdocVerifier {
     }
 
     /** Issuer signature verification only (no device auth, digest, or validity checks). */
-    public MdocVerificationResult verifyWithTrustedCerts(
-            String deviceResponseToken, List<X509Certificate> trustedCertificates) {
-        return verifyWithTrustedCerts(deviceResponseToken, trustedCertificates, null, null, null, null, null);
+    public MdocVerificationResult verifyWithTrustedCerts(String deviceResponseToken, ResolvedTrust trust) {
+        return verifyWithTrustedCerts(deviceResponseToken, trust, null, null, null, null, null);
     }
 
     /**
@@ -80,7 +80,7 @@ public class MdocVerifier {
      */
     public MdocVerificationResult verifyWithTrustedCerts(
             String deviceResponseToken,
-            List<X509Certificate> trustedCertificates,
+            ResolvedTrust trust,
             String clientId,
             String nonce,
             String responseUri,
@@ -95,7 +95,7 @@ public class MdocVerifier {
             if (docType == null) docType = "mso_mdoc";
 
             Map<String, Object> claims = extractClaims(document, mso);
-            verifyIssuerSignature(document, trustedCertificates);
+            verifyIssuerSignature(document, trust);
 
             if (mso != null) {
                 validateValidity(mso);
@@ -215,8 +215,8 @@ public class MdocVerifier {
         return asMap(decoded);
     }
 
-    private void verifyIssuerSignature(CBORPairList document, List<X509Certificate> trustedCertificates) {
-        if (trustedCertificates == null || trustedCertificates.isEmpty()) {
+    private void verifyIssuerSignature(CBORPairList document, ResolvedTrust trust) {
+        if (trust == null || !trust.hasIssuerTrust()) {
             throw new IllegalStateException("No trusted keys available for mDoc signature verification");
         }
 
@@ -228,11 +228,11 @@ public class MdocVerifier {
 
             List<X509Certificate> x5chain = extractX5Chain(sign1);
             if (x5chain != null && !x5chain.isEmpty()) {
-                PublicKey leafKey = X5cChainValidator.validateCertChain(x5chain, trustedCertificates);
+                PublicKey leafKey = trust.validateIssuerChain(x5chain);
                 if (leafKey != null && new COSEVerifier(leafKey).verify(sign1)) return;
             }
 
-            for (X509Certificate cert : trustedCertificates) {
+            for (X509Certificate cert : trust.directIssuerCertificates()) {
                 try {
                     if (new COSEVerifier(cert.getPublicKey()).verify(sign1)) return;
                 } catch (Exception ignored) {

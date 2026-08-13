@@ -202,7 +202,7 @@ class DcqlQueryBuilderTest {
     @Test
     void build_withTrustListUrl_includesTrustedAuthorities() throws Exception {
         builder.addCredentialType("dc+sd-jwt", "IdentityCredential", List.of(ClaimSpec.sdJwt("given_name")));
-        builder.setTrustListUrl("https://trust-list.example.com/tl.jwt");
+        builder.setTrustListUrls(List.of("https://trust-list.example.com/tl.jwt"));
 
         Map<String, Object> cred = firstCredential(builder.build());
 
@@ -217,7 +217,7 @@ class DcqlQueryBuilderTest {
     @Test
     void build_withAkiTrustedAuthorities_includesOnlyAki() throws Exception {
         builder.addCredentialType("dc+sd-jwt", "IdentityCredential", List.of(ClaimSpec.sdJwt("given_name")));
-        builder.setTrustedAuthorities("https://trust-list.example.com/tl.jwt", List.of("aki-1", "aki-2"));
+        builder.setTrustedAuthorities(List.of("https://trust-list.example.com/tl.jwt"), List.of("aki-1", "aki-2"));
 
         Map<String, Object> cred = firstCredential(builder.build());
 
@@ -236,7 +236,7 @@ class DcqlQueryBuilderTest {
     void build_multipleCredentials_eachHasTrustedAuthorities() throws Exception {
         builder.addCredentialType("dc+sd-jwt", "Type1", List.of());
         builder.addCredentialType("mso_mdoc", "org.iso.18013.5.1.mDL", List.of());
-        builder.setTrustListUrl("https://trust-list.example.com/tl.jwt");
+        builder.setTrustListUrls(List.of("https://trust-list.example.com/tl.jwt"));
 
         String json = builder.build();
 
@@ -273,7 +273,7 @@ class DcqlQueryBuilderTest {
                 new CredentialTypeSpec("dc+sd-jwt", "IdentityCredential", List.of(ClaimSpec.sdJwt("sub"))));
 
         DcqlQueryBuilder result = DcqlQueryBuilder.fromMapperSpecs(
-                objectMapper, specs, false, null, "https://trust-list.example.com/tl.jwt");
+                objectMapper, specs, false, null, List.of("https://trust-list.example.com/tl.jwt"));
 
         assertThat(firstCredential(result.build())).containsKey("trusted_authorities");
     }
@@ -423,11 +423,6 @@ class DcqlQueryBuilderTest {
             @Override
             public boolean isIssuerAllowed(String issuer) {
                 return true;
-            }
-
-            @Override
-            public String getTrustListLoTEType() {
-                return null;
             }
 
             @Override

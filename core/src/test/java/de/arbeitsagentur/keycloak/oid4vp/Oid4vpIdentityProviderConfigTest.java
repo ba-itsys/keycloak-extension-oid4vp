@@ -208,14 +208,14 @@ class Oid4vpIdentityProviderConfigTest {
     }
 
     @Test
-    void trustListMaxCacheTtl_defaultIsNull() {
-        assertThat(config.getTrustListMaxCacheTtl()).isNull();
+    void trustMaterialIdps_defaultIsNull() {
+        assertThat(config.getTrustMaterialIdps()).isNull();
     }
 
     @Test
-    void trustListMaxCacheTtl_parsesSeconds() {
-        config.setTrustListMaxCacheTtlSeconds(120);
-        assertThat(config.getTrustListMaxCacheTtl()).isEqualTo(Duration.ofSeconds(120));
+    void trustMaterialIdps_readsConfiguredValue() {
+        config.setTrustMaterialIdps("demo-trust-list,other-trust-list");
+        assertThat(config.getTrustMaterialIdps()).isEqualTo("demo-trust-list,other-trust-list");
     }
 
     @Test
@@ -239,17 +239,6 @@ class Oid4vpIdentityProviderConfigTest {
     void trustedAuthoritiesMode_invalidFallsBackToNone() {
         config.setTrustedAuthoritiesMode("bogus");
         assertThat(config.getTrustedAuthoritiesMode()).isEqualTo(Oid4vpTrustedAuthoritiesMode.NONE);
-    }
-
-    @Test
-    void trustListLoTEType_defaultsToEmpty() {
-        assertThat(config.getTrustListLoTEType()).isNull();
-    }
-
-    @Test
-    void trustListLoTEType_readsConfiguredValue() {
-        config.setTrustListLoTEType("http://uri.etsi.org/19602/LoTEType/EUWalletProvidersList");
-        assertThat(config.getTrustListLoTEType()).isEqualTo("http://uri.etsi.org/19602/LoTEType/EUWalletProvidersList");
     }
 
     @Test
