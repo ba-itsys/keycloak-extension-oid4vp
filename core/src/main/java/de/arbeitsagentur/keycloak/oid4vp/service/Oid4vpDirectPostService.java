@@ -15,6 +15,7 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
@@ -125,9 +126,7 @@ public class Oid4vpDirectPostService {
         SerializedBrokeredIdentityContext serialized = SerializedBrokeredIdentityContext.serialize(context);
         serialized.saveToAuthenticationSession(authSession, DEFERRED_IDENTITY_NOTE);
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> claims =
-                (Map<String, Object>) context.getContextData().get(Oid4vpMapperUtils.CONTEXT_CLAIMS_KEY);
+        JsonNode claims = Oid4vpMapperUtils.claimsNode(context);
         if (claims != null) {
             try {
                 String claimsJson = JsonSerialization.writeValueAsString(claims);
@@ -246,8 +245,7 @@ public class Oid4vpDirectPostService {
         String claimsJson = storedAuthSession.getAuthNote(DEFERRED_CLAIMS_NOTE);
         if (claimsJson != null) {
             try {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> claims = JsonSerialization.readValue(claimsJson, Map.class);
+                JsonNode claims = JsonSerialization.readValue(claimsJson, JsonNode.class);
                 context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CLAIMS_KEY, claims);
             } catch (Exception e) {
                 LOG.warnf("Failed to deserialize claims: %s", e.getMessage());

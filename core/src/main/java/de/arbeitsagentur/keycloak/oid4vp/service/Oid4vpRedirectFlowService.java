@@ -64,8 +64,9 @@ public class Oid4vpRedirectFlowService {
     private final int requestObjectLifespanSeconds;
     private final Oid4vpRequestObjectSigner requestObjectSigner;
 
+    /** The session may be null; it is only required for realm-key signing. */
     public Oid4vpRedirectFlowService(KeycloakSession session, int requestObjectLifespanSeconds) {
-        this.session = Objects.requireNonNull(session);
+        this.session = session;
         this.requestObjectLifespanSeconds = requestObjectLifespanSeconds;
         this.requestObjectSigner = new Oid4vpRequestObjectSigner();
     }
@@ -205,6 +206,7 @@ public class Oid4vpRedirectFlowService {
 
     /** Computes a {@code x509_san_dns:<dns-name>} client ID from the certificate's SAN DNS entry. */
     private KeyWrapper resolveRealmSigningKey() {
+        Objects.requireNonNull(session, "Realm-key signing requires a Keycloak session");
         RealmModel realm = session.getContext().getRealm();
         if (realm == null) {
             throw new IllegalStateException("Missing realm context");

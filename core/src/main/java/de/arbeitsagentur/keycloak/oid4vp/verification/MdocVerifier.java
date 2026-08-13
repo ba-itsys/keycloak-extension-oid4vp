@@ -32,6 +32,7 @@ import com.authlete.cose.COSEKey;
 import com.authlete.cose.COSESign1;
 import com.authlete.cose.COSEVerifier;
 import de.arbeitsagentur.keycloak.oid4vp.domain.MdocVerificationResult;
+import java.io.IOException;
 import java.security.PublicKey;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
@@ -43,6 +44,7 @@ import java.util.Map;
 import org.jboss.logging.Logger;
 import org.keycloak.crypto.JavaAlgorithm;
 import org.keycloak.jose.jws.crypto.HashUtils;
+import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 
 /**
@@ -148,14 +150,34 @@ public class MdocVerifier {
     }
 
     private void addNamespaceClaims(Map<String, Object> claims, String namespace, CBORItemList elementsList) {
+        Map<String, Object> namespaceClaims = new LinkedHashMap<>();
         for (CBORItem element : elementsList.getItems()) {
             CBORPairList item = unwrapTag24(element);
             if (item != null) {
                 String elementId = str(item, "elementIdentifier");
                 if (elementId != null) {
-                    claims.put(namespace + "/" + elementId, cborToJava(val(item, "elementValue")));
+                    namespaceClaims.put(elementId, structuredValue(cborToJava(val(item, "elementValue"))));
                 }
             }
+        }
+        claims.put(namespace, namespaceClaims);
+    }
+
+    // A JSON object or array serialized into a string element becomes a nested structure in the
+    // claims JSON, so mDoc claims follow the same addressing rules as SD-JWT claims.
+    private Object structuredValue(Object value) {
+        if (!(value instanceof String text)) {
+            return value;
+        }
+        String stripped = text.stripLeading();
+        if (!stripped.startsWith("{") && !stripped.startsWith("[")) {
+            return value;
+        }
+        try {
+            Object parsed = JsonSerialization.readValue(text, Object.class);
+            return parsed instanceof Map || parsed instanceof List ? parsed : value;
+        } catch (IOException e) {
+            return value;
         }
     }
 

@@ -37,8 +37,7 @@ public record ConformanceModuleResult(
      * always accepted: the suite skips a module when it is not applicable to the configuration
      * under test (for example a feature the verifier does not advertise), which is never a verifier
      * conformance failure. A REVIEW result is accepted in place of PASSED when the runner uploaded
-     * verification evidence: since suite release-v5.2.2 such modules always finish as REVIEW, with
-     * every conformance condition already checked.
+     * verification evidence, since such modules always finish as REVIEW.
      */
     public boolean finishedWith(ConformanceResult expectedResult) {
         if (!"FINISHED".equals(status)) {

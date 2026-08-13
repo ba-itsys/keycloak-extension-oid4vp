@@ -16,12 +16,10 @@
 package de.arbeitsagentur.keycloak.oid4vp.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
 
 import java.net.URI;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.keycloak.models.KeycloakSession;
 
 class Oid4vpWalletAuthorizationUrlTest {
 
@@ -32,7 +30,7 @@ class Oid4vpWalletAuthorizationUrlTest {
 
     @BeforeEach
     void setUp() {
-        service = new Oid4vpRedirectFlowService(mock(KeycloakSession.class), 300);
+        service = new Oid4vpRedirectFlowService(null, 300);
     }
 
     private String build(String walletScheme) {

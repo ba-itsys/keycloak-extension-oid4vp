@@ -97,20 +97,13 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
-                .name(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM)
-                .label("User Identifier Claim (SD-JWT)")
-                .helpText("Claim name used to identify the user from SD-JWT credentials (e.g., 'sub'). "
-                        + "Ignored when OID4VP transient users are enabled.")
+                .name(Oid4vpIdentityProviderConfig.PRINCIPAL_ATTRIBUTE)
+                .label("Principal Attribute")
+                .helpText("Dot notation path of the claim that identifies the user (e.g., 'sub'). "
+                        + "For mDoc credentials the path addresses a data element, looked up in each presented "
+                        + "namespace. Ignored when OID4VP transient users are enabled.")
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .defaultValue("sub")
-                .add()
-                .property()
-                .name(Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM_MDOC)
-                .label("User Identifier Claim (mDoc)")
-                .helpText(
-                        "Claim name used to identify the user from mDoc credentials. Falls back to SD-JWT claim if not set. "
-                                + "Ignored when OID4VP transient users are enabled.")
-                .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
                 .name(Oid4vpIdentityProviderConfig.SAME_DEVICE_ENABLED)

@@ -46,8 +46,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.common.crypto.CryptoIntegration;
-import org.keycloak.models.KeycloakSession;
-import org.mockito.Mockito;
 
 class Oid4vpRedirectFlowServiceHaipTest {
 
@@ -62,8 +60,8 @@ class Oid4vpRedirectFlowServiceHaipTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        KeycloakSession session = Mockito.mock(KeycloakSession.class);
-        service = new Oid4vpRedirectFlowService(session, 300);
+        // The session is only needed for realm-key signing; these tests sign with x509 keys.
+        service = new Oid4vpRedirectFlowService(null, 300);
 
         signingKey = new ECKeyGenerator(Curve.P_256).generate();
         X509Certificate cert = generateSelfSignedCert(signingKey);

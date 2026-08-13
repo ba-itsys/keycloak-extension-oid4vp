@@ -11,3 +11,4 @@ sandbox/
 docker-compose.ngrok.yml
 docker-compose.proxy.yml
 .env
+core/src/test/resources/realm-wallet-demo-local.json

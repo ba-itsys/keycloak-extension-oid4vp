@@ -16,8 +16,8 @@
 package de.arbeitsagentur.keycloak.oid4vp.it;
 
 import static de.arbeitsagentur.keycloak.oid4vp.it.Oid4vpTestKeycloakSetup.SD_JWT_PID_VCT;
-import static de.arbeitsagentur.keycloak.oid4vp.it.Oid4vpTestKeycloakSetup.attributeMapper;
-import static de.arbeitsagentur.keycloak.oid4vp.it.Oid4vpTestKeycloakSetup.sessionNoteMapper;
+import static de.arbeitsagentur.keycloak.oid4vp.it.Oid4vpTestKeycloakSetup.sdJwtAttributeMapper;
+import static de.arbeitsagentur.keycloak.oid4vp.it.Oid4vpTestKeycloakSetup.sdJwtSessionMapper;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
@@ -52,15 +52,10 @@ class KeycloakOid4vpClaimSetsE2eIT extends AbstractOid4vpE2eTest {
         // Options: 1-full = family_name, given_name, birthdate; 2-min = family_name, birthdate.
         // The wallet's PID carries all claims, so the preferred option must be disclosed.
         replaceDcqlMappers(List.of(
-                attributeMapper("cs-family-name", "dc+sd-jwt", SD_JWT_PID_VCT, "family_name", "lastName", null),
-                attributeMapper("cs-given-name", "dc+sd-jwt", SD_JWT_PID_VCT, "given_name", "firstName", "1-full"),
-                sessionNoteMapper(
-                        "cs-birthdate",
-                        "dc+sd-jwt",
-                        SD_JWT_PID_VCT,
-                        "birthdate",
-                        "credentialBirthdate",
-                        "1-full,2-min")));
+                sdJwtAttributeMapper("cs-family-name", SD_JWT_PID_VCT, "family_name", "lastName", null),
+                sdJwtAttributeMapper("cs-given-name", SD_JWT_PID_VCT, "given_name", "firstName", "1-full"),
+                sdJwtSessionMapper(
+                        "cs-birthdate", SD_JWT_PID_VCT, "birthdate", "credentialBirthdate", "1-full,2-min")));
 
         performSameDeviceLogin("claimset-full-user");
         flow.assertLoginSucceeded();
@@ -81,10 +76,9 @@ class KeycloakOid4vpClaimSetsE2eIT extends AbstractOid4vpE2eTest {
         // Options: 1-full = family_name, email, given_name; 2-min = family_name, given_name.
         // The wallet's PID has no email claim, so only the fallback option is satisfiable.
         replaceDcqlMappers(List.of(
-                attributeMapper("cs-family-name", "dc+sd-jwt", SD_JWT_PID_VCT, "family_name", "lastName", null),
-                attributeMapper("cs-email", "dc+sd-jwt", SD_JWT_PID_VCT, "email", "email", "1-full"),
-                attributeMapper(
-                        "cs-given-name", "dc+sd-jwt", SD_JWT_PID_VCT, "given_name", "firstName", "1-full,2-min")));
+                sdJwtAttributeMapper("cs-family-name", SD_JWT_PID_VCT, "family_name", "lastName", null),
+                sdJwtAttributeMapper("cs-email", SD_JWT_PID_VCT, "email", "email", "1-full"),
+                sdJwtAttributeMapper("cs-given-name", SD_JWT_PID_VCT, "given_name", "firstName", "1-full,2-min")));
 
         performSameDeviceLogin("claimset-fallback-user");
         flow.assertLoginSucceeded();

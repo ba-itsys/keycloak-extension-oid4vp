@@ -34,8 +34,7 @@ import org.keycloak.utils.StringUtil;
  */
 public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implements Oid4vpConfigProvider {
 
-    public static final String USER_MAPPING_CLAIM = "userMappingClaim";
-    public static final String USER_MAPPING_CLAIM_MDOC = "userMappingClaimMdoc";
+    public static final String PRINCIPAL_ATTRIBUTE = "principalAttribute";
     public static final String TRANSIENT_USERS = IdentityProviderModel.DO_NOT_STORE_USERS;
 
     public static final String SAME_DEVICE_ENABLED = "sameDeviceEnabled";
@@ -97,29 +96,14 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         super(model);
     }
 
-    public String getUserMappingClaim() {
-        String claim = getConfig().get(USER_MAPPING_CLAIM);
+    @Override
+    public String getPrincipalAttribute() {
+        String claim = getConfig().get(PRINCIPAL_ATTRIBUTE);
         return StringUtil.isNotBlank(claim) ? claim : "sub";
     }
 
-    public void setUserMappingClaim(String userMappingClaim) {
-        getConfig().put(USER_MAPPING_CLAIM, userMappingClaim);
-    }
-
-    public String getUserMappingClaimMdoc() {
-        String claim = getConfig().get(USER_MAPPING_CLAIM_MDOC);
-        return StringUtil.isNotBlank(claim) ? claim : getUserMappingClaim();
-    }
-
-    public void setUserMappingClaimMdoc(String userMappingClaimMdoc) {
-        getConfig().put(USER_MAPPING_CLAIM_MDOC, userMappingClaimMdoc);
-    }
-
-    public String getUserMappingClaimForFormat(String format) {
-        if (Oid4vpConstants.FORMAT_MSO_MDOC.equalsIgnoreCase(format)) {
-            return getUserMappingClaimMdoc();
-        }
-        return getUserMappingClaim();
+    public void setPrincipalAttribute(String principalAttribute) {
+        getConfig().put(PRINCIPAL_ATTRIBUTE, principalAttribute);
     }
 
     public boolean isSameDeviceEnabled() {

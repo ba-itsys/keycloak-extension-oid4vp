@@ -104,7 +104,7 @@ class MdocVerifierTest {
     }
 
     @Test
-    void verify_signedDocument_extractsNamespacePrefixedClaims() throws Exception {
+    void verify_signedDocument_nestsClaimsUnderNamespace() throws Exception {
         String token = buildSignedMdoc(
                 "org.iso.18013.5.1.mDL", "org.iso.18013.5.1", new String[] {"given_name", "John"}, new String[] {
                     "family_name", "Doe"
@@ -113,8 +113,32 @@ class MdocVerifierTest {
         MdocVerificationResult result = verifier.verifyWithTrustedCerts(token, List.of(signingCert));
 
         assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
-        assertThat(result.claims()).containsEntry("org.iso.18013.5.1/given_name", "John");
-        assertThat(result.claims()).containsEntry("org.iso.18013.5.1/family_name", "Doe");
+        assertThat(namespaceClaims(result, "org.iso.18013.5.1"))
+                .containsEntry("given_name", "John")
+                .containsEntry("family_name", "Doe");
+    }
+
+    // A namespace element carrying serialized JSON becomes a nested structure, so mDoc claims
+    // follow the same addressing rules as SD-JWT claims. Scalar and malformed strings stay raw.
+    @Test
+    void verify_jsonEncodedStringElements_becomeNestedStructures() throws Exception {
+        String token = buildSignedMdoc(
+                "org.iso.18013.5.1.mDL",
+                "org.iso.18013.5.1",
+                new String[] {"address", "{\"locality\": \"London\"}"},
+                new String[] {"nationalities", "[\"DE\", \"CZ\"]"},
+                new String[] {"note", "just text"},
+                new String[] {"number", "123"},
+                new String[] {"broken", "{not json"});
+
+        MdocVerificationResult result = verifier.verifyWithTrustedCerts(token, List.of(signingCert));
+
+        Map<String, Object> claims = namespaceClaims(result, "org.iso.18013.5.1");
+        assertThat(claims).containsEntry("address", Map.of("locality", "London"));
+        assertThat(claims).containsEntry("nationalities", List.of("DE", "CZ"));
+        assertThat(claims).containsEntry("note", "just text");
+        assertThat(claims).containsEntry("number", "123");
+        assertThat(claims).containsEntry("broken", "{not json");
     }
 
     @Test
@@ -176,8 +200,8 @@ class MdocVerifierTest {
 
         MdocVerificationResult result = verifier.verifyWithTrustedCerts(token, List.of(signingCert));
 
-        assertThat(result.claims()).containsEntry("org.iso.18013.5.1/given_name", "Alice");
-        assertThat(result.claims()).containsEntry("org.iso.18013.5.1.aamva/age_over_18", true);
+        assertThat(namespaceClaims(result, "org.iso.18013.5.1")).containsEntry("given_name", "Alice");
+        assertThat(namespaceClaims(result, "org.iso.18013.5.1.aamva")).containsEntry("age_over_18", true);
     }
 
     @Test
@@ -209,7 +233,7 @@ class MdocVerifierTest {
         MdocVerificationResult result = verifier.verifyWithTrustedCerts(helper.build(), List.of(helper.issuerCert));
 
         assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
-        assertThat(result.claims()).containsEntry("org.iso.18013.5.1/given_name", "John");
+        assertThat(namespaceClaims(result, "org.iso.18013.5.1")).containsEntry("given_name", "John");
     }
 
     static Stream<MdocDeviceResponseTestHelper.MdocAlgorithmSpec> supportedIssuerAlgorithms() {
@@ -220,6 +244,12 @@ class MdocVerifierTest {
     }
 
     // ===== Helper Methods =====
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> namespaceClaims(MdocVerificationResult result, String namespace) {
+        assertThat(result.claims()).containsKey(namespace);
+        return (Map<String, Object>) result.claims().get(namespace);
+    }
 
     private String buildSignedMdoc(String docType, String namespace, String[]... claimPairs) throws Exception {
         CBORPairList nameSpaces =
@@ -347,7 +377,7 @@ class MdocVerifierTest {
                     token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null);
 
             assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
-            assertThat(result.claims()).containsEntry("org.iso.18013.5.1/given_name", "John");
+            assertThat(namespaceClaims(result, "org.iso.18013.5.1")).containsEntry("given_name", "John");
         }
 
         @ParameterizedTest(name = "{0}")
@@ -363,7 +393,7 @@ class MdocVerifierTest {
                     token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, MDOC_GENERATED_NONCE, null);
 
             assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
-            assertThat(result.claims()).containsEntry("org.iso.18013.5.1/given_name", "John");
+            assertThat(namespaceClaims(result, "org.iso.18013.5.1")).containsEntry("given_name", "John");
         }
 
         @Test
@@ -458,7 +488,7 @@ class MdocVerifierTest {
             MdocVerificationResult result = verifier.verifyWithTrustedCerts(token, List.of(signingCert));
 
             assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
-            assertThat(result.claims()).containsEntry("org.iso.18013.5.1/given_name", "Test");
+            assertThat(namespaceClaims(result, "org.iso.18013.5.1")).containsEntry("given_name", "Test");
         }
     }
 }

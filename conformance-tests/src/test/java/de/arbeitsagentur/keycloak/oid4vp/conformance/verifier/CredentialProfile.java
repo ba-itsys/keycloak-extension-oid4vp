@@ -24,27 +24,21 @@ import org.keycloak.representations.idm.IdentityProviderMapperRepresentation;
 public enum CredentialProfile {
     SD_JWT_VC(
             "given_name",
-            "given_name",
             false,
             List.of(
-                    attributeMapper("sd-jwt-given_name", "dc+sd-jwt", "urn:eudi:pid:1", "given_name", "firstName"),
-                    attributeMapper("sd-jwt-family_name", "dc+sd-jwt", "urn:eudi:pid:1", "family_name", "lastName"))),
+                    sdJwtAttributeMapper("sd-jwt-given_name", "urn:eudi:pid:1", "given_name", "firstName"),
+                    sdJwtAttributeMapper("sd-jwt-family_name", "urn:eudi:pid:1", "family_name", "lastName"))),
     ISO_MDL(
             "given_name",
-            "org.iso.18013.5.1/given_name",
             true,
             List.of(
-                    attributeMapper(
-                            "mdoc-given_name",
-                            "mso_mdoc",
-                            "org.iso.18013.5.1.mDL",
-                            "org.iso.18013.5.1/given_name",
-                            "firstName"),
-                    attributeMapper(
+                    mdocAttributeMapper(
+                            "mdoc-given_name", "org.iso.18013.5.1.mDL", "org.iso.18013.5.1", "given_name", "firstName"),
+                    mdocAttributeMapper(
                             "mdoc-family_name",
-                            "mso_mdoc",
                             "org.iso.18013.5.1.mDL",
-                            "org.iso.18013.5.1/family_name",
+                            "org.iso.18013.5.1",
+                            "family_name",
                             "lastName")));
 
     // The mDL issuer certificate of the conformance suite, trusted for mdoc scenarios.
@@ -70,28 +64,19 @@ public enum CredentialProfile {
             -----END CERTIFICATE-----
             """;
 
-    private final String userMappingClaim;
-    private final String userMappingClaimMdoc;
+    private final String principalAttribute;
     private final boolean includeMdlIssuer;
     private final List<IdentityProviderMapperRepresentation> mappers;
 
     CredentialProfile(
-            String userMappingClaim,
-            String userMappingClaimMdoc,
-            boolean includeMdlIssuer,
-            List<IdentityProviderMapperRepresentation> mappers) {
-        this.userMappingClaim = userMappingClaim;
-        this.userMappingClaimMdoc = userMappingClaimMdoc;
+            String principalAttribute, boolean includeMdlIssuer, List<IdentityProviderMapperRepresentation> mappers) {
+        this.principalAttribute = principalAttribute;
         this.includeMdlIssuer = includeMdlIssuer;
         this.mappers = mappers;
     }
 
-    public String userMappingClaim() {
-        return userMappingClaim;
-    }
-
-    public String userMappingClaimMdoc() {
-        return userMappingClaimMdoc;
+    public String principalAttribute() {
+        return principalAttribute;
     }
 
     public boolean includeMdlIssuer() {
@@ -102,16 +87,29 @@ public enum CredentialProfile {
         return mappers;
     }
 
-    private static IdentityProviderMapperRepresentation attributeMapper(
-            String name, String format, String credentialType, String claim, String userAttribute) {
+    private static IdentityProviderMapperRepresentation sdJwtAttributeMapper(
+            String name, String vct, String claim, String userAttribute) {
         IdentityProviderMapperRepresentation mapper = new IdentityProviderMapperRepresentation();
         mapper.setName(name);
-        mapper.setIdentityProviderMapper("oid4vp-user-attribute-mapper");
+        mapper.setIdentityProviderMapper("oid4vp-sd-jwt-user-attribute-idp-mapper");
         mapper.setConfig(Map.of(
                 "syncMode", "INHERIT",
-                "credential.format", format,
-                "credential.type", credentialType,
+                "credential.type", vct,
                 "claim", claim,
+                "user.attribute", userAttribute));
+        return mapper;
+    }
+
+    private static IdentityProviderMapperRepresentation mdocAttributeMapper(
+            String name, String doctype, String namespace, String element, String userAttribute) {
+        IdentityProviderMapperRepresentation mapper = new IdentityProviderMapperRepresentation();
+        mapper.setName(name);
+        mapper.setIdentityProviderMapper("oid4vp-mdoc-user-attribute-idp-mapper");
+        mapper.setConfig(Map.of(
+                "syncMode", "INHERIT",
+                "credential.type", doctype,
+                "namespace", namespace,
+                "claim", element,
                 "user.attribute", userAttribute));
         return mapper;
     }

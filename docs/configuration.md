@@ -37,7 +37,7 @@ Example realm import fragment:
 
 ### Credential Request
 
-The DCQL query is generated from the configured OID4VP mappers. Each mapper contributes its credential format, credential type, and claim path; the [IdP mappers](#idp-mappers) section describes how claim sets are formed. At least one mapper with a credential type is required.
+The DCQL query is generated from the configured OID4VP mappers. The mapper type determines the credential format; its configuration contributes the credential type and claim path. The [IdP mappers](#idp-mappers) section describes how claim sets are formed. At least one mapper with a credential type is required.
 
 | Key | Description | Default |
 |-----|-------------|---------|
@@ -49,8 +49,7 @@ The DCQL query is generated from the configured OID4VP mappers. Each mapper cont
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `userMappingClaim` | Claim from an SD-JWT credential used as the unique user identifier. Not required when `useIdTokenSubject` is enabled. Ignored when OID4VP transient users are enabled. | `sub` |
-| `userMappingClaimMdoc` | Claim from an mDoc credential used as the unique user identifier. Falls back to `userMappingClaim`. Ignored when OID4VP transient users are enabled. | *(falls back)* |
+| `principalAttribute` | Dot notation path of the claim used as the unique user identifier. For mDoc credentials the path addresses a data element, looked up in each presented namespace. Not required when `useIdTokenSubject` is enabled. Ignored when OID4VP transient users are enabled. | `sub` |
 | `useIdTokenSubject` | When HAIP is disabled, requests an additional self-issued `id_token` and uses its subject as the user identifier. The VP token remains required for credential attributes. Ignored when HAIP is enabled. | `false` |
 | `doNotStoreUsers` | Native Keycloak IdP setting. When enabled, OID4VP switches to transient per-login identities, ignores configured identifying claims, and relies on Keycloak transient users. Requires the Keycloak `transient-users` feature to be enabled. | `false` |
 | `clockSkewSeconds` | Allowed clock skew for ID token time checks. | `60` |
@@ -66,7 +65,7 @@ To use this extension as a wallet connector without creating persisted Keycloak 
 Behavior in this mode:
 
 - The extension always generates a random per-login transient identifier.
-- `userMappingClaim`, `userMappingClaimMdoc`, and `useIdTokenSubject` are ignored for subject resolution.
+- `principalAttribute` and `useIdTokenSubject` are ignored for subject resolution.
 - OID4VP user-attribute mappers still apply, but the target user is transient and is not persisted after the session ends.
 - Session-note mappers are often the best fit when relying parties only need token-time claim propagation.
 
@@ -143,14 +142,18 @@ Trust lists are cached until the earliest of ETSI `ListAndSchemeInformation.Next
 
 ## IdP Mappers
 
-The extension provides two mapper types:
+The extension provides format-specific mapper types, following the mapper design of upstream Keycloak's OID4VP work:
 
-- `OID4VP Claim to User Attribute`
-- `OID4VP Claim to User Session Note`
+- `SD-JWT Attribute Importer` (`oid4vp-sd-jwt-user-attribute-idp-mapper`)
+- `SD-JWT User Session Attribute Importer` (`oid4vp-sd-jwt-user-session-attribute-idp-mapper`)
+- `mDoc Attribute Importer` (`oid4vp-mdoc-user-attribute-idp-mapper`)
+- `mDoc User Session Attribute Importer` (`oid4vp-mdoc-user-session-attribute-idp-mapper`)
 
-Each mapper declares a credential format, credential type, and claim path. These mappers drive the generated DCQL request: every credential type present in the mappers becomes a DCQL credential entry, and every claim path becomes a requested claim. The response is validated against this query, so all requested claims are known to the verifier.
+Each mapper declares a credential type (VCT or doctype) and a claim path. The claim path uses dot notation: `address.locality` selects a nested claim, `nationalities[]` selects all array elements, `nationalities[0]` selects the first presented element, and a literal dot is escaped as `\.`. Arrays import as multivalued attributes, object values as their JSON representation; session attribute mappers join multiple values with commas.
 
-For mDoc credentials, a claim path with a dotted first segment selects an explicit namespace (`org.iso.18013.5.1/given_name`); otherwise the credential type (doctype) is used as the namespace.
+mDoc mappers additionally declare the ISO 18013-5 `namespace` of the data element, defaulting to the credential type (doctype). The claim path addresses the element within that namespace; deeper path steps select into structured element values on the mapper side only. Element values holding serialized JSON objects or arrays become nested structures in the claims JSON, so they follow the same path rules as SD-JWT claims.
+
+These mappers drive the generated DCQL request: every credential type present in the mappers becomes a DCQL credential entry, and every claim path becomes a requested claim. The response is validated against this query, so all requested claims are known to the verifier.
 
 ### Claim Sets
 

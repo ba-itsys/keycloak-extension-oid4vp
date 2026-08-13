@@ -58,7 +58,7 @@ class Oid4vpIdentityProviderConfigTest {
 
     @Test
     void defaultValues() {
-        assertThat(config.getUserMappingClaim()).isEqualTo("sub");
+        assertThat(config.getPrincipalAttribute()).isEqualTo("sub");
         assertThat(config.getClientIdScheme()).isEqualTo("x509_hash");
         assertThat(config.getResponseMode()).isEqualTo("direct_post.jwt");
         assertThat(config.isTransientUsersEnabled()).isFalse();
@@ -147,29 +147,9 @@ class Oid4vpIdentityProviderConfigTest {
     }
 
     @Test
-    void getUserMappingClaimMdoc_fallsBackToSdJwtClaim() {
-        config.setUserMappingClaim("email");
-        assertThat(config.getUserMappingClaimMdoc()).isEqualTo("email");
-    }
-
-    @Test
-    void getUserMappingClaimMdoc_usesMdocSpecificIfSet() {
-        config.setUserMappingClaim("email");
-        config.setUserMappingClaimMdoc("org.iso.18013.5.1/email");
-        assertThat(config.getUserMappingClaimMdoc()).isEqualTo("org.iso.18013.5.1/email");
-    }
-
-    @Test
-    void getUserMappingClaimForFormat_sdJwt() {
-        config.setUserMappingClaim("sub");
-        assertThat(config.getUserMappingClaimForFormat("dc+sd-jwt")).isEqualTo("sub");
-    }
-
-    @Test
-    void getUserMappingClaimForFormat_mdoc() {
-        config.setUserMappingClaim("sub");
-        config.setUserMappingClaimMdoc("mdoc-sub");
-        assertThat(config.getUserMappingClaimForFormat("mso_mdoc")).isEqualTo("mdoc-sub");
+    void getPrincipalAttribute_readsConfiguredValue() {
+        config.setPrincipalAttribute("email");
+        assertThat(config.getPrincipalAttribute()).isEqualTo("email");
     }
 
     @Test

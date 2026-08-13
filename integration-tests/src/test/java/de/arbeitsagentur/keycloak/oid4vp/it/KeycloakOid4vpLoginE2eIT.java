@@ -71,7 +71,7 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
         replaceDcqlMappers(Oid4vpTestKeycloakSetup.sdJwtPidMappers());
         setIdpConfig(Map.of(
                 IdentityProviderModel.DO_NOT_STORE_USERS, "true",
-                Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM, "missing_identifier"));
+                Oid4vpIdentityProviderConfig.PRINCIPAL_ATTRIBUTE, "missing_identifier"));
 
         performSameDeviceLogin("transient-wallet-user");
         flow.assertLoginSucceeded();

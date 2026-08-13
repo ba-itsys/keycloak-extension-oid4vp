@@ -15,39 +15,49 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
+import de.arbeitsagentur.keycloak.oid4vp.mapper.ClaimPath;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 import org.keycloak.utils.StringUtil;
 
 /**
  * Specification of a single claim to request within a DCQL credential query.
  *
- * <p>The {@code path} uses {@code /} as separator for nested claims (e.g. {@code address/street}).
- * For mDoc credentials, a dotted first segment is treated as an explicit namespace (e.g.
- * {@code org.iso.18013.5.1/given_name}); otherwise the doctype is used as namespace.
+ * <p>{@code path} uses the {@link ClaimPath} dot notation shared with the OID4VP mappers
+ * ({@code address.locality}, {@code nationalities[]}). For mDoc claims, {@code namespace} names
+ * the ISO 18013-5 namespace and the first path step names the data element; deeper steps only
+ * address into the element value on the mapper side and are not part of the DCQL query.
  *
  * <p>{@code claimSetIds} lists the DCQL claim sets this claim belongs to. A claim without ids is
  * part of every generated claim set and therefore always requested.
  *
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.4">OID4VP 1.0 §6.4 — Claims Query</a>
  */
-public record ClaimSpec(String path, List<String> claimSetIds, boolean multivalued) {
+public record ClaimSpec(String namespace, String path, List<String> claimSetIds) {
 
-    private static final String PATH_SEPARATOR = "/";
     private static final String CLAIM_SET_ID_SEPARATOR = ",";
 
     public ClaimSpec {
         claimSetIds = claimSetIds != null ? List.copyOf(claimSetIds) : List.of();
     }
 
-    public ClaimSpec(String path) {
-        this(path, List.of(), false);
+    /** A claim of an SD-JWT credential, addressed by a dot notation path over the claims JSON. */
+    public static ClaimSpec sdJwt(String path, List<String> claimSetIds) {
+        return new ClaimSpec(null, path, claimSetIds);
     }
 
-    public ClaimSpec(String path, List<String> claimSetIds) {
-        this(path, claimSetIds, false);
+    public static ClaimSpec sdJwt(String path) {
+        return sdJwt(path, List.of());
+    }
+
+    /** A claim of an mDoc credential: a data element of the given namespace. */
+    public static ClaimSpec mdoc(String namespace, String path, List<String> claimSetIds) {
+        return new ClaimSpec(namespace, path, claimSetIds);
+    }
+
+    public static ClaimSpec mdoc(String namespace, String path) {
+        return mdoc(namespace, path, List.of());
     }
 
     /** Parses a comma-separated mapper config value into a list of claim set ids. */
@@ -62,68 +72,32 @@ public record ClaimSpec(String path, List<String> claimSetIds, boolean multivalu
                 .toList();
     }
 
-    /** Converts this claim path to a DCQL {@code claims[].path} array for the given credential format and type. */
-    public List<Object> toDcqlPath(String format, String type) {
-        if (StringUtil.isBlank(path)) {
-            return List.of();
-        }
-        if (Oid4vpConstants.FORMAT_MSO_MDOC.equals(format) && type != null) {
-            return toMdocPath(type);
-        }
-        if (path.contains(PATH_SEPARATOR)) {
-            List<Object> segments = Arrays.stream(path.split(PATH_SEPARATOR))
-                    .map(ClaimSpec::parsePathSegment)
-                    .collect(Collectors.toCollection(ArrayList::new));
-            if (multivalued && !endsWithArraySelector(segments)) {
-                segments.add(null);
-            }
-            return segments;
-        }
-        if (multivalued) {
-            return listWithNullableEntries(path, null);
-        }
-        return List.of(path);
+    /** The parsed claim path, or {@code null} when the configured path is malformed. */
+    public ClaimPath claimPath() {
+        return ClaimPath.parse(path);
     }
 
     /**
-     * Builds the two-element mDoc path {@code [namespace, element]}. mDoc namespaces are
-     * reverse-domain identifiers, so a dotted first path segment selects an explicit namespace;
-     * otherwise the doctype serves as namespace and only the first segment of a nested path is
-     * requested (mDoc claims cannot be requested below element level).
+     * Converts this claim to a DCQL {@code claims[].path} pointer. SD-JWT paths map step by step
+     * (field to string, all elements to null, first element to 0). mDoc paths are always
+     * {@code [namespace, element]}: mDoc claims cannot be requested below element level.
      */
-    private List<Object> toMdocPath(String doctype) {
-        String namespace = doctype;
-        String elementPath = path;
-        int separatorIndex = path.indexOf(PATH_SEPARATOR);
-        if (separatorIndex >= 0 && path.substring(0, separatorIndex).contains(".")) {
-            namespace = path.substring(0, separatorIndex);
-            elementPath = path.substring(separatorIndex + 1);
+    public List<Object> toDcqlPath() {
+        ClaimPath claimPath = claimPath();
+        if (claimPath == null) {
+            return List.of();
         }
-        String element = elementPath.contains(PATH_SEPARATOR)
-                ? elementPath.substring(0, elementPath.indexOf(PATH_SEPARATOR))
-                : elementPath;
-        return List.of(namespace, parsePathSegment(element));
-    }
-
-    private static boolean endsWithArraySelector(List<Object> segments) {
-        return !segments.isEmpty() && segments.get(segments.size() - 1) == null;
-    }
-
-    private static List<Object> listWithNullableEntries(Object... values) {
-        return new ArrayList<>(Arrays.asList(values));
-    }
-
-    private static Object parsePathSegment(String segment) {
-        if ("null".equals(segment)) {
-            return null;
+        if (namespace != null) {
+            return Arrays.asList(namespace, claimPath.steps().get(0).field());
         }
-        try {
-            int index = Integer.parseInt(segment);
-            if (index >= 0) {
-                return index;
+        List<Object> pointer = new ArrayList<>();
+        for (ClaimPath.Step step : claimPath.steps()) {
+            switch (step.kind()) {
+                case FIELD -> pointer.add(step.field());
+                case ALL_ELEMENTS -> pointer.add(null);
+                case FIRST_ELEMENT -> pointer.add(0);
             }
-        } catch (NumberFormatException ignored) {
         }
-        return segment;
+        return pointer;
     }
 }

@@ -17,25 +17,30 @@ package de.arbeitsagentur.keycloak.oid4vp.service;
 
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
+import de.arbeitsagentur.keycloak.oid4vp.mapper.ClaimPath;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import de.arbeitsagentur.keycloak.oid4vp.verification.SelfIssuedIdTokenValidator;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor;
+import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenVerifier;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.broker.provider.IdentityBrokerException;
 import org.keycloak.broker.provider.UserAuthenticationIdentityProvider;
+import org.keycloak.common.VerificationException;
 import org.keycloak.models.IdentityProviderModel;
+import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 
 /**
@@ -56,17 +61,17 @@ public class Oid4vpCallbackProcessor {
     private final IdentityProviderModel idpModel;
     private final Oid4vpConfigProvider configProvider;
     private final UserAuthenticationIdentityProvider<?> provider;
-    private final VpTokenProcessor vpTokenProcessor;
+    private final VpTokenVerifier vpTokenVerifier;
 
     public Oid4vpCallbackProcessor(
             IdentityProviderModel idpModel,
             Oid4vpConfigProvider configProvider,
             UserAuthenticationIdentityProvider<?> provider,
-            VpTokenProcessor vpTokenProcessor) {
+            VpTokenVerifier vpTokenVerifier) {
         this.idpModel = idpModel;
         this.configProvider = configProvider;
         this.provider = provider;
-        this.vpTokenProcessor = vpTokenProcessor;
+        this.vpTokenVerifier = vpTokenVerifier;
     }
 
     // Validates the VP token (and optionally a Self-Issued ID Token) and builds a brokered identity context.
@@ -86,7 +91,7 @@ public class Oid4vpCallbackProcessor {
 
         LOG.debugf("VP token received (length=%d)", vpToken.length());
 
-        VpTokenResult vpResult = vpTokenProcessor.process(new VpTokenProcessor.Request(
+        VpTokenResult vpResult = vpTokenVerifier.process(new VpTokenProcessor.Request(
                 vpToken,
                 requestContext.effectiveClientId(),
                 requestContext.nonce(),
@@ -117,8 +122,7 @@ public class Oid4vpCallbackProcessor {
         enforceConfiguredCredentialTypes(requestContext, vpResult);
         enforceRequestedClaims(requestContext, vpResult);
 
-        Map<String, Object> claims = Oid4vpMapperUtils.toMutableClaims(
-                vpResult.isMultiCredential() ? vpResult.mergedClaims() : primary.claims());
+        JsonNode claims = claimsNode(vpResult, primary);
 
         String subject;
         String identityKey;
@@ -144,10 +148,23 @@ public class Oid4vpCallbackProcessor {
         context.getContextData().put(Oid4vpMapperUtils.CONTEXT_SUBJECT_KEY, subject);
         context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CREDENTIAL_TYPE_KEY, credentialType);
         context.getContextData()
-                .put(
-                        Oid4vpMapperUtils.CONTEXT_PRESENTATION_TYPE_KEY,
-                        primary.presentationType().name());
+                .put(Oid4vpMapperUtils.CONTEXT_CREDENTIAL_FORMAT_KEY, Oid4vpMapperUtils.credentialFormat(primary));
         return context;
+    }
+
+    /** The claims JSON exposed to the mappers; multi-credential presentations merge in order. */
+    private JsonNode claimsNode(VpTokenResult vpResult, VerifiedCredential primary) {
+        if (!vpResult.isMultiCredential()) {
+            return Oid4vpMapperUtils.toClaimsNode(primary);
+        }
+        ObjectNode merged = JsonSerialization.mapper.createObjectNode();
+        for (VerifiedCredential credential : vpResult.credentials().values()) {
+            JsonNode node = Oid4vpMapperUtils.toClaimsNode(credential);
+            if (node instanceof ObjectNode objectNode) {
+                merged.setAll(objectNode);
+            }
+        }
+        return merged;
     }
 
     private String validateIdTokenAndExtractSubject(String idToken, String clientId, String expectedNonce) {
@@ -164,17 +181,37 @@ public class Oid4vpCallbackProcessor {
         }
     }
 
-    private String extractSubjectFromCredential(Map<String, Object> claims, VerifiedCredential primary) {
-        String credentialFormat =
-                primary.presentationType() == PresentationType.MDOC ? FORMAT_MSO_MDOC : FORMAT_SD_JWT_VC;
-        String userMappingClaimName = configProvider.getUserMappingClaimForFormat(credentialFormat);
-        Object subjectObj = Oid4vpMapperUtils.getNestedValue(claims, userMappingClaimName);
-        String subject = Oid4vpMapperUtils.toStringValue(subjectObj);
-
+    /**
+     * The principal claim becomes the brokered subject; for mDoc presentations the element is
+     * looked up in each presented namespace. Rejects presentations without a usable value.
+     */
+    private String extractSubjectFromCredential(JsonNode claims, VerifiedCredential primary) {
+        String principalPath = configProvider.getPrincipalAttribute();
+        ClaimPath path = StringUtil.isNotBlank(principalPath) ? ClaimPath.parse(principalPath.trim()) : null;
+        if (path == null) {
+            throw new IdentityBrokerException("Invalid principal attribute '" + principalPath + "'");
+        }
+        String subject = firstValue(path, claims);
+        if (subject == null && primary.presentationType() == PresentationType.MDOC && claims != null) {
+            for (JsonNode namespaceNode : claims) {
+                subject = firstValue(path, namespaceNode);
+                if (subject != null) {
+                    break;
+                }
+            }
+        }
         if (StringUtil.isBlank(subject)) {
-            throw new IdentityBrokerException("Missing subject claim '" + userMappingClaimName + "' in credential");
+            throw new IdentityBrokerException("Missing principal claim '" + principalPath + "' in credential");
         }
         return subject;
+    }
+
+    private static String firstValue(ClaimPath path, JsonNode root) {
+        return path.select(root).stream()
+                .filter(JsonNode::isValueNode)
+                .map(JsonNode::asText)
+                .findFirst()
+                .orElse(null);
     }
 
     private String buildTransientSubject(Oid4vpRequestObjectStore.RequestContextEntry requestContext) {
@@ -202,11 +239,10 @@ public class Oid4vpCallbackProcessor {
             if (requested == null) {
                 continue;
             }
-            List<String> missing = requested.missingClaims(credential.claims());
-            if (!missing.isEmpty()) {
-                throw new IdentityBrokerException("Presentation for credential type '"
-                        + credential.credentialType() + "' does not contain all requested claims. Missing: "
-                        + String.join(", ", missing));
+            try {
+                requested.checkIfSatisfiedBy(Oid4vpMapperUtils.toClaimsNode(credential));
+            } catch (VerificationException e) {
+                throw new IdentityBrokerException(e.getMessage(), e);
             }
         }
     }

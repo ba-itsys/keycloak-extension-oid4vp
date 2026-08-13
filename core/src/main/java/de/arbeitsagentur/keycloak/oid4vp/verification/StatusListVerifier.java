@@ -121,9 +121,12 @@ public class StatusListVerifier {
     }
 
     private Object findNestedStatusClaim(Map<String, Object> claims) {
-        for (Map.Entry<String, Object> entry : claims.entrySet()) {
-            if (entry.getKey().endsWith("/status")) {
-                return entry.getValue();
+        for (Object value : claims.values()) {
+            if (value instanceof Map<?, ?> namespaceClaims) {
+                Object status = namespaceClaims.get("status");
+                if (status != null) {
+                    return status;
+                }
             }
         }
         return null;
