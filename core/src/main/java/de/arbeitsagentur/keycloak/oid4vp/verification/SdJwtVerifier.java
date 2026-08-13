@@ -16,7 +16,7 @@
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.SdJwtVerificationResult;
-import java.security.cert.X509Certificate;
+import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
 import java.util.List;
 import org.jboss.logging.Logger;
 import org.keycloak.sdjwt.IssuerSignedJwtVerificationOpts;
@@ -68,11 +68,11 @@ public class SdJwtVerifier {
      * @param sdJwt the compact SD-JWT string (issuer JWT + disclosures + optional KB-JWT, tilde-separated)
      * @param expectedAudience the expected {@code aud} claim in the key binding JWT
      * @param expectedNonce the expected {@code nonce} claim in the key binding JWT
-     * @param trustedCertificates trusted CA certificates for issuer signature verification
+     * @param trust trust material for issuer signature verification
      */
     @SuppressWarnings("unchecked")
     public SdJwtVerificationResult verify(
-            String sdJwt, String expectedAudience, String expectedNonce, List<X509Certificate> trustedCertificates) {
+            String sdJwt, String expectedAudience, String expectedNonce, ResolvedTrust trust) {
 
         try {
             SdJwtVP sdJwtVP = SdJwtVP.of(sdJwt);
@@ -102,8 +102,7 @@ public class SdJwtVerifier {
             presentationConsumer.verifySdJwtPresentation(
                     sdJwtVP,
                     requirements,
-                    List.of(new Oid4vpTrustedSdJwtIssuer(
-                            trustedCertificates, issuerMetadataResolver, strictX5cVerification)),
+                    List.of(new Oid4vpTrustedSdJwtIssuer(trust, issuerMetadataResolver, strictX5cVerification)),
                     issuerOpts,
                     kbOptsBuilder.build());
 

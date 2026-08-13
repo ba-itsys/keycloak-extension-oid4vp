@@ -83,8 +83,8 @@ This method:
 2. **Builds request claims**: `jti`, `iat`, `exp`, `iss`, `aud`, `client_id`, `response_type`, `response_mode`, `response_uri`, `nonce`, `state`, optional `wallet_nonce`, DCQL query, verifier info, and `client_metadata`. When `useIdTokenSubject` is enabled and HAIP is disabled, `response_type` becomes `vp_token id_token` and `scope=openid` is added; under HAIP, `useIdTokenSubject` is effectively disabled
 3. **Builds `client_metadata`**: only for encrypted wallet responses, includes the public response-encryption JWK in `jwks`, the verifier's supported wallet-response encryption methods, and `vp_formats_supported`
 4. **Normalizes DCQL trusted-authorities constraints**: if `trustedAuthoritiesMode` is enabled, the generated/manual DCQL query gets exactly one `trusted_authorities` type:
-   - `etsi_tl` advertises the configured trust-list URL
-   - `aki` advertises certificate key identifiers extracted from the configured trust list
+   - `etsi_tl` advertises the trust-list URLs of the referenced trust material identity providers
+   - `aki` advertises certificate key identifiers exposed by the referenced trust material identity providers
    - `none` leaves `trusted_authorities` absent
    HAIP does not force this feature on; it remains explicit verifier configuration.
 5. **Delegates compact JWS creation to `Oid4vpRequestObjectSigner`**: attaches `x5c` or public `jwk` headers as required by the chosen client-id scheme and signs through Keycloak key abstractions
@@ -131,9 +131,9 @@ This:
 - Calls `VpTokenProcessor.process(vpToken, clientId, nonce, responseUri, mdocGeneratedNonce, encryptionJwkThumbprint)`:
   - SD-JWT: `SdJwtVerifier.verify()` — delegates to Keycloak's `SdJwtVP.verify()` which performs:
     1. **Issuer signature verification** — validates the SD-JWT's JWS signature using the issuer's public key, resolved in this order:
-       - `x5c` certificate-chain validation against the trust list (`X5cChainValidator`)
+       - `x5c` certificate-chain validation against the resolved trust material: a pinned trusted leaf certificate or a PKIX path to the trust anchors (`ResolvedTrust.validateIssuerChain`)
        - outside HAIP only: JWT VC issuer metadata lookup via `iss` + JOSE `kid` (`JwtVcIssuerMetadataResolver`), including `jwks_uri`
-       - final direct trusted-certificate fallback for non-HAIP deployments that use self-signed or directly trusted issuer keys
+       - final fallback to directly trusted issuer certificates and trusted issuer JWKs for non-HAIP deployments
     2. **Issuer JWT time checks** — `exp` (must not be expired), `nbf` (must be valid now), both with configurable clock skew (default 60s). No `iat` freshness check on the issuer JWT (old credentials are valid as long as `exp` holds)
     3. **Selective disclosure digest verification** — SHA-256 hashes of disclosed claims match the `_sd` digests in the issuer JWT
     4. **KB-JWT signature verification** — verifies the Key Binding JWT signature against the holder's public key from the credential's `cnf.jwk` claim
@@ -143,7 +143,7 @@ This:
     - **OID4VP 1.0** (Appendix B.3.2.2): `[null, null, ["OpenID4VPHandover", SHA-256(CBOR([client_id, nonce, jwk_thumbprint, response_uri]))]]` — the `jwk_thumbprint` is the RFC 7638 SHA-256 thumbprint of the HAIP encryption key from `client_metadata.jwks`, stored in the request context when the request object is created
     - **ISO 18013-7** (Annex B.4.4): `[null, null, [SHA-256(CBOR([client_id, mdoc_generated_nonce])), SHA-256(CBOR([response_uri, mdoc_generated_nonce])), nonce]]` — used as a fallback when `mdocGeneratedNonce` is present (extracted from JWE `apu` header) and the OID4VP 1.0 transcript does not verify
   - Checks revocation via `StatusListVerifier`
-  - Validates the fetched trust list's `LoTEType` against the IdP's configured trust domain
+  - The referenced ETSI trust list identity providers validate their trust list's `LoTEType` against their configured trust domain while resolving trust material
 - Validates issuer is allowed, credential type is allowed
 - Rejects credentials whose `vct` / `docType` was not explicitly requested by this IdP's DCQL query
 - Maps claims to `BrokeredIdentityContext`
@@ -231,8 +231,11 @@ Errors can occur at multiple points:
 | `MdocVerifier` | mDoc issuer/device auth verification, digest/validity checks, claim extraction |
 | `MdocSessionTranscriptBuilder` | Builds OID4VP 1.0 and ISO 18013-7 SessionTranscript structures |
 | `StatusListVerifier` | Token Status List fetching, caching, revocation bit checking |
+| `EtsiTrustListIdentityProvider` | Trust material identity provider (`etsi-trust-list`): trust anchors from an ETSI trust list URL and/or a pasted PEM bundle, LoTE type enforcement |
+| `Oid4vpTrustMaterialResolver` | Resolves trust material identity providers by alias and aggregates their trust into `ResolvedTrust` |
 | `TrustListProvider` | ETSI trust list fetching, certificate extraction, caching, optional JWT signature verification |
-| `X5cChainValidator` | x5c certificate chain validation (shared by SD-JWT, mDoc, status list, trust list) |
+| `X509CertificateChainValidator` | PKIX x5c certificate chain validation (mirror of Keycloak main, shared by SD-JWT, mDoc, status list) |
+| `X5cChainValidator` | JWT signature verification against pinned certificates (status list, trust list) |
 | `Oid4vpDirectPostService` | Deferred auth storage for both flows, session restoration at `/complete-auth` |
 | `Oid4vpCrossDeviceSseService` | Node-local SSE subscription handling for cross-device completion |
 | `Oid4vpRequestObjectStore` | Transient storage for the per-flow request context keyed by `oid4vp_state:{state}`. The response-encryption key's `kid` equals the `state`, so encrypted callbacks resolve through the same entry. The `state` entry is the liveness anchor: removing it invalidates the flow and blocks replay after the first successful callback |
@@ -243,9 +246,10 @@ Errors can occur at multiple points:
 
 ## Configuration Notes
 
-- `trustedAuthoritiesMode` is explicit verifier policy. `none` is the default, `etsi_tl` adds the trust-list URL to DCQL, and `aki` adds extension-derived certificate key identifiers from the trust list.
-- If `trustListLoTEType` is configured, the fetched trust list must match this `LoTEType`, which keeps one OID4VP IdP instance bound to one trust domain. If it is empty, all LoTE types are accepted and a warning is logged.
+- Trust configuration lives on trust material identity providers (`etsi-trust-list`), referenced from the OID4VP IdP via `trustMaterialIdps`. This mirrors the trust material delegation model of upstream Keycloak's OID4VP work.
+- `trustedAuthoritiesMode` is explicit verifier policy. `none` is the default, `etsi_tl` adds the trust-list URLs to DCQL, and `aki` adds certificate key identifiers exposed by the trust material identity providers.
+- If `trustListLoTEType` is configured on a trust material identity provider, the fetched trust list must match this `LoTEType`, which keeps one provider instance bound to one trust domain. If it is empty, all LoTE types are accepted.
 - Within an accepted trust list, issuer verification uses certificates from `.../SvcType/.../Issuance` services only, while status-list verification uses `.../SvcType/.../Revocation` services only.
 - The verifier trusts only the credential types it explicitly requested for that IdP.
 - If `trustListSigningCertPem` is not configured, the trust-list JWT signature is not verified and the fetched trust list is trusted as-is. The code warns about that configuration but does not fail startup.
-- When HAIP is enabled with `x509_hash`, the configured verifier certificate PEM is used for client ID derivation and request-object signing metadata. A full CA-issued chain is validated when present; a single non-self-signed leaf is also accepted, in which case issuer trust is expected to come from configured trust lists.
+- When HAIP is enabled with `x509_hash`, the configured verifier certificate PEM is used for client ID derivation and request-object signing metadata. A full CA-issued chain is validated when present; a single non-self-signed leaf is also accepted, in which case issuer trust is expected to come from the configured trust material identity providers.

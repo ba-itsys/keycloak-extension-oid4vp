@@ -53,18 +53,15 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final String CREDENTIAL_SET_MODE_ALL = "all";
     public static final String CREDENTIAL_SET_PURPOSE = "credentialSetPurpose";
 
-    public static final String TRUST_LIST_URL = "trustListUrl";
-    public static final String TRUST_LIST_SIGNING_CERT_PEM = "trustListSigningCertPem";
+    /** Comma separated aliases of trust material identity providers, same key as upstream. */
+    public static final String TRUST_MATERIAL_IDPS = "trustMaterialIdps";
+
     public static final String TRUSTED_AUTHORITIES_MODE = "trustedAuthoritiesMode";
-    public static final String TRUST_LIST_LOTE_TYPE = "trustListLoTEType";
 
     public static final String ALLOWED_ISSUERS = "allowedIssuers";
 
     public static final String STATUS_LIST_MAX_CACHE_TTL_SECONDS = "statusListMaxCacheTtlSeconds";
-    public static final String TRUST_LIST_MAX_CACHE_TTL_SECONDS = "trustListMaxCacheTtlSeconds";
-    public static final String TRUST_LIST_MAX_STALE_AGE_SECONDS = "trustListMaxStaleAgeSeconds";
     public static final String ISSUER_METADATA_MAX_CACHE_TTL_SECONDS = "issuerMetadataMaxCacheTtlSeconds";
-    public static final int DEFAULT_TRUST_LIST_MAX_STALE_AGE_SECONDS = 86400;
     public static final int DEFAULT_ISSUER_METADATA_MAX_CACHE_TTL_SECONDS = 86400;
 
     public static final String SSE_POLL_INTERVAL_MS = "ssePollIntervalMs";
@@ -200,20 +197,12 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         getConfig().put(CREDENTIAL_SET_PURPOSE, purpose);
     }
 
-    public String getTrustListUrl() {
-        return getConfig().get(TRUST_LIST_URL);
+    public String getTrustMaterialIdps() {
+        return getConfig().get(TRUST_MATERIAL_IDPS);
     }
 
-    public void setTrustListUrl(String url) {
-        getConfig().put(TRUST_LIST_URL, url);
-    }
-
-    public String getTrustListSigningCertPem() {
-        return normalizePemConfigValue(getConfig().get(TRUST_LIST_SIGNING_CERT_PEM));
-    }
-
-    public void setTrustListSigningCertPem(String pem) {
-        getConfig().put(TRUST_LIST_SIGNING_CERT_PEM, pem);
+    public void setTrustMaterialIdps(String aliases) {
+        getConfig().put(TRUST_MATERIAL_IDPS, aliases);
     }
 
     public Oid4vpTrustedAuthoritiesMode getTrustedAuthoritiesMode() {
@@ -222,15 +211,6 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public void setTrustedAuthoritiesMode(String mode) {
         getConfig().put(TRUSTED_AUTHORITIES_MODE, mode);
-    }
-
-    @Override
-    public String getTrustListLoTEType() {
-        return getConfig().get(TRUST_LIST_LOTE_TYPE);
-    }
-
-    public void setTrustListLoTEType(String value) {
-        getConfig().put(TRUST_LIST_LOTE_TYPE, value);
     }
 
     public boolean isEnforceHaip() {
@@ -285,14 +265,6 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         getConfig().put(STATUS_LIST_MAX_CACHE_TTL_SECONDS, String.valueOf(seconds));
     }
 
-    public Duration getTrustListMaxCacheTtl() {
-        return parseDurationSeconds(TRUST_LIST_MAX_CACHE_TTL_SECONDS);
-    }
-
-    public void setTrustListMaxCacheTtlSeconds(int seconds) {
-        getConfig().put(TRUST_LIST_MAX_CACHE_TTL_SECONDS, String.valueOf(seconds));
-    }
-
     public Duration getIssuerMetadataMaxCacheTtl() {
         String value = getConfig().get(ISSUER_METADATA_MAX_CACHE_TTL_SECONDS);
         if (StringUtil.isBlank(value)) {
@@ -307,27 +279,6 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public void setIssuerMetadataMaxCacheTtlSeconds(int seconds) {
         getConfig().put(ISSUER_METADATA_MAX_CACHE_TTL_SECONDS, String.valueOf(seconds));
-    }
-
-    /**
-     * Maximum age of a stale (expired) trust list cache entry that can be used as fallback when
-     * a trust list refresh fails (e.g., network timeout). Defaults to 1 day (86400 seconds).
-     * Set to 0 to disable stale cache usage entirely.
-     */
-    public Duration getTrustListMaxStaleAge() {
-        String value = getConfig().get(TRUST_LIST_MAX_STALE_AGE_SECONDS);
-        if (StringUtil.isBlank(value)) {
-            return Duration.ofSeconds(DEFAULT_TRUST_LIST_MAX_STALE_AGE_SECONDS);
-        }
-        try {
-            return Duration.ofSeconds(Long.parseLong(value));
-        } catch (NumberFormatException e) {
-            return Duration.ofSeconds(DEFAULT_TRUST_LIST_MAX_STALE_AGE_SECONDS);
-        }
-    }
-
-    public void setTrustListMaxStaleAgeSeconds(int seconds) {
-        getConfig().put(TRUST_LIST_MAX_STALE_AGE_SECONDS, String.valueOf(seconds));
     }
 
     private Duration parseDurationSeconds(String configKey) {

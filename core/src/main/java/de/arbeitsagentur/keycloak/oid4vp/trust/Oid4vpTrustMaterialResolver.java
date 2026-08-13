@@ -1,0 +1,160 @@
+/*
+ * Copyright 2026 Bundesagentur für Arbeit
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package de.arbeitsagentur.keycloak.oid4vp.trust;
+
+import java.security.cert.X509Certificate;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Stream;
+import org.jboss.logging.Logger;
+import org.keycloak.broker.provider.TrustMaterialIdentityProvider;
+import org.keycloak.broker.provider.TrustMaterialRequest;
+import org.keycloak.jose.jwk.JWK;
+import org.keycloak.models.IdentityProviderModel;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.services.resources.IdentityBrokerService;
+
+/**
+ * Resolves trust material identity providers by alias and aggregates their trust material for the
+ * OID4VP verifier.
+ *
+ * <p>Counterpart of the upstream {@code TrustMaterialResolver}: providers are looked up by alias
+ * from the realm, disabled or missing providers are skipped. Providers that only implement the
+ * upstream {@code TrustMaterialIdentityProvider} contract (for example Keycloak's
+ * {@code default-trust}) are adapted to the extension contract at lookup time, so aggregation
+ * works uniformly on {@link Oid4vpTrustMaterialIdentityProvider}.
+ */
+public class Oid4vpTrustMaterialResolver {
+
+    private static final Logger LOG = Logger.getLogger(Oid4vpTrustMaterialResolver.class);
+
+    /** Provider lookup indirection, replaceable in tests with a typed double. */
+    public interface ProviderLookup {
+        Oid4vpTrustMaterialIdentityProvider<?> byAlias(KeycloakSession session, String alias);
+    }
+
+    private final ProviderLookup providerLookup;
+
+    public Oid4vpTrustMaterialResolver() {
+        this(Oid4vpTrustMaterialResolver::lookupByAlias);
+    }
+
+    public Oid4vpTrustMaterialResolver(ProviderLookup providerLookup) {
+        this.providerLookup = providerLookup;
+    }
+
+    /**
+     * Aggregates the trust material of all trust material identity providers referenced by the
+     * comma separated alias list. Unknown or disabled aliases are skipped with a warning.
+     */
+    public ResolvedTrust resolveTrust(KeycloakSession session, String aliases) {
+        List<Oid4vpTrustMaterialIdentityProvider<?>> providers = resolveProviders(session, aliases);
+        if (providers.isEmpty()) {
+            return ResolvedTrust.empty();
+        }
+
+        TrustMaterialRequest request = TrustMaterialRequest.builder().build();
+        List<X509TrustMaterial> issuanceTrust = new ArrayList<>();
+        List<JWK> trustedIssuerJwks = new ArrayList<>();
+        Set<X509Certificate> directIssuerCertificates = new LinkedHashSet<>();
+        Set<X509Certificate> revocationCertificates = new LinkedHashSet<>();
+        Set<String> authorityKeyIdentifiers = new LinkedHashSet<>();
+        Set<String> trustListUrls = new LinkedHashSet<>();
+
+        for (Oid4vpTrustMaterialIdentityProvider<?> provider : providers) {
+            issuanceTrust.addAll(provider.resolveX509Trust(request).toList());
+            provider.resolveKeys(request).forEach(trustedIssuerJwks::add);
+            directIssuerCertificates.addAll(provider.directIssuerCertificates());
+            revocationCertificates.addAll(provider.revocationCertificates());
+            authorityKeyIdentifiers.addAll(provider.trustedAuthorityKeyIdentifiers());
+            provider.trustListUrl().ifPresent(trustListUrls::add);
+        }
+
+        return new ResolvedTrust(
+                issuanceTrust,
+                List.copyOf(directIssuerCertificates),
+                trustedIssuerJwks,
+                List.copyOf(revocationCertificates),
+                List.copyOf(authorityKeyIdentifiers),
+                List.copyOf(trustListUrls));
+    }
+
+    private List<Oid4vpTrustMaterialIdentityProvider<?>> resolveProviders(KeycloakSession session, String aliases) {
+        List<Oid4vpTrustMaterialIdentityProvider<?>> providers = new ArrayList<>();
+        for (String alias : splitAliases(aliases)) {
+            Oid4vpTrustMaterialIdentityProvider<?> provider = providerLookup.byAlias(session, alias);
+            if (provider == null) {
+                LOG.warnf(
+                        "Trust material identity provider '%s' is missing, disabled or not a trust material provider; skipping",
+                        alias);
+                continue;
+            }
+            providers.add(provider);
+        }
+        return providers;
+    }
+
+    private static List<String> splitAliases(String aliases) {
+        if (aliases == null || aliases.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(aliases.split(","))
+                .map(String::trim)
+                .filter(alias -> !alias.isEmpty())
+                .toList();
+    }
+
+    private static Oid4vpTrustMaterialIdentityProvider<?> lookupByAlias(KeycloakSession session, String alias) {
+        IdentityProviderModel model = session.identityProviders().getByAlias(alias);
+        if (model == null || !model.isEnabled()) {
+            return null;
+        }
+        Oid4vpTrustMaterialIdentityProvider<?> extensionProvider =
+                IdentityBrokerService.getIdentityProvider(session, model, Oid4vpTrustMaterialIdentityProvider.class);
+        if (extensionProvider != null) {
+            return extensionProvider;
+        }
+        TrustMaterialIdentityProvider<?> upstreamProvider =
+                IdentityBrokerService.getIdentityProvider(session, model, TrustMaterialIdentityProvider.class);
+        return upstreamProvider != null ? new UpstreamTrustMaterialAdapter(upstreamProvider) : null;
+    }
+
+    /**
+     * Adapts a provider that only implements the upstream contract: its keys are consumed, all
+     * extension surfaces stay empty.
+     */
+    private record UpstreamTrustMaterialAdapter(TrustMaterialIdentityProvider<?> delegate)
+            implements Oid4vpTrustMaterialIdentityProvider<IdentityProviderModel> {
+
+        @Override
+        public IdentityProviderModel getConfig() {
+            return delegate.getConfig();
+        }
+
+        @Override
+        public Stream<JWK> resolveKeys(TrustMaterialRequest request) {
+            return delegate.resolveKeys(request);
+        }
+
+        @Override
+        public void close() {
+            delegate.close();
+        }
+    }
+}

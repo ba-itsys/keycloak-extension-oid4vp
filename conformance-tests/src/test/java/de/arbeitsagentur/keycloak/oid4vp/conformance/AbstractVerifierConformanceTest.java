@@ -29,6 +29,8 @@ import de.arbeitsagentur.keycloak.oid4vp.conformance.verifier.VerifierScenario;
 import de.arbeitsagentur.keycloak.oid4vp.conformance.verifier.VerifierSigningMaterial;
 import de.arbeitsagentur.keycloak.oid4vp.conformance.verifier.VerifierSuiteConfig;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
+import de.arbeitsagentur.keycloak.oid4vp.trust.EtsiTrustListIdentityProviderConfig;
+import de.arbeitsagentur.keycloak.oid4vp.trust.EtsiTrustListIdentityProviderFactory;
 import jakarta.ws.rs.core.Response;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -56,6 +58,7 @@ import org.keycloak.util.JsonSerialization;
 public abstract class AbstractVerifierConformanceTest extends AbstractConformanceTest {
 
     static final String IDP_ALIAS = "oid4vp";
+    static final String TRUST_IDP_ALIAS = "etsi-trust-list";
 
     private static final String FINAL_PLAN = "oid4vp-1final-verifier-test-plan";
     private static final String HAIP_PLAN = "oid4vp-1final-verifier-haip-test-plan";
@@ -167,6 +170,15 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
         if (exists) {
             realm.admin().identityProviders().get(IDP_ALIAS).remove();
         }
+        boolean trustIdpExists = realm.admin().identityProviders().findAll().stream()
+                .anyMatch(idp -> TRUST_IDP_ALIAS.equals(idp.getAlias()));
+        if (trustIdpExists) {
+            realm.admin().identityProviders().get(TRUST_IDP_ALIAS).remove();
+        }
+        try (Response response = realm.admin().identityProviders().create(trustListIdentityProvider(scenario))) {
+            Assertions.assertEquals(
+                    201, response.getStatus(), "Creating the trust list identity provider failed: " + body(response));
+        }
         try (Response response = realm.admin().identityProviders().create(identityProvider(scenario))) {
             Assertions.assertEquals(
                     201, response.getStatus(), "Creating the OID4VP identity provider failed: " + body(response));
@@ -228,7 +240,7 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
         return VerifierSigningMaterial.forHost(OpenIdConformanceSuite.KEYCLOAK_BASE_URI.getHost());
     }
 
-    private IdentityProviderRepresentation identityProvider(VerifierScenario scenario) {
+    private IdentityProviderRepresentation trustListIdentityProvider(VerifierScenario scenario) {
         VerifierSigningMaterial material = signingMaterial();
         List<String> trustedCertificates = new ArrayList<>(List.of(material.leafCertPem(), material.caCertPem()));
         if (scenario.profile().includeMdlIssuer()) {
@@ -236,6 +248,22 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
         }
         String trustListUrl =
                 TrustListServer.instance().publish("trustlist-" + getClass().getSimpleName(), trustedCertificates);
+
+        IdentityProviderRepresentation idp = new IdentityProviderRepresentation();
+        idp.setAlias(TRUST_IDP_ALIAS);
+        idp.setDisplayName("ETSI Trust List");
+        idp.setProviderId(EtsiTrustListIdentityProviderFactory.PROVIDER_ID);
+        idp.setEnabled(true);
+
+        Map<String, String> config = new LinkedHashMap<>();
+        config.put(EtsiTrustListIdentityProviderConfig.TRUST_LIST_URL, trustListUrl);
+        config.put(EtsiTrustListIdentityProviderConfig.TRUST_LIST_LOTE_TYPE, TrustListServer.PID_LOTE_TYPE);
+        idp.setConfig(config);
+        return idp;
+    }
+
+    private IdentityProviderRepresentation identityProvider(VerifierScenario scenario) {
+        VerifierSigningMaterial material = signingMaterial();
 
         IdentityProviderRepresentation idp = new IdentityProviderRepresentation();
         idp.setAlias(IDP_ALIAS);
@@ -254,8 +282,7 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
         config.put(Oid4vpIdentityProviderConfig.CROSS_DEVICE_ENABLED, "false");
         config.put(Oid4vpIdentityProviderConfig.TRUSTED_AUTHORITIES_MODE, "none");
         config.put(Oid4vpIdentityProviderConfig.STATUS_LIST_MAX_CACHE_TTL_SECONDS, "0");
-        config.put(Oid4vpIdentityProviderConfig.TRUST_LIST_URL, trustListUrl);
-        config.put(Oid4vpIdentityProviderConfig.TRUST_LIST_LOTE_TYPE, TrustListServer.PID_LOTE_TYPE);
+        config.put(Oid4vpIdentityProviderConfig.TRUST_MATERIAL_IDPS, TRUST_IDP_ALIAS);
         config.put(Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM, material.combinedPem());
         config.put(
                 Oid4vpIdentityProviderConfig.PRINCIPAL_ATTRIBUTE,

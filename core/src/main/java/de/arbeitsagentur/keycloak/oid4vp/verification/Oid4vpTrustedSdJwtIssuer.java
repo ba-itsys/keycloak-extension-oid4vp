@@ -15,6 +15,8 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
+import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
+import de.arbeitsagentur.keycloak.oid4vp.trust.X509CertificateChainValidator;
 import de.arbeitsagentur.keycloak.oid4vp.verification.JwtVcIssuerMetadataResolver.ResolvedIssuerKey;
 import java.security.PublicKey;
 import java.security.cert.X509Certificate;
@@ -28,34 +30,35 @@ import org.keycloak.crypto.KeyType;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.crypto.SignatureVerifierContext;
+import org.keycloak.jose.jwk.JWK;
 import org.keycloak.jose.jws.JWSHeader;
 import org.keycloak.sdjwt.IssuerSignedJWT;
+import org.keycloak.sdjwt.JwkParsingUtils;
 import org.keycloak.sdjwt.consumer.TrustedSdJwtIssuer;
 import org.keycloak.util.KeyWrapperUtil;
 
 /**
- * Keycloak SD-JWT issuer resolution strategy for this OID4VP extension.
+ * Keycloak SD-JWT issuer resolution strategy for this OID4VP extension, working on the trust
+ * material resolved from the configured trust material identity providers.
  *
  * <p>Policy:
  * <ol>
- *   <li>Prefer x5c validation against trusted certificates</li>
+ *   <li>Prefer x5c validation: a pinned trusted leaf or a PKIX path to the issuance trust anchors</li>
  *   <li>When HAIP is not enforced, fall back to JWT VC issuer metadata</li>
- *   <li>Finally, try trusted certificates directly as issuer keys</li>
+ *   <li>Finally, try directly trusted issuer certificates and trusted issuer JWKs</li>
  * </ol>
  */
 public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpTrustedSdJwtIssuer.class);
 
-    private final List<X509Certificate> trustedCertificates;
+    private final ResolvedTrust trust;
     private final JwtVcIssuerMetadataResolver issuerMetadataResolver;
     private final boolean strictX5cVerification;
 
     public Oid4vpTrustedSdJwtIssuer(
-            List<X509Certificate> trustedCertificates,
-            JwtVcIssuerMetadataResolver issuerMetadataResolver,
-            boolean strictX5cVerification) {
-        this.trustedCertificates = trustedCertificates != null ? List.copyOf(trustedCertificates) : List.of();
+            ResolvedTrust trust, JwtVcIssuerMetadataResolver issuerMetadataResolver, boolean strictX5cVerification) {
+        this.trust = trust != null ? trust : ResolvedTrust.empty();
         this.issuerMetadataResolver = issuerMetadataResolver;
         this.strictX5cVerification = strictX5cVerification;
     }
@@ -90,19 +93,16 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
             }
         }
 
-        if (trustedCertificates.isEmpty()) {
+        List<SignatureVerifierContext> directVerifiers = directTrustVerifiers();
+        if (directVerifiers.isEmpty()) {
             if (x5cFailure != null) {
                 throw new VerificationException(x5cFailure.getMessage(), x5cFailure);
             }
             throw new VerificationException("No trusted keys available for SD-JWT signature verification");
         }
 
-        LOG.debug("Using trusted certificate keys directly for signature verification");
-        List<SignatureVerifierContext> verifiers = new ArrayList<>();
-        for (X509Certificate cert : trustedCertificates) {
-            verifiers.add(toVerifierContext(cert.getPublicKey()));
-        }
-        return verifiers;
+        LOG.debug("Using directly trusted issuer keys for signature verification");
+        return directVerifiers;
     }
 
     private List<SignatureVerifierContext> resolveIssuerVerifiersFromX5c(IssuerSignedJWT issuerSignedJWT) {
@@ -114,12 +114,13 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
             }
             return null;
         }
-        if (trustedCertificates.isEmpty()) {
+        if (trust.issuanceTrust().isEmpty() && trust.directIssuerCertificates().isEmpty()) {
             throw new IllegalStateException("No trusted keys available for SD-JWT x5c signature verification");
         }
         try {
-            PublicKey leafKey = X5cChainValidator.validateChain(x5c, trustedCertificates);
-            LOG.debug("SD-JWT x5c chain validated against trust list, using leaf certificate key");
+            List<X509Certificate> chain = X509CertificateChainValidator.decodeCertificateChain(x5c);
+            PublicKey leafKey = trust.validateIssuerChain(chain);
+            LOG.debug("SD-JWT x5c chain validated against trust material, using leaf certificate key");
             return List.of(toVerifierContext(leafKey));
         } catch (Exception e) {
             throw new IllegalStateException("SD-JWT x5c validation failed: " + e.getMessage(), e);
@@ -137,7 +138,7 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
     }
 
     private void validateResolvedKeyTrust(ResolvedIssuerKey issuerKey) {
-        if (trustedCertificates.isEmpty()) {
+        if (trust.issuanceTrust().isEmpty() && trust.directIssuerCertificates().isEmpty()) {
             return;
         }
         List<X509Certificate> chain = issuerKey.certificateChain();
@@ -145,7 +146,7 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
             return;
         }
         try {
-            PublicKey validatedLeafKey = X5cChainValidator.validateCertChain(chain, trustedCertificates);
+            PublicKey validatedLeafKey = trust.validateIssuerChain(chain);
             if (!Arrays.equals(
                     validatedLeafKey.getEncoded(), issuerKey.publicKey().getEncoded())) {
                 throw new IllegalStateException("Issuer metadata x5c leaf key does not match the resolved JWK");
@@ -155,6 +156,21 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
         } catch (Exception e) {
             throw new IllegalStateException("Issuer metadata x5c validation failed: " + e.getMessage(), e);
         }
+    }
+
+    private List<SignatureVerifierContext> directTrustVerifiers() {
+        List<SignatureVerifierContext> verifiers = new ArrayList<>();
+        for (X509Certificate certificate : trust.directIssuerCertificates()) {
+            verifiers.add(toVerifierContext(certificate.getPublicKey()));
+        }
+        for (JWK jwk : trust.trustedIssuerJwks()) {
+            try {
+                verifiers.add(JwkParsingUtils.convertJwkToVerifierContext(jwk));
+            } catch (Exception e) {
+                LOG.debugf("Skipping unusable trusted issuer JWK '%s': %s", jwk.getKeyId(), e.getMessage());
+            }
+        }
+        return verifiers;
     }
 
     private SignatureVerifierContext toVerifierContext(PublicKey publicKey) {

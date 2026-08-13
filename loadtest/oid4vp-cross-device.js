@@ -12,6 +12,7 @@ const ADMIN_USERNAME = env('LOAD_ADMIN_USERNAME', 'admin');
 const ADMIN_PASSWORD = env('LOAD_ADMIN_PASSWORD', 'admin');
 const ADMIN_CLIENT_ID = env('LOAD_ADMIN_CLIENT_ID', 'admin-cli');
 const IDP_ALIAS = env('LOAD_IDP_ALIAS', 'oid4vp');
+const TRUST_IDP_ALIAS = env('LOAD_TRUST_IDP_ALIAS', 'etsi-trust-list');
 const BROWSER_CLIENT_ID = env('LOAD_BROWSER_CLIENT_ID', 'wallet-mock');
 const BROWSER_REDIRECT_URI = env('LOAD_BROWSER_REDIRECT_URI', '');
 const SD_JWT_VCT = env('LOAD_SD_JWT_VCT', 'urn:eudi:pid:1');
@@ -231,6 +232,8 @@ class AdminApi {
     }
 
     configureOid4vpIdp() {
+        this.configureTrustListIdp();
+
         const idpPath = `/admin/realms/${encodeURIComponent(REALM_NAME)}/identity-provider/instances/${encodeURIComponent(IDP_ALIAS)}`;
         const idp = this.getJson(idpPath);
         const config = idp.config || {};
@@ -241,9 +244,7 @@ class AdminApi {
         config.enforceHaip = 'false';
         config.clientIdScheme = 'plain';
         config.responseMode = 'direct_post.jwt';
-        config.trustListUrl = `${trimTrailingSlash(WALLET_INTERNAL_BASE_URI)}/api/trustlist?vct=${encodeURIComponent(SD_JWT_VCT)}`;
-        config.trustListSigningCertPem = '';
-        config.trustListLoTEType = '';
+        config.trustMaterialIdps = TRUST_IDP_ALIAS;
         config.trustedAuthoritiesMode = 'none';
         config.x509CertificatePem = '';
         config.x509SigningKeyJwk = '';
@@ -253,6 +254,28 @@ class AdminApi {
 
         this.putJson(idpPath, idp);
         this.replaceDcqlMappers(idpPath);
+    }
+
+    // Creates or updates the ETSI trust list identity provider serving the wallet's trust list
+    configureTrustListIdp() {
+        const trustIdpPath = `/admin/realms/${encodeURIComponent(REALM_NAME)}/identity-provider/instances/${encodeURIComponent(TRUST_IDP_ALIAS)}`;
+        const trustListUrl = `${trimTrailingSlash(WALLET_INTERNAL_BASE_URI)}/api/trustlist?vct=${encodeURIComponent(SD_JWT_VCT)}`;
+        const representation = {
+            alias: TRUST_IDP_ALIAS,
+            displayName: 'ETSI Trust List',
+            providerId: 'etsi-trust-list',
+            enabled: true,
+            config: {
+                trustListUrl: trustListUrl,
+            },
+        };
+
+        const response = request(this.resolve(trustIdpPath), 'GET', null, this.authHeaders(), false);
+        if (response.status === 404) {
+            this.postJson(`/admin/realms/${encodeURIComponent(REALM_NAME)}/identity-provider/instances`, representation);
+        } else {
+            this.putJson(trustIdpPath, representation);
+        }
     }
 
     // Replaces DCQL-driving mappers (those with a credential type) with the SD-JWT-only set

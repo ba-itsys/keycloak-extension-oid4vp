@@ -22,13 +22,14 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SdJwtVerificationResult;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
-import java.security.cert.X509Certificate;
+import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Supplier;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.IdentityBrokerException;
 import org.keycloak.models.KeycloakSession;
@@ -52,21 +53,16 @@ public class VpTokenProcessor implements VpTokenVerifier {
     private final MdocVerifier mdocVerifier;
     private final StatusListVerifier statusListVerifier;
     private final ObjectMapper objectMapper;
-    private final TrustListProvider trustListProvider;
-    private final String expectedTrustListLoTEType;
+    private final Supplier<ResolvedTrust> trustSupplier;
 
     public record Config(
             KeycloakSession session,
-            String trustListUrl,
+            Supplier<ResolvedTrust> trustSupplier,
             Duration statusListMaxCacheTtl,
-            Duration trustListMaxCacheTtl,
             Duration issuerMetadataMaxCacheTtl,
             boolean strictX5cVerification,
             int clockSkewSeconds,
-            int kbJwtMaxAgeSeconds,
-            List<X509Certificate> trustListSigningCerts,
-            Duration trustListMaxStaleAge,
-            String expectedTrustListLoTEType) {}
+            int kbJwtMaxAgeSeconds) {}
 
     public record Request(
             String vpToken,
@@ -83,32 +79,30 @@ public class VpTokenProcessor implements VpTokenVerifier {
                 new JwtVcIssuerMetadataResolver(config.session(), config.issuerMetadataMaxCacheTtl()),
                 config.strictX5cVerification());
         this.mdocVerifier = new MdocVerifier();
-        this.trustListProvider = new TrustListProvider(
-                config.session(),
-                config.trustListUrl(),
-                config.trustListMaxCacheTtl(),
-                config.trustListMaxStaleAge(),
-                config.trustListSigningCerts());
-        this.statusListVerifier =
-                new StatusListVerifier(config.session(), this.trustListProvider, config.statusListMaxCacheTtl());
+        this.trustSupplier = config.trustSupplier();
+        this.statusListVerifier = new StatusListVerifier(
+                config.session(), () -> resolveTrust().revocationCertificates(), config.statusListMaxCacheTtl());
         this.objectMapper = objectMapper;
-        this.expectedTrustListLoTEType = config.expectedTrustListLoTEType();
     }
 
     public VpTokenProcessor(ObjectMapper objectMapper, StatusListVerifier statusListVerifier) {
-        this(objectMapper, statusListVerifier, null);
+        this(objectMapper, statusListVerifier, (Supplier<ResolvedTrust>) null);
     }
 
     public VpTokenProcessor(
-            ObjectMapper objectMapper, StatusListVerifier statusListVerifier, TrustListProvider trustListProvider) {
+            ObjectMapper objectMapper, StatusListVerifier statusListVerifier, Supplier<ResolvedTrust> trustSupplier) {
         this.sdJwtVerifier = new SdJwtVerifier(
                 Oid4vpIdentityProviderConfig.DEFAULT_CLOCK_SKEW_SECONDS,
                 Oid4vpIdentityProviderConfig.DEFAULT_KB_JWT_MAX_AGE_SECONDS);
         this.mdocVerifier = new MdocVerifier();
         this.statusListVerifier = statusListVerifier;
-        this.trustListProvider = trustListProvider;
+        this.trustSupplier = trustSupplier;
         this.objectMapper = objectMapper;
-        this.expectedTrustListLoTEType = null;
+    }
+
+    private ResolvedTrust resolveTrust() {
+        ResolvedTrust trust = trustSupplier != null ? trustSupplier.get() : null;
+        return trust != null ? trust : ResolvedTrust.empty();
     }
 
     /**
@@ -118,10 +112,12 @@ public class VpTokenProcessor implements VpTokenVerifier {
      */
     @Override
     public VpTokenResult process(Request request) {
-        List<X509Certificate> trustedCerts =
-                trustListProvider != null ? trustListProvider.getIssuanceCertificates() : List.of();
-        validateTrustListLoTEType();
-        LOG.debugf("Trust list provides %d trusted keys", trustedCerts.size());
+        ResolvedTrust trust = resolveTrust();
+        LOG.debugf(
+                "Trust material provides %d trust anchors sets, %d direct issuer certificates and %d issuer keys",
+                trust.issuanceTrust().size(),
+                trust.directIssuerCertificates().size(),
+                trust.trustedIssuerJwks().size());
 
         try {
             // Detect format: single credential or a JSON wrapper around one credential
@@ -130,7 +126,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
                         request.vpToken(),
                         request.clientId(),
                         request.expectedNonce(),
-                        trustedCerts,
+                        trust,
                         request.alternateResponseUri(),
                         request.mdocGeneratedNonce(),
                         request.encryptionJwkThumbprint());
@@ -140,7 +136,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
                     request.vpToken(),
                     request.clientId(),
                     request.expectedNonce(),
-                    trustedCerts,
+                    trust,
                     request.alternateResponseUri(),
                     request.mdocGeneratedNonce(),
                     request.encryptionJwkThumbprint());
@@ -156,7 +152,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
             String vpToken,
             String clientId,
             String expectedNonce,
-            List<X509Certificate> trustedCerts,
+            ResolvedTrust trust,
             String alternateResponseUri,
             String mdocGeneratedNonce,
             String encryptionJwkThumbprint) {
@@ -166,7 +162,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
                 vpToken,
                 clientId,
                 expectedNonce,
-                trustedCerts,
+                trust,
                 alternateResponseUri,
                 mdocGeneratedNonce,
                 encryptionJwkThumbprint);
@@ -182,7 +178,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
             String vpToken,
             String clientId,
             String expectedNonce,
-            List<X509Certificate> trustedCerts,
+            ResolvedTrust trust,
             String alternateResponseUri,
             String mdocGeneratedNonce,
             String encryptionJwkThumbprint) {
@@ -199,7 +195,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
                             credential,
                             clientId,
                             expectedNonce,
-                            trustedCerts,
+                            trust,
                             alternateResponseUri,
                             mdocGeneratedNonce,
                             encryptionJwkThumbprint);
@@ -245,14 +241,14 @@ public class VpTokenProcessor implements VpTokenVerifier {
             String credential,
             String clientId,
             String expectedNonce,
-            List<X509Certificate> trustedCerts,
+            ResolvedTrust trust,
             String alternateResponseUri,
             String mdocGeneratedNonce,
             String encryptionJwkThumbprint) {
 
         if (sdJwtVerifier.isSdJwt(credential)) {
             SdJwtVerificationResult result =
-                    verifySdJwtWithFallback(credential, clientId, expectedNonce, trustedCerts, alternateResponseUri);
+                    verifySdJwtWithFallback(credential, clientId, expectedNonce, trust, alternateResponseUri);
             statusListVerifier.checkRevocationStatus(result.claims());
             return new VerifiedCredential(
                     credentialId, result.issuer(), result.credentialType(), result.claims(), PresentationType.SD_JWT);
@@ -263,7 +259,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
             byte[] jwkThumbprintBytes = decodeJwkThumbprint(encryptionJwkThumbprint);
             MdocVerificationResult result = mdocVerifier.verifyWithTrustedCerts(
                     credential,
-                    trustedCerts,
+                    trust,
                     clientId,
                     expectedNonce,
                     alternateResponseUri,
@@ -286,37 +282,19 @@ public class VpTokenProcessor implements VpTokenVerifier {
         }
     }
 
-    private void validateTrustListLoTEType() {
-        if (trustListProvider == null || StringUtil.isBlank(expectedTrustListLoTEType)) {
-            return;
-        }
-        String actualLoTEType = trustListProvider.getCurrentLoTEType();
-        if (StringUtil.isBlank(actualLoTEType)) {
-            return;
-        }
-        if (!expectedTrustListLoTEType.equals(actualLoTEType)) {
-            throw new IdentityBrokerException("Trust list LoTE type mismatch: expected " + expectedTrustListLoTEType
-                    + " but got " + actualLoTEType);
-        }
-    }
-
     // Wallets in the field are inconsistent here: some bind the KB-JWT to client_id, others to
     // response_uri. We try the configured client_id first and then one bounded fallback to the
     // redirect flow's response_uri so interoperability does not depend on a single audience choice.
     private SdJwtVerificationResult verifySdJwtWithFallback(
-            String sdJwt,
-            String clientId,
-            String expectedNonce,
-            List<X509Certificate> trustedCerts,
-            String alternateResponseUri) {
+            String sdJwt, String clientId, String expectedNonce, ResolvedTrust trust, String alternateResponseUri) {
         try {
-            return sdJwtVerifier.verify(sdJwt, clientId, expectedNonce, trustedCerts);
+            return sdJwtVerifier.verify(sdJwt, clientId, expectedNonce, trust);
         } catch (Exception primaryError) {
             if (StringUtil.isNotBlank(alternateResponseUri)) {
                 try {
                     LOG.debugf(
                             "Primary verification failed, retrying with alternate audience: %s", alternateResponseUri);
-                    return sdJwtVerifier.verify(sdJwt, alternateResponseUri, expectedNonce, trustedCerts);
+                    return sdJwtVerifier.verify(sdJwt, alternateResponseUri, expectedNonce, trust);
                 } catch (Exception fallbackError) {
                     LOG.warnf("Fallback verification also failed: %s", fallbackError.getMessage());
                 }

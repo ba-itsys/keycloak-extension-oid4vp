@@ -111,13 +111,24 @@ abstract class AbstractOid4vpE2eTest {
      * framework, unlike identity provider config changes).
      */
     private void ensureIdentityProviderConfigured() {
+        boolean trustIdpExists = realm.admin().identityProviders().findAll().stream()
+                .anyMatch(idp -> Oid4vpTestKeycloakSetup.TRUST_IDP_ALIAS.equals(idp.getAlias()));
+        if (!trustIdpExists) {
+            try (Response response = realm.admin()
+                    .identityProviders()
+                    .create(Oid4vpTestKeycloakSetup.defaultTrustListIdentityProvider(wallet().pidTrustListUrl()))) {
+                assertThat(response.getStatus())
+                        .as("Creating the trust list identity provider failed: %s", response.readEntity(String.class))
+                        .isEqualTo(201);
+            }
+        }
         boolean exists = realm.admin().identityProviders().findAll().stream()
                 .anyMatch(idp -> Oid4vpTestKeycloakSetup.IDP_ALIAS.equals(idp.getAlias()));
         if (!exists) {
             String haipCertPem = TestCertificates.generateHaipCertificateChainPem();
             try (Response response = realm.admin()
                     .identityProviders()
-                    .create(Oid4vpTestKeycloakSetup.defaultIdentityProvider(wallet().pidTrustListUrl(), haipCertPem))) {
+                    .create(Oid4vpTestKeycloakSetup.defaultIdentityProvider(haipCertPem))) {
                 assertThat(response.getStatus())
                         .as("Creating the OID4VP identity provider failed: %s", response.readEntity(String.class))
                         .isEqualTo(201);
@@ -206,6 +217,15 @@ abstract class AbstractOid4vpE2eTest {
     protected void setIdpConfig(Map<String, String> entries) {
         realm.updateIdentityProvider(
                 Oid4vpTestKeycloakSetup.IDP_ALIAS, idp -> idp.getConfig().putAll(entries));
+    }
+
+    /**
+     * Updates the ETSI trust list identity provider config. The framework restores the original
+     * configuration after the test.
+     */
+    protected void setTrustIdpConfig(Map<String, String> entries) {
+        realm.updateIdentityProvider(
+                Oid4vpTestKeycloakSetup.TRUST_IDP_ALIAS, idp -> idp.getConfig().putAll(entries));
     }
 
     protected void deleteAllOid4vpUsers() {

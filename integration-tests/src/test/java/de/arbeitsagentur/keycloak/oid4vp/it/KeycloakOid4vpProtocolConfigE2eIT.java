@@ -289,11 +289,7 @@ class KeycloakOid4vpProtocolConfigE2eIT extends AbstractOid4vpE2eTest {
 
         try {
             replaceDcqlMappers(Oid4vpTestKeycloakSetup.sdJwtPidMappers());
-            setIdpConfig(Map.of(
-                    Oid4vpIdentityProviderConfig.TRUST_LIST_URL,
-                    wallet().pidTrustListUrl(),
-                    Oid4vpIdentityProviderConfig.ENFORCE_HAIP,
-                    "false"));
+            setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.ENFORCE_HAIP, "false"));
 
             flow.navigateToLoginPage();
             flow.clickOid4vpIdpButton();

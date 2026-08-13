@@ -39,13 +39,13 @@ public enum Oid4vpTrustedAuthoritiesMode {
         return this != NONE;
     }
 
-    public List<Map<String, Object>> toDcqlEntries(String trustListUrl, List<String> authorityKeyIdentifiers) {
+    public List<Map<String, Object>> toDcqlEntries(List<String> trustListUrls, List<String> authorityKeyIdentifiers) {
         return switch (this) {
             case NONE -> List.of();
             case ETSI_TL ->
-                StringUtil.isBlank(trustListUrl)
+                trustListUrls == null || trustListUrls.isEmpty()
                         ? List.of()
-                        : List.of(toDcqlEntry(Oid4vpConstants.DCQL_TRUSTED_AUTHORITY_ETSI_TL, List.of(trustListUrl)));
+                        : List.of(toDcqlEntry(Oid4vpConstants.DCQL_TRUSTED_AUTHORITY_ETSI_TL, trustListUrls));
             case AKI ->
                 authorityKeyIdentifiers == null || authorityKeyIdentifiers.isEmpty()
                         ? List.of()

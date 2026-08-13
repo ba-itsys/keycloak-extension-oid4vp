@@ -25,6 +25,8 @@ import java.security.cert.X509Certificate;
 import java.security.spec.ECGenParameterSpec;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import javax.security.auth.x500.X500Principal;
@@ -63,7 +65,7 @@ class X5cChainValidatorTest {
     }
 
     @Test
-    void validateCertChain_validChain_returnsLeafKey() throws Exception {
+    void validateChain_validChain_returnsLeafKey() throws Exception {
         KeyPair leafKp = generateKeyPair();
         X509Certificate leafCert = generateCert(
                 leafKp,
@@ -74,12 +76,12 @@ class X5cChainValidatorTest {
                 Instant.now().plus(1, ChronoUnit.DAYS),
                 false);
 
-        PublicKey result = X5cChainValidator.validateCertChain(List.of(leafCert, caCert), List.of(caCert));
+        PublicKey result = X5cChainValidator.validateChain(encode(leafCert, caCert), List.of(caCert));
         assertThat(result).isEqualTo(leafCert.getPublicKey());
     }
 
     @Test
-    void validateCertChain_expiredLeafCert_throws() throws Exception {
+    void validateChain_expiredLeafCert_throws() throws Exception {
         KeyPair leafKp = generateKeyPair();
         X509Certificate expiredLeaf = generateCert(
                 leafKp,
@@ -90,14 +92,13 @@ class X5cChainValidatorTest {
                 Instant.now().minus(1, ChronoUnit.HOURS),
                 false);
 
-        assertThatThrownBy(() -> X5cChainValidator.validateCertChain(List.of(expiredLeaf, caCert), List.of(caCert)))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("expired")
-                .hasMessageContaining("position 0");
+        assertThatThrownBy(() -> X5cChainValidator.validateChain(encode(expiredLeaf, caCert), List.of(caCert)))
+                .isInstanceOf(Exception.class)
+                .hasMessageContaining("Failed to validate the x5c certificate chain");
     }
 
     @Test
-    void validateCertChain_notYetValidLeafCert_throws() throws Exception {
+    void validateChain_notYetValidLeafCert_throws() throws Exception {
         KeyPair leafKp = generateKeyPair();
         X509Certificate futureLeaf = generateCert(
                 leafKp,
@@ -108,14 +109,13 @@ class X5cChainValidatorTest {
                 Instant.now().plus(2, ChronoUnit.DAYS),
                 false);
 
-        assertThatThrownBy(() -> X5cChainValidator.validateCertChain(List.of(futureLeaf, caCert), List.of(caCert)))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("not yet valid")
-                .hasMessageContaining("position 0");
+        assertThatThrownBy(() -> X5cChainValidator.validateChain(encode(futureLeaf, caCert), List.of(caCert)))
+                .isInstanceOf(Exception.class)
+                .hasMessageContaining("Failed to validate the x5c certificate chain");
     }
 
     @Test
-    void validateCertChain_expiredIntermediateCert_throws() throws Exception {
+    void validateChain_expiredIntermediateCert_throws() throws Exception {
         KeyPair intermediateKp = generateKeyPair();
         X509Certificate expiredIntermediate = generateCert(
                 intermediateKp,
@@ -136,22 +136,21 @@ class X5cChainValidatorTest {
                 Instant.now().plus(1, ChronoUnit.DAYS),
                 false);
 
-        assertThatThrownBy(() ->
-                        X5cChainValidator.validateCertChain(List.of(leafCert, expiredIntermediate), List.of(caCert)))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("expired")
-                .hasMessageContaining("position 1");
+        assertThatThrownBy(
+                        () -> X5cChainValidator.validateChain(encode(leafCert, expiredIntermediate), List.of(caCert)))
+                .isInstanceOf(Exception.class)
+                .hasMessageContaining("Failed to validate the x5c certificate chain");
     }
 
     @Test
-    void validateCertChain_emptyChain_throws() {
-        assertThatThrownBy(() -> X5cChainValidator.validateCertChain(List.of(), List.of(caCert)))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Empty x5c chain");
+    void validateChain_emptyChain_throws() {
+        assertThatThrownBy(() -> X5cChainValidator.validateChain(List.of(), List.of(caCert)))
+                .isInstanceOf(Exception.class)
+                .hasMessageContaining("The x5c certificate chain is empty");
     }
 
     @Test
-    void validateCertChain_untrustedChain_throws() throws Exception {
+    void validateChain_untrustedSelfSignedLeaf_throws() throws Exception {
         KeyPair untrustedKp = generateKeyPair();
         X509Certificate untrustedCert = generateCert(
                 untrustedKp,
@@ -162,19 +161,45 @@ class X5cChainValidatorTest {
                 Instant.now().plus(1, ChronoUnit.DAYS),
                 false);
 
-        assertThatThrownBy(() -> X5cChainValidator.validateCertChain(List.of(untrustedCert), List.of(caCert)))
+        assertThatThrownBy(() -> X5cChainValidator.validateChain(encode(untrustedCert), List.of(caCert)))
+                .isInstanceOf(Exception.class)
+                .hasMessageContaining("Self signed certificates are not accepted as chain leaf");
+    }
+
+    @Test
+    void validateChain_noCaAmongTrusted_throws() throws Exception {
+        KeyPair untrustedKp = generateKeyPair();
+        X509Certificate untrustedCert = generateCert(
+                untrustedKp,
+                caKeyPair,
+                "CN=Untrusted Leaf",
+                "CN=Test CA",
+                Instant.now().minus(1, ChronoUnit.HOURS),
+                Instant.now().plus(1, ChronoUnit.DAYS),
+                false);
+        KeyPair pinnedKp = generateKeyPair();
+        X509Certificate pinnedEndEntity = generateCert(
+                pinnedKp,
+                caKeyPair,
+                "CN=Pinned End Entity",
+                "CN=Test CA",
+                Instant.now().minus(1, ChronoUnit.HOURS),
+                Instant.now().plus(1, ChronoUnit.DAYS),
+                false);
+
+        assertThatThrownBy(() -> X5cChainValidator.validateChain(encode(untrustedCert), List.of(pinnedEndEntity)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("not anchored");
     }
 
     @Test
-    void validateCertChain_selfSignedLeaf_trustedDirectly_succeeds() throws Exception {
-        PublicKey result = X5cChainValidator.validateCertChain(List.of(caCert), List.of(caCert));
+    void validateChain_selfSignedLeaf_trustedDirectly_succeeds() throws Exception {
+        PublicKey result = X5cChainValidator.validateChain(encode(caCert), List.of(caCert));
         assertThat(result).isEqualTo(caCert.getPublicKey());
     }
 
     @Test
-    void validateCertChain_nonCaIntermediate_throws() throws Exception {
+    void validateChain_nonCaIntermediate_throws() throws Exception {
         KeyPair intermediateKp = generateKeyPair();
         X509Certificate nonCaIntermediate = generateCert(
                 intermediateKp,
@@ -195,10 +220,43 @@ class X5cChainValidatorTest {
                 Instant.now().plus(1, ChronoUnit.DAYS),
                 false);
 
-        assertThatThrownBy(() ->
-                        X5cChainValidator.validateCertChain(List.of(leafCert, nonCaIntermediate), List.of(caCert)))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("not a CA certificate");
+        assertThatThrownBy(() -> X5cChainValidator.validateChain(encode(leafCert, nonCaIntermediate), List.of(caCert)))
+                .isInstanceOf(Exception.class)
+                .hasMessageContaining("Failed to validate the x5c certificate chain");
+    }
+
+    @Test
+    void validateChain_trustedIntermediateCa_succeeds() throws Exception {
+        KeyPair intermediateKp = generateKeyPair();
+        X509Certificate intermediateCa = generateCert(
+                intermediateKp,
+                caKeyPair,
+                "CN=Trusted Intermediate",
+                "CN=Test CA",
+                Instant.now().minus(1, ChronoUnit.HOURS),
+                Instant.now().plus(1, ChronoUnit.DAYS),
+                true);
+
+        KeyPair leafKp = generateKeyPair();
+        X509Certificate leafCert = generateCert(
+                leafKp,
+                intermediateKp,
+                "CN=Leaf",
+                "CN=Trusted Intermediate",
+                Instant.now().minus(1, ChronoUnit.HOURS),
+                Instant.now().plus(1, ChronoUnit.DAYS),
+                false);
+
+        PublicKey result = X5cChainValidator.validateChain(encode(leafCert, intermediateCa), List.of(intermediateCa));
+        assertThat(result).isEqualTo(leafCert.getPublicKey());
+    }
+
+    private static List<String> encode(X509Certificate... certificates) throws Exception {
+        List<String> x5c = new ArrayList<>();
+        for (X509Certificate certificate : certificates) {
+            x5c.add(Base64.getEncoder().encodeToString(certificate.getEncoded()));
+        }
+        return x5c;
     }
 
     private static KeyPair generateKeyPair() throws Exception {

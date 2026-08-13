@@ -32,6 +32,8 @@ import com.authlete.cose.COSESigner;
 import com.authlete.cose.COSEUnprotectedHeaderBuilder;
 import com.authlete.cose.SigStructureBuilder;
 import de.arbeitsagentur.keycloak.oid4vp.domain.MdocVerificationResult;
+import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
+import de.arbeitsagentur.keycloak.oid4vp.trust.TestTrust;
 import java.math.BigInteger;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -110,7 +112,7 @@ class MdocVerifierTest {
                     "family_name", "Doe"
                 });
 
-        MdocVerificationResult result = verifier.verifyWithTrustedCerts(token, List.of(signingCert));
+        MdocVerificationResult result = verifier.verifyWithTrustedCerts(token, TestTrust.ofCertificates(signingCert));
 
         assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
         assertThat(namespaceClaims(result, "org.iso.18013.5.1"))
@@ -131,7 +133,7 @@ class MdocVerifierTest {
                 new String[] {"number", "123"},
                 new String[] {"broken", "{not json"});
 
-        MdocVerificationResult result = verifier.verifyWithTrustedCerts(token, List.of(signingCert));
+        MdocVerificationResult result = verifier.verifyWithTrustedCerts(token, TestTrust.ofCertificates(signingCert));
 
         Map<String, Object> claims = namespaceClaims(result, "org.iso.18013.5.1");
         assertThat(claims).containsEntry("address", Map.of("locality", "London"));
@@ -146,7 +148,7 @@ class MdocVerifierTest {
         CBORPairList root = new CBORPairList(List.of(new CBORPair(new CBORString("documents"), new CBORItemList())));
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(root.encode());
 
-        assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(token, List.of(signingCert)))
+        assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(token, TestTrust.ofCertificates(signingCert)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Empty documents array");
     }
@@ -157,7 +159,7 @@ class MdocVerifierTest {
                 new CBORPairList(List.of(new CBORPair(new CBORString("something_else"), new CBORString("value"))));
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(root.encode());
 
-        assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(token, List.of(signingCert)))
+        assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(token, TestTrust.ofCertificates(signingCert)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Unknown mDoc structure");
     }
@@ -177,7 +179,7 @@ class MdocVerifierTest {
 
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(root.encode());
 
-        assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(token, List.of()))
+        assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(token, ResolvedTrust.empty()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("No trusted keys available");
     }
@@ -198,7 +200,7 @@ class MdocVerifierTest {
 
         String token = buildSignedMdocWithNameSpaces("org.iso.18013.5.1.mDL", nameSpaces);
 
-        MdocVerificationResult result = verifier.verifyWithTrustedCerts(token, List.of(signingCert));
+        MdocVerificationResult result = verifier.verifyWithTrustedCerts(token, TestTrust.ofCertificates(signingCert));
 
         assertThat(namespaceClaims(result, "org.iso.18013.5.1")).containsEntry("given_name", "Alice");
         assertThat(namespaceClaims(result, "org.iso.18013.5.1.aamva")).containsEntry("age_over_18", true);
@@ -214,7 +216,7 @@ class MdocVerifierTest {
                 42,
                 new String[] {"given_name", "Alice"});
 
-        MdocVerificationResult result = verifier.verifyWithTrustedCerts(token, List.of(signingCert));
+        MdocVerificationResult result = verifier.verifyWithTrustedCerts(token, TestTrust.ofCertificates(signingCert));
 
         assertThat(result.claims()).containsKey("status");
         Map<String, Object> status = (Map<String, Object>) result.claims().get("status");
@@ -230,7 +232,8 @@ class MdocVerifierTest {
             throws Exception {
         MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper(algorithm);
 
-        MdocVerificationResult result = verifier.verifyWithTrustedCerts(helper.build(), List.of(helper.issuerCert));
+        MdocVerificationResult result =
+                verifier.verifyWithTrustedCerts(helper.build(), TestTrust.ofCertificates(helper.issuerCert));
 
         assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
         assertThat(namespaceClaims(result, "org.iso.18013.5.1")).containsEntry("given_name", "John");
@@ -374,7 +377,7 @@ class MdocVerifierTest {
             String token = helper.build(transcript);
 
             MdocVerificationResult result = verifier.verifyWithTrustedCerts(
-                    token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null);
+                    token, TestTrust.ofCertificates(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null);
 
             assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
             assertThat(namespaceClaims(result, "org.iso.18013.5.1")).containsEntry("given_name", "John");
@@ -390,7 +393,13 @@ class MdocVerifierTest {
             String token = helper.build(transcript);
 
             MdocVerificationResult result = verifier.verifyWithTrustedCerts(
-                    token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, MDOC_GENERATED_NONCE, null);
+                    token,
+                    TestTrust.ofCertificates(helper.issuerCert),
+                    CLIENT_ID,
+                    NONCE,
+                    RESPONSE_URI,
+                    MDOC_GENERATED_NONCE,
+                    null);
 
             assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
             assertThat(namespaceClaims(result, "org.iso.18013.5.1")).containsEntry("given_name", "John");
@@ -403,7 +412,13 @@ class MdocVerifierTest {
             String token = helper.build(transcript);
 
             assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(
-                            token, List.of(helper.issuerCert), CLIENT_ID, "wrong-nonce", RESPONSE_URI, null, null))
+                            token,
+                            TestTrust.ofCertificates(helper.issuerCert),
+                            CLIENT_ID,
+                            "wrong-nonce",
+                            RESPONSE_URI,
+                            null,
+                            null))
                     .isInstanceOf(IllegalStateException.class);
         }
 
@@ -417,7 +432,13 @@ class MdocVerifierTest {
 
             // Verify passes — OID4VP 1.0 is tried first, then falls back to ISO 18013-7
             MdocVerificationResult result = verifier.verifyWithTrustedCerts(
-                    token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, MDOC_GENERATED_NONCE, null);
+                    token,
+                    TestTrust.ofCertificates(helper.issuerCert),
+                    CLIENT_ID,
+                    NONCE,
+                    RESPONSE_URI,
+                    MDOC_GENERATED_NONCE,
+                    null);
 
             assertThat(result).isNotNull();
         }
@@ -434,7 +455,7 @@ class MdocVerifierTest {
 
             // Should pass — digests computed correctly by helper
             MdocVerificationResult result = verifier.verifyWithTrustedCerts(
-                    token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null);
+                    token, TestTrust.ofCertificates(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null);
 
             assertThat(result.claims()).isNotEmpty();
         }
@@ -453,7 +474,13 @@ class MdocVerifierTest {
             String token = helper.build(transcript);
 
             assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(
-                            token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null))
+                            token,
+                            TestTrust.ofCertificates(helper.issuerCert),
+                            CLIENT_ID,
+                            NONCE,
+                            RESPONSE_URI,
+                            null,
+                            null))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("expired");
         }
@@ -468,7 +495,13 @@ class MdocVerifierTest {
             String token = helper.build(transcript);
 
             assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(
-                            token, List.of(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null))
+                            token,
+                            TestTrust.ofCertificates(helper.issuerCert),
+                            CLIENT_ID,
+                            NONCE,
+                            RESPONSE_URI,
+                            null,
+                            null))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("not yet valid");
         }
@@ -485,7 +518,8 @@ class MdocVerifierTest {
                         "family_name", "User"
                     });
 
-            MdocVerificationResult result = verifier.verifyWithTrustedCerts(token, List.of(signingCert));
+            MdocVerificationResult result =
+                    verifier.verifyWithTrustedCerts(token, TestTrust.ofCertificates(signingCert));
 
             assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
             assertThat(namespaceClaims(result, "org.iso.18013.5.1")).containsEntry("given_name", "Test");

@@ -39,6 +39,7 @@ import com.nimbusds.jose.util.Base64URL;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SdJwtVerificationResult;
+import de.arbeitsagentur.keycloak.oid4vp.trust.TestTrust;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -89,7 +90,7 @@ class SdJwtSupportedAlgorithmsTest {
         X509Certificate cert = generateSelfSignedCert(material, "CN=" + algorithm.name());
         String sdJwt = buildIssuerSdJwt(material, cert, Map.of("iss", "https://issuer.example", "vct", "PID"));
 
-        SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, List.of(cert));
+        SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, TestTrust.ofCertificates(cert));
 
         assertThat(result.issuer()).isEqualTo("https://issuer.example");
         assertThat(result.credentialType()).isEqualTo("PID");
@@ -108,7 +109,7 @@ class SdJwtSupportedAlgorithmsTest {
                         "cnf", Map.of("jwk", holderMaterial.publicJwk().toJSONObject())));
         String sdJwt = buildSdJwtVpWithKbJwt(credentialJwt, holderMaterial, algorithm.jwsAlgorithm(), AUDIENCE, NONCE);
 
-        SdJwtVerificationResult result = verifier.verify(sdJwt, AUDIENCE, NONCE, List.of(issuerCert));
+        SdJwtVerificationResult result = verifier.verify(sdJwt, AUDIENCE, NONCE, TestTrust.ofCertificates(issuerCert));
 
         assertThat(result.issuer()).isEqualTo("https://issuer.example");
         assertThat(result.credentialType()).isEqualTo("PID");

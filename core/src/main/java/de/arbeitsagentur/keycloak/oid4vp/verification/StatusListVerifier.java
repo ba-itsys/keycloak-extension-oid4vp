@@ -24,6 +24,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
 import org.jboss.logging.Logger;
@@ -45,21 +46,22 @@ public class StatusListVerifier {
     private static final ConcurrentHashMap<String, CachedStatusList> CACHE = new ConcurrentHashMap<>();
 
     private final KeycloakSession session;
-    private final TrustListProvider trustListProvider;
+    private final Supplier<List<X509Certificate>> revocationCertificates;
     private final Duration maxCacheTtl;
 
-    /** Test-only constructor that creates a verifier without session or trust provider. */
+    /** Test-only constructor that creates a verifier without session or trust material. */
     StatusListVerifier() {
         this(null, null);
     }
 
-    public StatusListVerifier(KeycloakSession session, TrustListProvider trustListProvider) {
-        this(session, trustListProvider, null);
+    public StatusListVerifier(KeycloakSession session, Supplier<List<X509Certificate>> revocationCertificates) {
+        this(session, revocationCertificates, null);
     }
 
-    public StatusListVerifier(KeycloakSession session, TrustListProvider trustListProvider, Duration maxCacheTtl) {
+    public StatusListVerifier(
+            KeycloakSession session, Supplier<List<X509Certificate>> revocationCertificates, Duration maxCacheTtl) {
         this.session = session;
-        this.trustListProvider = trustListProvider;
+        this.revocationCertificates = revocationCertificates;
         this.maxCacheTtl = maxCacheTtl;
     }
 
@@ -174,8 +176,7 @@ public class StatusListVerifier {
     }
 
     private void verifyStatusListJwtSignature(String compactJwt, Map<String, Object> claims) throws Exception {
-        List<X509Certificate> trustedCerts =
-                trustListProvider != null ? trustListProvider.getRevocationCertificates() : List.of();
+        List<X509Certificate> trustedCerts = revocationCertificates != null ? revocationCertificates.get() : List.of();
         if (trustedCerts.isEmpty()) {
             LOG.debugf(
                     "Status list JWT signature not verified: no trusted keys configured (issuer=%s)",
