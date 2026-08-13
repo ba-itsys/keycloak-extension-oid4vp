@@ -1,2 +1,4 @@
-de.arbeitsagentur.keycloak.oid4vp.mapper.Oid4vpClaimToUserAttributeMapper
-de.arbeitsagentur.keycloak.oid4vp.mapper.Oid4vpClaimToUserSessionMapper
+de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPSdJwtUserAttributeMapper
+de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPSdJwtUserSessionAttributeMapper
+de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPMdocUserAttributeMapper
+de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPMdocUserSessionAttributeMapper

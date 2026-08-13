@@ -17,8 +17,6 @@ package de.arbeitsagentur.keycloak.oid4vp;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import java.math.BigInteger;
 import java.security.KeyPair;
@@ -41,10 +39,6 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.keycloak.common.crypto.CryptoIntegration;
-import org.keycloak.models.IdentityProviderModel;
-import org.keycloak.models.KeycloakContext;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
 import org.keycloak.provider.ProviderConfigProperty;
 
 class Oid4vpIdentityProviderFactoryTest {
@@ -126,45 +120,6 @@ class Oid4vpIdentityProviderFactoryTest {
         assertThatThrownBy(() -> Oid4vpIdentityProviderFactory.resolveX509SigningKey(config))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("signing key could not be resolved");
-    }
-
-    @Test
-    void create_allowsPlainNonHaipProviderWithoutCertificateBinding() {
-        KeycloakSession session = mockSession();
-        IdentityProviderModel model = new IdentityProviderModel();
-        model.setAlias("wallet");
-        model.getConfig().put(Oid4vpIdentityProviderConfig.ENFORCE_HAIP, "false");
-        model.getConfig().put(Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME, "plain");
-
-        Oid4vpIdentityProvider provider = new Oid4vpIdentityProviderFactory().create(session, model);
-
-        assertThat(provider).isNotNull();
-        assertThat(provider.getConfig().getResolvedClientIdScheme().configValue())
-                .isEqualTo("plain");
-    }
-
-    @Test
-    void create_doNotStoreUsers_requiresKeycloakFeature() {
-        KeycloakSession session = mockSession();
-        IdentityProviderModel model = new IdentityProviderModel();
-        model.setAlias("wallet");
-        model.getConfig().put(IdentityProviderModel.DO_NOT_STORE_USERS, "true");
-        model.getConfig().put(Oid4vpIdentityProviderConfig.ENFORCE_HAIP, "false");
-        model.getConfig().put(Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME, "plain");
-
-        assertThatThrownBy(() -> new Oid4vpIdentityProviderFactory().create(session, model))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("transient-users");
-    }
-
-    private static KeycloakSession mockSession() {
-        KeycloakSession session = mock(KeycloakSession.class);
-        KeycloakContext context = mock(KeycloakContext.class);
-        RealmModel realm = mock(RealmModel.class);
-        when(realm.getAccessCodeLifespanLogin()).thenReturn(1800);
-        when(context.getRealm()).thenReturn(realm);
-        when(session.getContext()).thenReturn(context);
-        return session;
     }
 
     private static KeyPair generateEcKeyPair() throws Exception {

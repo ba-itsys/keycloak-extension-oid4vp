@@ -151,10 +151,9 @@ public final class ConformanceApiClient {
     private record ModuleCompletion(JsonNode info, boolean evidenceUploaded) {}
 
     /**
-     * Waits for the module to finish. Since suite release-v5.2.2, verifier modules whose flow ends
-     * with a successful response no longer finish on their own: they log a screenshot placeholder
-     * and wait for evidence of the verification outcome, finishing as REVIEW once it is uploaded.
-     * Any unfilled placeholder is therefore filled with a minimal placeholder image while waiting.
+     * Waits for the module to finish. Since suite release-v5.2.2, modules whose flow succeeds log
+     * a screenshot placeholder and wait for verification evidence, finishing as REVIEW once it is
+     * uploaded, so unfilled placeholders are filled with a minimal image while waiting.
      */
     private ModuleCompletion waitForFinishedFillingEvidencePlaceholders(String moduleId, Duration timeout) {
         long deadline = System.nanoTime() + timeout.toNanos();

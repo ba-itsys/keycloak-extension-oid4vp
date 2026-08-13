@@ -22,14 +22,20 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.ClaimSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
+import de.arbeitsagentur.keycloak.oid4vp.mapper.AbstractOID4VPClaimMapper;
+import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPMdocUserAttributeMapper;
+import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPMdocUserSessionAttributeMapper;
+import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPSdJwtUserAttributeMapper;
+import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPSdJwtUserSessionAttributeMapper;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Stream;
 import org.jboss.logging.Logger;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
+import org.keycloak.models.IdentityProviderMapperModel;
 import org.keycloak.utils.StringUtil;
 
 /**
@@ -171,66 +177,49 @@ public class DcqlQueryBuilder {
     }
 
     /**
-     * Aggregates credential type specifications from all IdP mappers configured for this provider.
-     * Scans mapper configurations for credential format, type, claim paths, and claim set ids, then
-     * groups them into {@link CredentialTypeSpec} entries suitable for DCQL query generation.
-     * Credential types are ordered by format and type so the generated query does not depend on
-     * mapper enumeration order.
+     * Aggregates credential type specifications from the given OID4VP claim mappers. The mapper's
+     * provider id determines the credential format; its configuration carries the credential type,
+     * claim path, mDoc namespace, and claim set ids. Credential types are ordered by format and
+     * type so the generated query does not depend on mapper enumeration order.
      */
     public static Map<String, CredentialTypeSpec> aggregateFromMappers(
-            KeycloakSession session, Oid4vpConfigProvider config) {
+            Stream<IdentityProviderMapperModel> mappers, Oid4vpConfigProvider config) {
         Map<String, CredentialTypeSpec> result = new LinkedHashMap<>();
 
         try {
-            RealmModel realm = session.getContext().getRealm();
-            if (realm == null) {
-                return result;
-            }
-
-            String idpAlias = config.getAlias();
             Map<CredentialTypeKey, List<ClaimSpec>> claimsByType = new LinkedHashMap<>();
 
-            realm.getIdentityProviderMappersByAliasStream(idpAlias).forEach(mapper -> {
-                String format = mapper.getConfig().get(Oid4vpMapperConfigProperties.CREDENTIAL_FORMAT);
-                String type = mapper.getConfig().get(Oid4vpMapperConfigProperties.CREDENTIAL_TYPE);
-                String claimPath = mapper.getConfig().get(Oid4vpMapperConfigProperties.CLAIM_PATH);
-                List<String> claimSetIds =
-                        ClaimSpec.parseClaimSetIds(mapper.getConfig().get(Oid4vpMapperConfigProperties.CLAIM_SET_IDS));
-                boolean isMultivalued =
-                        "true".equalsIgnoreCase(mapper.getConfig().get(Oid4vpMapperConfigProperties.MULTIVALUED));
-
-                if (StringUtil.isBlank(format)) {
-                    format = FORMAT_SD_JWT_VC;
-                }
-                if (StringUtil.isBlank(type)) {
+            mappers.forEach(mapper -> {
+                String format = formatOfMapper(mapper.getIdentityProviderMapper());
+                if (format == null) {
                     return;
                 }
-
-                CredentialTypeKey typeKey = new CredentialTypeKey(format, type);
-                List<ClaimSpec> claims = claimsByType.computeIfAbsent(typeKey, k -> new ArrayList<>());
-
-                if (StringUtil.isNotBlank(claimPath)) {
-                    claims.add(new ClaimSpec(claimPath, claimSetIds, isMultivalued));
+                String type = mapper.getConfig().get(AbstractOID4VPClaimMapper.CREDENTIAL_TYPE);
+                String claimPath = mapper.getConfig().get(AbstractOID4VPClaimMapper.CLAIM);
+                if (StringUtil.isBlank(type) || StringUtil.isBlank(claimPath)) {
+                    return;
                 }
+                ClaimSpec claimSpec = claimSpecOfMapper(mapper, format, type.trim(), claimPath.trim());
+                if (claimSpec.claimPath() == null) {
+                    LOG.warnf("Ignoring invalid claim path '%s' of mapper %s", claimPath, mapper.getName());
+                    return;
+                }
+                claimsByType
+                        .computeIfAbsent(new CredentialTypeKey(format, type.trim()), k -> new ArrayList<>())
+                        .add(claimSpec);
             });
 
             if (!config.isUseIdTokenSubject() && !config.isTransientUsersEnabled()) {
-                String sdJwtUserMappingClaim = config.getUserMappingClaim();
-                String mdocUserMappingClaim = config.getUserMappingClaimMdoc();
-
                 for (Map.Entry<CredentialTypeKey, List<ClaimSpec>> entry : claimsByType.entrySet()) {
-                    String format = entry.getKey().format();
-                    List<ClaimSpec> claims = entry.getValue();
-
-                    String userMappingClaim =
-                            FORMAT_MSO_MDOC.equals(format) ? mdocUserMappingClaim : sdJwtUserMappingClaim;
-
-                    if (StringUtil.isNotBlank(userMappingClaim)) {
-                        boolean alreadyPresent =
-                                claims.stream().anyMatch(spec -> spec.path().equals(userMappingClaim));
-                        if (!alreadyPresent) {
-                            claims.add(new ClaimSpec(userMappingClaim));
-                        }
+                    ClaimSpec principal = principalClaim(config, entry.getKey(), entry.getValue());
+                    if (principal == null || principal.claimPath() == null) {
+                        continue;
+                    }
+                    boolean alreadyPresent = entry.getValue().stream()
+                            .anyMatch(spec -> spec.path().equals(principal.path())
+                                    && Objects.equals(spec.namespace(), principal.namespace()));
+                    if (!alreadyPresent) {
+                        entry.getValue().add(principal);
                     }
                 }
             }
@@ -249,6 +238,46 @@ public class DcqlQueryBuilder {
         }
 
         return result;
+    }
+
+    /** The DCQL credential format covered by the given mapper provider id, or null for other mappers. */
+    private static String formatOfMapper(String mapperProviderId) {
+        return switch (mapperProviderId) {
+            case OID4VPSdJwtUserAttributeMapper.PROVIDER_ID, OID4VPSdJwtUserSessionAttributeMapper.PROVIDER_ID ->
+                FORMAT_SD_JWT_VC;
+            case OID4VPMdocUserAttributeMapper.PROVIDER_ID, OID4VPMdocUserSessionAttributeMapper.PROVIDER_ID ->
+                FORMAT_MSO_MDOC;
+            default -> null;
+        };
+    }
+
+    private static ClaimSpec claimSpecOfMapper(
+            IdentityProviderMapperModel mapper, String format, String type, String claimPath) {
+        List<String> claimSetIds =
+                ClaimSpec.parseClaimSetIds(mapper.getConfig().get(AbstractOID4VPClaimMapper.CLAIM_SET_IDS));
+        if (FORMAT_MSO_MDOC.equals(format)) {
+            String namespace = mapper.getConfig().get(OID4VPMdocUserAttributeMapper.NAMESPACE);
+            String effectiveNamespace = StringUtil.isNotBlank(namespace) ? namespace.trim() : type;
+            return ClaimSpec.mdoc(effectiveNamespace, claimPath, claimSetIds);
+        }
+        return ClaimSpec.sdJwt(claimPath, claimSetIds);
+    }
+
+    /**
+     * The principal claim appended for a credential type so the subject is always requested. For
+     * mDoc credentials the element is requested in the namespace the credential's own mappers use.
+     */
+    private static ClaimSpec principalClaim(
+            Oid4vpConfigProvider config, CredentialTypeKey typeKey, List<ClaimSpec> claims) {
+        String path = config.getPrincipalAttribute();
+        if (StringUtil.isBlank(path)) {
+            return null;
+        }
+        if (FORMAT_MSO_MDOC.equals(typeKey.format())) {
+            String namespace = claims.isEmpty() ? typeKey.type() : claims.get(0).namespace();
+            return ClaimSpec.mdoc(namespace, path);
+        }
+        return ClaimSpec.sdJwt(path);
     }
 
     private Map<String, Object> buildCredentialEntry(CredentialTypeSpec typeSpec, String credId) {
@@ -295,7 +324,7 @@ public class DcqlQueryBuilder {
             String claimId = CLAIM_ID_PREFIX + claimIndex++;
             Map<String, Object> claim = new LinkedHashMap<>();
             claim.put(DCQL_ID, claimId);
-            claim.put(DCQL_PATH, claimSpec.toDcqlPath(typeSpec.format(), typeSpec.type()));
+            claim.put(DCQL_PATH, claimSpec.toDcqlPath());
             claims.add(claim);
             claimIds.add(claimId);
         }

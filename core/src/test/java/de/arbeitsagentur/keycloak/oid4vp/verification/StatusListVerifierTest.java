@@ -256,12 +256,14 @@ class StatusListVerifierTest {
     }
 
     @Test
-    void extractsStatusReferenceFromMdocNamespacedKey() {
+    void extractsStatusReferenceFromMdocNamespace() {
         Map<String, Object> claims = Map.of(
-                "eu.europa.ec.eudi.pid.1/family_name",
-                "Smith",
-                "eu.europa.ec.eudi.pid.1/status",
-                Map.of("status_list", Map.of("uri", "https://issuer.example/status", "idx", 7)));
+                "eu.europa.ec.eudi.pid.1",
+                Map.of(
+                        "family_name",
+                        "Smith",
+                        "status",
+                        Map.of("status_list", Map.of("uri", "https://issuer.example/status", "idx", 7))));
         StatusListVerifier.StatusReference ref = verifier.extractStatusReference(claims);
         assertThat(ref).isNotNull();
         assertThat(ref.uri()).isEqualTo("https://issuer.example/status");

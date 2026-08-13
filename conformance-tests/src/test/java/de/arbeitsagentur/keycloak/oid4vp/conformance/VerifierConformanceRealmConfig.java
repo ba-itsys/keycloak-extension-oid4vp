@@ -15,9 +15,9 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.conformance;
 
-import org.keycloak.testframework.realm.ClientConfigBuilder;
+import org.keycloak.testframework.realm.ClientBuilder;
+import org.keycloak.testframework.realm.RealmBuilder;
 import org.keycloak.testframework.realm.RealmConfig;
-import org.keycloak.testframework.realm.RealmConfigBuilder;
 
 // The realm the verifier conformance flows log in to with the public PKCE test client
 public class VerifierConformanceRealmConfig implements RealmConfig {
@@ -26,15 +26,13 @@ public class VerifierConformanceRealmConfig implements RealmConfig {
     public static final String CLIENT_ID = "wallet-mock";
 
     @Override
-    public RealmConfigBuilder configure(RealmConfigBuilder realm) {
+    public RealmBuilder configure(RealmBuilder realm) {
         return realm.name(REALM)
-                .client(ClientConfigBuilder.create()
-                        .clientId(CLIENT_ID)
+                .clients(ClientBuilder.create(CLIENT_ID)
                         .publicClient(true)
                         .protocol("openid-connect")
                         .redirectUris("*")
                         .webOrigins("*")
-                        .attribute("pkce.code.challenge.method", "S256")
-                        .build());
+                        .attribute("pkce.code.challenge.method", "S256"));
     }
 }

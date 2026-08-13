@@ -28,7 +28,7 @@ services:
       - oid4vc-wallet:/wallet
 
   keycloak-1:
-    image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.5.5}
+    image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.7.1}
     command:
       - start
       - --http-enabled=true
@@ -61,11 +61,11 @@ services:
     ports:
       - "${KC1_PORT:-18081}:8080"
     volumes:
-      - ../target/keycloak-extension-oid4vp.jar:/opt/keycloak/providers/keycloak-extension-oid4vp.jar:ro
-      - ../src/test/resources/realm-wallet-demo-local.json:/opt/keycloak/data/import/realm-wallet-demo-local.json:ro
+      - ../core/target/keycloak-extension-oid4vp.jar:/opt/keycloak/providers/keycloak-extension-oid4vp.jar:ro
+      - ../core/src/test/resources/realm-wallet-demo-local.json:/opt/keycloak/data/import/realm-wallet-demo-local.json:ro
 
   keycloak-2:
-    image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.5.5}
+    image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.7.1}
     command:
       - start
       - --http-enabled=true
@@ -96,8 +96,8 @@ services:
     ports:
       - "${KC2_PORT:-18082}:8080"
     volumes:
-      - ../target/keycloak-extension-oid4vp.jar:/opt/keycloak/providers/keycloak-extension-oid4vp.jar:ro
-      - ../src/test/resources/realm-wallet-demo-local.json:/opt/keycloak/data/import/realm-wallet-demo-local.json:ro
+      - ../core/target/keycloak-extension-oid4vp.jar:/opt/keycloak/providers/keycloak-extension-oid4vp.jar:ro
+      - ../core/src/test/resources/realm-wallet-demo-local.json:/opt/keycloak/data/import/realm-wallet-demo-local.json:ro
 
   haproxy:
     image: haproxy:3.1

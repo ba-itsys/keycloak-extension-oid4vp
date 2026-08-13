@@ -38,11 +38,11 @@ public interface Oid4vpConfigProvider {
 
     String getTrustListLoTEType();
 
-    String getUserMappingClaimForFormat(String format);
-
-    String getUserMappingClaim();
-
-    String getUserMappingClaimMdoc();
+    /**
+     * Dot notation claim path of the claim that becomes the brokered subject. For mDoc
+     * presentations the path addresses a data element, resolved against each presented namespace.
+     */
+    String getPrincipalAttribute();
 
     int getSsePollIntervalMs();
 

@@ -59,6 +59,7 @@ cat > "$REALM_OUT" <<REALMEOF
 {
   "realm": "wallet-demo",
   "enabled": true,
+  "sslRequired": "none",
   "registrationAllowed": false,
   "roles": {
     "realm": [
@@ -216,8 +217,7 @@ cat > "$REALM_OUT" <<REALMEOF
         "trustListUrl": "${TRUST_LIST_URL}",
         "clientIdScheme": "x509_san_dns",
         "walletScheme": "openid4vp://",
-        "userMappingClaim": "family_name",
-        "userMappingClaimMdoc": "family_name",
+        "principalAttribute": "family_name",
         "trustListLoTEType": "http://uri.etsi.org/19602/LoTEType/EUPIDProvidersList",
         "x509CertificatePem": "${PEM_CONTENT}",
         "verifierInfo": "${VERIFIER_INFO_CONTENT}"
@@ -228,10 +228,9 @@ cat > "$REALM_OUT" <<REALMEOF
     {
       "name": "sd-jwt-family_name-to-lastName",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-sd-jwt-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "dc+sd-jwt",
         "credential.type": "urn:eudi:pid:1",
         "claim": "family_name",
         "user.attribute": "lastName"
@@ -240,10 +239,9 @@ cat > "$REALM_OUT" <<REALMEOF
     {
       "name": "sd-jwt-given_name-to-firstName",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-sd-jwt-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "dc+sd-jwt",
         "credential.type": "urn:eudi:pid:1",
         "claim": "given_name",
         "user.attribute": "firstName"
@@ -252,10 +250,9 @@ cat > "$REALM_OUT" <<REALMEOF
     {
       "name": "sd-jwt-birthdate-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-sd-jwt-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "dc+sd-jwt",
         "credential.type": "urn:eudi:pid:1",
         "claim": "birthdate",
         "user.attribute": "birthdate"
@@ -264,10 +261,9 @@ cat > "$REALM_OUT" <<REALMEOF
     {
       "name": "mdoc-family_name-to-lastName",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-mdoc-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "mso_mdoc",
         "credential.type": "eu.europa.ec.eudi.pid.1",
         "claim": "family_name",
         "user.attribute": "lastName"
@@ -276,10 +272,9 @@ cat > "$REALM_OUT" <<REALMEOF
     {
       "name": "mdoc-given_name-to-firstName",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-mdoc-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "mso_mdoc",
         "credential.type": "eu.europa.ec.eudi.pid.1",
         "claim": "given_name",
         "user.attribute": "firstName"
@@ -288,10 +283,9 @@ cat > "$REALM_OUT" <<REALMEOF
     {
       "name": "mdoc-birth_date-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-mdoc-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "mso_mdoc",
         "credential.type": "eu.europa.ec.eudi.pid.1",
         "claim": "birth_date",
         "user.attribute": "birthdate"
@@ -300,82 +294,75 @@ cat > "$REALM_OUT" <<REALMEOF
     {
       "name": "sd-jwt-street_address-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-sd-jwt-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "dc+sd-jwt",
         "credential.type": "urn:eudi:pid:1",
-        "claim": "address/street_address",
+        "claim": "address.street_address",
         "user.attribute": "address.street_address"
       }
     },
     {
       "name": "sd-jwt-locality-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-sd-jwt-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "dc+sd-jwt",
         "credential.type": "urn:eudi:pid:1",
-        "claim": "address/locality",
+        "claim": "address.locality",
         "user.attribute": "address.locality"
       }
     },
     {
       "name": "sd-jwt-country-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-sd-jwt-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "dc+sd-jwt",
         "credential.type": "urn:eudi:pid:1",
-        "claim": "address/country",
+        "claim": "address.country",
         "user.attribute": "address.country"
       }
     },
     {
       "name": "sd-jwt-region-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-sd-jwt-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "dc+sd-jwt",
         "credential.type": "urn:eudi:pid:1",
-        "claim": "address/region",
+        "claim": "address.region",
         "user.attribute": "address.region"
       }
     },
     {
       "name": "sd-jwt-postal_code-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-sd-jwt-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "dc+sd-jwt",
         "credential.type": "urn:eudi:pid:1",
-        "claim": "address/postal_code",
+        "claim": "address.postal_code",
         "user.attribute": "address.postal_code"
       }
     },
     {
       "name": "sd-jwt-place_of_birth-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-sd-jwt-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "dc+sd-jwt",
         "credential.type": "urn:eudi:pid:1",
-        "claim": "place_of_birth/locality",
+        "claim": "place_of_birth.locality",
         "user.attribute": "place_of_birth"
       }
     },
     {
       "name": "sd-jwt-date_of_expiry-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-sd-jwt-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "dc+sd-jwt",
         "credential.type": "urn:eudi:pid:1",
         "claim": "date_of_expiry",
         "user.attribute": "date_of_expiry"
@@ -384,10 +371,9 @@ cat > "$REALM_OUT" <<REALMEOF
     {
       "name": "sd-jwt-issuing_authority-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-sd-jwt-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "dc+sd-jwt",
         "credential.type": "urn:eudi:pid:1",
         "claim": "issuing_authority",
         "user.attribute": "issuing_authority"
@@ -396,10 +382,9 @@ cat > "$REALM_OUT" <<REALMEOF
     {
       "name": "sd-jwt-issuing_country-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-sd-jwt-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "dc+sd-jwt",
         "credential.type": "urn:eudi:pid:1",
         "claim": "issuing_country",
         "user.attribute": "issuing_country"
@@ -408,10 +393,9 @@ cat > "$REALM_OUT" <<REALMEOF
     {
       "name": "mdoc-resident_street-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-mdoc-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "mso_mdoc",
         "credential.type": "eu.europa.ec.eudi.pid.1",
         "claim": "resident_street",
         "user.attribute": "resident_street"
@@ -420,10 +404,9 @@ cat > "$REALM_OUT" <<REALMEOF
     {
       "name": "mdoc-resident_city-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-mdoc-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "mso_mdoc",
         "credential.type": "eu.europa.ec.eudi.pid.1",
         "claim": "resident_city",
         "user.attribute": "resident_city"
@@ -432,10 +415,9 @@ cat > "$REALM_OUT" <<REALMEOF
     {
       "name": "mdoc-place_of_birth-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-mdoc-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "mso_mdoc",
         "credential.type": "eu.europa.ec.eudi.pid.1",
         "claim": "birth_place/locality",
         "user.attribute": "place_of_birth"
@@ -444,10 +426,9 @@ cat > "$REALM_OUT" <<REALMEOF
     {
       "name": "sd-jwt-nationalities-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-sd-jwt-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "dc+sd-jwt",
         "credential.type": "urn:eudi:pid:1",
         "claim": "nationalities/null",
         "multivalued": "true",
@@ -457,10 +438,9 @@ cat > "$REALM_OUT" <<REALMEOF
     {
       "name": "mdoc-nationality-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-mdoc-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "mso_mdoc",
         "credential.type": "eu.europa.ec.eudi.pid.1",
         "claim": "nationality",
         "multivalued": "true",
@@ -470,10 +450,9 @@ cat > "$REALM_OUT" <<REALMEOF
     {
       "name": "mdoc-resident_country-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-mdoc-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "mso_mdoc",
         "credential.type": "eu.europa.ec.eudi.pid.1",
         "claim": "resident_country",
         "user.attribute": "resident_country"
@@ -482,10 +461,9 @@ cat > "$REALM_OUT" <<REALMEOF
     {
       "name": "mdoc-resident_state-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-mdoc-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "mso_mdoc",
         "credential.type": "eu.europa.ec.eudi.pid.1",
         "claim": "resident_state",
         "user.attribute": "resident_state"
@@ -494,10 +472,9 @@ cat > "$REALM_OUT" <<REALMEOF
     {
       "name": "mdoc-resident_postal_code-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-mdoc-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "mso_mdoc",
         "credential.type": "eu.europa.ec.eudi.pid.1",
         "claim": "resident_postal_code",
         "user.attribute": "resident_postal_code"
@@ -506,10 +483,9 @@ cat > "$REALM_OUT" <<REALMEOF
     {
       "name": "mdoc-expiry_date-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-mdoc-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "mso_mdoc",
         "credential.type": "eu.europa.ec.eudi.pid.1",
         "claim": "expiry_date",
         "user.attribute": "expiry_date"
@@ -518,10 +494,9 @@ cat > "$REALM_OUT" <<REALMEOF
     {
       "name": "mdoc-issuing_authority-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-mdoc-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "mso_mdoc",
         "credential.type": "eu.europa.ec.eudi.pid.1",
         "claim": "issuing_authority",
         "user.attribute": "issuing_authority"
@@ -530,10 +505,9 @@ cat > "$REALM_OUT" <<REALMEOF
     {
       "name": "mdoc-issuing_country-to-attribute",
       "identityProviderAlias": "oid4vp",
-      "identityProviderMapper": "oid4vp-user-attribute-mapper",
+      "identityProviderMapper": "oid4vp-mdoc-user-attribute-idp-mapper",
       "config": {
         "syncMode": "INHERIT",
-        "credential.format": "mso_mdoc",
         "credential.type": "eu.europa.ec.eudi.pid.1",
         "claim": "issuing_country",
         "user.attribute": "issuing_country"

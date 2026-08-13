@@ -15,10 +15,8 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.service;
 
-import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.FORMAT_MSO_MDOC;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.FORMAT_SD_JWT_VC;
 import static org.assertj.core.api.Assertions.*;
-import static org.mockito.Mockito.*;
 
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -31,11 +29,12 @@ import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
+import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential.RequestedClaim;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
-import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor;
+import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenVerifier;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
@@ -45,28 +44,16 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.broker.provider.IdentityBrokerException;
-import org.keycloak.broker.provider.UserAuthenticationIdentityProvider;
 import org.keycloak.common.crypto.CryptoIntegration;
 
+/**
+ * Covers subject resolution, allow-list enforcement, and requested-claims validation with a real
+ * configuration and canned verification results; the verification pipeline itself is covered by
+ * its own tests and the end-to-end suite.
+ */
 class Oid4vpCallbackProcessorTest {
 
-    private static final Oid4vpRequestObjectStore.RequestContextEntry DEFAULT_REQUEST_CONTEXT =
-            new Oid4vpRequestObjectStore.RequestContextEntry(
-                    "test-state",
-                    "root-session",
-                    "tab-1",
-                    "test-client",
-                    "https://example.com/callback",
-                    "same_device",
-                    "test-nonce",
-                    null,
-                    null,
-                    List.of("IdentityCredential"),
-                    null);
-
-    private Oid4vpCallbackProcessor processor;
     private Oid4vpIdentityProviderConfig config;
-    private VpTokenProcessor vpTokenProcessor;
 
     @BeforeAll
     static void initCrypto() {
@@ -74,34 +61,20 @@ class Oid4vpCallbackProcessorTest {
     }
 
     @BeforeEach
-    void setUp() throws Exception {
-        config = mock(Oid4vpIdentityProviderConfig.class);
-        when(config.getAlias()).thenReturn("oid4vp");
-        when(config.isEnabled()).thenReturn(true);
-        when(config.isIssuerAllowed(anyString())).thenReturn(true);
-        when(config.getUserMappingClaimForFormat(anyString())).thenReturn("sub");
-        vpTokenProcessor = mock(VpTokenProcessor.class);
-        UserAuthenticationIdentityProvider<?> provider = mock(UserAuthenticationIdentityProvider.class);
-        processor = new Oid4vpCallbackProcessor(config, config, provider, vpTokenProcessor);
+    void setUp() {
+        config = new Oid4vpIdentityProviderConfig();
+        config.setAlias("oid4vp");
+        config.setEnabled(true);
+        config.setEnforceHaip(false);
+        config.setPrincipalAttribute("sub");
     }
 
     @Test
-    void process_validSdJwt_returnsBrokeredIdentityContext() throws Exception {
-        String vpToken = "vp-token";
-        VerifiedCredential credential = new VerifiedCredential(
-                "cred-1",
-                "https://issuer.example",
-                "IdentityCredential",
-                Map.of("sub", "user1"),
-                PresentationType.SD_JWT);
-        when(vpTokenProcessor.process(request(
-                        vpToken,
-                        DEFAULT_REQUEST_CONTEXT.effectiveClientId(),
-                        DEFAULT_REQUEST_CONTEXT.nonce(),
-                        DEFAULT_REQUEST_CONTEXT.responseUri())))
-                .thenReturn(new VpTokenResult(Map.of("cred-1", credential), Map.of()));
+    void process_validSdJwt_returnsBrokeredIdentityContext() {
+        VerifiedCredential credential = sdJwtCredential(Map.of("sub", "user1"));
 
-        BrokeredIdentityContext result = processor.process(DEFAULT_REQUEST_CONTEXT, vpToken, null, null);
+        BrokeredIdentityContext result = processor(resultOf(credential))
+                .process(requestContext("test-state", "test-nonce"), "vp-token", null, null);
 
         assertThat(result).isNotNull();
         assertThat(result.getUsername()).isEqualTo("user1");
@@ -110,10 +83,14 @@ class Oid4vpCallbackProcessorTest {
                 .isEqualTo("https://issuer.example");
         assertThat(result.getContextData().get(Oid4vpMapperUtils.CONTEXT_CREDENTIAL_TYPE_KEY))
                 .isEqualTo("IdentityCredential");
+        assertThat(result.getContextData().get(Oid4vpMapperUtils.CONTEXT_CREDENTIAL_FORMAT_KEY))
+                .isEqualTo(FORMAT_SD_JWT_VC);
     }
 
     @Test
     void process_missingRequestContext_throws() {
+        Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))));
+
         assertThatThrownBy(() -> processor.process(null, "token", null, null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("Missing request context");
@@ -121,66 +98,50 @@ class Oid4vpCallbackProcessorTest {
 
     @Test
     void process_missingVpToken_throws() {
-        assertThatThrownBy(() -> processor.process(DEFAULT_REQUEST_CONTEXT, null, null, null))
+        Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))));
+
+        assertThatThrownBy(() -> processor.process(requestContext("state", "nonce"), null, null, null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("Missing vp_token");
     }
 
     @Test
-    void process_issuerNotAllowed_throws() throws Exception {
-        when(config.isIssuerAllowed("https://bad-issuer.example")).thenReturn(false);
-        String vpToken = "vp-token";
-        VerifiedCredential credential = new VerifiedCredential(
-                "cred-1",
-                "https://bad-issuer.example",
-                "IdentityCredential",
-                Map.of("sub", "user1"),
-                PresentationType.SD_JWT);
-        when(vpTokenProcessor.process(request(vpToken, "test-client", "nonce", "https://example.com/callback")))
-                .thenReturn(new VpTokenResult(Map.of("cred-1", credential), Map.of()));
+    void process_issuerNotAllowed_throws() {
+        config.setAllowedIssuers("https://trusted-issuer.example");
+        Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))));
 
-        assertThatThrownBy(() -> processor.process(requestContext("state", "nonce"), vpToken, null, null))
+        assertThatThrownBy(() -> processor.process(requestContext("state", "nonce"), "vp-token", null, null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("Issuer not allowed");
     }
 
     @Test
-    void process_credentialTypeNotConfiguredForRequest_throws() throws Exception {
-        String vpToken = "vp-token";
+    void process_credentialTypeNotConfiguredForRequest_throws() {
         VerifiedCredential credential = new VerifiedCredential(
                 "cred-1", "https://issuer.example", "BadType", Map.of("sub", "user1"), PresentationType.SD_JWT);
-        when(vpTokenProcessor.process(request(vpToken, "test-client", "nonce", "https://example.com/callback")))
-                .thenReturn(new VpTokenResult(Map.of("cred-1", credential), Map.of()));
+        Oid4vpCallbackProcessor processor = processor(resultOf(credential));
 
-        assertThatThrownBy(() -> processor.process(requestContext("state", "nonce", "GoodType"), vpToken, null, null))
+        assertThatThrownBy(
+                        () -> processor.process(requestContext("state", "nonce", "GoodType"), "vp-token", null, null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("Credential type not trusted by this OID4VP IdP");
     }
 
     @Test
-    void process_missingSubjectClaim_throws() throws Exception {
-        String vpToken = "vp-token";
-        VerifiedCredential credential = new VerifiedCredential(
-                "cred-1", "https://issuer.example", "IdentityCredential", Map.of(), PresentationType.SD_JWT);
-        when(vpTokenProcessor.process(request(vpToken, "test-client", "nonce", "https://example.com/callback")))
-                .thenReturn(new VpTokenResult(Map.of("cred-1", credential), Map.of()));
+    void process_missingPrincipalClaim_throws() {
+        Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of())));
 
-        assertThatThrownBy(() -> processor.process(requestContext("state", "nonce"), vpToken, null, null))
+        assertThatThrownBy(() -> processor.process(requestContext("state", "nonce"), "vp-token", null, null))
                 .isInstanceOf(IdentityBrokerException.class)
-                .hasMessageContaining("Missing subject claim");
+                .hasMessageContaining("Missing principal claim");
     }
 
     @Test
-    void process_missingSubjectClaim_withTransientUsers_generatesTransientIdentity() throws Exception {
-        when(config.isTransientUsersEnabled()).thenReturn(true);
+    void process_missingPrincipalClaim_withTransientUsers_generatesTransientIdentity() {
+        config.setTransientUsersEnabled(true);
 
-        String vpToken = "vp-token";
-        VerifiedCredential credential = new VerifiedCredential(
-                "cred-1", "https://issuer.example", "IdentityCredential", Map.of(), PresentationType.SD_JWT);
-        when(vpTokenProcessor.process(request(vpToken, "test-client", "nonce", "https://example.com/callback")))
-                .thenReturn(new VpTokenResult(Map.of("cred-1", credential), Map.of()));
-
-        BrokeredIdentityContext result = processor.process(requestContext("state", "nonce"), vpToken, null, null);
+        BrokeredIdentityContext result = processor(resultOf(sdJwtCredential(Map.of())))
+                .process(requestContext("state", "nonce"), "vp-token", null, null);
 
         assertThat(result.getUsername()).startsWith("transient-state-");
         assertThat(result.getId()).isNotBlank();
@@ -190,21 +151,12 @@ class Oid4vpCallbackProcessorTest {
     }
 
     @Test
-    void process_transientUsersEnabled_ignoresIdTokenSubjectMode() throws Exception {
-        when(config.isTransientUsersEnabled()).thenReturn(true);
-        when(config.isUseIdTokenSubject()).thenReturn(true);
+    void process_transientUsersEnabled_ignoresIdTokenSubjectMode() {
+        config.setTransientUsersEnabled(true);
+        config.setUseIdTokenSubject(true);
 
-        String vpToken = "vp-token";
-        VerifiedCredential credential = new VerifiedCredential(
-                "cred-1",
-                "https://issuer.example",
-                "IdentityCredential",
-                Map.of("sub", "user1"),
-                PresentationType.SD_JWT);
-        when(vpTokenProcessor.process(request(vpToken, "test-client", "nonce", "https://example.com/callback")))
-                .thenReturn(new VpTokenResult(Map.of("cred-1", credential), Map.of()));
-
-        BrokeredIdentityContext result = processor.process(requestContext("state", "nonce"), vpToken, null, null);
+        BrokeredIdentityContext result = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))))
+                .process(requestContext("state", "nonce"), "vp-token", null, null);
 
         assertThat(result.getUsername()).startsWith("transient-state-");
         assertThat(result.getContextData().get(Oid4vpMapperUtils.CONTEXT_SUBJECT_KEY))
@@ -212,50 +164,15 @@ class Oid4vpCallbackProcessorTest {
     }
 
     @Test
-    void process_usesOnlyRequestContextState() throws Exception {
-        String vpToken = "vp-token";
-        VerifiedCredential credential = new VerifiedCredential(
-                "cred-1",
-                "https://issuer.example",
-                "IdentityCredential",
-                Map.of("sub", "user1"),
-                PresentationType.SD_JWT);
-        when(vpTokenProcessor.process(request(
-                        vpToken,
-                        DEFAULT_REQUEST_CONTEXT.effectiveClientId(),
-                        DEFAULT_REQUEST_CONTEXT.nonce(),
-                        DEFAULT_REQUEST_CONTEXT.responseUri())))
-                .thenReturn(new VpTokenResult(Map.of("cred-1", credential), Map.of()));
-
-        BrokeredIdentityContext result = processor.process(DEFAULT_REQUEST_CONTEXT, vpToken, null, null);
-
-        assertThat(result.getId()).isNotBlank();
-    }
-
-    @Test
     void process_withIdTokenSubject_usesJwkThumbprintAsSub() throws Exception {
-        when(config.isUseIdTokenSubject()).thenReturn(true);
-        when(config.getClockSkewSeconds()).thenReturn(30);
+        config.setUseIdTokenSubject(true);
 
-        // Use a mocked VpTokenProcessor to avoid KB-JWT requirement when clientId is set
-        VerifiedCredential credential = new VerifiedCredential(
-                "cred1",
-                "https://issuer.example",
-                "IdentityCredential",
-                Map.of("sub", "user1"),
-                PresentationType.SD_JWT);
-        when(vpTokenProcessor.process(any(VpTokenProcessor.Request.class)))
-                .thenReturn(new VpTokenResult(Map.of("cred1", credential), Map.of()));
-
-        UserAuthenticationIdentityProvider<?> provider = mock(UserAuthenticationIdentityProvider.class);
-        Oid4vpCallbackProcessor idTokenProcessor =
-                new Oid4vpCallbackProcessor(config, config, provider, vpTokenProcessor);
-
+        VerifiedCredential credential = sdJwtCredential(Map.of("sub", "user1"));
         ECKey walletKey = new ECKeyGenerator(Curve.P_256).generate();
         String idToken = buildSelfIssuedIdToken(walletKey, "test-client", "test-nonce");
 
-        BrokeredIdentityContext result =
-                idTokenProcessor.process(DEFAULT_REQUEST_CONTEXT, "dummy-vp-token", idToken, null);
+        BrokeredIdentityContext result = processor(resultOf(credential))
+                .process(requestContext("test-state", "test-nonce"), "dummy-vp-token", idToken, null);
 
         String expectedSub = walletKey.computeThumbprint("SHA-256").toString();
         String expectedIdentityKey = credential.generateIdentityKey(expectedSub);
@@ -268,9 +185,22 @@ class Oid4vpCallbackProcessorTest {
     }
 
     @Test
-    void process_claimMappedSubjectsMatchIgnoringCase() throws Exception {
-        when(config.getUserMappingClaimForFormat(FORMAT_SD_JWT_VC)).thenReturn("family_name");
-        when(config.getUserMappingClaimForFormat(FORMAT_MSO_MDOC)).thenReturn("eu.europa.ec.eudi.pid.1/family_name");
+    void process_idTokenSubjectEnabled_noIdToken_throws() {
+        config.setUseIdTokenSubject(true);
+        Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))));
+
+        assertThatThrownBy(() ->
+                        processor.process(requestContext("test-state", "test-nonce"), "dummy-vp-token", null, null))
+                .isInstanceOf(IdentityBrokerException.class)
+                .hasMessageContaining("no id_token received");
+    }
+
+    // The same user presents an SD-JWT and an mDoc credential whose principal values differ only
+    // in casing; both logins must resolve to the same brokered identity. The mDoc principal is
+    // found by looking the element up in the presented namespace.
+    @Test
+    void process_claimMappedSubjectsMatchIgnoringCase() {
+        config.setPrincipalAttribute("family_name");
 
         VerifiedCredential sdJwtCredential = new VerifiedCredential(
                 "sd-jwt-credential",
@@ -282,63 +212,25 @@ class Oid4vpCallbackProcessorTest {
                 "mdoc-credential",
                 "https://issuer.example",
                 "IdentityCredential",
-                Map.of("eu.europa.ec.eudi.pid.1/family_name", "exampleuser"),
+                Map.of("eu.europa.ec.eudi.pid.1", Map.of("family_name", "exampleuser")),
                 PresentationType.MDOC);
-        when(vpTokenProcessor.process(
-                        request("vp-upper", "test-client", "nonce-upper", "https://example.com/callback")))
-                .thenReturn(new VpTokenResult(Map.of("sd-jwt-credential", sdJwtCredential), Map.of()));
-        when(vpTokenProcessor.process(
-                        request("vp-lower", "test-client", "nonce-lower", "https://example.com/callback")))
-                .thenReturn(new VpTokenResult(Map.of("mdoc-credential", mdocCredential), Map.of()));
 
-        UserAuthenticationIdentityProvider<?> provider = mock(UserAuthenticationIdentityProvider.class);
-        Oid4vpCallbackProcessor claimProcessor =
-                new Oid4vpCallbackProcessor(config, config, provider, vpTokenProcessor);
-
-        BrokeredIdentityContext upperResult =
-                claimProcessor.process(requestContext("state-upper", "nonce-upper"), "vp-upper", null, null);
-        BrokeredIdentityContext lowerResult =
-                claimProcessor.process(requestContext("state-lower", "nonce-lower"), "vp-lower", null, null);
+        BrokeredIdentityContext upperResult = processor(resultOf(sdJwtCredential))
+                .process(requestContext("state-upper", "nonce-upper"), "vp-upper", null, null);
+        BrokeredIdentityContext lowerResult = processor(resultOf(mdocCredential))
+                .process(requestContext("state-lower", "nonce-lower"), "vp-lower", null, null);
 
         assertThat(upperResult.getId()).isEqualTo(lowerResult.getId());
     }
 
     @Test
-    void process_idTokenSubjectEnabled_noIdToken_throws() throws Exception {
-        when(config.isUseIdTokenSubject()).thenReturn(true);
-
-        // Use a mocked VpTokenProcessor to isolate the id_token validation test
-        VerifiedCredential credential = new VerifiedCredential(
-                "cred1",
-                "https://issuer.example",
-                "IdentityCredential",
-                Map.of("sub", "user1"),
-                PresentationType.SD_JWT);
-        when(vpTokenProcessor.process(any(VpTokenProcessor.Request.class)))
-                .thenReturn(new VpTokenResult(Map.of("cred1", credential), Map.of()));
-
-        UserAuthenticationIdentityProvider<?> provider = mock(UserAuthenticationIdentityProvider.class);
-        Oid4vpCallbackProcessor idTokenProcessor =
-                new Oid4vpCallbackProcessor(config, config, provider, vpTokenProcessor);
-
-        assertThatThrownBy(() -> idTokenProcessor.process(DEFAULT_REQUEST_CONTEXT, "dummy-vp-token", null, null))
-                .isInstanceOf(IdentityBrokerException.class)
-                .hasMessageContaining("no id_token received");
-    }
-
-    @Test
-    void process_rejectsPresentationMissingRequestedClaims() throws Exception {
-        VerifiedCredential credential = new VerifiedCredential(
-                "cred-1",
-                "https://issuer.example",
-                "IdentityCredential",
-                Map.of("sub", "user1"),
-                PresentationType.SD_JWT);
-        when(vpTokenProcessor.process(any(VpTokenProcessor.Request.class)))
-                .thenReturn(new VpTokenResult(Map.of("cred-1", credential), Map.of()));
-
+    void process_rejectsPresentationMissingRequestedClaims() {
+        Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))));
         RequestedCredential requested = new RequestedCredential(
-                FORMAT_SD_JWT_VC, "IdentityCredential", List.of("sub", "given_name"), List.of());
+                FORMAT_SD_JWT_VC,
+                "IdentityCredential",
+                List.of(new RequestedClaim(null, "sub"), new RequestedClaim(null, "given_name")),
+                List.of());
 
         assertThatThrownBy(() -> processor.process(
                         requestContext("state", "nonce", List.of(requested), "IdentityCredential"),
@@ -351,21 +243,13 @@ class Oid4vpCallbackProcessorTest {
     }
 
     @Test
-    void process_acceptsPresentationSatisfyingFallbackClaimSet() throws Exception {
-        VerifiedCredential credential = new VerifiedCredential(
-                "cred-1",
-                "https://issuer.example",
-                "IdentityCredential",
-                Map.of("sub", "user1"),
-                PresentationType.SD_JWT);
-        when(vpTokenProcessor.process(any(VpTokenProcessor.Request.class)))
-                .thenReturn(new VpTokenResult(Map.of("cred-1", credential), Map.of()));
-
+    void process_acceptsPresentationSatisfyingFallbackClaimSet() {
+        Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))));
         RequestedCredential requested = new RequestedCredential(
                 FORMAT_SD_JWT_VC,
                 "IdentityCredential",
-                List.of("sub", "given_name"),
-                List.of(List.of("sub", "given_name"), List.of("sub")));
+                List.of(new RequestedClaim(null, "sub"), new RequestedClaim(null, "given_name")),
+                List.of(List.of(0, 1), List.of(0)));
 
         BrokeredIdentityContext result = processor.process(
                 requestContext("state", "nonce", List.of(requested), "IdentityCredential"), "vp-token", null, null);
@@ -374,21 +258,17 @@ class Oid4vpCallbackProcessorTest {
     }
 
     @Test
-    void process_rejectsPresentationSatisfyingNoClaimSet() throws Exception {
-        VerifiedCredential credential = new VerifiedCredential(
-                "cred-1",
-                "https://issuer.example",
-                "IdentityCredential",
-                Map.of("email", "a@example.org", "sub", "user1"),
-                PresentationType.SD_JWT);
-        when(vpTokenProcessor.process(any(VpTokenProcessor.Request.class)))
-                .thenReturn(new VpTokenResult(Map.of("cred-1", credential), Map.of()));
-
+    void process_rejectsPresentationSatisfyingNoClaimSet() {
+        Oid4vpCallbackProcessor processor =
+                processor(resultOf(sdJwtCredential(Map.of("email", "a@example.org", "sub", "user1"))));
         RequestedCredential requested = new RequestedCredential(
                 FORMAT_SD_JWT_VC,
                 "IdentityCredential",
-                List.of("sub", "given_name", "family_name"),
-                List.of(List.of("sub", "given_name"), List.of("sub", "family_name")));
+                List.of(
+                        new RequestedClaim(null, "sub"),
+                        new RequestedClaim(null, "given_name"),
+                        new RequestedClaim(null, "family_name")),
+                List.of(List.of(0, 1), List.of(0, 2)));
 
         assertThatThrownBy(() -> processor.process(
                         requestContext("state", "nonce", List.of(requested), "IdentityCredential"),
@@ -400,6 +280,20 @@ class Oid4vpCallbackProcessorTest {
     }
 
     // ===== Helper Methods =====
+
+    private Oid4vpCallbackProcessor processor(VpTokenResult verificationResult) {
+        VpTokenVerifier verifier = request -> verificationResult;
+        return new Oid4vpCallbackProcessor(config, config, null, verifier);
+    }
+
+    private static VpTokenResult resultOf(VerifiedCredential credential) {
+        return new VpTokenResult(Map.of(credential.credentialId(), credential), Map.of());
+    }
+
+    private static VerifiedCredential sdJwtCredential(Map<String, Object> claims) {
+        return new VerifiedCredential(
+                "cred-1", "https://issuer.example", "IdentityCredential", claims, PresentationType.SD_JWT);
+    }
 
     private String buildSelfIssuedIdToken(ECKey walletKey, String audience, String nonce) throws Exception {
         String thumbprint = walletKey.computeThumbprint("SHA-256").toString();
@@ -444,10 +338,5 @@ class Oid4vpCallbackProcessorTest {
                 null,
                 List.of(configuredCredentialTypes),
                 requestedCredentials);
-    }
-
-    private static VpTokenProcessor.Request request(
-            String vpToken, String clientId, String expectedNonce, String alternateResponseUri) {
-        return new VpTokenProcessor.Request(vpToken, clientId, expectedNonce, alternateResponseUri, null, null);
     }
 }

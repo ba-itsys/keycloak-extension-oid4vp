@@ -15,36 +15,54 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
-import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
+import com.fasterxml.jackson.databind.JsonNode;
+import de.arbeitsagentur.keycloak.oid4vp.mapper.ClaimPath;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
+import org.keycloak.common.VerificationException;
+import org.keycloak.sdjwt.consumer.PresentationRequirements;
 
 /**
- * The claims a DCQL query requests for one credential entry, used to validate that a wallet
- * presentation contains everything the verifier asked for.
- *
- * <p>{@code claimPaths} are mapper-style paths ({@code address/street_address} for nested SD-JWT
- * claims, {@code namespace/element} for mDoc claims), matching the key conventions of verified
- * claim maps. {@code claimSets} holds the DCQL {@code claim_sets} options as path lists in
- * preference order; an empty list means every claim in {@code claimPaths} is required.
+ * The claims a DCQL query requests for one credential entry, used to validate that a presentation
+ * contains everything the verifier asked for. Claims are addressed like in the mappers: a
+ * {@link ClaimPath}, for mDoc claims scoped to a namespace. {@code claimSets} holds the DCQL
+ * {@code claim_sets} options as index lists into {@code claims} in preference order; an empty
+ * list means every claim is required.
  *
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.4">OID4VP 1.0 §6.4 — Claims Query</a>
  */
-public record RequestedCredential(String format, String type, List<String> claimPaths, List<List<String>> claimSets) {
+public record RequestedCredential(
+        String format, String type, List<RequestedClaim> claims, List<List<Integer>> claimSets)
+        implements PresentationRequirements {
+
+    /** One requested claim: the mDoc namespace (null for SD-JWT) and the claim path. */
+    public record RequestedClaim(String namespace, String path) {
+
+        /** Whether the presented claims contain this claim. */
+        public boolean presentIn(JsonNode presentedClaims) {
+            JsonNode root = namespace == null
+                    ? presentedClaims
+                    : presentedClaims != null ? presentedClaims.get(namespace) : null;
+            ClaimPath claimPath = ClaimPath.parse(path);
+            return claimPath != null && !claimPath.select(root).isEmpty();
+        }
+
+        public String describe() {
+            return namespace == null ? path : namespace + ":" + path;
+        }
+    }
 
     public RequestedCredential {
-        claimPaths = claimPaths != null ? List.copyOf(claimPaths) : List.of();
+        claims = claims != null ? List.copyOf(claims) : List.of();
         claimSets = claimSets != null ? claimSets.stream().map(List::copyOf).toList() : List.of();
     }
 
     /** Derives the requested claims model for a credential type aggregated from IdP mappers. */
     public static RequestedCredential of(CredentialTypeSpec spec) {
-        List<String> paths = spec.claimSpecs().stream().map(ClaimSpec::path).toList();
-        List<List<String>> claimSets = spec.claimSetOptionIndexes().stream()
-                .map(option -> option.stream().map(paths::get).toList())
+        List<RequestedClaim> claims = spec.claimSpecs().stream()
+                .map(claimSpec -> new RequestedClaim(claimSpec.namespace(), claimSpec.path()))
                 .toList();
-        return new RequestedCredential(spec.format(), spec.type(), paths, claimSets);
+        return new RequestedCredential(spec.format(), spec.type(), claims, spec.claimSetOptionIndexes());
     }
 
     /** Whether this requested credential entry matches a verified credential's format and type. */
@@ -55,18 +73,28 @@ public record RequestedCredential(String format, String type, List<String> claim
         return format.equals(credentialFormat) && type.equals(credential.credentialType());
     }
 
+    /** Rejects presentations that do not contain the requested claims. */
+    @Override
+    public void checkIfSatisfiedBy(JsonNode disclosedPayload) throws VerificationException {
+        List<String> missing = missingClaims(disclosedPayload);
+        if (!missing.isEmpty()) {
+            throw new VerificationException("Presentation for credential type '" + type
+                    + "' does not contain all requested claims. Missing: " + String.join(", ", missing));
+        }
+    }
+
     /**
      * Returns the requested claims the presented claims do not satisfy. Without claim sets, every
-     * claim path is required. With claim sets, the presentation must satisfy at least one option;
-     * when none is satisfied, the missing claims of the most-preferred option are returned.
+     * claim is required. With claim sets, the presentation must satisfy at least one option; when
+     * none is satisfied, the missing claims of the most-preferred option are returned.
      */
-    public List<String> missingClaims(Map<String, Object> presentedClaims) {
+    public List<String> missingClaims(JsonNode presentedClaims) {
         if (claimSets.isEmpty()) {
-            return missingFrom(claimPaths, presentedClaims);
+            return missingFrom(claims, presentedClaims);
         }
         List<String> preferredOptionMissing = null;
-        for (List<String> option : claimSets) {
-            List<String> missing = missingFrom(option, presentedClaims);
+        for (List<Integer> option : claimSets) {
+            List<String> missing = missingFrom(option.stream().map(claims::get).toList(), presentedClaims);
             if (missing.isEmpty()) {
                 return List.of();
             }
@@ -77,11 +105,11 @@ public record RequestedCredential(String format, String type, List<String> claim
         return preferredOptionMissing;
     }
 
-    private static List<String> missingFrom(List<String> paths, Map<String, Object> presentedClaims) {
+    private static List<String> missingFrom(List<RequestedClaim> requested, JsonNode presentedClaims) {
         List<String> missing = new ArrayList<>();
-        for (String path : paths) {
-            if (Oid4vpMapperUtils.getNestedValue(presentedClaims, path) == null) {
-                missing.add(path);
+        for (RequestedClaim claim : requested) {
+            if (!claim.presentIn(presentedClaims)) {
+                missing.add(claim.describe());
             }
         }
         return missing;

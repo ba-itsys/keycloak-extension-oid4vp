@@ -258,11 +258,8 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
         config.put(Oid4vpIdentityProviderConfig.TRUST_LIST_LOTE_TYPE, TrustListServer.PID_LOTE_TYPE);
         config.put(Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM, material.combinedPem());
         config.put(
-                Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM,
-                scenario.profile().userMappingClaim());
-        config.put(
-                Oid4vpIdentityProviderConfig.USER_MAPPING_CLAIM_MDOC,
-                scenario.profile().userMappingClaimMdoc());
+                Oid4vpIdentityProviderConfig.PRINCIPAL_ATTRIBUTE,
+                scenario.profile().principalAttribute());
         idp.setConfig(config);
         return idp;
     }

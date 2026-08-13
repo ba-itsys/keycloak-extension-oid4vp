@@ -16,22 +16,23 @@
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
 import static org.assertj.core.api.Assertions.*;
-import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.arbeitsagentur.keycloak.oid4vp.domain.ClaimSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
+import de.arbeitsagentur.keycloak.oid4vp.mapper.AbstractOID4VPClaimMapper;
+import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPMdocUserAttributeMapper;
+import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPSdJwtUserAttributeMapper;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.IdentityProviderMapperModel;
-import org.keycloak.models.KeycloakContext;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
 
 class DcqlQueryBuilderTest {
 
@@ -53,7 +54,9 @@ class DcqlQueryBuilderTest {
     @Test
     void build_singleSdJwtCredential_correctStructure() throws Exception {
         builder.addCredentialType(
-                "dc+sd-jwt", "IdentityCredential", List.of(new ClaimSpec("given_name"), new ClaimSpec("family_name")));
+                "dc+sd-jwt",
+                "IdentityCredential",
+                List.of(ClaimSpec.sdJwt("given_name"), ClaimSpec.sdJwt("family_name")));
 
         String json = builder.build();
 
@@ -73,15 +76,10 @@ class DcqlQueryBuilderTest {
 
     @Test
     void build_singleMdocCredential_usesDoctype() throws Exception {
-        builder.addCredentialType("mso_mdoc", "org.iso.18013.5.1.mDL", List.of(new ClaimSpec("given_name")));
+        builder.addCredentialType(
+                "mso_mdoc", "org.iso.18013.5.1.mDL", List.of(ClaimSpec.mdoc("org.iso.18013.5.1", "given_name")));
 
-        String json = builder.build();
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> result = objectMapper.readValue(json, Map.class);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> credentials = (List<Map<String, Object>>) result.get("credentials");
-        Map<String, Object> cred = credentials.get(0);
+        Map<String, Object> cred = firstCredential(builder.build());
 
         @SuppressWarnings("unchecked")
         Map<String, Object> meta = (Map<String, Object>) cred.get("meta");
@@ -123,9 +121,9 @@ class DcqlQueryBuilderTest {
                 "dc+sd-jwt",
                 "IdentityCredential",
                 List.of(
-                        new ClaimSpec("given_name", List.of("1-full")),
-                        new ClaimSpec("family_name", List.of("2-min", "1-full")),
-                        new ClaimSpec("birthdate")));
+                        ClaimSpec.sdJwt("given_name", List.of("1-full")),
+                        ClaimSpec.sdJwt("family_name", List.of("2-min", "1-full")),
+                        ClaimSpec.sdJwt("birthdate")));
 
         Map<String, Object> credential = firstCredential(builder.build());
 
@@ -139,9 +137,9 @@ class DcqlQueryBuilderTest {
                 "dc+sd-jwt",
                 "IdentityCredential",
                 List.of(
-                        new ClaimSpec("email", List.of("contact")),
-                        new ClaimSpec("phone", List.of("phone-only")),
-                        new ClaimSpec("sub")));
+                        ClaimSpec.sdJwt("email", List.of("contact")),
+                        ClaimSpec.sdJwt("phone", List.of("phone-only")),
+                        ClaimSpec.sdJwt("sub")));
 
         Map<String, Object> credential = firstCredential(builder.build());
 
@@ -152,7 +150,7 @@ class DcqlQueryBuilderTest {
     @Test
     void build_noClaimSetIds_omitsClaimSets() throws Exception {
         builder.addCredentialType(
-                "dc+sd-jwt", "IdentityCredential", List.of(new ClaimSpec("given_name"), new ClaimSpec("email")));
+                "dc+sd-jwt", "IdentityCredential", List.of(ClaimSpec.sdJwt("given_name"), ClaimSpec.sdJwt("email")));
 
         Map<String, Object> credential = firstCredential(builder.build());
 
@@ -162,8 +160,11 @@ class DcqlQueryBuilderTest {
     @Test
     void build_claimSetIds_onlyAffectCredentialDefiningThem() throws Exception {
         builder.addCredentialType(
-                "dc+sd-jwt", "IdentityCredential", List.of(new ClaimSpec("given_name", List.of("min"))));
-        builder.addCredentialType("mso_mdoc", "eu.europa.ec.eudi.pid.1", List.of(new ClaimSpec("family_name")));
+                "dc+sd-jwt", "IdentityCredential", List.of(ClaimSpec.sdJwt("given_name", List.of("min"))));
+        builder.addCredentialType(
+                "mso_mdoc",
+                "eu.europa.ec.eudi.pid.1",
+                List.of(ClaimSpec.mdoc("eu.europa.ec.eudi.pid.1", "family_name")));
 
         String json = builder.build();
         @SuppressWarnings("unchecked")
@@ -176,103 +177,34 @@ class DcqlQueryBuilderTest {
     }
 
     @Test
-    void toDcqlPath_simplePath_returnsSimpleArray() {
-        List<Object> path = new ClaimSpec("given_name").toDcqlPath("dc+sd-jwt", "IdentityCredential");
-        assertThat(path).containsExactly("given_name");
+    void toDcqlPath_mapsClaimPathStepsToPointer() {
+        assertThat(ClaimSpec.sdJwt("given_name").toDcqlPath()).containsExactly("given_name");
+        assertThat(ClaimSpec.sdJwt("address.street_address").toDcqlPath()).containsExactly("address", "street_address");
+        assertThat(ClaimSpec.sdJwt("nationalities[]").toDcqlPath()).isEqualTo(Arrays.asList("nationalities", null));
+        assertThat(ClaimSpec.sdJwt("degrees[0].type").toDcqlPath()).containsExactly("degrees", 0, "type");
     }
 
     @Test
-    void toDcqlPath_nestedPath_splitsBySlash() {
-        List<Object> path = new ClaimSpec("address/street").toDcqlPath("dc+sd-jwt", "IdentityCredential");
-        assertThat(path).containsExactly("address", "street");
+    void toDcqlPath_mdocPathIsNamespaceAndElement() {
+        assertThat(ClaimSpec.mdoc("org.iso.18013.5.1", "given_name").toDcqlPath())
+                .containsExactly("org.iso.18013.5.1", "given_name");
+        assertThat(ClaimSpec.mdoc("eu.europa.ec.eudi.pid.1", "birth_place.locality")
+                        .toDcqlPath())
+                .as("mDoc claims cannot be requested below element level")
+                .containsExactly("eu.europa.ec.eudi.pid.1", "birth_place");
     }
 
     @Test
-    void toDcqlPath_placeOfBirthLocality_usesNestedLeafPath() {
-        List<Object> path = new ClaimSpec("place_of_birth/locality").toDcqlPath("dc+sd-jwt", "urn:eudi:pid:de:1");
-        assertThat(path).containsExactly("place_of_birth", "locality");
-    }
-
-    @Test
-    void toDcqlPath_mdocNestedMapperPath_requestsOnlyBaseClaim() {
-        List<Object> path = new ClaimSpec("birth_place/locality").toDcqlPath("mso_mdoc", "eu.europa.ec.eudi.pid.1");
-        assertThat(path).containsExactly("eu.europa.ec.eudi.pid.1", "birth_place");
-    }
-
-    @Test
-    void toDcqlPath_mdocFormat_prependsDocType() {
-        List<Object> path = new ClaimSpec("given_name").toDcqlPath("mso_mdoc", "org.iso.18013.5.1.mDL");
-        assertThat(path).containsExactly("org.iso.18013.5.1.mDL", "given_name");
-    }
-
-    @Test
-    void toDcqlPath_mdocExplicitNamespacePath_usesNamespaceInsteadOfDoctype() {
-        List<Object> path =
-                new ClaimSpec("org.iso.18013.5.1/given_name").toDcqlPath("mso_mdoc", "org.iso.18013.5.1.mDL");
-        assertThat(path).containsExactly("org.iso.18013.5.1", "given_name");
-    }
-
-    @Test
-    void toDcqlPath_mdocExplicitNamespaceMatchingDoctype_isSameAsBareElementPath() {
-        List<Object> explicit =
-                new ClaimSpec("eu.europa.ec.eudi.pid.1/family_name").toDcqlPath("mso_mdoc", "eu.europa.ec.eudi.pid.1");
-        List<Object> bare = new ClaimSpec("family_name").toDcqlPath("mso_mdoc", "eu.europa.ec.eudi.pid.1");
-
-        assertThat(explicit).containsExactly("eu.europa.ec.eudi.pid.1", "family_name");
-        assertThat(bare).isEqualTo(explicit);
-    }
-
-    @Test
-    void toDcqlPath_multivalued_appendsArraySelector() {
-        List<Object> sdJwt = new ClaimSpec("nationalities", List.of(), true).toDcqlPath("dc+sd-jwt", "PID");
-        assertThat(sdJwt).containsExactly("nationalities", null);
-
-        List<Object> mdoc =
-                new ClaimSpec("nationality", List.of(), true).toDcqlPath("mso_mdoc", "eu.europa.ec.eudi.pid.1");
-        assertThat(mdoc).containsExactly("eu.europa.ec.eudi.pid.1", "nationality");
-    }
-
-    @Test
-    void toDcqlPath_multivaluedPathWithArraySelector_doesNotAppendDuplicateNull() {
-        List<Object> sdJwt = new ClaimSpec("nationalities/null", List.of(), true).toDcqlPath("dc+sd-jwt", "PID");
-        assertThat(sdJwt).containsExactly("nationalities", null);
-    }
-
-    @Test
-    void toDcqlPath_sdJwtMultivaluedPath_isSameWithOrWithoutExplicitArraySelector() {
-        List<Object> implicitSelector = new ClaimSpec("nationalities", List.of(), true).toDcqlPath("dc+sd-jwt", "PID");
-        List<Object> explicitSelector =
-                new ClaimSpec("nationalities/null", List.of(), true).toDcqlPath("dc+sd-jwt", "PID");
-
-        assertThat(implicitSelector).containsExactly("nationalities", null);
-        assertThat(explicitSelector).isEqualTo(implicitSelector);
-    }
-
-    @Test
-    void toDcqlPath_mdocNestedMultivaluedPath_requestsOnlyBaseClaim() {
-        List<Object> path = new ClaimSpec("birth_place/locality", List.of(), true)
-                .toDcqlPath("mso_mdoc", "eu.europa.ec.eudi.pid.1");
-        assertThat(path).containsExactly("eu.europa.ec.eudi.pid.1", "birth_place");
-    }
-
-    @Test
-    void toDcqlPath_numericSegment_parsedAsInt() {
-        List<Object> path = new ClaimSpec("items/0/name").toDcqlPath("dc+sd-jwt", "Type");
-        assertThat(path).containsExactly("items", 0, "name");
+    void toDcqlPath_invalidPath_isEmpty() {
+        assertThat(ClaimSpec.sdJwt("degrees[x]").toDcqlPath()).isEmpty();
     }
 
     @Test
     void build_withTrustListUrl_includesTrustedAuthorities() throws Exception {
-        builder.addCredentialType("dc+sd-jwt", "IdentityCredential", List.of(new ClaimSpec("given_name")));
+        builder.addCredentialType("dc+sd-jwt", "IdentityCredential", List.of(ClaimSpec.sdJwt("given_name")));
         builder.setTrustListUrl("https://trust-list.example.com/tl.jwt");
 
-        String json = builder.build();
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> result = objectMapper.readValue(json, Map.class);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> credentials = (List<Map<String, Object>>) result.get("credentials");
-        Map<String, Object> cred = credentials.get(0);
+        Map<String, Object> cred = firstCredential(builder.build());
 
         assertThat(cred).containsKey("trusted_authorities");
         @SuppressWarnings("unchecked")
@@ -284,33 +216,20 @@ class DcqlQueryBuilderTest {
 
     @Test
     void build_withAkiTrustedAuthorities_includesOnlyAki() throws Exception {
-        builder.addCredentialType("dc+sd-jwt", "IdentityCredential", List.of(new ClaimSpec("given_name")));
+        builder.addCredentialType("dc+sd-jwt", "IdentityCredential", List.of(ClaimSpec.sdJwt("given_name")));
         builder.setTrustedAuthorities("https://trust-list.example.com/tl.jwt", List.of("aki-1", "aki-2"));
 
-        String json = builder.build();
+        Map<String, Object> cred = firstCredential(builder.build());
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> result = objectMapper.readValue(json, Map.class);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> credentials = (List<Map<String, Object>>) result.get("credentials");
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> authorities =
-                (List<Map<String, Object>>) credentials.get(0).get("trusted_authorities");
-
-        assertThat(authorities).containsExactly(Map.of("type", "aki", "values", List.of("aki-1", "aki-2")));
+        assertThat(cred.get("trusted_authorities"))
+                .isEqualTo(List.of(Map.of("type", "aki", "values", List.of("aki-1", "aki-2"))));
     }
 
     @Test
     void build_withoutTrustListUrl_noTrustedAuthorities() throws Exception {
-        builder.addCredentialType("dc+sd-jwt", "IdentityCredential", List.of(new ClaimSpec("given_name")));
+        builder.addCredentialType("dc+sd-jwt", "IdentityCredential", List.of(ClaimSpec.sdJwt("given_name")));
 
-        String json = builder.build();
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> result = objectMapper.readValue(json, Map.class);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> credentials = (List<Map<String, Object>>) result.get("credentials");
-        assertThat(credentials.get(0)).doesNotContainKey("trusted_authorities");
+        assertThat(firstCredential(builder.build())).doesNotContainKey("trusted_authorities");
     }
 
     @Test
@@ -335,7 +254,7 @@ class DcqlQueryBuilderTest {
         Map<String, CredentialTypeSpec> specs = new LinkedHashMap<>();
         specs.put(
                 "dc+sd-jwt|IdentityCredential",
-                new CredentialTypeSpec("dc+sd-jwt", "IdentityCredential", List.of(new ClaimSpec("sub"))));
+                new CredentialTypeSpec("dc+sd-jwt", "IdentityCredential", List.of(ClaimSpec.sdJwt("sub"))));
 
         DcqlQueryBuilder result = DcqlQueryBuilder.fromMapperSpecs(
                 objectMapper, specs, false, "Test purpose", Oid4vpTrustedAuthoritiesMode.NONE, null, List.of());
@@ -351,47 +270,26 @@ class DcqlQueryBuilderTest {
         Map<String, CredentialTypeSpec> specs = new LinkedHashMap<>();
         specs.put(
                 "dc+sd-jwt|IdentityCredential",
-                new CredentialTypeSpec("dc+sd-jwt", "IdentityCredential", List.of(new ClaimSpec("sub"))));
+                new CredentialTypeSpec("dc+sd-jwt", "IdentityCredential", List.of(ClaimSpec.sdJwt("sub"))));
 
         DcqlQueryBuilder result = DcqlQueryBuilder.fromMapperSpecs(
                 objectMapper, specs, false, null, "https://trust-list.example.com/tl.jwt");
-        String json = result.build();
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> parsed = objectMapper.readValue(json, Map.class);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> credentials = (List<Map<String, Object>>) parsed.get("credentials");
-        assertThat(credentials.get(0)).containsKey("trusted_authorities");
+        assertThat(firstCredential(result.build())).containsKey("trusted_authorities");
     }
 
     @Test
-    void aggregateFromMappers_withoutRealm_returnsEmpty() {
-        KeycloakSession session = mock(KeycloakSession.class);
-        KeycloakContext context = mock(KeycloakContext.class);
-        when(session.getContext()).thenReturn(context);
-        when(context.getRealm()).thenReturn(null);
-        Oid4vpConfigProvider config = config("oid4vp", false, "sub", "mdoc-sub");
-
-        assertThat(DcqlQueryBuilder.aggregateFromMappers(session, config)).isEmpty();
+    void aggregateFromMappers_withoutMappers_returnsEmpty() {
+        assertThat(DcqlQueryBuilder.aggregateFromMappers(Stream.of(), config("oid4vp", false, "sub")))
+                .isEmpty();
     }
 
     @Test
-    void aggregateFromMappers_defaultsBlankFormatAndAddsUserMappingClaim() {
-        KeycloakSession session = mock(KeycloakSession.class);
-        KeycloakContext context = mock(KeycloakContext.class);
-        RealmModel realm = mock(RealmModel.class);
-        IdentityProviderMapperModel mapper = new IdentityProviderMapperModel();
-        mapper.setConfig(new LinkedHashMap<>());
-        mapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_TYPE, "IdentityCredential");
-        mapper.getConfig().put(Oid4vpMapperConfigProperties.CLAIM_PATH, "given_name");
-        mapper.getConfig().put(Oid4vpMapperConfigProperties.CLAIM_SET_IDS, " 1-full , 2-min ");
-        mapper.getConfig().put(Oid4vpMapperConfigProperties.MULTIVALUED, "true");
-        when(session.getContext()).thenReturn(context);
-        when(context.getRealm()).thenReturn(realm);
-        when(realm.getIdentityProviderMappersByAliasStream("oid4vp")).thenReturn(java.util.stream.Stream.of(mapper));
-        Oid4vpConfigProvider config = config("oid4vp", false, "sub", "mdoc-sub");
+    void aggregateFromMappers_readsSdJwtMapperAndAddsPrincipalClaim() {
+        IdentityProviderMapperModel mapper = sdJwtMapper("IdentityCredential", "given_name", " 1-full , 2-min ");
 
-        Map<String, CredentialTypeSpec> result = DcqlQueryBuilder.aggregateFromMappers(session, config);
+        Map<String, CredentialTypeSpec> result =
+                DcqlQueryBuilder.aggregateFromMappers(Stream.of(mapper), config("oid4vp", false, "sub"));
 
         assertThat(result).hasSize(1);
         CredentialTypeSpec type = result.values().iterator().next();
@@ -399,34 +297,80 @@ class DcqlQueryBuilderTest {
         assertThat(type.type()).isEqualTo("IdentityCredential");
         assertThat(type.claimSpecs()).extracting(ClaimSpec::path).containsExactly("given_name", "sub");
         assertThat(type.claimSpecs().get(0).claimSetIds()).containsExactly("1-full", "2-min");
-        assertThat(type.claimSpecs().get(0).multivalued()).isTrue();
         assertThat(type.claimSpecs().get(1).claimSetIds())
-                .as("auto-added user mapping claim must be part of every claim set")
+                .as("auto-added principal claim must be part of every claim set")
+                .isEmpty();
+    }
+
+    @Test
+    void aggregateFromMappers_readsMdocMapperWithNamespaceAndPrincipal() {
+        IdentityProviderMapperModel mapper = mdocMapper("org.iso.18013.5.1.mDL", "org.iso.18013.5.1", "family_name");
+
+        Map<String, CredentialTypeSpec> result =
+                DcqlQueryBuilder.aggregateFromMappers(Stream.of(mapper), config("oid4vp", false, "given_name"));
+
+        CredentialTypeSpec type = result.values().iterator().next();
+        assertThat(type.format()).isEqualTo("mso_mdoc");
+        assertThat(type.claimSpecs())
+                .containsExactly(
+                        ClaimSpec.mdoc("org.iso.18013.5.1", "family_name"),
+                        ClaimSpec.mdoc("org.iso.18013.5.1", "given_name"));
+    }
+
+    @Test
+    void aggregateFromMappers_mdocNamespaceDefaultsToDoctype() {
+        IdentityProviderMapperModel mapper = mdocMapper("eu.europa.ec.eudi.pid.1", null, "family_name");
+
+        Map<String, CredentialTypeSpec> result =
+                DcqlQueryBuilder.aggregateFromMappers(Stream.of(mapper), config("oid4vp", false, "family_name"));
+
+        CredentialTypeSpec type = result.values().iterator().next();
+        assertThat(type.claimSpecs()).containsExactly(ClaimSpec.mdoc("eu.europa.ec.eudi.pid.1", "family_name"));
+    }
+
+    @Test
+    void aggregateFromMappers_doesNotDuplicateExistingPrincipalClaim() {
+        IdentityProviderMapperModel mapper = sdJwtMapper("IdentityCredential", "sub", null);
+
+        Map<String, CredentialTypeSpec> result =
+                DcqlQueryBuilder.aggregateFromMappers(Stream.of(mapper), config("oid4vp", false, "sub"));
+
+        CredentialTypeSpec type = result.values().iterator().next();
+        assertThat(type.claimSpecs()).extracting(ClaimSpec::path).containsExactly("sub");
+    }
+
+    @Test
+    void aggregateFromMappers_transientUsersEnabled_skipsPrincipalClaim() {
+        IdentityProviderMapperModel mapper = sdJwtMapper("IdentityCredential", "given_name", null);
+
+        Map<String, CredentialTypeSpec> result =
+                DcqlQueryBuilder.aggregateFromMappers(Stream.of(mapper), config("oid4vp", false, true, "sub"));
+
+        CredentialTypeSpec type = result.values().iterator().next();
+        assertThat(type.claimSpecs()).extracting(ClaimSpec::path).containsExactly("given_name");
+    }
+
+    @Test
+    void aggregateFromMappers_skipsForeignAndMisconfiguredMappers() {
+        IdentityProviderMapperModel foreign = new IdentityProviderMapperModel();
+        foreign.setIdentityProviderMapper("hardcoded-attribute-idp-mapper");
+        foreign.setConfig(new LinkedHashMap<>());
+
+        IdentityProviderMapperModel blankType = sdJwtMapper(" ", "given_name", null);
+        IdentityProviderMapperModel invalidPath = sdJwtMapper("IdentityCredential", "degrees[x]", null);
+
+        assertThat(DcqlQueryBuilder.aggregateFromMappers(
+                        Stream.of(foreign, blankType, invalidPath), config("oid4vp", true, "sub")))
                 .isEmpty();
     }
 
     @Test
     void aggregateFromMappers_ordersCredentialTypesByFormatAndType() {
-        KeycloakSession session = mock(KeycloakSession.class);
-        KeycloakContext context = mock(KeycloakContext.class);
-        RealmModel realm = mock(RealmModel.class);
-        IdentityProviderMapperModel mdocMapper = new IdentityProviderMapperModel();
-        mdocMapper.setConfig(new LinkedHashMap<>());
-        mdocMapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_FORMAT, "mso_mdoc");
-        mdocMapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_TYPE, "eu.europa.ec.eudi.pid.1");
-        mdocMapper.getConfig().put(Oid4vpMapperConfigProperties.CLAIM_PATH, "family_name");
-        IdentityProviderMapperModel sdJwtMapper = new IdentityProviderMapperModel();
-        sdJwtMapper.setConfig(new LinkedHashMap<>());
-        sdJwtMapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_FORMAT, "dc+sd-jwt");
-        sdJwtMapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_TYPE, "urn:eudi:pid:1");
-        sdJwtMapper.getConfig().put(Oid4vpMapperConfigProperties.CLAIM_PATH, "family_name");
-        when(session.getContext()).thenReturn(context);
-        when(context.getRealm()).thenReturn(realm);
-        when(realm.getIdentityProviderMappersByAliasStream("oid4vp"))
-                .thenReturn(java.util.stream.Stream.of(mdocMapper, sdJwtMapper));
-        Oid4vpConfigProvider config = config("oid4vp", false, "sub", "family_name");
+        IdentityProviderMapperModel mdocMapper = mdocMapper("eu.europa.ec.eudi.pid.1", null, "family_name");
+        IdentityProviderMapperModel sdJwtMapper = sdJwtMapper("urn:eudi:pid:1", "family_name", null);
 
-        Map<String, CredentialTypeSpec> result = DcqlQueryBuilder.aggregateFromMappers(session, config);
+        Map<String, CredentialTypeSpec> result = DcqlQueryBuilder.aggregateFromMappers(
+                Stream.of(mdocMapper, sdJwtMapper), config("oid4vp", false, "family_name"));
 
         assertThat(result.values())
                 .as("credential order must not depend on mapper enumeration order")
@@ -434,86 +378,28 @@ class DcqlQueryBuilderTest {
                 .containsExactly("dc+sd-jwt", "mso_mdoc");
     }
 
-    @Test
-    void aggregateFromMappers_usesMdocUserMappingClaimForMdocCredentials() {
-        KeycloakSession session = mock(KeycloakSession.class);
-        KeycloakContext context = mock(KeycloakContext.class);
-        RealmModel realm = mock(RealmModel.class);
+    private static IdentityProviderMapperModel sdJwtMapper(String vct, String claim, String claimSetIds) {
         IdentityProviderMapperModel mapper = new IdentityProviderMapperModel();
+        mapper.setIdentityProviderMapper(OID4VPSdJwtUserAttributeMapper.PROVIDER_ID);
         mapper.setConfig(new LinkedHashMap<>());
-        mapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_FORMAT, "mso_mdoc");
-        mapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_TYPE, "eu.europa.ec.eudi.pid.1");
-        mapper.getConfig().put(Oid4vpMapperConfigProperties.CLAIM_PATH, "family_name");
-        when(session.getContext()).thenReturn(context);
-        when(context.getRealm()).thenReturn(realm);
-        when(realm.getIdentityProviderMappersByAliasStream("oid4vp")).thenReturn(java.util.stream.Stream.of(mapper));
-        Oid4vpConfigProvider config = config("oid4vp", false, "sub", "document_number");
-
-        Map<String, CredentialTypeSpec> result = DcqlQueryBuilder.aggregateFromMappers(session, config);
-
-        CredentialTypeSpec type = result.values().iterator().next();
-        assertThat(type.claimSpecs()).extracting(ClaimSpec::path).containsExactly("family_name", "document_number");
+        mapper.getConfig().put(AbstractOID4VPClaimMapper.CREDENTIAL_TYPE, vct);
+        mapper.getConfig().put(AbstractOID4VPClaimMapper.CLAIM, claim);
+        if (claimSetIds != null) {
+            mapper.getConfig().put(AbstractOID4VPClaimMapper.CLAIM_SET_IDS, claimSetIds);
+        }
+        return mapper;
     }
 
-    @Test
-    void aggregateFromMappers_doesNotDuplicateExistingUserMappingClaim() {
-        KeycloakSession session = mock(KeycloakSession.class);
-        KeycloakContext context = mock(KeycloakContext.class);
-        RealmModel realm = mock(RealmModel.class);
+    private static IdentityProviderMapperModel mdocMapper(String doctype, String namespace, String claim) {
         IdentityProviderMapperModel mapper = new IdentityProviderMapperModel();
+        mapper.setIdentityProviderMapper(OID4VPMdocUserAttributeMapper.PROVIDER_ID);
         mapper.setConfig(new LinkedHashMap<>());
-        mapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_FORMAT, "dc+sd-jwt");
-        mapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_TYPE, "IdentityCredential");
-        mapper.getConfig().put(Oid4vpMapperConfigProperties.CLAIM_PATH, "sub");
-        when(session.getContext()).thenReturn(context);
-        when(context.getRealm()).thenReturn(realm);
-        when(realm.getIdentityProviderMappersByAliasStream("oid4vp")).thenReturn(java.util.stream.Stream.of(mapper));
-        Oid4vpConfigProvider config = config("oid4vp", false, "sub", "mdoc-sub");
-
-        Map<String, CredentialTypeSpec> result = DcqlQueryBuilder.aggregateFromMappers(session, config);
-
-        CredentialTypeSpec type = result.values().iterator().next();
-        assertThat(type.claimSpecs()).extracting(ClaimSpec::path).containsExactly("sub");
-    }
-
-    @Test
-    void aggregateFromMappers_transientUsersEnabled_skipsUserMappingClaim() {
-        KeycloakSession session = mock(KeycloakSession.class);
-        KeycloakContext context = mock(KeycloakContext.class);
-        RealmModel realm = mock(RealmModel.class);
-        IdentityProviderMapperModel mapper = new IdentityProviderMapperModel();
-        mapper.setConfig(new LinkedHashMap<>());
-        mapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_FORMAT, "dc+sd-jwt");
-        mapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_TYPE, "IdentityCredential");
-        mapper.getConfig().put(Oid4vpMapperConfigProperties.CLAIM_PATH, "given_name");
-        when(session.getContext()).thenReturn(context);
-        when(context.getRealm()).thenReturn(realm);
-        when(realm.getIdentityProviderMappersByAliasStream("oid4vp")).thenReturn(java.util.stream.Stream.of(mapper));
-        Oid4vpConfigProvider config = config("oid4vp", false, true, "sub", "mdoc-sub");
-
-        Map<String, CredentialTypeSpec> result = DcqlQueryBuilder.aggregateFromMappers(session, config);
-
-        CredentialTypeSpec type = result.values().iterator().next();
-        assertThat(type.claimSpecs()).extracting(ClaimSpec::path).containsExactly("given_name");
-    }
-
-    @Test
-    void aggregateFromMappers_ignoresBlankTypesAndHandlesMapperFailure() {
-        KeycloakSession session = mock(KeycloakSession.class);
-        KeycloakContext context = mock(KeycloakContext.class);
-        RealmModel realm = mock(RealmModel.class);
-        IdentityProviderMapperModel blankTypeMapper = new IdentityProviderMapperModel();
-        blankTypeMapper.setConfig(new LinkedHashMap<>());
-        blankTypeMapper.getConfig().put(Oid4vpMapperConfigProperties.CREDENTIAL_TYPE, " ");
-        when(session.getContext()).thenReturn(context);
-        when(context.getRealm()).thenReturn(realm);
-        when(realm.getIdentityProviderMappersByAliasStream("oid4vp"))
-                .thenReturn(java.util.stream.Stream.of(blankTypeMapper))
-                .thenThrow(new RuntimeException("simulated mapper lookup failure"));
-        Oid4vpConfigProvider config = config("oid4vp", true, "sub", "mdoc-sub");
-
-        assertThat(DcqlQueryBuilder.aggregateFromMappers(session, config)).isEmpty();
-        assertThat(DcqlQueryBuilder.aggregateFromMappers(session, config)).isEmpty();
+        mapper.getConfig().put(AbstractOID4VPClaimMapper.CREDENTIAL_TYPE, doctype);
+        mapper.getConfig().put(AbstractOID4VPClaimMapper.CLAIM, claim);
+        if (namespace != null) {
+            mapper.getConfig().put(OID4VPMdocUserAttributeMapper.NAMESPACE, namespace);
+        }
+        return mapper;
     }
 
     @SuppressWarnings("unchecked")
@@ -522,17 +408,12 @@ class DcqlQueryBuilderTest {
         return ((List<Map<String, Object>>) result.get("credentials")).get(0);
     }
 
-    private static Oid4vpConfigProvider config(
-            String alias, boolean useIdTokenSubject, String userClaim, String mdocClaim) {
-        return config(alias, useIdTokenSubject, false, userClaim, mdocClaim);
+    private static Oid4vpConfigProvider config(String alias, boolean useIdTokenSubject, String principal) {
+        return config(alias, useIdTokenSubject, false, principal);
     }
 
     private static Oid4vpConfigProvider config(
-            String alias,
-            boolean useIdTokenSubject,
-            boolean transientUsersEnabled,
-            String userClaim,
-            String mdocClaim) {
+            String alias, boolean useIdTokenSubject, boolean transientUsersEnabled, String principal) {
         return new Oid4vpConfigProvider() {
             @Override
             public String getAlias() {
@@ -550,18 +431,8 @@ class DcqlQueryBuilderTest {
             }
 
             @Override
-            public String getUserMappingClaimForFormat(String format) {
-                return "mso_mdoc".equals(format) ? mdocClaim : userClaim;
-            }
-
-            @Override
-            public String getUserMappingClaim() {
-                return userClaim;
-            }
-
-            @Override
-            public String getUserMappingClaimMdoc() {
-                return mdocClaim;
+            public String getPrincipalAttribute() {
+                return principal;
             }
 
             @Override

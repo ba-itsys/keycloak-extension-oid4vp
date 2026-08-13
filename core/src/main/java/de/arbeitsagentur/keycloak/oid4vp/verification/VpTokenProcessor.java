@@ -43,7 +43,7 @@ import org.keycloak.utils.StringUtil;
  *
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-7">OID4VP 1.0 §7 — VP Token</a>
  */
-public class VpTokenProcessor {
+public class VpTokenProcessor implements VpTokenVerifier {
 
     private static final Logger LOG = Logger.getLogger(VpTokenProcessor.class);
     private static final String DEFAULT_CREDENTIAL_ID = "cred1";
@@ -116,6 +116,7 @@ public class VpTokenProcessor {
      *
      * @param request the wallet response plus verification context
      */
+    @Override
     public VpTokenResult process(Request request) {
         List<X509Certificate> trustedCerts =
                 trustListProvider != null ? trustListProvider.getIssuanceCertificates() : List.of();

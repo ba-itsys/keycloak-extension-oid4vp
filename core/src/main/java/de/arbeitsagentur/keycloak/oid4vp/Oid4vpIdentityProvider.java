@@ -158,7 +158,13 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     }
 
     public PreparedDcqlQuery prepareDcqlQueryFromConfig() {
-        Map<String, CredentialTypeSpec> credentialTypes = DcqlQueryBuilder.aggregateFromMappers(session, getConfig());
+        RealmModel realm = session.getContext().getRealm();
+        Map<String, CredentialTypeSpec> credentialTypes = realm == null
+                ? Map.of()
+                : DcqlQueryBuilder.aggregateFromMappers(
+                        realm.getIdentityProviderMappersByAliasStream(
+                                getConfig().getAlias()),
+                        getConfig());
 
         if (credentialTypes.isEmpty()) {
             throw new IdentityBrokerException(

@@ -35,12 +35,11 @@ const PKCE_CHALLENGE = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
 const SD_JWT_DCQL_MAPPERS = ['given_name', 'family_name', 'birthdate'].map((claim) => ({
     name: `load-sd-jwt-${claim}`,
     identityProviderAlias: IDP_ALIAS,
-    identityProviderMapper: 'oid4vp-user-session-mapper',
+    identityProviderMapper: 'oid4vp-sd-jwt-user-session-attribute-idp-mapper',
     config: {
-        'credential.format': 'dc+sd-jwt',
         'credential.type': SD_JWT_VCT,
         claim,
-        'session.note': `load_${claim}`,
+        attribute: `load_${claim}`,
     },
 }));
 
@@ -249,8 +248,7 @@ class AdminApi {
         config.x509CertificatePem = '';
         config.x509SigningKeyJwk = '';
         config.verifierInfo = '';
-        config.userMappingClaim = 'family_name';
-        config.userMappingClaimMdoc = 'family_name';
+        config.principalAttribute = 'family_name';
         idp.config = config;
 
         this.putJson(idpPath, idp);
