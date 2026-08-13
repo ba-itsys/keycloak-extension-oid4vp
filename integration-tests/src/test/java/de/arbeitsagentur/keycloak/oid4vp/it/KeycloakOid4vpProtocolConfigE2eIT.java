@@ -179,32 +179,6 @@ class KeycloakOid4vpProtocolConfigE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
-    void trustedAuthoritiesIncludeAkiWhenEnabled() throws Exception {
-        testApp().reset();
-        flow.clearBrowserSession();
-
-        setIdpConfig(Map.of(
-                Oid4vpIdentityProviderConfig.ENFORCE_HAIP, "true",
-                Oid4vpIdentityProviderConfig.TRUSTED_AUTHORITIES_MODE, "aki"));
-
-        SignedJWT requestJwt = fetchCurrentRequestObject();
-        @SuppressWarnings("unchecked")
-        Map<String, Object> dcql =
-                (Map<String, Object>) requestJwt.getJWTClaimsSet().getJSONObjectClaim("dcql_query");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> credential = ((List<Map<String, Object>>) dcql.get("credentials")).get(0);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> trustedAuthorities =
-                (List<Map<String, Object>>) credential.get("trusted_authorities");
-
-        assertThat(trustedAuthorities).hasSize(1);
-        assertThat(trustedAuthorities.get(0).get("type")).isEqualTo("aki");
-        @SuppressWarnings("unchecked")
-        List<String> akiValues = (List<String>) trustedAuthorities.get(0).get("values");
-        assertThat(akiValues).isNotEmpty();
-    }
-
-    @Test
     void encryptedResponseModeWithoutHaipKeepsConfiguredX509SanDnsClientIdScheme() throws Exception {
         testApp().reset();
         flow.clearBrowserSession();
@@ -301,22 +275,5 @@ class KeycloakOid4vpProtocolConfigE2eIT extends AbstractOid4vpE2eTest {
         } finally {
             wallet().client().clearPreferredFormat();
         }
-    }
-
-    private SignedJWT fetchCurrentRequestObject() throws Exception {
-        flow.navigateToLoginPage();
-        flow.clickOid4vpIdpButton();
-
-        String walletUrl = flow.getSameDeviceWalletUrl();
-        String requestUri = Oid4vpLoginFlowHelper.extractRequestUri(walletUrl);
-        HttpResponse<String> response = HttpClient.newHttpClient()
-                .send(
-                        HttpRequest.newBuilder()
-                                .uri(URI.create(requestUri))
-                                .GET()
-                                .build(),
-                        HttpResponse.BodyHandlers.ofString());
-        assertThat(response.statusCode()).isEqualTo(200);
-        return SignedJWT.parse(response.body());
     }
 }

@@ -30,6 +30,7 @@ import com.nimbusds.jose.JWEObject;
 import com.nimbusds.jose.Payload;
 import com.nimbusds.jose.crypto.ECDHEncrypter;
 import com.nimbusds.jose.jwk.ECKey;
+import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectPlaywrightBrowser;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestApp;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestApp;
@@ -37,8 +38,11 @@ import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestCertificates;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
 import jakarta.ws.rs.core.Response;
 import java.io.IOException;
+import java.net.URI;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -243,6 +247,30 @@ abstract class AbstractOid4vpE2eTest {
         Oid4vpLoginFlowHelper.WalletResponse response = flow.submitToWallet(walletUrl);
         flow.waitForLoginCompletion(response);
         flow.completeFirstBrokerLoginIfNeeded(usernamePrefix);
+    }
+
+    /** Starts a same device login and returns the request object the wallet would fetch. */
+    protected SignedJWT fetchCurrentRequestObject() throws Exception {
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        return fetchRequestObject(flow.getSameDeviceWalletUrl());
+    }
+
+    /**
+     * Fetches the request object of a wallet URL of a login already in progress. Retrieval does not
+     * consume the request context, so the wallet can still be driven through the same wallet URL.
+     */
+    protected SignedJWT fetchRequestObject(String walletUrl) throws Exception {
+        String requestUri = Oid4vpLoginFlowHelper.extractRequestUri(walletUrl);
+        HttpResponse<String> response = HttpClient.newHttpClient()
+                .send(
+                        HttpRequest.newBuilder()
+                                .uri(URI.create(requestUri))
+                                .GET()
+                                .build(),
+                        HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(200);
+        return SignedJWT.parse(response.body());
     }
 
     protected void waitForCrossDeviceNavigation() {

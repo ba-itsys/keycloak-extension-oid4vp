@@ -29,10 +29,13 @@ import org.bouncycastle.asn1.x509.BasicConstraints;
 import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.GeneralName;
 import org.bouncycastle.asn1.x509.GeneralNames;
+import org.bouncycastle.asn1.x509.SubjectKeyIdentifier;
+import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
+import org.keycloak.common.util.PemUtils;
 
 public final class TestCertificates {
 
@@ -110,5 +113,31 @@ public final class TestCertificates {
     public static String toPem(String type, byte[] der) {
         String base64 = Base64.getMimeEncoder(64, "\n".getBytes()).encodeToString(der);
         return "-----BEGIN " + type + "-----\n" + base64 + "\n-----END " + type + "-----";
+    }
+
+    public static X509Certificate parseCertificate(String pem) {
+        try {
+            return PemUtils.decodeCertificate(pem);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to parse certificate PEM", e);
+        }
+    }
+
+    /**
+     * The certificate's subject key identifier, base64url encoded without padding. Credentials
+     * issued under this certificate carry the same value in their authority key identifier, which
+     * is what DCQL {@code trusted_authorities} entries of type {@code aki} advertise.
+     */
+    public static String subjectKeyIdentifierBase64Url(X509Certificate certificate) {
+        try {
+            SubjectKeyIdentifier subjectKeyIdentifier = SubjectKeyIdentifier.fromExtensions(
+                    new X509CertificateHolder(certificate.getEncoded()).getExtensions());
+            if (subjectKeyIdentifier == null) {
+                throw new IllegalStateException("Certificate has no subject key identifier extension");
+            }
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(subjectKeyIdentifier.getKeyIdentifier());
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to read the subject key identifier", e);
+        }
     }
 }
