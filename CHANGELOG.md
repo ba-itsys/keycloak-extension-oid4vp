@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.6.6...v0.7.0) (2026-08-13)
+
+
+### Features
+
+* define DCQL claim sets via mapper claim set ids and validate presented claims ([5a06c61](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/5a06c61721738bf2ea2a5458ab13948900b9261b))
+
 ## [0.6.6](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.6.5...v0.6.6) (2026-08-04)
 
 
