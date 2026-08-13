@@ -168,7 +168,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         Oid4vpTrustedAuthoritiesMode trustedAuthoritiesMode = getConfig().getTrustedAuthoritiesMode();
         ResolvedTrust trustedAuthoritiesTrust =
                 trustedAuthoritiesMode.isEnabled() ? resolveTrust() : ResolvedTrust.empty();
-        warnIfAuthorityKeyIdentifiersMissing(trustedAuthoritiesMode, trustedAuthoritiesTrust);
+        warnIfTrustedAuthoritiesMissing(trustedAuthoritiesMode, trustedAuthoritiesTrust);
         String dcqlQuery = DcqlQueryBuilder.fromMapperSpecs(
                         OBJECT_MAPPER,
                         credentialTypes,
@@ -188,12 +188,21 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         return trustMaterialResolver.resolveTrust(session, getConfig().getTrustMaterialIdps());
     }
 
-    private void warnIfAuthorityKeyIdentifiersMissing(Oid4vpTrustedAuthoritiesMode mode, ResolvedTrust trust) {
-        if (mode == Oid4vpTrustedAuthoritiesMode.AKI
-                && trust.authorityKeyIdentifiers().isEmpty()) {
+    /**
+     * Warns when an enabled trusted authorities mode resolves to no value, because the query then
+     * silently carries no {@code trusted_authorities} constraint at all and any issuer is accepted.
+     */
+    private void warnIfTrustedAuthoritiesMissing(Oid4vpTrustedAuthoritiesMode mode, ResolvedTrust trust) {
+        String missingMaterial =
+                switch (mode) {
+                    case NONE -> null;
+                    case AKI -> trust.authorityKeyIdentifiers().isEmpty() ? "certificate key identifiers" : null;
+                    case ETSI_TL -> trust.trustListUrls().isEmpty() ? "trust list URLs" : null;
+                };
+        if (missingMaterial != null) {
             LOG.warnf(
-                    "OID4VP IdP '%s': trusted_authorities type 'aki' is enabled, but the trust material identity providers '%s' expose no certificate key identifiers",
-                    getConfig().getAlias(), getConfig().getTrustMaterialIdps());
+                    "OID4VP IdP '%s': trusted_authorities type '%s' is enabled, but the trust material identity providers '%s' expose no %s",
+                    getConfig().getAlias(), mode.configValue(), getConfig().getTrustMaterialIdps(), missingMaterial);
         }
     }
 
