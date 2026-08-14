@@ -528,6 +528,25 @@ class DcqlQueryBuilderTest {
         return mapper;
     }
 
+    @Test
+    void aggregateFromMappers_withSubjectCredential_asksOnlyItForThePrincipalClaim() {
+        IdentityProviderMapperModel pid = sdJwtMapper("urn:eudi:pid:1", "given_name", null);
+        pid.getConfig().put(AbstractOID4VPClaimMapper.CREDENTIAL_ID, "pid");
+        IdentityProviderMapperModel employee = sdJwtMapper("https://kc.example/employee", "employee_id", null);
+        employee.getConfig().put(AbstractOID4VPClaimMapper.CREDENTIAL_ID, "employee");
+
+        Map<String, CredentialTypeSpec> result =
+                aggregate(Stream.of(pid, employee), config("oid4vp", false, "sub", "employee"));
+
+        assertThat(result.get("pid").claimSpecs())
+                .extracting(ClaimSpec::path)
+                .as("the PID does not carry the subject, so it must not be asked for it")
+                .containsExactly("given_name");
+        assertThat(result.get("employee").claimSpecs())
+                .extracting(ClaimSpec::path)
+                .containsExactly("employee_id", "sub");
+    }
+
     @SuppressWarnings("unchecked")
     private Map<String, Object> firstCredential(String dcqlJson) throws Exception {
         Map<String, Object> result = objectMapper.readValue(dcqlJson, Map.class);
@@ -535,10 +554,15 @@ class DcqlQueryBuilderTest {
     }
 
     private static Oid4vpConfigProvider config(String alias, String principal) {
-        return config(alias, false, principal);
+        return config(alias, false, principal, null);
     }
 
     private static Oid4vpConfigProvider config(String alias, boolean transientUsersEnabled, String principal) {
+        return config(alias, transientUsersEnabled, principal, null);
+    }
+
+    private static Oid4vpConfigProvider config(
+            String alias, boolean transientUsersEnabled, String principal, String principalCredentialId) {
         return new Oid4vpConfigProvider() {
             @Override
             public String getAlias() {
@@ -557,7 +581,7 @@ class DcqlQueryBuilderTest {
 
             @Override
             public String getPrincipalCredentialId() {
-                return null;
+                return principalCredentialId;
             }
 
             @Override
@@ -578,6 +602,11 @@ class DcqlQueryBuilderTest {
             @Override
             public int getCrossDeviceCompleteTtlSeconds() {
                 return 0;
+            }
+
+            @Override
+            public boolean isAllowMissingSubjectCredential() {
+                return false;
             }
 
             @Override

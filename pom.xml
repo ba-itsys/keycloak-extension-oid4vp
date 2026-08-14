@@ -47,6 +47,10 @@
          keycloak.version aligned with core/pom.xml -->
     <keycloak.version>26.7.1</keycloak.version>
     <keycloak-test-framework.version>26.7.1</keycloak-test-framework.version>
+    <!-- Released from keycloak/keycloak-client, whose versions trail the server. The
+         quarkus-bom imported by keycloak-parent pins it several releases back, so the newest
+         client release is named here instead. -->
+    <keycloak-admin-client.version>26.0.12</keycloak-admin-client.version>
     <junit.version>6.1.1</junit.version>
     <assertj.version>3.27.7</assertj.version>
     <logback.version>1.5.37</logback.version>

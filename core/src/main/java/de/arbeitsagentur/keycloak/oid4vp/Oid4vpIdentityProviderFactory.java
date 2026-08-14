@@ -89,6 +89,17 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
+                .name(Oid4vpIdentityProviderConfig.ALLOW_MISSING_SUBJECT_CREDENTIAL)
+                .label("Allow Missing Subject Credential")
+                .helpText("Accepts a presentation that does not carry the subject credential, for credentials this "
+                        + "Keycloak issues itself. The verifier then generates a pseudonymous subject, the first "
+                        + "broker login establishes which user it belongs to. Configure a first broker login flow "
+                        + "with 'idp-username-password-form' followed by 'oid4vp-subject-binding', which binds the "
+                        + "login to that user so the credential issued afterwards identifies them.")
+                .type(ProviderConfigProperty.BOOLEAN_TYPE)
+                .defaultValue("false")
+                .add()
+                .property()
                 .name(Oid4vpIdentityProviderConfig.PRINCIPAL_ATTRIBUTE)
                 .label("Principal Attribute")
                 .helpText("Dot notation path of the claim that identifies the user (e.g., 'sub'). "

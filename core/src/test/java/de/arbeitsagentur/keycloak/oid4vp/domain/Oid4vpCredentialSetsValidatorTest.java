@@ -257,7 +257,8 @@ class Oid4vpCredentialSetsValidatorTest {
                 "org.iso.18013.5.1.mDL",
                 List.of(ClaimSpec.mdoc("org.iso.18013.5.1", "family_name")));
 
-        assertThat(Oid4vpCredentialSetsValidator.problems(List.of(), Map.of(MDL, withoutPrincipal), "", "sub", false))
+        assertThat(Oid4vpCredentialSetsValidator.problems(
+                        List.of(), Map.of(MDL, withoutPrincipal), "", "sub", false, false))
                 .as("useIdTokenSubject and transient users do not read a principal claim")
                 .isEmpty();
     }
@@ -267,6 +268,20 @@ class Oid4vpCredentialSetsValidatorTest {
                 Oid4vpConstants.FORMAT_SD_JWT_VC,
                 "urn:eudi:pid:1",
                 List.of(ClaimSpec.sdJwt("given_name"), ClaimSpec.sdJwt("sub")));
+    }
+
+    @Test
+    void anAvoidableSubjectCredentialIsAllowedWhenItMayBeMissing() {
+        String credentialSets = "[{\"options\": [[\"" + PID + "\", \"" + MDL + "\"], [\"" + PID + "\"]]}]";
+        Map<String, CredentialTypeSpec> credentials = Map.of(PID, pidSpec(), MDL, pidSpec());
+        List<CredentialSet> parsed = CredentialSet.parse(objectMapper, credentialSets);
+
+        assertThat(Oid4vpCredentialSetsValidator.problems(parsed, credentials, MDL, "sub", true, false))
+                .as("the subject credential can be avoided, so the login could identify nobody")
+                .isNotEmpty();
+        assertThat(Oid4vpCredentialSetsValidator.problems(parsed, credentials, MDL, "sub", true, true))
+                .as("a presentation without the subject credential is expected here")
+                .isEmpty();
     }
 
     private List<String> problems(String credentialSetsJson, String principalCredentialId) {
@@ -281,6 +296,6 @@ class Oid4vpCredentialSetsValidatorTest {
         List<CredentialSet> credentialSets =
                 credentialSetsJson.isBlank() ? List.of() : CredentialSet.parse(objectMapper, credentialSetsJson);
         return Oid4vpCredentialSetsValidator.problems(
-                credentialSets, credentials, principalCredentialId, principalAttribute, true);
+                credentialSets, credentials, principalCredentialId, principalAttribute, true, false);
     }
 }

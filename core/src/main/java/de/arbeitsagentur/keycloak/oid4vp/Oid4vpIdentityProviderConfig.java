@@ -69,6 +69,13 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
      */
     public static final String REMOVED_TRUSTED_AUTHORITIES_MODE = "trustedAuthoritiesMode";
 
+    /**
+     * Whether a presentation without the subject credential is expected. The verifier then generates
+     * a pseudonymous subject and the login that follows establishes which user it belongs to, instead
+     * of failing because nothing identified the user.
+     */
+    public static final String ALLOW_MISSING_SUBJECT_CREDENTIAL = "allowMissingSubjectCredential";
+
     public static final String ALLOWED_ISSUERS = "allowedIssuers";
 
     public static final String STATUS_LIST_MAX_CACHE_TTL_SECONDS = "statusListMaxCacheTtlSeconds";
@@ -217,7 +224,8 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
                 aggregated.credentials(),
                 getPrincipalCredentialId(),
                 getPrincipalAttribute(),
-                !isTransientUsersEnabled()));
+                !isTransientUsersEnabled(),
+                isAllowMissingSubjectCredential()));
         if (!problems.isEmpty()) {
             throw new IllegalArgumentException(String.join("; ", problems));
         }
@@ -264,6 +272,15 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public void setTrustMaterialIdps(String aliases) {
         getConfig().put(TRUST_MATERIAL_IDPS, aliases);
+    }
+
+    @Override
+    public boolean isAllowMissingSubjectCredential() {
+        return getBoolConfig(ALLOW_MISSING_SUBJECT_CREDENTIAL, false);
+    }
+
+    public void setAllowMissingSubjectCredential(boolean allow) {
+        getConfig().put(ALLOW_MISSING_SUBJECT_CREDENTIAL, String.valueOf(allow));
     }
 
     @Override

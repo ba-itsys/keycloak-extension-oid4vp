@@ -15,11 +15,9 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.trust;
 
-import java.util.Arrays;
 import java.util.List;
 import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.models.RealmModel;
-import org.keycloak.utils.StringUtil;
 
 /**
  * Configuration of the trust material identity provider for credentials this Keycloak issues
@@ -32,7 +30,7 @@ public class KeycloakRealmIssuerIdentityProviderConfig extends IdentityProviderM
 
     public static final String ISSUER_REALM = "issuerRealm";
     public static final String ISSUER = "issuer";
-    public static final String SERVED_CREDENTIAL_TYPES = "servedCredentialTypes";
+    public static final String SERVED_CREDENTIAL_TYPES = ServedCredentialTypes.CONFIG_KEY;
 
     public KeycloakRealmIssuerIdentityProviderConfig() {}
 
@@ -78,15 +76,7 @@ public class KeycloakRealmIssuerIdentityProviderConfig extends IdentityProviderM
     }
 
     public List<String> getServedCredentialTypes() {
-        String configured = getConfig().get(SERVED_CREDENTIAL_TYPES);
-        if (StringUtil.isBlank(configured)) {
-            return List.of();
-        }
-        return Arrays.stream(configured.split(","))
-                .map(String::trim)
-                .filter(value -> !value.isEmpty())
-                .distinct()
-                .toList();
+        return ServedCredentialTypes.of(this);
     }
 
     public void setServedCredentialTypes(String commaSeparatedCredentialTypes) {

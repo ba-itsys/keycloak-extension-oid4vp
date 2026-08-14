@@ -42,7 +42,7 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
     public static final String TRUST_LIST_MAX_STALE_AGE_SECONDS = "trustListMaxStaleAgeSeconds";
     public static final String TRUSTED_CERTIFICATES = "trustedCertificates";
     public static final String REQUIRED_EXTENDED_KEY_USAGES = "requiredExtendedKeyUsages";
-    public static final String SERVED_CREDENTIAL_TYPES = "servedCredentialTypes";
+    public static final String SERVED_CREDENTIAL_TYPES = ServedCredentialTypes.CONFIG_KEY;
     public static final String ADVERTISE_TRUSTED_AUTHORITIES = "advertiseTrustedAuthorities";
 
     public static final int DEFAULT_TRUST_LIST_MAX_STALE_AGE_SECONDS = 86400;
@@ -138,7 +138,18 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
      * means the provider serves every credential type of the identity providers referencing it.
      */
     public List<String> getServedCredentialTypes() {
-        return parseCommaSeparated(getConfig().get(SERVED_CREDENTIAL_TYPES));
+        return ServedCredentialTypes.of(this);
+    }
+
+    private static List<String> parseCommaSeparated(String configured) {
+        if (StringUtil.isBlank(configured)) {
+            return List.of();
+        }
+        return Arrays.stream(configured.split(","))
+                .map(String::trim)
+                .filter(value -> !value.isEmpty())
+                .distinct()
+                .toList();
     }
 
     public void setServedCredentialTypes(String commaSeparatedCredentialTypes) {
@@ -157,17 +168,6 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
 
     public void setAdvertiseTrustedAuthorities(boolean advertise) {
         getConfig().put(ADVERTISE_TRUSTED_AUTHORITIES, String.valueOf(advertise));
-    }
-
-    private static List<String> parseCommaSeparated(String configured) {
-        if (StringUtil.isBlank(configured)) {
-            return List.of();
-        }
-        return Arrays.stream(configured.split(","))
-                .map(String::trim)
-                .filter(value -> !value.isEmpty())
-                .distinct()
-                .toList();
     }
 
     /** Parses the pasted PEM bundle. Returns an empty list when unset or unparsable. */

@@ -192,7 +192,14 @@ public class DcqlQueryBuilder {
             });
 
             if (!config.isTransientUsersEnabled()) {
+                // With a subject credential configured the principal claim is requested from that
+                // credential alone. Without one the subject comes from whichever credential the
+                // wallet presents, so every credential has to carry it.
+                String subjectCredentialId = config.getPrincipalCredentialId();
                 for (Map.Entry<String, List<ClaimSpec>> entry : claimsByCredentialId.entrySet()) {
+                    if (StringUtil.isNotBlank(subjectCredentialId) && !subjectCredentialId.equals(entry.getKey())) {
+                        continue;
+                    }
                     ClaimSpec principal =
                             principalClaim(config, typesByCredentialId.get(entry.getKey()), entry.getValue());
                     if (principal == null || principal.claimPath() == null) {
