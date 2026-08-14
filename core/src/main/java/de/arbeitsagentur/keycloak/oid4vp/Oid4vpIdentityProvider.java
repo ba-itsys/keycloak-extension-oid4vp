@@ -24,13 +24,13 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpClientIdScheme;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpCredentialSetsValidator;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PreparedDcqlQuery;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
+import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthority;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpCallbackProcessor;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpRedirectFlowService;
+import de.arbeitsagentur.keycloak.oid4vp.trust.CredentialTrustPlan;
 import de.arbeitsagentur.keycloak.oid4vp.trust.Oid4vpTrustMaterialResolver;
-import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
 import de.arbeitsagentur.keycloak.oid4vp.util.DcqlQueryBuilder;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpQrCodeService;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
@@ -39,6 +39,7 @@ import jakarta.ws.rs.core.Response;
 import java.net.URI;
 import java.security.SecureRandom;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -93,7 +94,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                         OBJECT_MAPPER,
                         new VpTokenProcessor.Config(
                                 session,
-                                this::resolveTrust,
+                                this::resolveTrustPlan,
                                 config.getStatusListMaxCacheTtl(),
                                 config.getIssuerMetadataMaxCacheTtl(),
                                 config.isEnforceHaip(),
@@ -174,22 +175,28 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
         List<CredentialSet> credentialSets = validatedCredentialSets(credentialTypes);
 
-        Oid4vpTrustedAuthoritiesMode trustedAuthoritiesMode = getConfig().getTrustedAuthoritiesMode();
-        ResolvedTrust trustedAuthoritiesTrust =
-                trustedAuthoritiesMode.isEnabled() ? resolveTrust() : ResolvedTrust.empty();
-        warnIfTrustedAuthoritiesMissing(trustedAuthoritiesMode, trustedAuthoritiesTrust);
+        CredentialTrustPlan trustPlan = resolveTrustPlan();
+        warnIfCredentialTypesAreUnserved(credentialTypes, trustPlan);
         String dcqlQuery = DcqlQueryBuilder.fromMapperSpecs(
-                        OBJECT_MAPPER,
-                        credentialTypes,
-                        credentialSets,
-                        trustedAuthoritiesMode,
-                        trustedAuthoritiesTrust.trustListUrls(),
-                        trustedAuthoritiesTrust.authorityKeyIdentifiers())
+                        OBJECT_MAPPER, credentialTypes, credentialSets, trustedAuthorities(credentialTypes, trustPlan))
                 .build();
         List<RequestedCredential> requestedCredentials = credentialTypes.entrySet().stream()
                 .map(entry -> RequestedCredential.of(entry.getKey(), entry.getValue()))
                 .toList();
         return new PreparedDcqlQuery(dcqlQuery, requestedCredentials, credentialSets);
+    }
+
+    /**
+     * The {@code trusted_authorities} entries of every credential, taken from the trust material
+     * identity providers serving its credential type. Only they know whether their trust domain can
+     * be advertised at all, so there is no verifier-wide setting to override them.
+     */
+    private static Map<String, List<TrustedAuthority>> trustedAuthorities(
+            Map<String, CredentialTypeSpec> credentialTypes, CredentialTrustPlan trustPlan) {
+        Map<String, List<TrustedAuthority>> trustedAuthorities = new LinkedHashMap<>();
+        credentialTypes.forEach((credentialId, spec) ->
+                trustedAuthorities.put(credentialId, trustPlan.trustedAuthoritiesFor(spec.type())));
+        return trustedAuthorities;
     }
 
     /**
@@ -218,27 +225,29 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         return credentialSets;
     }
 
-    /** Resolves the aggregated trust material of the configured trust material identity providers. */
-    public ResolvedTrust resolveTrust() {
-        return trustMaterialResolver.resolveTrust(session, getConfig().getTrustMaterialIdps());
+    /** Resolves the configured trust material identity providers into a per credential type plan. */
+    public CredentialTrustPlan resolveTrustPlan() {
+        return trustMaterialResolver.resolvePlan(session, getConfig().getTrustMaterialIdps());
     }
 
     /**
-     * Warns when an enabled trusted authorities mode resolves to no value, because the query then
-     * silently carries no {@code trusted_authorities} constraint at all and any issuer is accepted.
+     * Warns about requested credential types that no trust material identity provider serves. Only
+     * reported once the providers declare credential types at all, because an unscoped provider
+     * serves everything and cannot leave a type uncovered.
      */
-    private void warnIfTrustedAuthoritiesMissing(Oid4vpTrustedAuthoritiesMode mode, ResolvedTrust trust) {
-        String missingMaterial =
-                switch (mode) {
-                    case NONE -> null;
-                    case AKI -> trust.authorityKeyIdentifiers().isEmpty() ? "certificate key identifiers" : null;
-                    case ETSI_TL -> trust.trustListUrls().isEmpty() ? "trust list URLs" : null;
-                };
-        if (missingMaterial != null) {
-            LOG.warnf(
-                    "OID4VP IdP '%s': trusted_authorities type '%s' is enabled, but the trust material identity providers '%s' expose no %s",
-                    getConfig().getAlias(), mode.configValue(), getConfig().getTrustMaterialIdps(), missingMaterial);
+    private void warnIfCredentialTypesAreUnserved(
+            Map<String, CredentialTypeSpec> credentialTypes, CredentialTrustPlan trustPlan) {
+        if (!trustPlan.isScopedByCredentialType()) {
+            return;
         }
+        credentialTypes.forEach((credentialId, spec) -> {
+            if (!trustPlan.serves(spec.type())) {
+                LOG.warnf(
+                        "OID4VP IdP '%s': no trust material identity provider of '%s' serves the credential type '%s' "
+                                + "requested as '%s'; presentations of that credential cannot be verified",
+                        getConfig().getAlias(), getConfig().getTrustMaterialIdps(), spec.type(), credentialId);
+            }
+        });
     }
 
     private LoginContext initializeLoginContext(AuthenticationRequest request, AuthenticationSessionModel authSession) {

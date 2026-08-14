@@ -19,9 +19,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.domain.MdocVerificationResult;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
+import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SdJwtVerificationResult;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
+import de.arbeitsagentur.keycloak.oid4vp.trust.CredentialTrustPlan;
 import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
 import java.time.Duration;
 import java.util.Base64;
@@ -39,7 +41,12 @@ import org.keycloak.utils.StringUtil;
  *
  * <p>Handles format detection (SD-JWT vs mDoc), single-credential VP tokens,
  * signature verification (delegated to {@link SdJwtVerifier} / {@link MdocVerifier}),
- * trust list validation, and revocation checking (via {@link StatusListVerifier}).
+ * trust validation, and revocation checking (via {@link StatusListVerifier}).
+ *
+ * <p>Trust is selected per credential: a presentation is verified against the trust material of the
+ * providers serving the credential type that was requested under the credential id the wallet
+ * answered with. The requested id to credential type binding comes from the request context, never
+ * from the presentation, so a wallet cannot choose the trust domain its credential is judged by.
  *
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-7">OID4VP 1.0 §7 — VP Token</a>
  */
@@ -52,11 +59,11 @@ public class VpTokenProcessor implements VpTokenVerifier {
     private final MdocVerifier mdocVerifier;
     private final StatusListVerifier statusListVerifier;
     private final ObjectMapper objectMapper;
-    private final Supplier<ResolvedTrust> trustSupplier;
+    private final Supplier<CredentialTrustPlan> trustPlanSupplier;
 
     public record Config(
             KeycloakSession session,
-            Supplier<ResolvedTrust> trustSupplier,
+            Supplier<CredentialTrustPlan> trustPlanSupplier,
             Duration statusListMaxCacheTtl,
             Duration issuerMetadataMaxCacheTtl,
             boolean strictX5cVerification,
@@ -69,7 +76,13 @@ public class VpTokenProcessor implements VpTokenVerifier {
             String expectedNonce,
             String alternateResponseUri,
             String mdocGeneratedNonce,
-            String encryptionJwkThumbprint) {}
+            String encryptionJwkThumbprint,
+            List<RequestedCredential> requestedCredentials) {
+
+        public Request {
+            requestedCredentials = requestedCredentials != null ? List.copyOf(requestedCredentials) : List.of();
+        }
+    }
 
     public VpTokenProcessor(ObjectMapper objectMapper, Config config) {
         this.sdJwtVerifier = new SdJwtVerifier(
@@ -78,30 +91,31 @@ public class VpTokenProcessor implements VpTokenVerifier {
                 new JwtVcIssuerMetadataResolver(config.session(), config.issuerMetadataMaxCacheTtl()),
                 config.strictX5cVerification());
         this.mdocVerifier = new MdocVerifier();
-        this.trustSupplier = config.trustSupplier();
-        this.statusListVerifier = new StatusListVerifier(
-                config.session(), () -> resolveTrust().revocationCertificates(), config.statusListMaxCacheTtl());
+        this.trustPlanSupplier = config.trustPlanSupplier();
+        this.statusListVerifier = new StatusListVerifier(config.session(), config.statusListMaxCacheTtl());
         this.objectMapper = objectMapper;
     }
 
     public VpTokenProcessor(ObjectMapper objectMapper, StatusListVerifier statusListVerifier) {
-        this(objectMapper, statusListVerifier, (Supplier<ResolvedTrust>) null);
+        this(objectMapper, statusListVerifier, null);
     }
 
     public VpTokenProcessor(
-            ObjectMapper objectMapper, StatusListVerifier statusListVerifier, Supplier<ResolvedTrust> trustSupplier) {
+            ObjectMapper objectMapper,
+            StatusListVerifier statusListVerifier,
+            Supplier<CredentialTrustPlan> trustPlanSupplier) {
         this.sdJwtVerifier = new SdJwtVerifier(
                 Oid4vpIdentityProviderConfig.DEFAULT_CLOCK_SKEW_SECONDS,
                 Oid4vpIdentityProviderConfig.DEFAULT_KB_JWT_MAX_AGE_SECONDS);
         this.mdocVerifier = new MdocVerifier();
         this.statusListVerifier = statusListVerifier;
-        this.trustSupplier = trustSupplier;
+        this.trustPlanSupplier = trustPlanSupplier;
         this.objectMapper = objectMapper;
     }
 
-    private ResolvedTrust resolveTrust() {
-        ResolvedTrust trust = trustSupplier != null ? trustSupplier.get() : null;
-        return trust != null ? trust : ResolvedTrust.empty();
+    private CredentialTrustPlan resolveTrustPlan() {
+        CredentialTrustPlan plan = trustPlanSupplier != null ? trustPlanSupplier.get() : null;
+        return plan != null ? plan : CredentialTrustPlan.empty();
     }
 
     /**
@@ -111,34 +125,16 @@ public class VpTokenProcessor implements VpTokenVerifier {
      */
     @Override
     public VpTokenResult process(Request request) {
-        ResolvedTrust trust = resolveTrust();
-        LOG.debugf(
-                "Trust material provides %d trust anchors sets, %d direct issuer certificates and %d issuer keys",
-                trust.issuanceTrust().size(),
-                trust.directIssuerCertificates().size(),
-                trust.trustedIssuerJwks().size());
+        CredentialTrustSelection trust =
+                new CredentialTrustSelection(resolveTrustPlan(), request.requestedCredentials());
 
         try {
             // Detect format: single credential or a JSON wrapper around one credential
             if (request.vpToken().trim().startsWith("{")) {
-                return processMultiCredential(
-                        request.vpToken(),
-                        request.clientId(),
-                        request.expectedNonce(),
-                        trust,
-                        request.alternateResponseUri(),
-                        request.mdocGeneratedNonce(),
-                        request.encryptionJwkThumbprint());
+                return processMultiCredential(request, trust);
             }
 
-            return processSingleCredential(
-                    request.vpToken(),
-                    request.clientId(),
-                    request.expectedNonce(),
-                    trust,
-                    request.alternateResponseUri(),
-                    request.mdocGeneratedNonce(),
-                    request.encryptionJwkThumbprint());
+            return processSingleCredential(request, trust);
 
         } catch (IdentityBrokerException e) {
             throw e;
@@ -147,57 +143,26 @@ public class VpTokenProcessor implements VpTokenVerifier {
         }
     }
 
-    private VpTokenResult processSingleCredential(
-            String vpToken,
-            String clientId,
-            String expectedNonce,
-            ResolvedTrust trust,
-            String alternateResponseUri,
-            String mdocGeneratedNonce,
-            String encryptionJwkThumbprint) {
-
-        VerifiedCredential cred = verifyCredential(
-                DEFAULT_CREDENTIAL_ID,
-                vpToken,
-                clientId,
-                expectedNonce,
-                trust,
-                alternateResponseUri,
-                mdocGeneratedNonce,
-                encryptionJwkThumbprint);
+    private VpTokenResult processSingleCredential(Request request, CredentialTrustSelection trust) {
+        String credentialId = trust.singleCredentialId();
+        VerifiedCredential cred = verifyCredential(credentialId, request.vpToken(), request, trust);
         if (cred == null) {
             throw new IdentityBrokerException("Unsupported VP token format");
         }
 
-        return new VpTokenResult(Map.of(DEFAULT_CREDENTIAL_ID, cred), cred.claims());
+        return new VpTokenResult(Map.of(credentialId, cred), cred.claims());
     }
 
     @SuppressWarnings("unchecked")
-    private VpTokenResult processMultiCredential(
-            String vpToken,
-            String clientId,
-            String expectedNonce,
-            ResolvedTrust trust,
-            String alternateResponseUri,
-            String mdocGeneratedNonce,
-            String encryptionJwkThumbprint) {
-
+    private VpTokenResult processMultiCredential(Request request, CredentialTrustSelection trust) {
         try {
-            Map<String, Object> wrapper = objectMapper.readValue(vpToken, Map.class);
+            Map<String, Object> wrapper = objectMapper.readValue(request.vpToken(), Map.class);
             Map<String, VerifiedCredential> credentials = new LinkedHashMap<>();
 
             for (Map.Entry<String, Object> entry : wrapper.entrySet()) {
                 String credentialId = entry.getKey();
                 for (String credential : extractCredentialStrings(entry.getValue())) {
-                    VerifiedCredential cred = verifyCredential(
-                            credentialId,
-                            credential,
-                            clientId,
-                            expectedNonce,
-                            trust,
-                            alternateResponseUri,
-                            mdocGeneratedNonce,
-                            encryptionJwkThumbprint);
+                    VerifiedCredential cred = verifyCredential(credentialId, credential, request, trust);
                     // A credential id addresses one credential in the query, so several
                     // presentations under one id are answers to the same request and the first
                     // verified one is used.
@@ -232,35 +197,36 @@ public class VpTokenProcessor implements VpTokenVerifier {
     }
 
     private VerifiedCredential verifyCredential(
-            String credentialId,
-            String credential,
-            String clientId,
-            String expectedNonce,
-            ResolvedTrust trust,
-            String alternateResponseUri,
-            String mdocGeneratedNonce,
-            String encryptionJwkThumbprint) {
+            String credentialId, String credential, Request request, CredentialTrustSelection trustSelection) {
+
+        ResolvedTrust trust = trustSelection.forCredentialId(credentialId);
+        LOG.debugf(
+                "Credential '%s' is verified against %d trust anchor sets, %d direct issuer certificates and %d issuer keys",
+                credentialId,
+                trust.issuanceTrust().size(),
+                trust.directIssuerCertificates().size(),
+                trust.trustedIssuerKeys().size());
 
         if (sdJwtVerifier.isSdJwt(credential)) {
-            SdJwtVerificationResult result =
-                    verifySdJwtWithFallback(credential, clientId, expectedNonce, trust, alternateResponseUri);
-            statusListVerifier.checkRevocationStatus(result.claims());
+            SdJwtVerificationResult result = verifySdJwtWithFallback(
+                    credential, request.clientId(), request.expectedNonce(), trust, request.alternateResponseUri());
+            statusListVerifier.checkRevocationStatus(result.claims(), trust.revocationCertificates());
             return new VerifiedCredential(
                     credentialId, result.issuer(), result.credentialType(), result.claims(), PresentationType.SD_JWT);
         }
 
         if (mdocVerifier.isMdoc(credential)) {
             // Use alternateResponseUri as the response_uri for session transcript
-            byte[] jwkThumbprintBytes = decodeJwkThumbprint(encryptionJwkThumbprint);
+            byte[] jwkThumbprintBytes = decodeJwkThumbprint(request.encryptionJwkThumbprint());
             MdocVerificationResult result = mdocVerifier.verifyWithTrustedCerts(
                     credential,
                     trust,
-                    clientId,
-                    expectedNonce,
-                    alternateResponseUri,
-                    mdocGeneratedNonce,
+                    request.clientId(),
+                    request.expectedNonce(),
+                    request.alternateResponseUri(),
+                    request.mdocGeneratedNonce(),
                     jwkThumbprintBytes);
-            statusListVerifier.checkRevocationStatus(result.claims());
+            statusListVerifier.checkRevocationStatus(result.claims(), trust.revocationCertificates());
             return new VerifiedCredential(credentialId, null, result.docType(), result.claims(), PresentationType.MDOC);
         }
 
@@ -295,6 +261,56 @@ public class VpTokenProcessor implements VpTokenVerifier {
                 }
             }
             throw primaryError;
+        }
+    }
+
+    /**
+     * Resolves the trust material of one response, keyed by the credential id the wallet answered
+     * under. An id that was not requested is rejected before any signature is verified, so an
+     * unknown id can never borrow the trust of a requested credential.
+     */
+    private static class CredentialTrustSelection {
+
+        private final CredentialTrustPlan trustPlan;
+        private final Map<String, String> credentialTypeById;
+
+        CredentialTrustSelection(CredentialTrustPlan trustPlan, List<RequestedCredential> requestedCredentials) {
+            this.trustPlan = trustPlan;
+            Map<String, String> credentialTypeById = new LinkedHashMap<>();
+            requestedCredentials.forEach(requested -> credentialTypeById.put(requested.id(), requested.type()));
+            this.credentialTypeById = Map.copyOf(credentialTypeById);
+        }
+
+        ResolvedTrust forCredentialId(String credentialId) {
+            if (credentialTypeById.isEmpty()) {
+                // No request context: legacy callers and tests that verify without a prepared query.
+                return trustPlan.forCredentialType(null);
+            }
+            String credentialType = credentialTypeById.get(credentialId);
+            if (credentialType == null) {
+                throw new IdentityBrokerException(
+                        "VP token contains the credential id '" + credentialId + "', which was not requested");
+            }
+            return trustPlan.forCredentialType(credentialType);
+        }
+
+        /**
+         * The credential id of a VP token that is a bare credential instead of the credential id
+         * keyed object OID4VP 1.0 §8.1 defines. It can only be attributed when exactly one
+         * credential was requested; otherwise the response stays under the legacy id and is
+         * verified against the providers that serve every credential type.
+         */
+        String singleCredentialId() {
+            if (credentialTypeById.size() == 1) {
+                return credentialTypeById.keySet().iterator().next();
+            }
+            if (credentialTypeById.size() > 1) {
+                LOG.warnf(
+                        "VP token is a bare credential, but %d credentials were requested. It cannot be attributed to "
+                                + "a credential id and is verified against trust material that serves every credential type.",
+                        credentialTypeById.size());
+            }
+            return DEFAULT_CREDENTIAL_ID;
         }
     }
 }

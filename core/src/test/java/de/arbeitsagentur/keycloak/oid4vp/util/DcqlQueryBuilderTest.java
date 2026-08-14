@@ -22,7 +22,8 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.ClaimSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
+import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthority;
+import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthorityType;
 import de.arbeitsagentur.keycloak.oid4vp.mapper.AbstractOID4VPClaimMapper;
 import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPMdocUserAttributeMapper;
 import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPSdJwtUserAttributeMapper;
@@ -173,8 +174,10 @@ class DcqlQueryBuilderTest {
 
     @Test
     void build_withTrustListUrl_includesTrustedAuthorities() throws Exception {
-        builder.addCredentialType("dc+sd-jwt", "IdentityCredential", List.of(ClaimSpec.sdJwt("given_name")));
-        builder.setTrustListUrls(List.of("https://trust-list.example.com/tl.jwt"));
+        builder.addCredentialType("pid", "dc+sd-jwt", "IdentityCredential", List.of(ClaimSpec.sdJwt("given_name")));
+        builder.setTrustedAuthorities(Map.of(
+                "pid",
+                TrustedAuthority.of(TrustedAuthorityType.ETSI_TL, List.of("https://trust-list.example.com/tl.jwt"))));
 
         Map<String, Object> cred = firstCredential(builder.build());
 
@@ -187,38 +190,52 @@ class DcqlQueryBuilderTest {
     }
 
     @Test
-    void build_withAkiTrustedAuthorities_includesOnlyAki() throws Exception {
-        builder.addCredentialType("dc+sd-jwt", "IdentityCredential", List.of(ClaimSpec.sdJwt("given_name")));
-        builder.setTrustedAuthorities(List.of("https://trust-list.example.com/tl.jwt"), List.of("aki-1", "aki-2"));
+    void build_withSeveralAuthorityTypes_writesThemAsAlternatives() throws Exception {
+        builder.addCredentialType("pid", "dc+sd-jwt", "IdentityCredential", List.of(ClaimSpec.sdJwt("given_name")));
+        builder.setTrustedAuthorities(Map.of(
+                "pid",
+                List.of(
+                        new TrustedAuthority(
+                                TrustedAuthorityType.ETSI_TL, List.of("https://trust-list.example.com/tl.jwt")),
+                        new TrustedAuthority(TrustedAuthorityType.AKI, List.of("aki-1", "aki-2")))));
 
         Map<String, Object> cred = firstCredential(builder.build());
 
         assertThat(cred.get("trusted_authorities"))
-                .isEqualTo(List.of(Map.of("type", "aki", "values", List.of("aki-1", "aki-2"))));
+                .isEqualTo(List.of(
+                        Map.of("type", "etsi_tl", "values", List.of("https://trust-list.example.com/tl.jwt")),
+                        Map.of("type", "aki", "values", List.of("aki-1", "aki-2"))));
     }
 
     @Test
-    void build_withoutTrustListUrl_noTrustedAuthorities() throws Exception {
+    void build_withoutTrustedAuthorities_omitsTheMember() throws Exception {
         builder.addCredentialType("dc+sd-jwt", "IdentityCredential", List.of(ClaimSpec.sdJwt("given_name")));
 
         assertThat(firstCredential(builder.build())).doesNotContainKey("trusted_authorities");
     }
 
     @Test
-    void build_multipleCredentials_eachHasTrustedAuthorities() throws Exception {
-        builder.addCredentialType("dc+sd-jwt", "Type1", List.of());
-        builder.addCredentialType("mso_mdoc", "org.iso.18013.5.1.mDL", List.of());
-        builder.setTrustListUrls(List.of("https://trust-list.example.com/tl.jwt"));
-
-        String json = builder.build();
+    void build_credentialsOfDifferentTrustDomains_carryTheirOwnAuthorities() throws Exception {
+        builder.addCredentialType("pid", "dc+sd-jwt", "urn:eudi:pid:1", List.of());
+        builder.addCredentialType("badge", "dc+sd-jwt", "https://kc.example/badge", List.of());
+        builder.setTrustedAuthorities(Map.of(
+                "pid",
+                TrustedAuthority.of(TrustedAuthorityType.ETSI_TL, List.of("https://trust-list.example.com/tl.jwt")),
+                "badge",
+                List.of()));
 
         @SuppressWarnings("unchecked")
-        Map<String, Object> result = objectMapper.readValue(json, Map.class);
+        Map<String, Object> result = objectMapper.readValue(builder.build(), Map.class);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> credentials = (List<Map<String, Object>>) result.get("credentials");
-        for (Map<String, Object> cred : credentials) {
-            assertThat(cred).containsKey("trusted_authorities");
-        }
+
+        assertThat(credentials).hasSize(2);
+        assertThat(credentials.get(0).get("id")).isEqualTo("pid");
+        assertThat(credentials.get(0)).containsKey("trusted_authorities");
+        assertThat(credentials.get(1).get("id")).isEqualTo("badge");
+        assertThat(credentials.get(1))
+                .as("a credential of a trust domain with nothing to advertise stays unconstrained")
+                .doesNotContainKey("trusted_authorities");
     }
 
     @Test
@@ -228,8 +245,7 @@ class DcqlQueryBuilderTest {
                 "dc+sd-jwt|IdentityCredential",
                 new CredentialTypeSpec("dc+sd-jwt", "IdentityCredential", List.of(ClaimSpec.sdJwt("sub"))));
 
-        DcqlQueryBuilder result = DcqlQueryBuilder.fromMapperSpecs(
-                objectMapper, specs, List.of(), Oid4vpTrustedAuthoritiesMode.NONE, null, List.of());
+        DcqlQueryBuilder result = DcqlQueryBuilder.fromMapperSpecs(objectMapper, specs, List.of(), Map.of());
         String json = result.build();
 
         @SuppressWarnings("unchecked")
@@ -245,7 +261,13 @@ class DcqlQueryBuilderTest {
                 new CredentialTypeSpec("dc+sd-jwt", "IdentityCredential", List.of(ClaimSpec.sdJwt("sub"))));
 
         DcqlQueryBuilder result = DcqlQueryBuilder.fromMapperSpecs(
-                objectMapper, specs, List.of(), List.of("https://trust-list.example.com/tl.jwt"));
+                objectMapper,
+                specs,
+                List.of(),
+                Map.of(
+                        "dc+sd-jwt|IdentityCredential",
+                        TrustedAuthority.of(
+                                TrustedAuthorityType.ETSI_TL, List.of("https://trust-list.example.com/tl.jwt"))));
 
         assertThat(firstCredential(result.build())).containsKey("trusted_authorities");
     }

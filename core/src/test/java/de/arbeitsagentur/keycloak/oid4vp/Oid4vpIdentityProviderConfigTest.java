@@ -17,7 +17,6 @@ package de.arbeitsagentur.keycloak.oid4vp;
 
 import static org.assertj.core.api.Assertions.*;
 
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
 import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -216,29 +215,6 @@ class Oid4vpIdentityProviderConfigTest {
     void trustMaterialIdps_readsConfiguredValue() {
         config.setTrustMaterialIdps("demo-trust-list,other-trust-list");
         assertThat(config.getTrustMaterialIdps()).isEqualTo("demo-trust-list,other-trust-list");
-    }
-
-    @Test
-    void trustedAuthoritiesMode_defaultsToNone() {
-        assertThat(config.getTrustedAuthoritiesMode()).isEqualTo(Oid4vpTrustedAuthoritiesMode.NONE);
-    }
-
-    @Test
-    void trustedAuthoritiesMode_readsEtsiTl() {
-        config.setTrustedAuthoritiesMode("etsi_tl");
-        assertThat(config.getTrustedAuthoritiesMode()).isEqualTo(Oid4vpTrustedAuthoritiesMode.ETSI_TL);
-    }
-
-    @Test
-    void trustedAuthoritiesMode_readsAki() {
-        config.setTrustedAuthoritiesMode("aki");
-        assertThat(config.getTrustedAuthoritiesMode()).isEqualTo(Oid4vpTrustedAuthoritiesMode.AKI);
-    }
-
-    @Test
-    void trustedAuthoritiesMode_invalidFallsBackToNone() {
-        config.setTrustedAuthoritiesMode("bogus");
-        assertThat(config.getTrustedAuthoritiesMode()).isEqualTo(Oid4vpTrustedAuthoritiesMode.NONE);
     }
 
     @Test

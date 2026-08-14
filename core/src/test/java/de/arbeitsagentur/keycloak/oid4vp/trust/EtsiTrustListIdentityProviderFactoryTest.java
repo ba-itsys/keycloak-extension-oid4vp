@@ -18,6 +18,8 @@ package de.arbeitsagentur.keycloak.oid4vp.trust;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthority;
+import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthorityType;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.IdentityProviderModel;
@@ -41,7 +43,9 @@ class EtsiTrustListIdentityProviderFactoryTest {
         EtsiTrustListIdentityProvider provider = factory.create(null, model);
 
         assertThat(provider.getConfig().getTrustListUrl()).isEqualTo("https://tl.example/list.jwt");
-        assertThat(provider.trustListUrl()).contains("https://tl.example/list.jwt");
+        assertThat(provider.trustedAuthorities())
+                .containsExactly(
+                        new TrustedAuthority(TrustedAuthorityType.ETSI_TL, List.of("https://tl.example/list.jwt")));
         provider.close();
     }
 
@@ -70,6 +74,8 @@ class EtsiTrustListIdentityProviderFactoryTest {
                         EtsiTrustListIdentityProviderConfig.TRUST_LIST_MAX_CACHE_TTL_SECONDS,
                         EtsiTrustListIdentityProviderConfig.TRUST_LIST_MAX_STALE_AGE_SECONDS,
                         EtsiTrustListIdentityProviderConfig.TRUSTED_CERTIFICATES,
+                        EtsiTrustListIdentityProviderConfig.SERVED_CREDENTIAL_TYPES,
+                        EtsiTrustListIdentityProviderConfig.ADVERTISE_TRUSTED_AUTHORITIES,
                         EtsiTrustListIdentityProviderConfig.REQUIRED_EXTENDED_KEY_USAGES);
     }
 }

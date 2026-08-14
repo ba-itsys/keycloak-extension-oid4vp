@@ -17,7 +17,6 @@ package de.arbeitsagentur.keycloak.oid4vp;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpClientIdScheme;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpSigningKeyParser;
 import java.security.PrivateKey;
 import java.security.PublicKey;
@@ -52,6 +51,7 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
     private static final Map<String, String> RESOLVED_KEY_CACHE = new ConcurrentHashMap<>();
     private static final Set<String> WARNED_MISSING_CERTIFICATE_BINDINGS = ConcurrentHashMap.newKeySet();
     private static final Set<String> WARNED_MISSING_TRUST_MATERIAL_IDPS = ConcurrentHashMap.newKeySet();
+    private static final Set<String> WARNED_REMOVED_TRUSTED_AUTHORITIES_MODE = ConcurrentHashMap.newKeySet();
 
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES;
 
@@ -166,19 +166,6 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
-                .name(Oid4vpIdentityProviderConfig.TRUSTED_AUTHORITIES_MODE)
-                .label("Trusted Authorities Mode")
-                .helpText("Adds one 'trusted_authorities' constraint type to each credential in the DCQL query. "
-                        + "'none' disables the feature, 'etsi_tl' advertises the trust list URL, and 'aki' advertises certificate key identifiers extracted from the trust list. "
-                        + "This is opt-in and independent of HAIP.")
-                .type(ProviderConfigProperty.LIST_TYPE)
-                .defaultValue(Oid4vpTrustedAuthoritiesMode.NONE.configValue())
-                .options(List.of(
-                        Oid4vpTrustedAuthoritiesMode.NONE.configValue(),
-                        Oid4vpTrustedAuthoritiesMode.ETSI_TL.configValue(),
-                        Oid4vpTrustedAuthoritiesMode.AKI.configValue()))
-                .add()
-                .property()
                 .name(Oid4vpIdentityProviderConfig.ISSUER_METADATA_MAX_CACHE_TTL_SECONDS)
                 .label("Issuer Metadata Cache TTL (seconds)")
                 .helpText("Maximum time to cache JWT VC Issuer Metadata and resolved issuer JWKS. "
@@ -235,6 +222,7 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
         resolveX509SigningKey(config);
         validateHaipConfig(config);
         warnIfTrustMaterialIdpsAreMissing(config);
+        warnIfTrustedAuthoritiesModeIsConfigured(config);
 
         return new Oid4vpIdentityProvider(session, config);
     }
@@ -280,6 +268,25 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                     "OID4VP IdP '%s': trustMaterialIdps is empty. Credential signature verification has no trust "
                             + "anchors; configure a trust material identity provider (e.g. etsi-trust-list).",
                     config.getAlias());
+        }
+    }
+
+    /**
+     * Points admins at the trust material identity providers when an upgraded realm still carries
+     * the removed trusted authorities setting, which no longer has any effect.
+     */
+    private static void warnIfTrustedAuthoritiesModeIsConfigured(Oid4vpIdentityProviderConfig config) {
+        String configured = config.getConfig().get(Oid4vpIdentityProviderConfig.REMOVED_TRUSTED_AUTHORITIES_MODE);
+        if (StringUtil.isBlank(configured)) {
+            return;
+        }
+        if (WARNED_REMOVED_TRUSTED_AUTHORITIES_MODE.add(config.getAlias())) {
+            LOG.warnf(
+                    "OID4VP IdP '%s': the setting 'trustedAuthoritiesMode' (value '%s') was removed and is ignored. "
+                            + "The DCQL trusted_authorities of a credential are now inherited from the trust material "
+                            + "identity providers serving its credential type; use their 'servedCredentialTypes' and "
+                            + "'advertiseTrustedAuthorities' settings instead.",
+                    config.getAlias(), configured);
         }
     }
 

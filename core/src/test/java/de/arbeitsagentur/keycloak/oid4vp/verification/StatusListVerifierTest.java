@@ -20,8 +20,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.node.IntNode;
 import com.fasterxml.jackson.databind.node.TextNode;
+import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.zip.Deflater;
 import org.junit.jupiter.api.AfterEach;
@@ -38,14 +40,14 @@ class StatusListVerifierTest {
 
     @Test
     void constructorWithMaxCacheTtl_acceptsZero() {
-        StatusListVerifier v = new StatusListVerifier(null, null, Duration.ZERO);
+        StatusListVerifier v = new StatusListVerifier(null, Duration.ZERO);
         // Should not throw; verifier is functional for non-HTTP operations
         v.checkRevocationStatus(Map.of("given_name", "Alice"));
     }
 
     @Test
     void constructorWithMaxCacheTtl_acceptsNull() {
-        StatusListVerifier v = new StatusListVerifier(null, null, null);
+        StatusListVerifier v = new StatusListVerifier(null, null);
         v.checkRevocationStatus(Map.of());
     }
 
@@ -220,7 +222,7 @@ class StatusListVerifierTest {
     void checkRevocationStatusThrowsWhenCredentialIsRevoked() {
         StatusListVerifier revokedVerifier = new StatusListVerifier() {
             @Override
-            DecodedStatusList fetchAndDecodeStatusList(String uri) {
+            DecodedStatusList fetchAndDecodeStatusList(String uri, List<X509Certificate> revocationCertificates) {
                 return new DecodedStatusList(new byte[] {0x01}, 1);
             }
         };
@@ -235,7 +237,8 @@ class StatusListVerifierTest {
     void checkRevocationStatusWrapsUnexpectedVerifierFailures() {
         StatusListVerifier failingVerifier = new StatusListVerifier() {
             @Override
-            DecodedStatusList fetchAndDecodeStatusList(String uri) throws Exception {
+            DecodedStatusList fetchAndDecodeStatusList(String uri, List<X509Certificate> revocationCertificates)
+                    throws Exception {
                 throw new RuntimeException("simulated status list fetch failure");
             }
         };
@@ -363,7 +366,7 @@ class StatusListVerifierTest {
 
     @Test
     void resolveExpiryCapsAtMaxCacheTtl() {
-        StatusListVerifier capped = new StatusListVerifier(null, null, Duration.ofSeconds(60));
+        StatusListVerifier capped = new StatusListVerifier(null, Duration.ofSeconds(60));
         Instant expiry = capped.resolveExpiry(null, 3600);
         assertThat(expiry).isBefore(Instant.now().plusSeconds(65));
         assertThat(expiry).isAfter(Instant.now().plusSeconds(55));

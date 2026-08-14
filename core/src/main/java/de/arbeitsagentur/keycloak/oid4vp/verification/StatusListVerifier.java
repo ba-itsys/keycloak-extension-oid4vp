@@ -24,7 +24,6 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Supplier;
 import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
 import org.jboss.logging.Logger;
@@ -46,32 +45,33 @@ public class StatusListVerifier {
     private static final ConcurrentHashMap<String, CachedStatusList> CACHE = new ConcurrentHashMap<>();
 
     private final KeycloakSession session;
-    private final Supplier<List<X509Certificate>> revocationCertificates;
     private final Duration maxCacheTtl;
 
-    /** Test-only constructor that creates a verifier without session or trust material. */
+    /** Test-only constructor that creates a verifier without session or cache bound. */
     StatusListVerifier() {
         this(null, null);
     }
 
-    public StatusListVerifier(KeycloakSession session, Supplier<List<X509Certificate>> revocationCertificates) {
-        this(session, revocationCertificates, null);
+    public StatusListVerifier(KeycloakSession session, Duration maxCacheTtl) {
+        this.session = session;
+        this.maxCacheTtl = maxCacheTtl;
     }
 
-    public StatusListVerifier(
-            KeycloakSession session, Supplier<List<X509Certificate>> revocationCertificates, Duration maxCacheTtl) {
-        this.session = session;
-        this.revocationCertificates = revocationCertificates;
-        this.maxCacheTtl = maxCacheTtl;
+    /** Checks the revocation status without revocation trust material, leaving the status list JWT unverified. */
+    public void checkRevocationStatus(Map<String, Object> claims) {
+        checkRevocationStatus(claims, List.of());
     }
 
     /**
      * Checks the revocation status of a credential based on its payload claims.
      * If no status claim is present, this method returns silently.
      *
+     * @param revocationCertificates the status list service certificates of the trust domain serving
+     *                               this credential. An empty list leaves the status list JWT
+     *                               signature unverified.
      * @throws IllegalStateException if the credential is revoked or status check fails
      */
-    public void checkRevocationStatus(Map<String, Object> claims) {
+    public void checkRevocationStatus(Map<String, Object> claims, List<X509Certificate> revocationCertificates) {
         StatusReference ref = extractStatusReference(claims);
         if (ref == null) {
             LOG.debug("No status_list claim found in credential — skipping revocation check");
@@ -81,7 +81,7 @@ public class StatusListVerifier {
         LOG.infof("Checking revocation status: uri=%s, idx=%d", ref.uri, ref.idx);
 
         try {
-            DecodedStatusList statusList = fetchAndDecodeStatusList(ref.uri);
+            DecodedStatusList statusList = fetchAndDecodeStatusList(ref.uri, revocationCertificates);
             int status = getStatusAtIndex(statusList.statusBits, ref.idx, statusList.bitsPerStatus);
 
             if (status != 0) {
@@ -134,7 +134,8 @@ public class StatusListVerifier {
         return null;
     }
 
-    DecodedStatusList fetchAndDecodeStatusList(String uri) throws Exception {
+    DecodedStatusList fetchAndDecodeStatusList(String uri, List<X509Certificate> revocationCertificates)
+            throws Exception {
         CachedStatusList cached = CACHE.get(uri);
         if (cached != null && cached.isValid()) {
             LOG.debugf("Using cached status list for %s (expires %s)", uri, cached.expiresAt);
@@ -145,7 +146,7 @@ public class StatusListVerifier {
         JWSInput signedJwt = X5cChainValidator.parseJwt(jwt);
         Map<String, Object> claims = X5cChainValidator.parseClaims(signedJwt);
 
-        verifyStatusListJwtSignature(jwt, claims);
+        verifyStatusListJwtSignature(jwt, claims, revocationCertificates);
 
         validateStatusListToken(headerType(signedJwt), stringClaim(claims, "sub"), instantClaim(claims, "exp"), uri);
         Map<String, Object> statusListClaim = jsonObjectClaim(claims, "status_list");
@@ -175,8 +176,10 @@ public class StatusListVerifier {
         return decoded;
     }
 
-    private void verifyStatusListJwtSignature(String compactJwt, Map<String, Object> claims) throws Exception {
-        List<X509Certificate> trustedCerts = revocationCertificates != null ? revocationCertificates.get() : List.of();
+    private void verifyStatusListJwtSignature(
+            String compactJwt, Map<String, Object> claims, List<X509Certificate> revocationCertificates)
+            throws Exception {
+        List<X509Certificate> trustedCerts = revocationCertificates != null ? revocationCertificates : List.of();
         if (trustedCerts.isEmpty()) {
             LOG.debugf(
                     "Status list JWT signature not verified: no trusted keys configured (issuer=%s)",

@@ -83,6 +83,25 @@ public class EtsiTrustListIdentityProviderFactory
             .type(ProviderConfigProperty.TEXT_TYPE)
             .add()
             .property()
+            .name(EtsiTrustListIdentityProviderConfig.SERVED_CREDENTIAL_TYPES)
+            .label("Served Credential Types")
+            .helpText("Comma separated credential types (SD-JWT VCT or mDoc doctype) this trust domain is "
+                    + "responsible for. Credentials of these types are verified against this provider's material "
+                    + "only, and their DCQL entries advertise its trusted authorities. Leave empty to serve every "
+                    + "credential type of the OID4VP identity providers referencing this instance.")
+            .type(ProviderConfigProperty.STRING_TYPE)
+            .add()
+            .property()
+            .name(EtsiTrustListIdentityProviderConfig.ADVERTISE_TRUSTED_AUTHORITIES)
+            .label("Advertise Trusted Authorities")
+            .helpText("Whether the DCQL query tells wallets about this trust domain, as a 'trusted_authorities' "
+                    + "entry of type 'etsi_tl' for the trust list URL and 'aki' for the key identifiers of the "
+                    + "trusted certificates. Disable to keep an internal trust domain out of the authorization "
+                    + "request; the verifier enforces it either way.")
+            .type(ProviderConfigProperty.BOOLEAN_TYPE)
+            .defaultValue("true")
+            .add()
+            .property()
             .name(EtsiTrustListIdentityProviderConfig.REQUIRED_EXTENDED_KEY_USAGES)
             .label("Required Extended Key Usages")
             .helpText("Comma separated extended key usage OIDs. When set, credential signing certificates must "

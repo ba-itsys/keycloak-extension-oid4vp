@@ -42,6 +42,8 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
     public static final String TRUST_LIST_MAX_STALE_AGE_SECONDS = "trustListMaxStaleAgeSeconds";
     public static final String TRUSTED_CERTIFICATES = "trustedCertificates";
     public static final String REQUIRED_EXTENDED_KEY_USAGES = "requiredExtendedKeyUsages";
+    public static final String SERVED_CREDENTIAL_TYPES = "servedCredentialTypes";
+    public static final String ADVERTISE_TRUSTED_AUTHORITIES = "advertiseTrustedAuthorities";
 
     public static final int DEFAULT_TRUST_LIST_MAX_STALE_AGE_SECONDS = 86400;
 
@@ -124,7 +126,40 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
     }
 
     public List<String> getRequiredExtendedKeyUsages() {
-        String configured = getConfig().get(REQUIRED_EXTENDED_KEY_USAGES);
+        return parseCommaSeparated(getConfig().get(REQUIRED_EXTENDED_KEY_USAGES));
+    }
+
+    public void setRequiredExtendedKeyUsages(String commaSeparatedOids) {
+        getConfig().put(REQUIRED_EXTENDED_KEY_USAGES, commaSeparatedOids);
+    }
+
+    /**
+     * The credential types (SD-JWT VCT, mDoc doctype) this trust domain is responsible for. Empty
+     * means the provider serves every credential type of the identity providers referencing it.
+     */
+    public List<String> getServedCredentialTypes() {
+        return parseCommaSeparated(getConfig().get(SERVED_CREDENTIAL_TYPES));
+    }
+
+    public void setServedCredentialTypes(String commaSeparatedCredentialTypes) {
+        getConfig().put(SERVED_CREDENTIAL_TYPES, commaSeparatedCredentialTypes);
+    }
+
+    /**
+     * Whether the DCQL query may advertise this provider's trust anchors to wallets. Enabled by
+     * default. Disabling it keeps a trust list URL or the key identifiers of an internal CA out of
+     * the authorization request.
+     */
+    public boolean isAdvertiseTrustedAuthorities() {
+        String configured = getConfig().get(ADVERTISE_TRUSTED_AUTHORITIES);
+        return StringUtil.isBlank(configured) || Boolean.parseBoolean(configured);
+    }
+
+    public void setAdvertiseTrustedAuthorities(boolean advertise) {
+        getConfig().put(ADVERTISE_TRUSTED_AUTHORITIES, String.valueOf(advertise));
+    }
+
+    private static List<String> parseCommaSeparated(String configured) {
         if (StringUtil.isBlank(configured)) {
             return List.of();
         }
@@ -133,10 +168,6 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
                 .filter(value -> !value.isEmpty())
                 .distinct()
                 .toList();
-    }
-
-    public void setRequiredExtendedKeyUsages(String commaSeparatedOids) {
-        getConfig().put(REQUIRED_EXTENDED_KEY_USAGES, commaSeparatedOids);
     }
 
     /** Parses the pasted PEM bundle. Returns an empty list when unset or unparsable. */
