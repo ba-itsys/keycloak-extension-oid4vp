@@ -15,9 +15,9 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
+import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredentials;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
@@ -126,13 +126,13 @@ public class Oid4vpDirectPostService {
         SerializedBrokeredIdentityContext serialized = SerializedBrokeredIdentityContext.serialize(context);
         serialized.saveToAuthenticationSession(authSession, DEFERRED_IDENTITY_NOTE);
 
-        JsonNode claims = Oid4vpMapperUtils.claimsNode(context);
-        if (claims != null) {
+        PresentedCredentials credentials = Oid4vpMapperUtils.presentedCredentials(context);
+        if (credentials != null) {
             try {
-                String claimsJson = JsonSerialization.writeValueAsString(claims);
-                authSession.setAuthNote(DEFERRED_CLAIMS_NOTE, claimsJson);
+                String credentialsJson = JsonSerialization.writeValueAsString(credentials);
+                authSession.setAuthNote(DEFERRED_CLAIMS_NOTE, credentialsJson);
             } catch (Exception e) {
-                LOG.warnf("Failed to serialize claims: %s", e.getMessage());
+                LOG.warnf("Failed to serialize the presented credentials: %s", e.getMessage());
             }
         }
 
@@ -242,13 +242,14 @@ public class Oid4vpDirectPostService {
         context.setAuthenticationSession(activeAuthSession);
         context.getContextData().keySet().removeIf(key -> key.startsWith("user.attributes."));
 
-        String claimsJson = storedAuthSession.getAuthNote(DEFERRED_CLAIMS_NOTE);
-        if (claimsJson != null) {
+        String credentialsJson = storedAuthSession.getAuthNote(DEFERRED_CLAIMS_NOTE);
+        if (credentialsJson != null) {
             try {
-                JsonNode claims = JsonSerialization.readValue(claimsJson, JsonNode.class);
-                context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CLAIMS_KEY, claims);
+                PresentedCredentials credentials =
+                        JsonSerialization.readValue(credentialsJson, PresentedCredentials.class);
+                context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CREDENTIALS_KEY, credentials);
             } catch (Exception e) {
-                LOG.warnf("Failed to deserialize claims: %s", e.getMessage());
+                LOG.warnf("Failed to deserialize the presented credentials: %s", e.getMessage());
             }
             storedAuthSession.removeAuthNote(DEFERRED_CLAIMS_NOTE);
         }

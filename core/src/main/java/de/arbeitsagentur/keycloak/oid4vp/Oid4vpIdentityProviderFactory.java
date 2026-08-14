@@ -79,20 +79,23 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                         Oid4vpConstants.RESPONSE_MODE_DIRECT_POST, Oid4vpConstants.RESPONSE_MODE_DIRECT_POST_JWT))
                 .add()
                 .property()
-                .name(Oid4vpIdentityProviderConfig.CREDENTIAL_SET_MODE)
-                .label("Credential Set Mode")
-                .helpText(
-                        "When multiple credential types are configured via mappers: 'optional' requires any one credential, 'all' requires all.")
-                .type(ProviderConfigProperty.LIST_TYPE)
-                .defaultValue(Oid4vpIdentityProviderConfig.CREDENTIAL_SET_MODE_OPTIONAL)
-                .options(List.of(
-                        Oid4vpIdentityProviderConfig.CREDENTIAL_SET_MODE_OPTIONAL,
-                        Oid4vpIdentityProviderConfig.CREDENTIAL_SET_MODE_ALL))
+                .name(Oid4vpIdentityProviderConfig.CREDENTIAL_SETS)
+                .label("Credential Sets")
+                .helpText("DCQL credential_sets constraints in specification syntax, referencing the credential ids "
+                        + "of the configured mappers. Each entry lists alternative credential combinations in "
+                        + "preference order, i.e. "
+                        + "[{\"purpose\": \"Login\", \"options\": [[\"pid\", \"mdl\"], [\"pid\"]]}]. "
+                        + "'required' defaults to true; set it to false for an optional extra credential. "
+                        + "Leave empty to require every configured credential.")
+                .type(ProviderConfigProperty.TEXT_TYPE)
                 .add()
                 .property()
-                .name(Oid4vpIdentityProviderConfig.CREDENTIAL_SET_PURPOSE)
-                .label("Credential Set Purpose")
-                .helpText("Optional purpose description for the credential request (shown to user in wallet).")
+                .name(Oid4vpIdentityProviderConfig.PRINCIPAL_CREDENTIAL_ID)
+                .label("Principal Credential ID")
+                .helpText("Credential id whose claims identify the user. It must be part of every option of every "
+                        + "required credential set, and it must request the principal attribute in every claim set "
+                        + "option. Leave empty to take the subject from whichever requested credential the wallet "
+                        + "presents, which then requires every credential to carry the principal attribute.")
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()

@@ -31,6 +31,7 @@ import com.nimbusds.jose.Payload;
 import com.nimbusds.jose.crypto.ECDHEncrypter;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jwt.SignedJWT;
+import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectPlaywrightBrowser;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestApp;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestApp;
@@ -54,6 +55,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.keycloak.admin.client.resource.IdentityProviderResource;
 import org.keycloak.representations.idm.IdentityProviderMapperRepresentation;
+import org.keycloak.representations.idm.IdentityProviderRepresentation;
 import org.keycloak.testframework.annotations.InjectKeycloakUrls;
 import org.keycloak.testframework.annotations.InjectRealm;
 import org.keycloak.testframework.realm.ManagedRealm;
@@ -111,8 +113,9 @@ abstract class AbstractOid4vpE2eTest {
     /**
      * Creates the OID4VP identity provider pointing at the injected wallet's trust list. The
      * realm has CLASS lifecycle, so the provider is created once per test class while the mappers
-     * are reset to the defaults before every test (mapper changes are not restored by the
-     * framework, unlike identity provider config changes).
+     * and the credential sets that reference them are reset to the defaults before every test
+     * (neither is restored by the framework, unlike identity provider config changes made through
+     * {@link #setIdpConfig(Map)}).
      */
     private void ensureIdentityProviderConfigured() {
         boolean trustIdpExists = realm.admin().identityProviders().findAll().stream()
@@ -146,11 +149,15 @@ abstract class AbstractOid4vpE2eTest {
         defaults.add(Oid4vpTestKeycloakSetup.defaultSessionNoteMapper());
         defaults.addAll(Oid4vpTestKeycloakSetup.defaultDcqlMappers());
         replaceIdpMappers(defaults);
+        setCredentialSets(Oid4vpTestKeycloakSetup.alternativeCredentialSets(
+                Oid4vpTestKeycloakSetup.SD_JWT_PID_CREDENTIAL_ID, Oid4vpTestKeycloakSetup.MDOC_PID_CREDENTIAL_ID));
     }
 
     /**
      * Replaces the DCQL-driving identity provider mappers (those with a credential type) while
-     * keeping untyped mappers. The next test starts from the default mapper set again.
+     * keeping untyped mappers, and narrows the credential sets to the credentials these mappers
+     * produce so no set references a credential that is not configured. The next test starts
+     * from the default mapper set again.
      */
     protected void replaceDcqlMappers(List<IdentityProviderMapperRepresentation> mappers) {
         IdentityProviderResource idp = realm.admin().identityProviders().get(Oid4vpTestKeycloakSetup.IDP_ALIAS);
@@ -162,6 +169,20 @@ abstract class AbstractOid4vpE2eTest {
             }
         }
         addIdpMappers(idp, mappers);
+        setCredentialSets(Oid4vpTestKeycloakSetup.alternativeCredentialSets(
+                Oid4vpTestKeycloakSetup.credentialIdsOf(mappers).toArray(String[]::new)));
+    }
+
+    /**
+     * Applies a DCQL {@code credential_sets} configuration to the OID4VP identity provider. The
+     * framework does not restore this write, so every test starts from the default credential sets
+     * again through {@link #ensureIdentityProviderConfigured()}.
+     */
+    protected void setCredentialSets(String credentialSetsJson) {
+        IdentityProviderResource idp = realm.admin().identityProviders().get(Oid4vpTestKeycloakSetup.IDP_ALIAS);
+        IdentityProviderRepresentation representation = idp.toRepresentation();
+        representation.getConfig().put(Oid4vpIdentityProviderConfig.CREDENTIAL_SETS, credentialSetsJson);
+        idp.update(representation);
     }
 
     private void replaceIdpMappers(List<IdentityProviderMapperRepresentation> mappers) {

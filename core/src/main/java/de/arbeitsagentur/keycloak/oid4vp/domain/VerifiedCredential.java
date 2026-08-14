@@ -15,12 +15,14 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Map;
 import org.keycloak.common.util.Base64Url;
 import org.keycloak.crypto.JavaAlgorithm;
 import org.keycloak.jose.jws.crypto.HashUtils;
+import org.keycloak.util.JsonSerialization;
 
 /**
  * A credential that has been cryptographically verified and had its claims extracted.
@@ -66,5 +68,10 @@ public record VerifiedCredential(
 
     private static String normalize(String value) {
         return value != null ? value.strip() : "";
+    }
+
+    /** The claims as a JSON tree, which is what a {@code ClaimPath} resolves against. */
+    public JsonNode claimsNode() {
+        return JsonSerialization.mapper.valueToTree(claims);
     }
 }

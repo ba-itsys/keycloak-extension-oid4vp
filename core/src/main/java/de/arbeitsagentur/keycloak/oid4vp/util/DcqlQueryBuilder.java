@@ -19,6 +19,8 @@ import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.arbeitsagentur.keycloak.oid4vp.domain.ClaimSpec;
+import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialId;
+import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
@@ -28,7 +30,6 @@ import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPMdocUserSessionAttributeMa
 import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPSdJwtUserAttributeMapper;
 import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPSdJwtUserSessionAttributeMapper;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,13 +52,11 @@ import org.keycloak.utils.StringUtil;
 public class DcqlQueryBuilder {
 
     private static final Logger LOG = Logger.getLogger(DcqlQueryBuilder.class);
-    private static final String CREDENTIAL_ID_PREFIX = "cred";
     private static final String CLAIM_ID_PREFIX = "claim";
 
     private final ObjectMapper objectMapper;
-    private final List<CredentialTypeSpec> credentialTypes = new ArrayList<>();
-    private boolean allCredentialsRequired = false;
-    private String purpose;
+    private final Map<String, CredentialTypeSpec> credentialTypes = new LinkedHashMap<>();
+    private List<CredentialSet> credentialSets = List.of();
     private Oid4vpTrustedAuthoritiesMode trustedAuthoritiesMode = Oid4vpTrustedAuthoritiesMode.NONE;
     private List<String> trustedAuthoritiesTrustListUrls = List.of();
     private List<String> trustedAuthoritiesAuthorityKeyIdentifiers = List.of();
@@ -66,18 +65,24 @@ public class DcqlQueryBuilder {
         this.objectMapper = objectMapper;
     }
 
+    /** Adds a credential under the id derived from its format and type. */
     public DcqlQueryBuilder addCredentialType(String format, String type, List<ClaimSpec> claimSpecs) {
-        credentialTypes.add(new CredentialTypeSpec(format, type, claimSpecs != null ? claimSpecs : List.of()));
+        return addCredentialType(CredentialId.defaultFor(format, type), format, type, claimSpecs);
+    }
+
+    public DcqlQueryBuilder addCredentialType(
+            String credentialId, String format, String type, List<ClaimSpec> claimSpecs) {
+        credentialTypes.put(
+                credentialId, new CredentialTypeSpec(format, type, claimSpecs != null ? claimSpecs : List.of()));
         return this;
     }
 
-    public DcqlQueryBuilder setAllCredentialsRequired(boolean required) {
-        this.allCredentialsRequired = required;
-        return this;
-    }
-
-    public DcqlQueryBuilder setPurpose(String purpose) {
-        this.purpose = purpose;
+    /**
+     * Sets the DCQL {@code credential_sets} constraints. Without them the query carries no
+     * {@code credential_sets} member, which per DCQL means every credential is required.
+     */
+    public DcqlQueryBuilder setCredentialSets(List<CredentialSet> credentialSets) {
+        this.credentialSets = credentialSets != null ? List.copyOf(credentialSets) : List.of();
         return this;
     }
 
@@ -121,20 +126,19 @@ public class DcqlQueryBuilder {
 
         try {
             List<Map<String, Object>> credentials = new ArrayList<>();
-            List<String> credentialIds = new ArrayList<>();
-            int credIndex = 1;
-
-            for (CredentialTypeSpec typeSpec : credentialTypes) {
-                String credId = CREDENTIAL_ID_PREFIX + credIndex++;
-                credentialIds.add(credId);
-                credentials.add(buildCredentialEntry(typeSpec, credId));
+            for (Map.Entry<String, CredentialTypeSpec> credentialType : credentialTypes.entrySet()) {
+                credentials.add(buildCredentialEntry(credentialType.getValue(), credentialType.getKey()));
             }
 
             Map<String, Object> dcqlQuery = new LinkedHashMap<>();
             dcqlQuery.put(DCQL_CREDENTIALS, credentials);
 
-            if (credentials.size() > 1) {
-                dcqlQuery.put(DCQL_CREDENTIAL_SETS, List.of(buildCredentialSet(credentialIds)));
+            if (!credentialSets.isEmpty()) {
+                dcqlQuery.put(
+                        DCQL_CREDENTIAL_SETS,
+                        credentialSets.stream()
+                                .map(DcqlQueryBuilder::buildCredentialSet)
+                                .toList());
             }
 
             return objectMapper.writeValueAsString(dcqlQuery);
@@ -147,14 +151,12 @@ public class DcqlQueryBuilder {
     public static DcqlQueryBuilder fromMapperSpecs(
             ObjectMapper objectMapper,
             Map<String, CredentialTypeSpec> credentialTypes,
-            boolean allCredentialsRequired,
-            String purpose,
+            List<CredentialSet> credentialSets,
             List<String> trustListUrls) {
         return fromMapperSpecs(
                 objectMapper,
                 credentialTypes,
-                allCredentialsRequired,
-                purpose,
+                credentialSets,
                 Oid4vpTrustedAuthoritiesMode.ETSI_TL,
                 trustListUrls,
                 List.of());
@@ -163,31 +165,33 @@ public class DcqlQueryBuilder {
     public static DcqlQueryBuilder fromMapperSpecs(
             ObjectMapper objectMapper,
             Map<String, CredentialTypeSpec> credentialTypes,
-            boolean allCredentialsRequired,
-            String purpose,
+            List<CredentialSet> credentialSets,
             Oid4vpTrustedAuthoritiesMode trustedAuthoritiesMode,
             List<String> trustListUrls,
             List<String> authorityKeyIdentifiers) {
         DcqlQueryBuilder builder = new DcqlQueryBuilder(objectMapper);
-        builder.setAllCredentialsRequired(allCredentialsRequired);
-        builder.setPurpose(purpose);
+        builder.setCredentialSets(credentialSets);
         builder.setTrustedAuthoritiesMode(trustedAuthoritiesMode, trustListUrls, authorityKeyIdentifiers);
-        builder.credentialTypes.addAll(credentialTypes.values());
+        builder.credentialTypes.putAll(credentialTypes);
         return builder;
     }
 
     /**
-     * Aggregates credential type specifications from the given OID4VP claim mappers. The mapper's
-     * provider id determines the credential format; its configuration carries the credential type,
-     * claim path, mDoc namespace, and claim set ids. Credential types are ordered by format and
-     * type so the generated query does not depend on mapper enumeration order.
+     * Aggregates credential type specifications from the given OID4VP claim mappers, keyed by the
+     * credential id the mappers resolve to. The mapper's provider id determines the credential
+     * format; its configuration carries the credential type, credential id, claim path, mDoc
+     * namespace, and claim set ids. Mappers sharing a credential id form one credential entry, so
+     * the same credential type can be requested more than once with different claims. Credentials
+     * are ordered by id so the generated query does not depend on mapper enumeration order.
      */
-    public static Map<String, CredentialTypeSpec> aggregateFromMappers(
+    public static AggregatedCredentials aggregateFromMappers(
             Stream<IdentityProviderMapperModel> mappers, Oid4vpConfigProvider config) {
         Map<String, CredentialTypeSpec> result = new LinkedHashMap<>();
+        List<String> problems = new ArrayList<>();
 
         try {
-            Map<CredentialTypeKey, List<ClaimSpec>> claimsByType = new LinkedHashMap<>();
+            Map<String, CredentialTypeKey> typesByCredentialId = new LinkedHashMap<>();
+            Map<String, List<ClaimSpec>> claimsByCredentialId = new LinkedHashMap<>();
 
             mappers.forEach(mapper -> {
                 String format = formatOfMapper(mapper.getIdentityProviderMapper());
@@ -204,14 +208,25 @@ public class DcqlQueryBuilder {
                     LOG.warnf("Ignoring invalid claim path '%s' of mapper %s", claimPath, mapper.getName());
                     return;
                 }
-                claimsByType
-                        .computeIfAbsent(new CredentialTypeKey(format, type.trim()), k -> new ArrayList<>())
+                CredentialTypeKey typeKey = new CredentialTypeKey(format, type.trim());
+                String credentialId = credentialIdOfMapper(mapper, typeKey);
+                CredentialTypeKey known = typesByCredentialId.putIfAbsent(credentialId, typeKey);
+                if (known != null && !known.equals(typeKey)) {
+                    problems.add("mapper '" + mapper.getName() + "' uses the credential id '" + credentialId
+                            + "' of credential type '" + known.type() + "' (format '" + known.format()
+                            + "') for credential type '" + typeKey.type() + "' (format '" + typeKey.format()
+                            + "'). A credential id addresses exactly one credential.");
+                    return;
+                }
+                claimsByCredentialId
+                        .computeIfAbsent(credentialId, k -> new ArrayList<>())
                         .add(claimSpec);
             });
 
             if (!config.isUseIdTokenSubject() && !config.isTransientUsersEnabled()) {
-                for (Map.Entry<CredentialTypeKey, List<ClaimSpec>> entry : claimsByType.entrySet()) {
-                    ClaimSpec principal = principalClaim(config, entry.getKey(), entry.getValue());
+                for (Map.Entry<String, List<ClaimSpec>> entry : claimsByCredentialId.entrySet()) {
+                    ClaimSpec principal =
+                            principalClaim(config, typesByCredentialId.get(entry.getKey()), entry.getValue());
                     if (principal == null || principal.claimPath() == null) {
                         continue;
                     }
@@ -224,21 +239,25 @@ public class DcqlQueryBuilder {
                 }
             }
 
-            List<CredentialTypeKey> orderedKeys = claimsByType.keySet().stream()
-                    .sorted(Comparator.comparing(CredentialTypeKey::format).thenComparing(CredentialTypeKey::type))
-                    .toList();
-            int credentialIndex = 1;
-            for (CredentialTypeKey typeKey : orderedKeys) {
+            claimsByCredentialId.keySet().stream().sorted().forEach(credentialId -> {
+                CredentialTypeKey typeKey = typesByCredentialId.get(credentialId);
                 result.put(
-                        CREDENTIAL_ID_PREFIX + credentialIndex++,
-                        new CredentialTypeSpec(typeKey.format(), typeKey.type(), claimsByType.get(typeKey)));
-            }
+                        credentialId,
+                        new CredentialTypeSpec(
+                                typeKey.format(), typeKey.type(), claimsByCredentialId.get(credentialId)));
+            });
         } catch (Exception e) {
             LOG.warnf("Failed to aggregate mappers: %s", e.getMessage());
         }
 
-        return result;
+        return new AggregatedCredentials(result, List.copyOf(problems));
     }
+
+    /**
+     * The credentials the mappers request, keyed by credential id, together with the configuration
+     * problems found while aggregating them.
+     */
+    public record AggregatedCredentials(Map<String, CredentialTypeSpec> credentials, List<String> problems) {}
 
     /** The DCQL credential format covered by the given mapper provider id, or null for other mappers. */
     private static String formatOfMapper(String mapperProviderId) {
@@ -340,19 +359,33 @@ public class DcqlQueryBuilder {
         credential.put(DCQL_CLAIM_SETS, claimSets);
     }
 
-    private Map<String, Object> buildCredentialSet(List<String> credentialIds) {
+    private static Map<String, Object> buildCredentialSet(CredentialSet configuredSet) {
         Map<String, Object> credentialSet = new LinkedHashMap<>();
-        if (StringUtil.isNotBlank(purpose)) {
-            credentialSet.put(DCQL_PURPOSE, purpose);
+        if (StringUtil.isNotBlank(configuredSet.purpose())) {
+            credentialSet.put(DCQL_PURPOSE, configuredSet.purpose());
         }
-
-        if (allCredentialsRequired) {
-            credentialSet.put(DCQL_OPTIONS, List.of(credentialIds));
-        } else {
-            List<List<String>> options = credentialIds.stream().map(List::of).toList();
-            credentialSet.put(DCQL_OPTIONS, options);
+        credentialSet.put(DCQL_OPTIONS, configuredSet.options());
+        // DCQL defaults required to true, so it is only written when the set is optional.
+        if (!configuredSet.required()) {
+            credentialSet.put(DCQL_REQUIRED, false);
         }
         return credentialSet;
+    }
+
+    /** The credential id a mapper contributes to: its explicit id, or the one derived from format and type. */
+    private static String credentialIdOfMapper(IdentityProviderMapperModel mapper, CredentialTypeKey typeKey) {
+        String configured = mapper.getConfig().get(AbstractOID4VPClaimMapper.CREDENTIAL_ID);
+        if (StringUtil.isBlank(configured)) {
+            return CredentialId.defaultFor(typeKey.format(), typeKey.type());
+        }
+        String credentialId = configured.trim();
+        if (!CredentialId.isValid(credentialId)) {
+            LOG.warnf(
+                    "Mapper %s configures the invalid credential id '%s'; falling back to the derived id",
+                    mapper.getName(), credentialId);
+            return CredentialId.defaultFor(typeKey.format(), typeKey.type());
+        }
+        return credentialId;
     }
 
     private record CredentialTypeKey(String format, String type) {}

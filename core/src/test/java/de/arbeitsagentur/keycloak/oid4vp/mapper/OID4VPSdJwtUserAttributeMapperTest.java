@@ -17,10 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp.mapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
-import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
+import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,7 +25,6 @@ import org.junit.jupiter.api.Test;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.models.IdentityProviderMapperModel;
 import org.keycloak.models.IdentityProviderSyncMode;
-import org.keycloak.util.JsonSerialization;
 
 /**
  * Covers value conversion and target application, mirroring the test cases of upstream Keycloak's
@@ -165,9 +161,8 @@ class OID4VPSdJwtUserAttributeMapperTest {
 
     @Test
     void mdocPresentationMapsNothing() throws Exception {
-        BrokeredIdentityContext context = contextWithClaims("""
+        BrokeredIdentityContext context = MapperTestContexts.context(PresentationType.MDOC, "urn:eudi:pid:1", """
                 {"eu.europa.ec.eudi.pid.1": {"family_name": "Wonder"}}""");
-        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CREDENTIAL_FORMAT_KEY, Oid4vpConstants.FORMAT_MSO_MDOC);
 
         preprocess(context, "eu\\.europa\\.ec\\.eudi\\.pid\\.1.family_name", "lastName");
 
@@ -202,15 +197,7 @@ class OID4VPSdJwtUserAttributeMapperTest {
     }
 
     static BrokeredIdentityContext contextWithClaims(String claimsJson) throws Exception {
-        JsonNode claims = JsonSerialization.readValue(claimsJson, JsonNode.class);
-        Oid4vpIdentityProviderConfig config = new Oid4vpIdentityProviderConfig();
-        config.setAlias("oid4vp");
-        config.setEnabled(true);
-        BrokeredIdentityContext context = new BrokeredIdentityContext("test-user", config);
-        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CLAIMS_KEY, claims);
-        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CREDENTIAL_FORMAT_KEY, Oid4vpConstants.FORMAT_SD_JWT_VC);
-        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CREDENTIAL_TYPE_KEY, "urn:eudi:pid:1");
-        return context;
+        return MapperTestContexts.context(PresentationType.SD_JWT, "urn:eudi:pid:1", claimsJson);
     }
 
     @SuppressWarnings("unchecked")

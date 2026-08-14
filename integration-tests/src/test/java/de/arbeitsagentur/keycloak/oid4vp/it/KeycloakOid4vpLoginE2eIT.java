@@ -234,6 +234,31 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
+    void twoCredentialOptionImportsClaimsFromEachCredential() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        deleteAllOid4vpUsers();
+
+        // One option naming both credentials, so the wallet presents the SD-JWT PID and the mDoc
+        // PID together. Both carry family_name, so each mapper has to read its own credential.
+        setCredentialSets("[{\"options\": [[\"" + Oid4vpTestKeycloakSetup.SD_JWT_PID_CREDENTIAL_ID + "\", \""
+                + Oid4vpTestKeycloakSetup.MDOC_PID_CREDENTIAL_ID + "\"]]}]");
+
+        performSameDeviceLogin("two-credential-user");
+        flow.assertLoginSucceeded();
+
+        JsonNode tokenResponse = exchangeAuthorizationCode();
+        SignedJWT idToken = SignedJWT.parse(tokenResponse.path("id_token").asText());
+
+        assertThat(idToken.getJWTClaimsSet().getStringClaim("sd_jwt_family_name"))
+                .as("the SD-JWT mapper imports the family_name of the SD-JWT PID")
+                .isNotBlank();
+        assertThat(idToken.getJWTClaimsSet().getStringClaim("mdoc_family_name"))
+                .as("the mDoc mapper imports the family_name of the mDoc PID")
+                .isNotBlank();
+    }
+
+    @Test
     void sdJwtAndMdocResolveToSameBrokeredUser() throws Exception {
         testApp().reset();
         flow.clearBrowserSession();

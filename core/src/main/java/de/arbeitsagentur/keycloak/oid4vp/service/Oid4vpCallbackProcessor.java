@@ -18,9 +18,10 @@ package de.arbeitsagentur.keycloak.oid4vp.service;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
+import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredentials;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
@@ -32,6 +33,8 @@ import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenVerifier;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import org.jboss.logging.Logger;
@@ -40,7 +43,6 @@ import org.keycloak.broker.provider.IdentityBrokerException;
 import org.keycloak.broker.provider.UserAuthenticationIdentityProvider;
 import org.keycloak.common.VerificationException;
 import org.keycloak.models.IdentityProviderModel;
-import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 
 /**
@@ -119,10 +121,7 @@ public class Oid4vpCallbackProcessor {
         if (issuer != null && !configProvider.isIssuerAllowed(issuer)) {
             throw new IdentityBrokerException("Issuer not allowed: " + issuer);
         }
-        enforceConfiguredCredentialTypes(requestContext, vpResult);
-        enforceRequestedClaims(requestContext, vpResult);
-
-        JsonNode claims = claimsNode(vpResult, primary);
+        enforceCredentialSets(requestContext, enforceRequestedClaims(requestContext, vpResult));
 
         String subject;
         String identityKey;
@@ -134,37 +133,21 @@ public class Oid4vpCallbackProcessor {
                     idToken, requestContext.effectiveClientId(), requestContext.nonce());
             identityKey = primary.generateIdentityKey(subject);
         } else {
-            subject = extractSubjectFromCredential(claims, primary);
-            identityKey = primary.generateCaseInsensitiveIdentityKey(subject);
+            VerifiedCredential subjectCredential = principalCredential(requestContext, vpResult, primary);
+            subject = extractSubjectFromCredential(subjectCredential.claimsNode(), subjectCredential);
+            identityKey = subjectCredential.generateCaseInsensitiveIdentityKey(subject);
         }
 
         BrokeredIdentityContext context = new BrokeredIdentityContext(identityKey, idpModel);
         context.setIdp(provider);
         context.setUsername(subject);
-        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CLAIMS_KEY, claims);
+        context.getContextData()
+                .put(Oid4vpMapperUtils.CONTEXT_CREDENTIALS_KEY, PresentedCredentials.of(vpResult.credentials()));
         if (issuer != null) {
             context.getContextData().put(Oid4vpMapperUtils.CONTEXT_ISSUER_KEY, issuer);
         }
         context.getContextData().put(Oid4vpMapperUtils.CONTEXT_SUBJECT_KEY, subject);
-        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CREDENTIAL_TYPE_KEY, credentialType);
-        context.getContextData()
-                .put(Oid4vpMapperUtils.CONTEXT_CREDENTIAL_FORMAT_KEY, Oid4vpMapperUtils.credentialFormat(primary));
         return context;
-    }
-
-    /** The claims JSON exposed to the mappers; multi-credential presentations merge in order. */
-    private JsonNode claimsNode(VpTokenResult vpResult, VerifiedCredential primary) {
-        if (!vpResult.isMultiCredential()) {
-            return Oid4vpMapperUtils.toClaimsNode(primary);
-        }
-        ObjectNode merged = JsonSerialization.mapper.createObjectNode();
-        for (VerifiedCredential credential : vpResult.credentials().values()) {
-            JsonNode node = Oid4vpMapperUtils.toClaimsNode(credential);
-            if (node instanceof ObjectNode objectNode) {
-                merged.setAll(objectNode);
-            }
-        }
-        return merged;
     }
 
     private String validateIdTokenAndExtractSubject(String idToken, String clientId, String expectedNonce) {
@@ -179,6 +162,37 @@ public class Oid4vpCallbackProcessor {
         } catch (IllegalArgumentException e) {
             throw new IdentityBrokerException("ID token validation failed: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * The credential the subject is read from. With a configured principal credential id the
+     * subject always comes from that credential; otherwise it comes from the first requested
+     * credential the wallet actually presented, so the identity does not depend on how the claims
+     * of several credentials merge.
+     */
+    private VerifiedCredential principalCredential(
+            Oid4vpRequestObjectStore.RequestContextEntry requestContext,
+            VpTokenResult vpResult,
+            VerifiedCredential primary) {
+        String configured = configProvider.getPrincipalCredentialId();
+        if (StringUtil.isNotBlank(configured)) {
+            VerifiedCredential credential = vpResult.credentials().get(configured);
+            if (credential == null) {
+                throw new IdentityBrokerException(
+                        "The credential '" + configured + "' carrying the subject was not presented");
+            }
+            return credential;
+        }
+
+        List<RequestedCredential> requestedCredentials = requestContext.requestedCredentials();
+        if (requestedCredentials == null) {
+            return primary;
+        }
+        return requestedCredentials.stream()
+                .map(requested -> vpResult.credentials().get(requested.id()))
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(primary);
     }
 
     /**
@@ -223,43 +237,71 @@ public class Oid4vpCallbackProcessor {
     /**
      * Validates that every verified credential contains the claims its DCQL credential entry
      * requested: all claims when no claim sets are defined, otherwise at least one complete
-     * claim_sets option.
+     * claim_sets option. Entries are looked up by the credential id the wallet answered under, so
+     * two entries of the same credential type stay distinguishable.
+     *
+     * @return the credential ids whose presentation satisfied their requested claims
      */
-    private void enforceRequestedClaims(
+    private Set<String> enforceRequestedClaims(
             Oid4vpRequestObjectStore.RequestContextEntry requestContext, VpTokenResult vpResult) {
         List<RequestedCredential> requestedCredentials = requestContext.requestedCredentials();
         if (requestedCredentials == null || requestedCredentials.isEmpty()) {
-            return;
+            return Set.copyOf(vpResult.credentials().keySet());
         }
-        for (VerifiedCredential credential : vpResult.credentials().values()) {
+
+        Set<String> satisfied = new LinkedHashSet<>();
+        for (Map.Entry<String, VerifiedCredential> presented :
+                vpResult.credentials().entrySet()) {
+            String credentialId = presented.getKey();
+            VerifiedCredential credential = presented.getValue();
             RequestedCredential requested = requestedCredentials.stream()
-                    .filter(candidate -> candidate.matches(credential))
+                    .filter(candidate -> credentialId.equals(candidate.id()))
                     .findFirst()
                     .orElse(null);
             if (requested == null) {
-                continue;
+                throw new IdentityBrokerException(
+                        "VP token contains the credential id '" + credentialId + "', which was not requested");
+            }
+            if (!requested.matches(credential)) {
+                throw new IdentityBrokerException("Credential type not trusted by this OID4VP IdP: the query requested"
+                        + " format '" + requested.format() + "' and type '" + requested.type() + "' under credential id"
+                        + " '" + credentialId + "', but the wallet presented type '" + credential.credentialType()
+                        + "'");
             }
             try {
-                requested.checkIfSatisfiedBy(Oid4vpMapperUtils.toClaimsNode(credential));
+                requested.checkIfSatisfiedBy(credential.claimsNode());
             } catch (VerificationException e) {
                 throw new IdentityBrokerException(e.getMessage(), e);
             }
+            satisfied.add(credentialId);
         }
+        return satisfied;
     }
 
-    private void enforceConfiguredCredentialTypes(
-            Oid4vpRequestObjectStore.RequestContextEntry requestContext, VpTokenResult vpResult) {
-        Set<String> configuredCredentialTypes = new LinkedHashSet<>(
-                requestContext != null && requestContext.configuredCredentialTypes() != null
-                        ? requestContext.configuredCredentialTypes()
-                        : List.of());
-        if (configuredCredentialTypes.isEmpty()) {
+    /**
+     * Validates that the presented credentials satisfy one complete option of every required
+     * credential set. Only credentials that passed their own claim validation count, so a
+     * credential that withheld requested claims cannot satisfy an option.
+     */
+    private void enforceCredentialSets(
+            Oid4vpRequestObjectStore.RequestContextEntry requestContext, Set<String> satisfiedCredentialIds) {
+        List<CredentialSet> credentialSets = requestContext.credentialSets();
+        if (credentialSets == null || credentialSets.isEmpty()) {
             return;
         }
-        for (VerifiedCredential credential : vpResult.credentials().values()) {
-            String credentialType = credential.credentialType();
-            if (credentialType == null || !configuredCredentialTypes.contains(credentialType)) {
-                throw new IdentityBrokerException("Credential type not trusted by this OID4VP IdP: " + credentialType);
+        for (CredentialSet credentialSet : credentialSets) {
+            if (!credentialSet.required()) {
+                continue;
+            }
+            boolean anyOptionSatisfied = credentialSet.options().stream().anyMatch(satisfiedCredentialIds::containsAll);
+            if (!anyOptionSatisfied) {
+                List<String> preferredOption = credentialSet.options().get(0);
+                List<String> missing = preferredOption.stream()
+                        .filter(credentialId -> !satisfiedCredentialIds.contains(credentialId))
+                        .toList();
+                throw new IdentityBrokerException("The presentation does not satisfy any option of a required "
+                        + "credential set. The preferred option [" + String.join(", ", preferredOption)
+                        + "] is missing: " + String.join(", ", missing));
             }
         }
     }

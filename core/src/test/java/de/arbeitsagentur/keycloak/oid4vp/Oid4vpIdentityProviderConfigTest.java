@@ -65,8 +65,8 @@ class Oid4vpIdentityProviderConfigTest {
         assertThat(config.isSameDeviceEnabled()).isTrue();
         assertThat(config.isCrossDeviceEnabled()).isTrue();
         assertThat(config.isEnforceHaip()).isTrue();
-        assertThat(config.getCredentialSetMode()).isEqualTo("optional");
-        assertThat(config.isAllCredentialsRequired()).isFalse();
+        assertThat(config.getCredentialSets()).isNull();
+        assertThat(config.getPrincipalCredentialId()).isNull();
     }
 
     @Test
