@@ -217,7 +217,8 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 credentialTypes,
                 getConfig().getPrincipalCredentialId(),
                 getConfig().getPrincipalAttribute(),
-                !getConfig().isTransientUsersEnabled());
+                !getConfig().isTransientUsersEnabled(),
+                getConfig().isAllowMissingSubjectCredential());
         if (!problems.isEmpty()) {
             throw new IdentityBrokerException(INVALID_CREDENTIAL_SETS + String.join("; ", problems));
         }

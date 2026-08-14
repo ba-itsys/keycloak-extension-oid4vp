@@ -57,6 +57,7 @@ import org.keycloak.utils.StringUtil;
 public class Oid4vpCallbackProcessor {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpCallbackProcessor.class);
+    private static final String GENERATED_SUBJECT_PREFIX = "oid4vp-";
 
     private final IdentityProviderModel idpModel;
     private final Oid4vpConfigProvider configProvider;
@@ -121,13 +122,20 @@ public class Oid4vpCallbackProcessor {
 
         String subject;
         String identityKey;
+        boolean generatedSubject = false;
         if (configProvider.isTransientUsersEnabled()) {
             subject = buildTransientSubject(requestContext);
             identityKey = primary.generateIdentityKey(subject);
         } else {
-            VerifiedCredential subjectCredential = principalCredential(requestContext, vpResult, primary);
-            subject = extractSubjectFromCredential(subjectCredential.claimsNode(), subjectCredential);
-            identityKey = subjectCredential.generateCaseInsensitiveIdentityKey(subject);
+            VerifiedCredential subjectCredential = subjectCredential(requestContext, vpResult, primary);
+            if (subjectCredential == null) {
+                subject = generateSubject();
+                identityKey = primary.generateCaseInsensitiveIdentityKey(subject);
+                generatedSubject = true;
+            } else {
+                subject = extractSubjectFromCredential(subjectCredential.claimsNode(), subjectCredential);
+                identityKey = subjectCredential.generateCaseInsensitiveIdentityKey(subject);
+            }
         }
 
         BrokeredIdentityContext context = new BrokeredIdentityContext(identityKey, idpModel);
@@ -139,6 +147,9 @@ public class Oid4vpCallbackProcessor {
             context.getContextData().put(Oid4vpMapperUtils.CONTEXT_ISSUER_KEY, issuer);
         }
         context.getContextData().put(Oid4vpMapperUtils.CONTEXT_SUBJECT_KEY, subject);
+        if (generatedSubject) {
+            context.getContextData().put(Oid4vpMapperUtils.CONTEXT_GENERATED_SUBJECT_KEY, subject);
+        }
         return context;
     }
 
@@ -148,14 +159,14 @@ public class Oid4vpCallbackProcessor {
      * credential the wallet actually presented, so the identity does not depend on how the claims
      * of several credentials merge.
      */
-    private VerifiedCredential principalCredential(
+    private VerifiedCredential subjectCredential(
             Oid4vpRequestObjectStore.RequestContextEntry requestContext,
             VpTokenResult vpResult,
             VerifiedCredential primary) {
         String configured = configProvider.getPrincipalCredentialId();
         if (StringUtil.isNotBlank(configured)) {
             VerifiedCredential credential = vpResult.credentials().get(configured);
-            if (credential == null) {
+            if (credential == null && !configProvider.isAllowMissingSubjectCredential()) {
                 throw new IdentityBrokerException(
                         "The credential '" + configured + "' carrying the subject was not presented");
             }
@@ -204,6 +215,15 @@ public class Oid4vpCallbackProcessor {
                 .map(JsonNode::asText)
                 .findFirst()
                 .orElse(null);
+    }
+
+    /**
+     * A pseudonymous subject for a presentation that carried no subject credential. Nothing in the
+     * presentation identifies the user, so the login that follows establishes which user this
+     * subject belongs to, and an issuer puts it into the credential that identifies them next time.
+     */
+    private static String generateSubject() {
+        return GENERATED_SUBJECT_PREFIX + UUID.randomUUID();
     }
 
     private String buildTransientSubject(Oid4vpRequestObjectStore.RequestContextEntry requestContext) {

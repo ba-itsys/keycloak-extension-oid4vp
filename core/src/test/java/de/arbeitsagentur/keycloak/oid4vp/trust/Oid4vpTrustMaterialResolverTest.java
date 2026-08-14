@@ -39,6 +39,7 @@ import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.junit.jupiter.api.Test;
+import org.keycloak.broker.provider.TrustMaterialIdentityProvider;
 import org.keycloak.broker.provider.TrustMaterialRequest;
 import org.keycloak.jose.jwk.ECPublicJWK;
 import org.keycloak.jose.jwk.JWK;
@@ -80,6 +81,41 @@ class Oid4vpTrustMaterialResolverTest {
         assertThat(plan.isScopedByCredentialType())
                 .as("providers without declared credential types serve everything")
                 .isFalse();
+    }
+
+    @Test
+    void aProviderOfTheUpstreamContractIsScopedByItsConfiguration() {
+        // Keycloak's default-trust publishes the JWKs of an issuer that has no trust list. It knows
+        // nothing of this extension, so its scope has to come from its configuration.
+        JWK issuerKey = new ECPublicJWK();
+        issuerKey.setKeyId("issuer-jwk");
+        IdentityProviderModel model = new IdentityProviderModel();
+        model.getConfig().put(ServedCredentialTypes.CONFIG_KEY, BADGE);
+
+        CredentialTrustPlan plan =
+                new CredentialTrustPlan(List.of(new Oid4vpTrustMaterialResolver.UpstreamTrustMaterialAdapter(
+                        new UpstreamOnlyTrustDouble(model, List.of(issuerKey)))));
+
+        assertThat(plan.isScopedByCredentialType()).isTrue();
+        assertThat(plan.forCredentialType(BADGE).trustedIssuerKeys())
+                .containsExactly(TrustedIssuerKey.ofAnyIssuer(issuerKey));
+        assertThat(plan.forCredentialType(PID).trustedIssuerKeys())
+                .as("keys published for one credential type do not verify another")
+                .isEmpty();
+    }
+
+    @Test
+    void aProviderOfTheUpstreamContractWithoutAScopeStillServesEverything() {
+        JWK issuerKey = new ECPublicJWK();
+        issuerKey.setKeyId("issuer-jwk");
+
+        CredentialTrustPlan plan =
+                new CredentialTrustPlan(List.of(new Oid4vpTrustMaterialResolver.UpstreamTrustMaterialAdapter(
+                        new UpstreamOnlyTrustDouble(new IdentityProviderModel(), List.of(issuerKey)))));
+
+        assertThat(plan.isScopedByCredentialType()).isFalse();
+        assertThat(plan.forCredentialType(PID).trustedIssuerKeys())
+                .containsExactly(TrustedIssuerKey.ofAnyIssuer(issuerKey));
     }
 
     @Test
@@ -168,6 +204,24 @@ class Oid4vpTrustMaterialResolverTest {
      * Double for a provider that only implements the upstream contract. The extension methods stay
      * at their defaults, matching what the resolver's adapter produces for Keycloak's default-trust.
      */
+    /** Double for a provider that implements the upstream contract only, such as default-trust. */
+    private record UpstreamOnlyTrustDouble(IdentityProviderModel config, List<JWK> keys)
+            implements TrustMaterialIdentityProvider<IdentityProviderModel> {
+
+        @Override
+        public IdentityProviderModel getConfig() {
+            return config;
+        }
+
+        @Override
+        public Stream<JWK> resolveKeys(TrustMaterialRequest request) {
+            return keys.stream();
+        }
+
+        @Override
+        public void close() {}
+    }
+
     private record UpstreamStyleTrustDouble(List<JWK> keys)
             implements Oid4vpTrustMaterialIdentityProvider<IdentityProviderModel> {
 

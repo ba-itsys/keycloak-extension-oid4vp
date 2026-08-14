@@ -322,6 +322,7 @@
                 <exclude>**/service/Oid4vpCrossDeviceSseService*.class</exclude>
                 <exclude>**/service/Oid4vpRequestObjectService*.class</exclude>
                 <exclude>**/service/Oid4vpEndpointResponseFactory*.class</exclude>
+                <exclude>**/authentication/Oid4vpSubjectBindingAuthenticator*.class</exclude>
                 <exclude>**/util/Oid4vpAuthSessionResolver*.class</exclude>
                 <exclude>**/util/Oid4vpRequestObjectStore*.class</exclude>
                 <exclude>**/verification/JwtVcIssuerMetadataResolver*.class</exclude>

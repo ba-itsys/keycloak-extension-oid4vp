@@ -16,12 +16,7 @@
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import java.nio.charset.StandardCharsets;
-import java.util.Locale;
 import java.util.Map;
-import org.keycloak.common.util.Base64Url;
-import org.keycloak.crypto.JavaAlgorithm;
-import org.keycloak.jose.jws.crypto.HashUtils;
 import org.keycloak.util.JsonSerialization;
 
 /**
@@ -45,7 +40,7 @@ public record VerifiedCredential(
      * (SD-JWT / mDoc) and still be matched to the same Keycloak identity.
      */
     public String generateIdentityKey(String subject) {
-        return generateIdentityKey(subject, false);
+        return Oid4vpIdentityKey.of(subject);
     }
 
     /**
@@ -54,20 +49,7 @@ public record VerifiedCredential(
      * across formats while representing the same user identity.
      */
     public String generateCaseInsensitiveIdentityKey(String subject) {
-        return generateIdentityKey(subject, true);
-    }
-
-    private String generateIdentityKey(String subject, boolean caseInsensitive) {
-        String normalizedSubject = normalize(subject);
-        if (caseInsensitive) {
-            normalizedSubject = normalizedSubject.toLowerCase(Locale.ROOT);
-        }
-        return Base64Url.encode(
-                HashUtils.hash(JavaAlgorithm.SHA256, normalizedSubject.getBytes(StandardCharsets.UTF_8)));
-    }
-
-    private static String normalize(String value) {
-        return value != null ? value.strip() : "";
+        return Oid4vpIdentityKey.caseInsensitive(subject);
     }
 
     /** The claims as a JSON tree, which is what a {@code ClaimPath} resolves against. */

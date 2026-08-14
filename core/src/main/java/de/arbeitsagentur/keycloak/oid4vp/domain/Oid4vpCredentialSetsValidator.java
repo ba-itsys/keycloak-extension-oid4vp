@@ -37,8 +37,12 @@ public final class Oid4vpCredentialSetsValidator {
     /**
      * @param credentials the credentials aggregated from the mappers, keyed by credential id, or
      *     empty to check only what the identity provider configuration says on its own
-     * @param principalClaimRequested false when the subject comes from an ID token or from a
-     *     transient user, so no credential has to carry the principal claim
+     * @param principalClaimRequested false when the subject comes from a transient user, so no
+     *     credential has to carry the principal claim
+     * @param subjectCredentialMayBeMissing whether a presentation without the subject credential is
+     *     expected, which lifts the requirement that every required credential set option carries
+     *     it. The subject is then established by the login that follows instead of by the
+     *     presentation.
      * @return the problems of this configuration, empty when it is valid
      */
     public static List<String> problems(
@@ -46,11 +50,17 @@ public final class Oid4vpCredentialSetsValidator {
             Map<String, CredentialTypeSpec> credentials,
             String principalCredentialId,
             String principalAttribute,
-            boolean principalClaimRequested) {
+            boolean principalClaimRequested,
+            boolean subjectCredentialMayBeMissing) {
 
         List<String> problems = referenceProblems(credentialSets, credentials);
         if (problems.isEmpty() && principalClaimRequested) {
-            problems = subjectProblems(credentialSets, credentials, principalCredentialId, principalAttribute);
+            problems = subjectProblems(
+                    credentialSets,
+                    credentials,
+                    principalCredentialId,
+                    principalAttribute,
+                    subjectCredentialMayBeMissing);
         }
         return List.copyOf(problems);
     }
@@ -79,8 +89,11 @@ public final class Oid4vpCredentialSetsValidator {
             List<CredentialSet> credentialSets,
             Map<String, CredentialTypeSpec> credentials,
             String principalCredentialId,
-            String principalAttribute) {
-        List<String> problems = principalCoverageProblems(credentialSets, principalCredentialId);
+            String principalAttribute,
+            boolean subjectCredentialMayBeMissing) {
+        List<String> problems = subjectCredentialMayBeMissing
+                ? List.of()
+                : principalCoverageProblems(credentialSets, principalCredentialId);
         if (!problems.isEmpty() || credentials.isEmpty()) {
             return problems;
         }

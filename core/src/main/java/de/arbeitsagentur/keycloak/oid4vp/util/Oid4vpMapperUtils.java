@@ -32,6 +32,9 @@ public final class Oid4vpMapperUtils {
     public static final String CONTEXT_ISSUER_KEY = "oid4vp_issuer";
     public static final String CONTEXT_SUBJECT_KEY = "oid4vp_subject";
 
+    /** Set when the subject was generated because the subject credential was not presented. */
+    public static final String CONTEXT_GENERATED_SUBJECT_KEY = "oid4vp_generated_subject";
+
     private Oid4vpMapperUtils() {}
 
     /** The credentials of the verified presentation, or null when the context carries none. */

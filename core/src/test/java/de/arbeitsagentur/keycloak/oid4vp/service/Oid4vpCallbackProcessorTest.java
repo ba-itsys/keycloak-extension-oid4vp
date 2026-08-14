@@ -290,6 +290,79 @@ class Oid4vpCallbackProcessorTest {
                 "cred-1", FORMAT_SD_JWT_VC, "IdentityCredential", List.of(new RequestedClaim(null, "sub")), List.of());
     }
 
+    @Test
+    void process_subjectCredentialMissing_generatesASubject() {
+        // The subject credential is issued by this Keycloak, so a first presentation legitimately
+        // arrives without it and the login that follows establishes which user it belongs to.
+        config.setPrincipalCredentialId("kc");
+        config.setAllowMissingSubjectCredential(true);
+        RequestedCredential pid = new RequestedCredential(
+                "cred-1", FORMAT_SD_JWT_VC, "IdentityCredential", List.of(new RequestedClaim(null, "sub")), List.of());
+        RequestedCredential kc = new RequestedCredential(
+                "kc",
+                FORMAT_SD_JWT_VC,
+                "https://kc.example/badge",
+                List.of(new RequestedClaim(null, "sub")),
+                List.of());
+
+        BrokeredIdentityContext result = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))))
+                .process(requestContext("state", "nonce", List.of(pid, kc), "IdentityCredential"), "vp-token", null);
+
+        assertThat(result.getUsername()).startsWith("oid4vp-");
+        assertThat(result.getContextData().get(Oid4vpMapperUtils.CONTEXT_GENERATED_SUBJECT_KEY))
+                .isEqualTo(result.getContextData().get(Oid4vpMapperUtils.CONTEXT_SUBJECT_KEY));
+    }
+
+    @Test
+    void process_subjectCredentialMissingWithoutTheSetting_stillFails() {
+        config.setPrincipalCredentialId("kc");
+
+        assertThatThrownBy(() -> processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))))
+                        .process(requestContext("state", "nonce"), "vp-token", null))
+                .isInstanceOf(IdentityBrokerException.class)
+                .hasMessageContaining("carrying the subject was not presented");
+    }
+
+    @Test
+    void process_subjectCredentialPresented_usesItsSubjectInsteadOfGeneratingOne() {
+        config.setPrincipalCredentialId("cred-1");
+        config.setAllowMissingSubjectCredential(true);
+
+        BrokeredIdentityContext result = processor(resultOf(sdJwtCredential(Map.of("sub", "oid4vp-generated-earlier"))))
+                .process(requestContext("state", "nonce"), "vp-token", null);
+
+        assertThat(result.getUsername()).isEqualToIgnoringCase("oid4vp-generated-earlier");
+        assertThat(result.getContextData()).doesNotContainKey(Oid4vpMapperUtils.CONTEXT_GENERATED_SUBJECT_KEY);
+    }
+
+    @Test
+    void generatedSubjectAndCredentialCarriedSubjectResolveToTheSameIdentity() {
+        config.setPrincipalCredentialId("kc");
+        config.setAllowMissingSubjectCredential(true);
+        RequestedCredential kc = new RequestedCredential(
+                "kc",
+                FORMAT_SD_JWT_VC,
+                "https://kc.example/badge",
+                List.of(new RequestedClaim(null, "sub")),
+                List.of());
+
+        BrokeredIdentityContext firstLogin = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))))
+                .process(
+                        requestContext("state", "nonce", List.of(requestedSub(), kc), "IdentityCredential"),
+                        "vp-token",
+                        null);
+        String generatedSubject = (String) firstLogin.getContextData().get(Oid4vpMapperUtils.CONTEXT_SUBJECT_KEY);
+
+        // The next login presents the issued credential, which carries the generated subject
+        config.setPrincipalCredentialId("cred-1");
+        BrokeredIdentityContext secondLogin = processor(resultOf(sdJwtCredential(Map.of("sub", generatedSubject))))
+                .process(requestContext("state-2", "nonce-2"), "vp-token", null);
+
+        assertThat(secondLogin.getId())
+                .as("the brokered identity of both logins has to be the same user")
+                .isEqualTo(firstLogin.getId());
+    }
+
     // ===== Helper Methods =====
 
     private Oid4vpCallbackProcessor processor(VpTokenResult verificationResult) {

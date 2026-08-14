@@ -56,6 +56,12 @@ public interface Oid4vpConfigProvider {
 
     int getCrossDeviceCompleteTtlSeconds();
 
+    /**
+     * Whether a presentation without the subject credential is expected, so the verifier generates a
+     * pseudonymous subject instead of failing the login.
+     */
+    boolean isAllowMissingSubjectCredential();
+
     boolean isTransientUsersEnabled();
 
     int getClockSkewSeconds();

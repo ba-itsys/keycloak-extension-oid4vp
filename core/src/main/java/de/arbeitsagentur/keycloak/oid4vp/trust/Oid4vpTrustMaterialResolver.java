@@ -106,11 +106,19 @@ public class Oid4vpTrustMaterialResolver {
     }
 
     /**
-     * Adapts a provider that only implements the upstream contract: its keys are consumed, all
-     * extension surfaces stay empty.
+     * Adapts a provider that only implements the upstream contract, for example Keycloak's
+     * {@code default-trust}, which publishes the JWKs of an issuer that has no trust list. Its keys
+     * are consumed and trusted for any issuer, because the upstream contract does not bind them to
+     * one. The credential types it serves are read from its configuration, so such a provider can be
+     * scoped like the providers of this extension.
      */
-    private record UpstreamTrustMaterialAdapter(TrustMaterialIdentityProvider<?> delegate)
+    record UpstreamTrustMaterialAdapter(TrustMaterialIdentityProvider<?> delegate)
             implements Oid4vpTrustMaterialIdentityProvider<IdentityProviderModel> {
+
+        @Override
+        public List<String> servedCredentialTypes() {
+            return ServedCredentialTypes.of(delegate.getConfig());
+        }
 
         @Override
         public IdentityProviderModel getConfig() {
