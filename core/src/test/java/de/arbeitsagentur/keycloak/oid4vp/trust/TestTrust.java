@@ -38,10 +38,21 @@ public final class TestTrust {
         }
         List<X509TrustMaterial> issuanceTrust =
                 anchors.isEmpty() ? List.of() : List.of(new X509TrustMaterial(anchors, List.of()));
-        return new ResolvedTrust(issuanceTrust, certificates, List.of(), certificates, List.of(), List.of());
+        return new ResolvedTrust(issuanceTrust, certificates, List.of(), certificates, List.of());
     }
 
     public static ResolvedTrust ofCertificates(X509Certificate... certificates) {
         return ofCertificates(List.of(certificates));
+    }
+
+    /** Trust that identifies the issuer by key instead of by certificate, as a JWKS trust domain does. */
+    public static ResolvedTrust ofIssuerKeys(TrustedIssuerKey... issuerKeys) {
+        return new ResolvedTrust(List.of(), List.of(), List.of(issuerKeys), List.of(), List.of());
+    }
+
+    /** A plan with one provider serving the given credential types, or every type when none are given. */
+    public static CredentialTrustPlan planOf(ResolvedTrust trust, String... servedCredentialTypes) {
+        return new CredentialTrustPlan(
+                List.of(FixedTrustMaterialIdentityProvider.serving(trust, servedCredentialTypes)));
     }
 }

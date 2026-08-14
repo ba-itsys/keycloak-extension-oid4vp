@@ -99,7 +99,8 @@ public class Oid4vpCallbackProcessor {
                 requestContext.nonce(),
                 requestContext.responseUri(),
                 mdocGeneratedNonce,
-                requestContext.encryptionJwkThumbprint()));
+                requestContext.encryptionJwkThumbprint(),
+                requestContext.requestedCredentials()));
 
         VerifiedCredential primary = vpResult.getPrimaryCredential();
         if (primary == null) {

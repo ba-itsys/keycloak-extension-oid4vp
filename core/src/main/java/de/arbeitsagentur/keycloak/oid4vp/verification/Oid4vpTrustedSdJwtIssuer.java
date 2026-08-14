@@ -16,6 +16,7 @@
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
 import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
+import de.arbeitsagentur.keycloak.oid4vp.trust.TrustedIssuerKey;
 import de.arbeitsagentur.keycloak.oid4vp.trust.X509CertificateChainValidator;
 import de.arbeitsagentur.keycloak.oid4vp.verification.JwtVcIssuerMetadataResolver.ResolvedIssuerKey;
 import java.security.PublicKey;
@@ -74,13 +75,21 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
             }
         } catch (IllegalStateException e) {
             x5cFailure = e;
-            if (strictX5cVerification) {
+            if (requiresCertificateChain()) {
                 throw new VerificationException(e.getMessage(), e);
             }
             LOG.debugf("x5c-based SD-JWT verification unavailable, trying fallback mechanisms: %s", e.getMessage());
         }
 
-        if (issuerMetadataResolver != null) {
+        // Issuer keys configured for this credential are the deliberate alternative to a chain, so
+        // they take precedence over discovering keys from wherever the credential points to.
+        List<SignatureVerifierContext> directVerifiers = directTrustVerifiers(issuerSignedJWT);
+        if (!directVerifiers.isEmpty()) {
+            LOG.debug("Using configured trusted issuer keys for signature verification");
+            return directVerifiers;
+        }
+
+        if (issuerMetadataResolver != null && !trust.hasIssuerKeyTrust()) {
             try {
                 ResolvedIssuerKey issuerKey = resolveIssuerKeyFromMetadata(issuerSignedJWT);
                 LOG.debug("SD-JWT issuer key resolved via issuer metadata fallback");
@@ -93,16 +102,20 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
             }
         }
 
-        List<SignatureVerifierContext> directVerifiers = directTrustVerifiers();
-        if (directVerifiers.isEmpty()) {
-            if (x5cFailure != null) {
-                throw new VerificationException(x5cFailure.getMessage(), x5cFailure);
-            }
-            throw new VerificationException("No trusted keys available for SD-JWT signature verification");
+        if (x5cFailure != null) {
+            throw new VerificationException(x5cFailure.getMessage(), x5cFailure);
         }
+        throw new VerificationException("No trusted keys available for SD-JWT signature verification");
+    }
 
-        LOG.debug("Using directly trusted issuer keys for signature verification");
-        return directVerifiers;
+    /**
+     * Whether a certificate chain is mandatory for this credential: because HAIP is enforced, or
+     * because the trust material serving it can only validate chains. Pinned issuer certificates
+     * and published issuer keys make a chainless credential a configured case, for example a
+     * credential signed with a key whose certificate is trusted directly.
+     */
+    private boolean requiresCertificateChain() {
+        return strictX5cVerification || (trust.hasCertificateChainAnchors() && !trust.hasChainlessIssuerTrust());
     }
 
     private List<SignatureVerifierContext> resolveIssuerVerifiersFromX5c(IssuerSignedJWT issuerSignedJWT) {
@@ -114,8 +127,13 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
             }
             return null;
         }
-        if (trust.issuanceTrust().isEmpty() && trust.directIssuerCertificates().isEmpty()) {
-            throw new IllegalStateException("No trusted keys available for SD-JWT x5c signature verification");
+        if (!trust.hasX509Trust()) {
+            if (strictX5cVerification) {
+                throw new IllegalStateException("No trusted keys available for SD-JWT x5c signature verification");
+            }
+            // The trust domain of this credential identifies its issuer by key, so the presented
+            // chain is not the route to validate it.
+            return null;
         }
         try {
             List<X509Certificate> chain = X509CertificateChainValidator.decodeCertificateChain(x5c);
@@ -158,12 +176,22 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
         }
     }
 
-    private List<SignatureVerifierContext> directTrustVerifiers() {
+    /**
+     * Verifiers for a credential that identifies its issuer key directly: pinned issuer
+     * certificates, and the trusted issuer keys published for this credential's {@code iss} that
+     * answer its {@code kid}. Binding the keys keeps trust domains apart, so a key published by one
+     * issuer cannot verify a credential claiming to come from another.
+     */
+    private List<SignatureVerifierContext> directTrustVerifiers(IssuerSignedJWT issuerSignedJWT) {
         List<SignatureVerifierContext> verifiers = new ArrayList<>();
         for (X509Certificate certificate : trust.directIssuerCertificates()) {
             verifiers.add(toVerifierContext(certificate.getPublicKey()));
         }
-        for (JWK jwk : trust.trustedIssuerJwks()) {
+        JWSHeader header = issuerSignedJWT.getJwsHeader();
+        String issuer = issuerSignedJWT.getPayload().path("iss").asText(null);
+        String keyId = header != null ? header.getKeyId() : null;
+        for (TrustedIssuerKey trustedIssuerKey : trust.issuerKeysFor(issuer, keyId)) {
+            JWK jwk = trustedIssuerKey.jwk();
             try {
                 verifiers.add(JwkParsingUtils.convertJwkToVerifierContext(jwk));
             } catch (Exception e) {

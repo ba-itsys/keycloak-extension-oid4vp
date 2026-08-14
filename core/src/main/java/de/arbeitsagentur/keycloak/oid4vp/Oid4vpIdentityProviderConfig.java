@@ -21,7 +21,6 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpCredentialSetsValidator;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpResponseMode;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
 import de.arbeitsagentur.keycloak.oid4vp.util.DcqlQueryBuilder;
 import de.arbeitsagentur.keycloak.oid4vp.util.DcqlQueryBuilder.AggregatedCredentials;
 import java.time.Duration;
@@ -63,7 +62,12 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     /** Comma separated aliases of trust material identity providers, same key as upstream. */
     public static final String TRUST_MATERIAL_IDPS = "trustMaterialIdps";
 
-    public static final String TRUSTED_AUTHORITIES_MODE = "trustedAuthoritiesMode";
+    /**
+     * Removed setting. The DCQL {@code trusted_authorities} entries are inherited from the trust
+     * material identity providers serving a credential, which are the only place that knows whether
+     * a trust domain can be advertised at all. Kept to detect and report stale configurations.
+     */
+    public static final String REMOVED_TRUSTED_AUTHORITIES_MODE = "trustedAuthoritiesMode";
 
     public static final String ALLOWED_ISSUERS = "allowedIssuers";
 
@@ -249,14 +253,6 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public void setTrustMaterialIdps(String aliases) {
         getConfig().put(TRUST_MATERIAL_IDPS, aliases);
-    }
-
-    public Oid4vpTrustedAuthoritiesMode getTrustedAuthoritiesMode() {
-        return Oid4vpTrustedAuthoritiesMode.resolve(getConfig().get(TRUSTED_AUTHORITIES_MODE));
-    }
-
-    public void setTrustedAuthoritiesMode(String mode) {
-        getConfig().put(TRUSTED_AUTHORITIES_MODE, mode);
     }
 
     public boolean isEnforceHaip() {

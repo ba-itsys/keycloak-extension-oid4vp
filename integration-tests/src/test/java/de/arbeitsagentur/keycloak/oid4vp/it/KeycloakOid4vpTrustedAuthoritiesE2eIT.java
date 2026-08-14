@@ -18,7 +18,6 @@ package de.arbeitsagentur.keycloak.oid4vp.it;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.nimbusds.jwt.SignedJWT;
-import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestCertificates;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestTrustListServer;
@@ -31,13 +30,15 @@ import org.junit.jupiter.api.Test;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
 /**
- * End to end coverage of the DCQL {@code trusted_authorities} constraint (OID4VP 1.0 §6.1.1) in
- * both supported modes.
+ * End to end coverage of the DCQL {@code trusted_authorities} constraint (OID4VP 1.0 §6.1.1).
  *
- * <p>Each mode is covered by the value the verifier derives from its trust material identity
- * provider, by a login where the wallet's credential issuer is covered by that value, and by a
- * login where it is not: there the trust material identity provider serves a trust list of a
- * foreign authority, leaving the wallet without a credential it may present.
+ * <p>The entries are inherited from the trust material identity providers serving a credential, so
+ * every test drives the trust provider rather than the verifier: a provider backed by a trust list
+ * advertises its URL as {@code etsi_tl} and the key identifiers of its issuance certificates as
+ * {@code aki}, both as alternatives the wallet may match. Coverage is the advertised values, a
+ * login where the wallet's credential issuer is covered by them, a login where it is not (the
+ * provider then serves a trust list of a foreign authority, leaving the wallet without a credential
+ * it may present), and a provider that advertises nothing.
  */
 @KeycloakIntegrationTest(config = Oid4vpServerConfig.class)
 class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
@@ -54,82 +55,67 @@ class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
-    void akiModeAdvertisesTheAuthorityKeyIdentifierOfTheTrustList() throws Exception {
+    void advertisesTheTrustListUrlAndItsAuthorityKeyIdentifiers() throws Exception {
         testApp().reset();
         flow.clearBrowserSession();
 
-        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.TRUSTED_AUTHORITIES_MODE, "aki"));
+        advertiseTrustedAuthorities();
 
         assertThat(trustedAuthoritiesOf(fetchCurrentRequestObject()))
-                .containsExactly(trustedAuthority("aki", walletAuthorityKeyIdentifier()));
+                .containsExactly(
+                        trustedAuthority("etsi_tl", wallet().pidTrustListUrl()),
+                        trustedAuthority("aki", walletAuthorityKeyIdentifier()));
     }
 
     @Test
-    void akiModeAcceptsTheCredentialOfTheAdvertisedAuthority() throws Exception {
+    void advertisesNothingWhileTheTrustProviderKeepsItsDomainPrivate() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+
+        assertThat(trustedAuthoritiesOf(fetchCurrentRequestObject()))
+                .as("the trust provider of the test realm does not advertise its trust domain")
+                .isNull();
+    }
+
+    @Test
+    void acceptsTheCredentialOfTheAdvertisedAuthority() throws Exception {
         testApp().reset();
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
 
-        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.TRUSTED_AUTHORITIES_MODE, "aki"));
+        advertiseTrustedAuthorities();
 
-        performSameDeviceLogin("aki-trusted-user");
+        performSameDeviceLogin("trusted-authority-user");
         flow.assertLoginSucceeded();
     }
 
     @Test
-    void akiModeRejectsTheCredentialOfAnUnlistedAuthority() throws Exception {
+    void rejectsTheCredentialOfAnUnlistedAuthority() throws Exception {
         testApp().reset();
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
 
         try (TestTrustListServer foreignTrustList = TestTrustListServer.serving(foreignAuthority)) {
-            useTrustList(foreignTrustList.url(), "aki");
+            useTrustList(foreignTrustList.url());
 
             assertPresentationIsRefused(
+                    trustedAuthority("etsi_tl", foreignTrustList.url()),
                     trustedAuthority("aki", TestCertificates.subjectKeyIdentifierBase64Url(foreignAuthority)));
         }
     }
 
-    @Test
-    void etsiTlModeAdvertisesTheConfiguredTrustListUrl() throws Exception {
-        testApp().reset();
-        flow.clearBrowserSession();
-
-        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.TRUSTED_AUTHORITIES_MODE, "etsi_tl"));
-
-        assertThat(trustedAuthoritiesOf(fetchCurrentRequestObject()))
-                .containsExactly(trustedAuthority("etsi_tl", wallet().pidTrustListUrl()));
+    /** Lets the trust material identity provider advertise the trust domain it is backed by. */
+    private void advertiseTrustedAuthorities() {
+        setTrustIdpConfig(Map.of(EtsiTrustListIdentityProviderConfig.ADVERTISE_TRUSTED_AUTHORITIES, "true"));
     }
 
-    @Test
-    void etsiTlModeAcceptsTheCredentialListedOnTheAdvertisedTrustList() throws Exception {
-        testApp().reset();
-        flow.clearBrowserSession();
-        deleteAllOid4vpUsers();
-
-        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.TRUSTED_AUTHORITIES_MODE, "etsi_tl"));
-
-        performSameDeviceLogin("etsi-tl-trusted-user");
-        flow.assertLoginSucceeded();
-    }
-
-    @Test
-    void etsiTlModeRejectsTheCredentialMissingFromTheAdvertisedTrustList() throws Exception {
-        testApp().reset();
-        flow.clearBrowserSession();
-        deleteAllOid4vpUsers();
-
-        try (TestTrustListServer foreignTrustList = TestTrustListServer.serving(foreignAuthority)) {
-            useTrustList(foreignTrustList.url(), "etsi_tl");
-
-            assertPresentationIsRefused(trustedAuthority("etsi_tl", foreignTrustList.url()));
-        }
-    }
-
-    // Points the trust material identity provider at the given trust list and enables the mode
-    private void useTrustList(String trustListUrl, String trustedAuthoritiesMode) {
-        setTrustIdpConfig(Map.of(EtsiTrustListIdentityProviderConfig.TRUST_LIST_URL, trustListUrl));
-        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.TRUSTED_AUTHORITIES_MODE, trustedAuthoritiesMode));
+    // Points the trust material identity provider at the given trust list and lets it advertise it
+    private void useTrustList(String trustListUrl) {
+        setTrustIdpConfig(Map.of(
+                EtsiTrustListIdentityProviderConfig.TRUST_LIST_URL,
+                trustListUrl,
+                EtsiTrustListIdentityProviderConfig.ADVERTISE_TRUSTED_AUTHORITIES,
+                "true"));
     }
 
     /**
@@ -137,12 +123,13 @@ class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
      * satisfies the query. The advertised entry is checked before the wallet is driven, so a login
      * that never carried the constraint under test fails here instead of passing as a refusal.
      */
-    private void assertPresentationIsRefused(Map<String, Object> expectedTrustedAuthority) throws Exception {
+    @SafeVarargs
+    private void assertPresentationIsRefused(Map<String, Object>... expectedTrustedAuthorities) throws Exception {
         flow.navigateToLoginPage();
         flow.clickOid4vpIdpButton();
         String walletUrl = flow.getSameDeviceWalletUrl();
 
-        assertThat(trustedAuthoritiesOf(fetchRequestObject(walletUrl))).containsExactly(expectedTrustedAuthority);
+        assertThat(trustedAuthoritiesOf(fetchRequestObject(walletUrl))).containsExactly(expectedTrustedAuthorities);
 
         Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
         assertLoginFailed(walletResponse, "no matching credentials");

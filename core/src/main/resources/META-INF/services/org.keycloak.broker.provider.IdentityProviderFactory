@@ -1,2 +1,3 @@
 de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderFactory
 de.arbeitsagentur.keycloak.oid4vp.trust.EtsiTrustListIdentityProviderFactory
+de.arbeitsagentur.keycloak.oid4vp.trust.KeycloakRealmIssuerIdentityProviderFactory

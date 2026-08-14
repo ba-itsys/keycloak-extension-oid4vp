@@ -18,6 +18,8 @@ package de.arbeitsagentur.keycloak.oid4vp.trust;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthority;
+import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthorityType;
 import de.arbeitsagentur.keycloak.oid4vp.verification.TrustListProvider;
 import java.io.StringWriter;
 import java.math.BigInteger;
@@ -75,7 +77,9 @@ class EtsiTrustListIdentityProviderTest {
         assertThat(provider.resolveKeys(EMPTY_REQUEST)).isEmpty();
         assertThat(provider.directIssuerCertificates()).containsExactly(ca, endEntity);
         assertThat(provider.revocationCertificates()).containsExactly(ca, endEntity);
-        assertThat(provider.trustListUrl()).isEmpty();
+        assertThat(provider.trustedAuthorities())
+                .as("a pasted bundle without key identifiers has nothing to advertise")
+                .isEmpty();
     }
 
     @Test
@@ -124,7 +128,8 @@ class EtsiTrustListIdentityProviderTest {
                 provider.resolveX509Trust(EMPTY_REQUEST).toList();
         assertThat(materials).hasSize(1);
         assertThat(materials.get(0).trustAnchors()).containsExactly(ca);
-        assertThat(provider.trustListUrl()).contains("https://tl.example/list.jwt");
+        assertThat(provider.trustedAuthorities())
+                .contains(new TrustedAuthority(TrustedAuthorityType.ETSI_TL, List.of("https://tl.example/list.jwt")));
     }
 
     @Test
@@ -175,7 +180,121 @@ class EtsiTrustListIdentityProviderTest {
         config.setTrustedCertificates(toPem(ca));
         EtsiTrustListIdentityProvider provider = new EtsiTrustListIdentityProvider(null, config);
 
-        assertThat(provider.trustedAuthorityKeyIdentifiers()).hasSize(1);
+        assertThat(provider.trustedAuthorities()).hasSize(1);
+        assertThat(provider.trustedAuthorities().get(0).type()).isEqualTo(TrustedAuthorityType.AKI);
+        assertThat(provider.trustedAuthorities().get(0).values()).hasSize(1);
+    }
+
+    @Test
+    void advertisesNothingWhenTrustedAuthoritiesAreDisabled() throws Exception {
+        KeyPair caKp = generateKeyPair();
+        X509Certificate ca = generateCertWithSki(caKp, "CN=SKI CA");
+
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
+        config.setTrustListUrl("https://tl.example/list.jwt");
+        config.setTrustedCertificates(toPem(ca));
+        config.setAdvertiseTrustedAuthorities(false);
+        EtsiTrustListIdentityProvider provider = new EtsiTrustListIdentityProvider(config, null, null);
+
+        assertThat(provider.trustedAuthorities()).isEmpty();
+    }
+
+    @Test
+    void servesEveryCredentialTypeUntilTypesAreDeclared() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
+        config.setTrustListUrl("https://tl.example/list.jwt");
+        EtsiTrustListIdentityProvider provider = new EtsiTrustListIdentityProvider(config, null, null);
+
+        assertThat(provider.servedCredentialTypes()).isEmpty();
+
+        config.setServedCredentialTypes(" urn:eudi:pid:1 , org.iso.18013.5.1.mDL ");
+        assertThat(provider.servedCredentialTypes()).containsExactly("urn:eudi:pid:1", "org.iso.18013.5.1.mDL");
+    }
+
+    @Test
+    void trustListIsPulledOncePerProviderInstance() throws Exception {
+        KeyPair caKp = generateKeyPair();
+        X509Certificate ca = generateCertWithSki(caKp, "CN=SKI CA");
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
+        config.setTrustListUrl("https://tl.example/list.jwt");
+        CountingTrustListProvider trustList = new CountingTrustListProvider(List.of(ca));
+        EtsiTrustListIdentityProvider provider = new EtsiTrustListIdentityProvider(config, trustList, null);
+
+        // Everything a trust resolution asks the provider for, once for a first credential type.
+        resolveAllTrustMaterial(provider);
+        int issuancePullsOfFirstResolution = trustList.issuancePulls;
+        int revocationPullsOfFirstResolution = trustList.revocationPulls;
+
+        // Two further credential types resolve against the same provider instance.
+        resolveAllTrustMaterial(provider);
+        resolveAllTrustMaterial(provider);
+
+        assertThat(trustList.issuancePulls)
+                .as("a trust list without freshness metadata would otherwise be fetched for every ask")
+                .isEqualTo(issuancePullsOfFirstResolution);
+        assertThat(trustList.revocationPulls).isEqualTo(revocationPullsOfFirstResolution);
+    }
+
+    private static void resolveAllTrustMaterial(EtsiTrustListIdentityProvider provider) {
+        provider.resolveX509Trust(EMPTY_REQUEST).toList();
+        provider.directIssuerCertificates();
+        provider.revocationCertificates();
+        provider.trustedAuthorities();
+    }
+
+    @Test
+    void aFailingTrustListIsNotMemoizedAsEmpty() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
+        config.setTrustListUrl("https://tl.example/list.jwt");
+        FailingTrustListProvider trustList = new FailingTrustListProvider();
+        EtsiTrustListIdentityProvider provider = new EtsiTrustListIdentityProvider(config, trustList, null);
+
+        assertThatThrownBy(provider::directIssuerCertificates).isInstanceOf(IdentityBrokerException.class);
+        assertThatThrownBy(provider::directIssuerCertificates)
+                .as("a resolution that failed must not leave the provider believing the trust list is empty")
+                .isInstanceOf(IdentityBrokerException.class);
+        assertThat(trustList.pulls).isEqualTo(2);
+    }
+
+    /** Trust list double counting how often its certificates are pulled. */
+    private static class CountingTrustListProvider extends TrustListProvider {
+
+        private final List<X509Certificate> certificates;
+        private int issuancePulls;
+        private int revocationPulls;
+
+        CountingTrustListProvider(List<X509Certificate> certificates) {
+            super(certificates);
+            this.certificates = certificates;
+        }
+
+        @Override
+        public List<X509Certificate> getIssuanceCertificates() {
+            issuancePulls++;
+            return certificates;
+        }
+
+        @Override
+        public List<X509Certificate> getRevocationCertificates() {
+            revocationPulls++;
+            return certificates;
+        }
+    }
+
+    /** Trust list double that cannot be reached. */
+    private static class FailingTrustListProvider extends TrustListProvider {
+
+        private int pulls;
+
+        FailingTrustListProvider() {
+            super(List.of());
+        }
+
+        @Override
+        public List<X509Certificate> getIssuanceCertificates() {
+            pulls++;
+            throw new IdentityBrokerException("Trust list unreachable");
+        }
     }
 
     /** Trust list double that serves fixed certificates and a fixed LoTE type. */

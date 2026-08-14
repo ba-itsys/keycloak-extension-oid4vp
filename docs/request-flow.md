@@ -82,11 +82,7 @@ This method:
 1. **Resolves signing and response-encryption keys**: uses the configured x509 signing JWK when present, otherwise the realm signing key; when the effective `response_mode` is `direct_post.jwt`, it uses the per-flow ECDH-ES response-encryption key allocated at render
 2. **Builds request claims**: `jti`, `iat`, `exp`, `iss`, `aud`, `client_id`, `response_type`, `response_mode`, `response_uri`, `nonce`, `state`, optional `wallet_nonce`, DCQL query, verifier info, and `client_metadata`. When `useIdTokenSubject` is enabled and HAIP is disabled, `response_type` becomes `vp_token id_token` and `scope=openid` is added; under HAIP, `useIdTokenSubject` is effectively disabled
 3. **Builds `client_metadata`**: only for encrypted wallet responses, includes the public response-encryption JWK in `jwks`, the verifier's supported wallet-response encryption methods, and `vp_formats_supported`
-4. **Normalizes DCQL trusted-authorities constraints**: if `trustedAuthoritiesMode` is enabled, the generated/manual DCQL query gets exactly one `trusted_authorities` type:
-   - `etsi_tl` advertises the trust-list URLs of the referenced trust material identity providers
-   - `aki` advertises certificate key identifiers exposed by the referenced trust material identity providers
-   - `none` leaves `trusted_authorities` absent
-   HAIP does not force this feature on; it remains explicit verifier configuration.
+4. **Adds DCQL trusted-authorities constraints per credential**: every credential entry advertises what the trust material identity providers serving its credential type expose, as `etsi_tl` for a trust list URL and `aki` for certificate key identifiers. A credential whose trust domain has nothing to advertise, or whose provider sets `advertiseTrustedAuthorities=false`, carries no `trusted_authorities` member. Per OID4VP 1.0 §6.1.1 the entries are alternatives: a credential matches when it matches one value of one entry.
 5. **Delegates compact JWS creation to `Oid4vpRequestObjectSigner`**: attaches `x5c` or public `jwk` headers as required by the chosen client-id scheme and signs through Keycloak key abstractions
 
 Returns `SignedRequestObject(jwt, encryptionKeyJson)`. The returned `encryptionKeyJson` matches the per-flow request context entry stored at render.
@@ -247,7 +243,7 @@ Errors can occur at multiple points:
 ## Configuration Notes
 
 - Trust configuration lives on trust material identity providers (`etsi-trust-list`), referenced from the OID4VP IdP via `trustMaterialIdps`. This mirrors the trust material delegation model of upstream Keycloak's OID4VP work.
-- `trustedAuthoritiesMode` is explicit verifier policy. `none` is the default, `etsi_tl` adds the trust-list URLs to DCQL, and `aki` adds certificate key identifiers exposed by the trust material identity providers.
+- Trust is resolved per credential: a trust material identity provider serves the credential types declared in `servedCredentialTypes`, or every type while the field is empty. A credential is verified against the material of the providers serving the type requested under the DCQL credential id it was presented for, and its DCQL entry advertises the `trusted_authorities` of those providers.
 - If `trustListLoTEType` is configured on a trust material identity provider, the fetched trust list must match this `LoTEType`, which keeps one provider instance bound to one trust domain. If it is empty, all LoTE types are accepted.
 - Within an accepted trust list, issuer verification uses certificates from `.../SvcType/.../Issuance` services only, while status-list verification uses `.../SvcType/.../Revocation` services only.
 - The verifier trusts only the credential types it explicitly requested for that IdP.

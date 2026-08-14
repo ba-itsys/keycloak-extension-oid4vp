@@ -15,12 +15,9 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.trust;
 
-import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.stream.Stream;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.TrustMaterialIdentityProvider;
@@ -31,14 +28,14 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.services.resources.IdentityBrokerService;
 
 /**
- * Resolves trust material identity providers by alias and aggregates their trust material for the
+ * Resolves trust material identity providers by alias into a {@link CredentialTrustPlan} for the
  * OID4VP verifier.
  *
  * <p>Counterpart of the upstream {@code TrustMaterialResolver}: providers are looked up by alias
  * from the realm, disabled or missing providers are skipped. Providers that only implement the
  * upstream {@code TrustMaterialIdentityProvider} contract (for example Keycloak's
- * {@code default-trust}) are adapted to the extension contract at lookup time, so aggregation
- * works uniformly on {@link Oid4vpTrustMaterialIdentityProvider}.
+ * {@code default-trust}) are adapted to the extension contract at lookup time, so the plan works
+ * uniformly on {@link Oid4vpTrustMaterialIdentityProvider}.
  */
 public class Oid4vpTrustMaterialResolver {
 
@@ -60,39 +57,12 @@ public class Oid4vpTrustMaterialResolver {
     }
 
     /**
-     * Aggregates the trust material of all trust material identity providers referenced by the
-     * comma separated alias list. Unknown or disabled aliases are skipped with a warning.
+     * Resolves the trust material identity providers referenced by the comma separated alias list
+     * into a plan that answers per credential type. Unknown or disabled aliases are skipped with a
+     * warning.
      */
-    public ResolvedTrust resolveTrust(KeycloakSession session, String aliases) {
-        List<Oid4vpTrustMaterialIdentityProvider<?>> providers = resolveProviders(session, aliases);
-        if (providers.isEmpty()) {
-            return ResolvedTrust.empty();
-        }
-
-        TrustMaterialRequest request = TrustMaterialRequest.builder().build();
-        List<X509TrustMaterial> issuanceTrust = new ArrayList<>();
-        List<JWK> trustedIssuerJwks = new ArrayList<>();
-        Set<X509Certificate> directIssuerCertificates = new LinkedHashSet<>();
-        Set<X509Certificate> revocationCertificates = new LinkedHashSet<>();
-        Set<String> authorityKeyIdentifiers = new LinkedHashSet<>();
-        Set<String> trustListUrls = new LinkedHashSet<>();
-
-        for (Oid4vpTrustMaterialIdentityProvider<?> provider : providers) {
-            issuanceTrust.addAll(provider.resolveX509Trust(request).toList());
-            provider.resolveKeys(request).forEach(trustedIssuerJwks::add);
-            directIssuerCertificates.addAll(provider.directIssuerCertificates());
-            revocationCertificates.addAll(provider.revocationCertificates());
-            authorityKeyIdentifiers.addAll(provider.trustedAuthorityKeyIdentifiers());
-            provider.trustListUrl().ifPresent(trustListUrls::add);
-        }
-
-        return new ResolvedTrust(
-                issuanceTrust,
-                List.copyOf(directIssuerCertificates),
-                trustedIssuerJwks,
-                List.copyOf(revocationCertificates),
-                List.copyOf(authorityKeyIdentifiers),
-                List.copyOf(trustListUrls));
+    public CredentialTrustPlan resolvePlan(KeycloakSession session, String aliases) {
+        return new CredentialTrustPlan(resolveProviders(session, aliases));
     }
 
     private List<Oid4vpTrustMaterialIdentityProvider<?>> resolveProviders(KeycloakSession session, String aliases) {

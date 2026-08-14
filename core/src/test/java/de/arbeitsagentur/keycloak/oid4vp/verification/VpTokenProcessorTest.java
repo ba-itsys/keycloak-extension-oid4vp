@@ -30,6 +30,7 @@ import com.nimbusds.jose.util.Base64URL;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
+import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
 import de.arbeitsagentur.keycloak.oid4vp.trust.TestTrust;
@@ -74,7 +75,7 @@ class VpTokenProcessorTest {
         holderKey = new ECKeyGenerator(Curve.P_256).generate();
         signingCert = generateSelfSignedCert(signingKey);
         processor = new VpTokenProcessor(
-                objectMapper, new StatusListVerifier(), () -> TestTrust.ofCertificates(signingCert));
+                objectMapper, new StatusListVerifier(), () -> TestTrust.planOf(TestTrust.ofCertificates(signingCert)));
     }
 
     @Test
@@ -300,6 +301,16 @@ class VpTokenProcessorTest {
 
     private static VpTokenProcessor.Request request(
             String vpToken, String clientId, String expectedNonce, String alternateResponseUri) {
-        return new VpTokenProcessor.Request(vpToken, clientId, expectedNonce, alternateResponseUri, null, null);
+        return request(vpToken, clientId, expectedNonce, alternateResponseUri, List.of());
+    }
+
+    private static VpTokenProcessor.Request request(
+            String vpToken,
+            String clientId,
+            String expectedNonce,
+            String alternateResponseUri,
+            List<RequestedCredential> requestedCredentials) {
+        return new VpTokenProcessor.Request(
+                vpToken, clientId, expectedNonce, alternateResponseUri, null, null, requestedCredentials);
     }
 }

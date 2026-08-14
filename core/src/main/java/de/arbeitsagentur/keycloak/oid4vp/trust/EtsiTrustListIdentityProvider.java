@@ -15,13 +15,14 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.trust;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthority;
+import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthorityType;
 import de.arbeitsagentur.keycloak.oid4vp.verification.TrustListProvider;
 import de.arbeitsagentur.keycloak.oid4vp.verification.X5cChainValidator;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 import org.keycloak.broker.provider.IdentityBrokerException;
@@ -45,6 +46,15 @@ public class EtsiTrustListIdentityProvider
     private final EtsiTrustListIdentityProviderConfig config;
     private final TrustListProvider urlTrustList;
     private final TrustListProvider staticTrustList;
+
+    // One provider instance serves one trust resolution, during which several methods ask for the
+    // same certificates, once for every credential type. Trust lists without freshness metadata are
+    // not cacheable across requests, so without memoising here every one of those asks would be
+    // another fetch. Failures are not memoised, so a failed resolution stays failed for this
+    // instance only.
+    private volatile List<X509Certificate> issuanceCertificates;
+    private volatile List<X509Certificate> revocationCertificates;
+    private volatile List<String> authorityKeyIdentifiers;
 
     public EtsiTrustListIdentityProvider(KeycloakSession session, EtsiTrustListIdentityProviderConfig config) {
         this(
@@ -107,6 +117,15 @@ public class EtsiTrustListIdentityProvider
 
     @Override
     public List<X509Certificate> revocationCertificates() {
+        List<X509Certificate> memoized = revocationCertificates;
+        if (memoized == null) {
+            memoized = resolveRevocationCertificates();
+            revocationCertificates = memoized;
+        }
+        return memoized;
+    }
+
+    private List<X509Certificate> resolveRevocationCertificates() {
         List<X509Certificate> certificates = new ArrayList<>();
         if (urlTrustList != null) {
             certificates.addAll(urlTrustList.getRevocationCertificates());
@@ -119,7 +138,38 @@ public class EtsiTrustListIdentityProvider
     }
 
     @Override
-    public List<String> trustedAuthorityKeyIdentifiers() {
+    public List<String> servedCredentialTypes() {
+        return config.getServedCredentialTypes();
+    }
+
+    /**
+     * A configured trust list URL is advertised as {@code etsi_tl}, the key identifiers of the
+     * issuance certificates as {@code aki}. Both are alternatives for the wallet, so a provider
+     * backed by a trust list and a pasted bundle contributes both.
+     */
+    @Override
+    public List<TrustedAuthority> trustedAuthorities() {
+        if (!config.isAdvertiseTrustedAuthorities()) {
+            return List.of();
+        }
+        List<TrustedAuthority> authorities = new ArrayList<>();
+        if (StringUtil.isNotBlank(config.getTrustListUrl())) {
+            authorities.addAll(TrustedAuthority.of(TrustedAuthorityType.ETSI_TL, List.of(config.getTrustListUrl())));
+        }
+        authorities.addAll(TrustedAuthority.of(TrustedAuthorityType.AKI, authorityKeyIdentifiers()));
+        return List.copyOf(authorities);
+    }
+
+    private List<String> authorityKeyIdentifiers() {
+        List<String> memoized = authorityKeyIdentifiers;
+        if (memoized == null) {
+            memoized = resolveAuthorityKeyIdentifiers();
+            authorityKeyIdentifiers = memoized;
+        }
+        return memoized;
+    }
+
+    private List<String> resolveAuthorityKeyIdentifiers() {
         Set<String> identifiers = new LinkedHashSet<>();
         if (urlTrustList != null) {
             identifiers.addAll(urlTrustList.getTrustedAuthorityKeyIdentifiers());
@@ -132,14 +182,18 @@ public class EtsiTrustListIdentityProvider
     }
 
     @Override
-    public Optional<String> trustListUrl() {
-        return Optional.ofNullable(config.getTrustListUrl()).filter(StringUtil::isNotBlank);
-    }
-
-    @Override
     public void close() {}
 
     private List<X509Certificate> issuanceCertificates() {
+        List<X509Certificate> memoized = issuanceCertificates;
+        if (memoized == null) {
+            memoized = resolveIssuanceCertificates();
+            issuanceCertificates = memoized;
+        }
+        return memoized;
+    }
+
+    private List<X509Certificate> resolveIssuanceCertificates() {
         List<X509Certificate> certificates = new ArrayList<>();
         if (urlTrustList != null) {
             certificates.addAll(urlTrustList.getIssuanceCertificates());

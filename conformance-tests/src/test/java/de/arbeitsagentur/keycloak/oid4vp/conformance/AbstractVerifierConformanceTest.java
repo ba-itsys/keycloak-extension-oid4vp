@@ -258,6 +258,8 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
         Map<String, String> config = new LinkedHashMap<>();
         config.put(EtsiTrustListIdentityProviderConfig.TRUST_LIST_URL, trustListUrl);
         config.put(EtsiTrustListIdentityProviderConfig.TRUST_LIST_LOTE_TYPE, TrustListServer.PID_LOTE_TYPE);
+        // The conformance suite's wallet is driven without a trusted_authorities constraint.
+        config.put(EtsiTrustListIdentityProviderConfig.ADVERTISE_TRUSTED_AUTHORITIES, "false");
         idp.setConfig(config);
         return idp;
     }
@@ -280,7 +282,6 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
         config.put(Oid4vpIdentityProviderConfig.ENFORCE_HAIP, String.valueOf(scenario.enforceHaip()));
         config.put(Oid4vpIdentityProviderConfig.SAME_DEVICE_ENABLED, "true");
         config.put(Oid4vpIdentityProviderConfig.CROSS_DEVICE_ENABLED, "false");
-        config.put(Oid4vpIdentityProviderConfig.TRUSTED_AUTHORITIES_MODE, "none");
         config.put(Oid4vpIdentityProviderConfig.STATUS_LIST_MAX_CACHE_TTL_SECONDS, "0");
         config.put(Oid4vpIdentityProviderConfig.TRUST_MATERIAL_IDPS, TRUST_IDP_ALIAS);
         config.put(Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM, material.combinedPem());

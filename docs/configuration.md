@@ -111,13 +111,33 @@ This mode is intended for credentials that do not carry a stable account identif
 | Key | Description | Default |
 |-----|-------------|---------|
 | `enforceHaip` | Enables the HAIP-oriented effective configuration (`direct_post.jwt` and `x509_hash`). | `true` |
-| `trustMaterialIdps` | Comma-separated aliases of trust material identity providers (see below). All referenced providers contribute trust anchors, directly trusted issuer certificates, and revocation trust. | *(none)* |
-| `trustedAuthoritiesMode` | DCQL `trusted_authorities` mode: `none`, `etsi_tl`, or `aki`. The advertised values come from the referenced trust material identity providers. | `none` |
+| `trustMaterialIdps` | Comma-separated aliases of trust material identity providers (see below). Each referenced provider contributes trust anchors, directly trusted issuer certificates, issuer keys, and revocation trust for the credential types it serves. | *(none)* |
 | `allowedIssuers` | Comma-separated list of allowed SD-JWT issuer (`iss`) values, or `*`. mDoc credentials are not checked against this list because mDoc does not define a standard canonical credential-issuer string equivalent to SD-JWT `iss`. | `*` |
 | `clockSkewSeconds` | Clock skew tolerance for credential verification. | `60` |
 | `kbJwtMaxAgeSeconds` | Maximum accepted age of the SD-JWT KB-JWT `iat` claim. | `300` |
 
 Trust configuration lives on separate trust material identity providers, referenced by alias. This matches the trust material delegation model of upstream Keycloak's OID4VP work.
+
+### Trust per Credential
+
+A response can carry credentials of several trust domains: a PID from a national trust list next to a credential this Keycloak issued itself. Trust is therefore resolved per credential, not once per identity provider.
+
+Every trust material identity provider declares the credential types it serves in `servedCredentialTypes`. A credential is verified against the material of the providers serving its credential type, and its DCQL entry advertises the `trusted_authorities` those providers expose. A provider that declares no credential types serves all of them, so a configuration that never sets the field behaves exactly as before.
+
+Selection uses the credential type that was **requested** under the DCQL credential id the wallet answered with, taken from the request context. The type inside the presented credential is checked afterwards against the same entry, so a wallet cannot choose the trust domain its credential is judged by. A credential id that was not requested is rejected before any signature is verified.
+
+### Trust Cases
+
+| Case | Credential carries | Key resolution | Advertised `trusted_authorities` | Configuration |
+|------|--------------------|----------------|----------------------------------|---------------|
+| ETSI trust list | `x5c` chain | PKIX path to the anchors of the Issuance services on the list | `etsi_tl` with the list URL, `aki` with the key identifiers | `etsi-trust-list` with `trustListUrl` |
+| Pinned certificate bundle | `x5c` chain, or nothing | PKIX path to the CA certificates, and end entity certificates are trusted directly | `aki` with the key identifiers | `etsi-trust-list` with `trustedCertificates` |
+| Keycloak-issued, CA-chained realm key | `x5c` chain to the CA that issued the realm key certificate | as the pinned bundle, with that CA as anchor | `aki`, a private CA has nothing else to advertise | `etsi-trust-list` with the CA in `trustedCertificates` |
+| Keycloak-issued, chainless | JOSE `kid` only | the realm's published signature keys, bound to the realm issuer, and the realm key certificates trusted directly | none | `keycloak-realm-issuer` |
+| mDoc | `x5chain` in COSE | PKIX path or a pinned leaf certificate | `etsi_tl` or `aki` | an X.509 provider, because there is no COSE `kid` route for a key-only provider to serve a doctype |
+| Revocation | status list JWT | the status list certificates of the providers serving that credential | not applicable | follows the credential's trust domain |
+
+A credential type that no provider serves has no trust material, so its presentation cannot be verified. This is logged when the query is built, and only reported once providers declare credential types at all.
 
 ### ETSI Trust List Identity Provider (`etsi-trust-list`)
 
@@ -131,15 +151,29 @@ A dedicated identity provider type carries the trust material. It never authenti
 | `trustListMaxCacheTtlSeconds` | Optional maximum cache TTL for the trust list. The effective lifetime is capped earlier by ETSI `NextUpdate` and HTTP cache headers. | *(use trust-list freshness metadata)* |
 | `trustListMaxStaleAgeSeconds` | Maximum age of an expired trust-list cache entry that may be reused when refresh fails. Set `0` to disable stale fallback. | `86400` |
 | `trustedCertificates` | PEM-encoded X.509 certificate bundle of trusted issuers, used instead of or in addition to the trust list URL. | *(none)* |
+| `servedCredentialTypes` | Comma-separated credential types (SD-JWT VCT or mDoc doctype) this trust domain is responsible for. Empty serves every credential type. | *(none)* |
+| `advertiseTrustedAuthorities` | Whether the DCQL entries of the served credentials advertise this trust domain, as `etsi_tl` for the trust list URL and `aki` for the key identifiers of the trusted certificates. The verifier enforces the trust either way. | `true` |
 | `requiredExtendedKeyUsages` | Comma-separated extended key usage OIDs. When set, credential signing certificates must contain at least one of them (e.g. `1.0.18013.5.1.2` for mDL document signers). | *(none)* |
+
+### Keycloak Realm Issuer Identity Provider (`keycloak-realm-issuer`)
+
+Trust material for credentials this Keycloak issues itself. The material is the signature key material of the issuing realm, read in process: the published JWKs bound to the realm's issuer identifier for credentials that identify their key by `kid`, and the realm key certificates as directly trusted issuer certificates for credentials that pin their leaf in `x5c`. Nothing has to be pasted, and a key rotation takes effect without reconfiguration because passive keys stay published while credentials signed with them are still valid.
+
+| Key | Description | Default |
+|-----|-------------|---------|
+| `servedCredentialTypes` | Comma-separated credential types this Keycloak issues. Required, so the realm keys are trusted for these credentials only. | *(none, rejected)* |
+| `issuerRealm` | Name of the realm whose signature keys sign the credentials. | *(the realm the OID4VP identity provider runs in)* |
+| `issuer` | The credential `iss` the realm keys are trusted for. | *(derived from the issuer realm, the value its JWT VC issuer metadata publishes)* |
+
+A realm key whose certificate is issued by a CA is a plain X.509 trust domain instead: put that CA into an `etsi-trust-list` instance so presented chains are validated against it.
 
 For SD-JWT VC verification, the verifier tries issuer-key resolution in this order:
 
 1. `x5c` certificate-chain validation: a pinned trusted leaf certificate or a PKIX path to the trust anchors
-2. When HAIP is disabled, JWT VC issuer metadata lookup via `iss` + JOSE `kid` from `/.well-known/jwt-vc-issuer`, including `jwks_uri`
-3. Final fallback to directly trusted issuer certificates and trusted issuer JWKs for non-HAIP deployments
+2. The issuer keys the credential's trust domain publishes, matched on the credential's `iss` and JOSE `kid`
+3. When HAIP is disabled and the trust domain publishes no issuer keys, JWT VC issuer metadata lookup via `iss` + `kid` from `/.well-known/jwt-vc-issuer`, including `jwks_uri`
 
-When `enforceHaip=true`, only the `x5c` path is attempted.
+A certificate chain is mandatory when HAIP is enforced, or when the credential's trust domain consists of CA anchors alone. Pinned issuer certificates and published issuer keys make a chainless credential a configured case rather than a missing chain.
 
 By default, the verifier only trusts the credential types this IdP actually requested in its DCQL query. Those types come from the credential types declared on the configured OID4VP mappers.
 

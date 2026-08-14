@@ -23,7 +23,7 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialId;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
+import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthority;
 import de.arbeitsagentur.keycloak.oid4vp.mapper.AbstractOID4VPClaimMapper;
 import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPMdocUserAttributeMapper;
 import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPMdocUserSessionAttributeMapper;
@@ -56,10 +56,8 @@ public class DcqlQueryBuilder {
 
     private final ObjectMapper objectMapper;
     private final Map<String, CredentialTypeSpec> credentialTypes = new LinkedHashMap<>();
+    private final Map<String, List<TrustedAuthority>> trustedAuthoritiesByCredentialId = new LinkedHashMap<>();
     private List<CredentialSet> credentialSets = List.of();
-    private Oid4vpTrustedAuthoritiesMode trustedAuthoritiesMode = Oid4vpTrustedAuthoritiesMode.NONE;
-    private List<String> trustedAuthoritiesTrustListUrls = List.of();
-    private List<String> trustedAuthoritiesAuthorityKeyIdentifiers = List.of();
 
     public DcqlQueryBuilder(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
@@ -87,33 +85,19 @@ public class DcqlQueryBuilder {
     }
 
     /**
-     * Sets the ETSI Trusted List URLs to include as a {@code trusted_authorities} constraint
-     * on each credential entry. When set, each credential in the DCQL query will contain
-     * {@code "trusted_authorities": [{"type": "etsi_tl", "values": ["<url>", ...]}]}.
+     * Sets the {@code trusted_authorities} entries per credential id. They are not a verifier-wide
+     * policy: each credential advertises what the trust material identity providers serving its
+     * credential type expose, so a credential from a trusted list and one from a private trust
+     * domain carry different entries.
      *
      * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1.1">OID4VP 1.0 §6.1.1 — Trusted Authorities Query</a>
      */
-    public DcqlQueryBuilder setTrustListUrls(List<String> trustListUrls) {
-        this.trustedAuthoritiesMode = Oid4vpTrustedAuthoritiesMode.ETSI_TL;
-        this.trustedAuthoritiesTrustListUrls = trustListUrls != null ? List.copyOf(trustListUrls) : List.of();
-        this.trustedAuthoritiesAuthorityKeyIdentifiers = List.of();
-        return this;
-    }
-
-    public DcqlQueryBuilder setTrustedAuthorities(List<String> trustListUrls, List<String> authorityKeyIdentifiers) {
-        this.trustedAuthoritiesMode = Oid4vpTrustedAuthoritiesMode.AKI;
-        this.trustedAuthoritiesTrustListUrls = trustListUrls != null ? List.copyOf(trustListUrls) : List.of();
-        this.trustedAuthoritiesAuthorityKeyIdentifiers =
-                authorityKeyIdentifiers != null ? List.copyOf(authorityKeyIdentifiers) : List.of();
-        return this;
-    }
-
-    public DcqlQueryBuilder setTrustedAuthoritiesMode(
-            Oid4vpTrustedAuthoritiesMode mode, List<String> trustListUrls, List<String> authorityKeyIdentifiers) {
-        this.trustedAuthoritiesMode = mode != null ? mode : Oid4vpTrustedAuthoritiesMode.NONE;
-        this.trustedAuthoritiesTrustListUrls = trustListUrls != null ? List.copyOf(trustListUrls) : List.of();
-        this.trustedAuthoritiesAuthorityKeyIdentifiers =
-                authorityKeyIdentifiers != null ? List.copyOf(authorityKeyIdentifiers) : List.of();
+    public DcqlQueryBuilder setTrustedAuthorities(
+            Map<String, List<TrustedAuthority>> trustedAuthoritiesByCredentialId) {
+        this.trustedAuthoritiesByCredentialId.clear();
+        if (trustedAuthoritiesByCredentialId != null) {
+            this.trustedAuthoritiesByCredentialId.putAll(trustedAuthoritiesByCredentialId);
+        }
         return this;
     }
 
@@ -152,26 +136,10 @@ public class DcqlQueryBuilder {
             ObjectMapper objectMapper,
             Map<String, CredentialTypeSpec> credentialTypes,
             List<CredentialSet> credentialSets,
-            List<String> trustListUrls) {
-        return fromMapperSpecs(
-                objectMapper,
-                credentialTypes,
-                credentialSets,
-                Oid4vpTrustedAuthoritiesMode.ETSI_TL,
-                trustListUrls,
-                List.of());
-    }
-
-    public static DcqlQueryBuilder fromMapperSpecs(
-            ObjectMapper objectMapper,
-            Map<String, CredentialTypeSpec> credentialTypes,
-            List<CredentialSet> credentialSets,
-            Oid4vpTrustedAuthoritiesMode trustedAuthoritiesMode,
-            List<String> trustListUrls,
-            List<String> authorityKeyIdentifiers) {
+            Map<String, List<TrustedAuthority>> trustedAuthoritiesByCredentialId) {
         DcqlQueryBuilder builder = new DcqlQueryBuilder(objectMapper);
         builder.setCredentialSets(credentialSets);
-        builder.setTrustedAuthoritiesMode(trustedAuthoritiesMode, trustListUrls, authorityKeyIdentifiers);
+        builder.setTrustedAuthorities(trustedAuthoritiesByCredentialId);
         builder.credentialTypes.putAll(credentialTypes);
         return builder;
     }
@@ -305,8 +273,8 @@ public class DcqlQueryBuilder {
         credential.put(DCQL_FORMAT, typeSpec.format());
         credential.put(DCQL_META, buildMetaConstraint(typeSpec));
 
-        List<Map<String, Object>> trustedAuthorities = trustedAuthoritiesMode.toDcqlEntries(
-                trustedAuthoritiesTrustListUrls, trustedAuthoritiesAuthorityKeyIdentifiers);
+        List<Map<String, Object>> trustedAuthorities =
+                TrustedAuthority.toDcqlEntries(trustedAuthoritiesByCredentialId.getOrDefault(credId, List.of()));
         if (!trustedAuthorities.isEmpty()) {
             credential.put(DCQL_TRUSTED_AUTHORITIES, trustedAuthorities);
         }

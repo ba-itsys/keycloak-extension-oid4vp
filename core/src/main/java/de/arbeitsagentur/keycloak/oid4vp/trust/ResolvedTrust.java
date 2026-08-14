@@ -15,53 +15,84 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.trust;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthority;
 import java.security.PublicKey;
 import java.security.cert.CertificateExpiredException;
 import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.X509Certificate;
 import java.util.List;
 import org.keycloak.common.VerificationException;
-import org.keycloak.jose.jwk.JWK;
 
 /**
- * Trust material aggregated from the trust material identity providers referenced by an OID4VP
- * identity provider.
+ * Trust material aggregated from the trust material identity providers that serve one credential.
  *
  * @param issuanceTrust             X.509 trust anchors and policy for credential issuer chains
  *                                  (SD-JWT x5c, mDoc x5chain)
  * @param directIssuerCertificates  end entity certificates listed as issuance services whose keys
  *                                  are trusted directly when a credential carries no chain
- * @param trustedIssuerJwks         trusted issuer JWKs from providers that expose keys instead of
- *                                  X.509 anchors
+ * @param trustedIssuerKeys         trusted issuer keys from providers that expose keys instead of
+ *                                  X.509 anchors, each bound to the issuer it is trusted for
  * @param revocationCertificates    certificates of status list (revocation) services
- * @param authorityKeyIdentifiers   certificate key identifiers for DCQL {@code trusted_authorities}
- *                                  entries of type {@code aki}
- * @param trustListUrls             trust list URLs for DCQL {@code trusted_authorities} entries of
- *                                  type {@code etsi_tl}
+ * @param trustedAuthorities        the DCQL {@code trusted_authorities} entries these providers
+ *                                  advertise for the credential
  */
 public record ResolvedTrust(
         List<X509TrustMaterial> issuanceTrust,
         List<X509Certificate> directIssuerCertificates,
-        List<JWK> trustedIssuerJwks,
+        List<TrustedIssuerKey> trustedIssuerKeys,
         List<X509Certificate> revocationCertificates,
-        List<String> authorityKeyIdentifiers,
-        List<String> trustListUrls) {
+        List<TrustedAuthority> trustedAuthorities) {
 
     public ResolvedTrust {
         issuanceTrust = List.copyOf(issuanceTrust);
         directIssuerCertificates = List.copyOf(directIssuerCertificates);
-        trustedIssuerJwks = List.copyOf(trustedIssuerJwks);
+        trustedIssuerKeys = List.copyOf(trustedIssuerKeys);
         revocationCertificates = List.copyOf(revocationCertificates);
-        authorityKeyIdentifiers = List.copyOf(authorityKeyIdentifiers);
-        trustListUrls = List.copyOf(trustListUrls);
+        trustedAuthorities = List.copyOf(trustedAuthorities);
     }
 
     public static ResolvedTrust empty() {
-        return new ResolvedTrust(List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        return new ResolvedTrust(List.of(), List.of(), List.of(), List.of(), List.of());
     }
 
     public boolean hasIssuerTrust() {
-        return !issuanceTrust.isEmpty() || !directIssuerCertificates.isEmpty() || !trustedIssuerJwks.isEmpty();
+        return hasX509Trust() || !trustedIssuerKeys.isEmpty();
+    }
+
+    /** Whether a presented certificate chain can be validated against this trust material. */
+    public boolean hasX509Trust() {
+        return !issuanceTrust.isEmpty() || !directIssuerCertificates.isEmpty();
+    }
+
+    /** Whether a presented certificate chain can be built to an anchor of this trust material. */
+    public boolean hasCertificateChainAnchors() {
+        return !issuanceTrust.isEmpty();
+    }
+
+    /**
+     * Whether a credential without a certificate chain can be verified: pinned issuer certificates
+     * and published issuer keys both identify the issuer key directly. Providers exposing them make
+     * a chainless credential a configured case rather than a missing chain.
+     */
+    public boolean hasChainlessIssuerTrust() {
+        return !directIssuerCertificates.isEmpty() || !trustedIssuerKeys.isEmpty();
+    }
+
+    /**
+     * Whether an issuer key route is configured for this credential. Providers that publish keys
+     * make the {@code kid} route legitimate, so discovering keys from the credential's own issuer
+     * metadata is not needed.
+     */
+    public boolean hasIssuerKeyTrust() {
+        return !trustedIssuerKeys.isEmpty();
+    }
+
+    /** The trusted keys usable for a credential of the given issuer and JOSE {@code kid}. */
+    public List<TrustedIssuerKey> issuerKeysFor(String issuer, String keyId) {
+        return trustedIssuerKeys.stream()
+                .filter(key -> key.trustedFor(issuer))
+                .filter(key -> key.matchesKeyId(keyId))
+                .toList();
     }
 
     /**

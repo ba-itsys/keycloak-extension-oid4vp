@@ -17,6 +17,8 @@ package de.arbeitsagentur.keycloak.oid4vp.trust;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthority;
+import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthorityType;
 import java.math.BigInteger;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -27,7 +29,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 import javax.security.auth.x500.X500Principal;
@@ -45,104 +46,130 @@ import org.keycloak.models.IdentityProviderModel;
 
 class Oid4vpTrustMaterialResolverTest {
 
+    private static final String PID = "urn:eudi:pid:1";
+    private static final String BADGE = "https://kc.example/badge";
+
     @Test
     void aggregatesTrustAcrossAliasesAndSkipsUnknownOnes() throws Exception {
         KeyPair caKp = generateKeyPair();
         X509Certificate ca = generateCert(caKp, caKp, "CN=CA", "CN=CA", true);
-        X509TrustMaterial material = new X509TrustMaterial(Set.of(ca), List.of());
+        ResolvedTrust x509Trust = trustOf(ca, "aki-1", "https://tl.example/list.jwt");
         JWK jwk = new ECPublicJWK();
         jwk.setKeyId("jwk-1");
 
         Map<String, Oid4vpTrustMaterialIdentityProvider<?>> providers = Map.of(
-                "x509-trust", new X509TrustDouble(material, List.of(ca), "https://tl.example/list.jwt"),
-                "jwk-trust", new JwkOnlyTrustDouble(List.of(jwk)));
+                "x509-trust",
+                FixedTrustMaterialIdentityProvider.serving(x509Trust),
+                "jwk-trust",
+                new UpstreamStyleTrustDouble(List.of(jwk)));
         Oid4vpTrustMaterialResolver resolver =
                 new Oid4vpTrustMaterialResolver((session, alias) -> providers.get(alias));
 
-        ResolvedTrust trust = resolver.resolveTrust(null, "x509-trust, jwk-trust, unknown");
+        CredentialTrustPlan plan = resolver.resolvePlan(null, "x509-trust, jwk-trust, unknown");
+        ResolvedTrust trust = plan.forCredentialType(PID);
 
-        assertThat(trust.issuanceTrust()).containsExactly(material);
+        assertThat(trust.issuanceTrust()).isEqualTo(x509Trust.issuanceTrust());
         assertThat(trust.directIssuerCertificates()).containsExactly(ca);
-        assertThat(trust.trustedIssuerJwks()).containsExactly(jwk);
         assertThat(trust.revocationCertificates()).containsExactly(ca);
-        assertThat(trust.authorityKeyIdentifiers()).containsExactly("aki-1");
-        assertThat(trust.trustListUrls()).containsExactly("https://tl.example/list.jwt");
+        assertThat(trust.trustedIssuerKeys()).containsExactly(TrustedIssuerKey.ofAnyIssuer(jwk));
+        assertThat(trust.trustedAuthorities())
+                .containsExactly(
+                        new TrustedAuthority(TrustedAuthorityType.ETSI_TL, List.of("https://tl.example/list.jwt")),
+                        new TrustedAuthority(TrustedAuthorityType.AKI, List.of("aki-1")));
         assertThat(trust.hasIssuerTrust()).isTrue();
+        assertThat(plan.isScopedByCredentialType())
+                .as("providers without declared credential types serve everything")
+                .isFalse();
+    }
+
+    @Test
+    void credentialTypesSeeOnlyTheTrustOfTheProvidersServingThem() throws Exception {
+        KeyPair pidCaKp = generateKeyPair();
+        X509Certificate pidCa = generateCert(pidCaKp, pidCaKp, "CN=PID CA", "CN=PID CA", true);
+        KeyPair badgeCaKp = generateKeyPair();
+        X509Certificate badgeCa = generateCert(badgeCaKp, badgeCaKp, "CN=Badge CA", "CN=Badge CA", true);
+
+        Map<String, Oid4vpTrustMaterialIdentityProvider<?>> providers = Map.of(
+                "pid-tl",
+                        FixedTrustMaterialIdentityProvider.serving(
+                                trustOf(pidCa, "pid-aki", "https://tl.example/eudi.jwt"), PID),
+                "badge-ca", FixedTrustMaterialIdentityProvider.serving(trustOf(badgeCa, "badge-aki", null), BADGE));
+        CredentialTrustPlan plan = new Oid4vpTrustMaterialResolver((session, alias) -> providers.get(alias))
+                .resolvePlan(null, "pid-tl,badge-ca");
+
+        assertThat(plan.isScopedByCredentialType()).isTrue();
+        assertThat(plan.forCredentialType(PID).directIssuerCertificates()).containsExactly(pidCa);
+        assertThat(plan.forCredentialType(BADGE).directIssuerCertificates()).containsExactly(badgeCa);
+        assertThat(plan.forCredentialType(PID).trustedAuthorities())
+                .containsExactly(
+                        new TrustedAuthority(TrustedAuthorityType.ETSI_TL, List.of("https://tl.example/eudi.jwt")),
+                        new TrustedAuthority(TrustedAuthorityType.AKI, List.of("pid-aki")));
+        assertThat(plan.forCredentialType(BADGE).trustedAuthorities())
+                .containsExactly(new TrustedAuthority(TrustedAuthorityType.AKI, List.of("badge-aki")));
+    }
+
+    @Test
+    void credentialTypeNoProviderServesHasNoTrustAtAll() throws Exception {
+        KeyPair caKp = generateKeyPair();
+        X509Certificate ca = generateCert(caKp, caKp, "CN=PID CA", "CN=PID CA", true);
+        Map<String, Oid4vpTrustMaterialIdentityProvider<?>> providers =
+                Map.of("pid-tl", FixedTrustMaterialIdentityProvider.serving(trustOf(ca, "pid-aki", null), PID));
+        CredentialTrustPlan plan =
+                new Oid4vpTrustMaterialResolver((session, alias) -> providers.get(alias)).resolvePlan(null, "pid-tl");
+
+        assertThat(plan.serves(BADGE)).isFalse();
+        assertThat(plan.forCredentialType(BADGE)).isEqualTo(ResolvedTrust.empty());
+        assertThat(plan.forCredentialType(BADGE).hasIssuerTrust()).isFalse();
+    }
+
+    @Test
+    void unscopedProvidersAlsoServeCredentialTypesOfScopedOnes() throws Exception {
+        KeyPair pidCaKp = generateKeyPair();
+        X509Certificate pidCa = generateCert(pidCaKp, pidCaKp, "CN=PID CA", "CN=PID CA", true);
+        KeyPair anyCaKp = generateKeyPair();
+        X509Certificate anyCa = generateCert(anyCaKp, anyCaKp, "CN=Any CA", "CN=Any CA", true);
+
+        Map<String, Oid4vpTrustMaterialIdentityProvider<?>> providers = Map.of(
+                "pid-tl", FixedTrustMaterialIdentityProvider.serving(trustOf(pidCa, "pid-aki", null), PID),
+                "legacy", FixedTrustMaterialIdentityProvider.serving(trustOf(anyCa, "any-aki", null)));
+        CredentialTrustPlan plan = new Oid4vpTrustMaterialResolver((session, alias) -> providers.get(alias))
+                .resolvePlan(null, "pid-tl,legacy");
+
+        assertThat(plan.forCredentialType(PID).directIssuerCertificates()).containsExactlyInAnyOrder(pidCa, anyCa);
+        assertThat(plan.forCredentialType(BADGE).directIssuerCertificates()).containsExactly(anyCa);
     }
 
     @Test
     void emptyAliasesResolveToEmptyTrust() {
         Oid4vpTrustMaterialResolver resolver = new Oid4vpTrustMaterialResolver((session, alias) -> null);
 
-        assertThat(resolver.resolveTrust(null, null)).isEqualTo(ResolvedTrust.empty());
-        assertThat(resolver.resolveTrust(null, "  ")).isEqualTo(ResolvedTrust.empty());
+        assertThat(resolver.resolvePlan(null, null).hasProviders()).isFalse();
+        assertThat(resolver.resolvePlan(null, "  ").forCredentialType(PID)).isEqualTo(ResolvedTrust.empty());
         assertThat(ResolvedTrust.empty().hasIssuerTrust()).isFalse();
     }
 
-    /** Trust material double serving the full extension surface. */
-    private static class X509TrustDouble implements Oid4vpTrustMaterialIdentityProvider<IdentityProviderModel> {
-
-        private final X509TrustMaterial material;
-        private final List<X509Certificate> certificates;
-        private final String trustListUrl;
-
-        X509TrustDouble(X509TrustMaterial material, List<X509Certificate> certificates, String trustListUrl) {
-            this.material = material;
-            this.certificates = certificates;
-            this.trustListUrl = trustListUrl;
-        }
-
-        @Override
-        public IdentityProviderModel getConfig() {
-            return new IdentityProviderModel();
-        }
-
-        @Override
-        public Stream<JWK> resolveKeys(TrustMaterialRequest request) {
-            return Stream.empty();
-        }
-
-        @Override
-        public Stream<X509TrustMaterial> resolveX509Trust(TrustMaterialRequest request) {
-            return Stream.of(material);
-        }
-
-        @Override
-        public List<X509Certificate> directIssuerCertificates() {
-            return certificates;
-        }
-
-        @Override
-        public List<X509Certificate> revocationCertificates() {
-            return certificates;
-        }
-
-        @Override
-        public List<String> trustedAuthorityKeyIdentifiers() {
-            return List.of("aki-1");
-        }
-
-        @Override
-        public Optional<String> trustListUrl() {
-            return Optional.of(trustListUrl);
-        }
-
-        @Override
-        public void close() {}
+    private static ResolvedTrust trustOf(
+            X509Certificate certificate, String authorityKeyIdentifier, String trustListUrl) {
+        List<TrustedAuthority> trustedAuthorities = Stream.concat(
+                        trustListUrl == null
+                                ? Stream.<TrustedAuthority>empty()
+                                : TrustedAuthority.of(TrustedAuthorityType.ETSI_TL, List.of(trustListUrl)).stream(),
+                        TrustedAuthority.of(TrustedAuthorityType.AKI, List.of(authorityKeyIdentifier)).stream())
+                .toList();
+        return new ResolvedTrust(
+                List.of(new X509TrustMaterial(Set.of(certificate), List.of())),
+                List.of(certificate),
+                List.of(),
+                List.of(certificate),
+                trustedAuthorities);
     }
 
     /**
-     * Double for an upstream-style provider that only exposes JWKs; the extension surfaces stay at
-     * their empty defaults, matching what the resolver's adapter produces for Keycloak's
-     * default-trust.
+     * Double for a provider that only implements the upstream contract. The extension methods stay
+     * at their defaults, matching what the resolver's adapter produces for Keycloak's default-trust.
      */
-    private static class JwkOnlyTrustDouble implements Oid4vpTrustMaterialIdentityProvider<IdentityProviderModel> {
-
-        private final List<JWK> jwks;
-
-        JwkOnlyTrustDouble(List<JWK> jwks) {
-            this.jwks = jwks;
-        }
+    private record UpstreamStyleTrustDouble(List<JWK> keys)
+            implements Oid4vpTrustMaterialIdentityProvider<IdentityProviderModel> {
 
         @Override
         public IdentityProviderModel getConfig() {
@@ -151,7 +178,7 @@ class Oid4vpTrustMaterialResolverTest {
 
         @Override
         public Stream<JWK> resolveKeys(TrustMaterialRequest request) {
-            return jwks.stream();
+            return keys.stream();
         }
 
         @Override
@@ -159,22 +186,23 @@ class Oid4vpTrustMaterialResolverTest {
     }
 
     private static KeyPair generateKeyPair() throws Exception {
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC");
-        kpg.initialize(new ECGenParameterSpec("secp256r1"));
-        return kpg.generateKeyPair();
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("EC");
+        generator.initialize(new ECGenParameterSpec("secp256r1"));
+        return generator.generateKeyPair();
     }
 
     private static X509Certificate generateCert(
-            KeyPair subjectKp, KeyPair issuerKp, String subjectDn, String issuerDn, boolean isCa) throws Exception {
-        ContentSigner signer = new JcaContentSignerBuilder("SHA256withECDSA").build(issuerKp.getPrivate());
-        var builder = new JcaX509v3CertificateBuilder(
-                new X500Principal(issuerDn),
-                BigInteger.valueOf(Instant.now().toEpochMilli()),
-                Date.from(Instant.now().minus(1, ChronoUnit.DAYS)),
-                Date.from(Instant.now().plus(365, ChronoUnit.DAYS)),
-                new X500Principal(subjectDn),
-                subjectKp.getPublic());
-        builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(isCa));
+            KeyPair subjectKeyPair, KeyPair issuerKeyPair, String subject, String issuer, boolean ca) throws Exception {
+        Instant now = Instant.now();
+        JcaX509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(
+                new X500Principal(issuer),
+                BigInteger.valueOf(now.toEpochMilli()),
+                Date.from(now.minus(1, ChronoUnit.DAYS)),
+                Date.from(now.plus(365, ChronoUnit.DAYS)),
+                new X500Principal(subject),
+                subjectKeyPair.getPublic());
+        builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(ca));
+        ContentSigner signer = new JcaContentSignerBuilder("SHA256withECDSA").build(issuerKeyPair.getPrivate());
         return new JcaX509CertificateConverter().getCertificate(builder.build(signer));
     }
 }
