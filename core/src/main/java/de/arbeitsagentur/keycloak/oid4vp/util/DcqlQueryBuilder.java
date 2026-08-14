@@ -191,7 +191,7 @@ public class DcqlQueryBuilder {
                         .add(claimSpec);
             });
 
-            if (!config.isUseIdTokenSubject() && !config.isTransientUsersEnabled()) {
+            if (!config.isTransientUsersEnabled()) {
                 for (Map.Entry<String, List<ClaimSpec>> entry : claimsByCredentialId.entrySet()) {
                     ClaimSpec principal =
                             principalClaim(config, typesByCredentialId.get(entry.getKey()), entry.getValue());

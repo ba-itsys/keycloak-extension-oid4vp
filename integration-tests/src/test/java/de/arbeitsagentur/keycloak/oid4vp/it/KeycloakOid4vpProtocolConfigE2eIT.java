@@ -68,7 +68,6 @@ class KeycloakOid4vpProtocolConfigE2eIT extends AbstractOid4vpE2eTest {
         setIdpConfig(Map.of(
                 Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM, combinedPem,
                 Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME, "x509_san_dns",
-                Oid4vpIdentityProviderConfig.ENFORCE_HAIP, "false",
                 Oid4vpIdentityProviderConfig.X509_SIGNING_KEY_JWK, ""));
 
         flow.navigateToLoginPage();
@@ -105,7 +104,6 @@ class KeycloakOid4vpProtocolConfigE2eIT extends AbstractOid4vpE2eTest {
         setIdpConfig(Map.of(
                 Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM, certOnlyPem,
                 Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME, "x509_san_dns",
-                Oid4vpIdentityProviderConfig.ENFORCE_HAIP, "false",
                 Oid4vpIdentityProviderConfig.X509_SIGNING_KEY_JWK, ""));
 
         flow.navigateToLoginPage();
@@ -116,14 +114,13 @@ class KeycloakOid4vpProtocolConfigE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
-    void haipOverridesConfiguredClientIdSchemeToX509Hash() throws Exception {
+    void unconfiguredSchemeAndResponseModeUseTheCertificateBoundDefaults() throws Exception {
         testApp().reset();
         flow.clearBrowserSession();
 
         setIdpConfig(Map.of(
-                Oid4vpIdentityProviderConfig.ENFORCE_HAIP, "true",
-                Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME, "x509_san_dns",
-                Oid4vpIdentityProviderConfig.RESPONSE_MODE, "direct_post"));
+                Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME, "",
+                Oid4vpIdentityProviderConfig.RESPONSE_MODE, ""));
 
         flow.navigateToLoginPage();
         flow.clickOid4vpIdpButton();
@@ -147,13 +144,9 @@ class KeycloakOid4vpProtocolConfigE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
-    void haipRequestObjectForcesVpTokenAndAdvertisesMdocAuthAlgorithms() throws Exception {
+    void requestObjectAsksForAVpTokenAndAdvertisesMdocAuthAlgorithms() throws Exception {
         testApp().reset();
         flow.clearBrowserSession();
-
-        setIdpConfig(Map.of(
-                Oid4vpIdentityProviderConfig.ENFORCE_HAIP, "true",
-                Oid4vpIdentityProviderConfig.USE_ID_TOKEN_SUBJECT, "true"));
 
         SignedJWT requestJwt = fetchCurrentRequestObject();
         assertThat(requestJwt.getJWTClaimsSet().getStringClaim("response_type")).isEqualTo("vp_token");
@@ -196,7 +189,6 @@ class KeycloakOid4vpProtocolConfigE2eIT extends AbstractOid4vpE2eTest {
         setIdpConfig(Map.of(
                 Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM, combinedPem,
                 Oid4vpIdentityProviderConfig.X509_SIGNING_KEY_JWK, "",
-                Oid4vpIdentityProviderConfig.ENFORCE_HAIP, "false",
                 Oid4vpIdentityProviderConfig.RESPONSE_MODE, "direct_post.jwt",
                 Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME, "x509_san_dns"));
 
@@ -227,7 +219,6 @@ class KeycloakOid4vpProtocolConfigE2eIT extends AbstractOid4vpE2eTest {
         flow.clearBrowserSession();
 
         setIdpConfig(Map.of(
-                Oid4vpIdentityProviderConfig.ENFORCE_HAIP, "false",
                 Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME, "plain",
                 Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM, "",
                 Oid4vpIdentityProviderConfig.X509_SIGNING_KEY_JWK, ""));
@@ -255,7 +246,7 @@ class KeycloakOid4vpProtocolConfigE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
-    void nonHaipFallsBackToKidBasedIssuerMetadataResolution() throws Exception {
+    void sdJwtWithoutCertificateChainIsAccepted() throws Exception {
         testApp().reset();
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
@@ -263,14 +254,13 @@ class KeycloakOid4vpProtocolConfigE2eIT extends AbstractOid4vpE2eTest {
 
         try {
             replaceDcqlMappers(Oid4vpTestKeycloakSetup.sdJwtPidMappers());
-            setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.ENFORCE_HAIP, "false"));
 
             flow.navigateToLoginPage();
             flow.clickOid4vpIdpButton();
             String walletUrl = flow.getSameDeviceWalletUrl();
             Oid4vpLoginFlowHelper.WalletResponse response = flow.submitToWallet(walletUrl);
             flow.waitForLoginCompletion(response);
-            flow.completeFirstBrokerLoginIfNeeded("kid-metadata-user");
+            flow.completeFirstBrokerLoginIfNeeded("chainless-sdjwt-user");
             flow.assertLoginSucceeded();
         } finally {
             wallet().client().clearPreferredFormat();

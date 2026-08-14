@@ -16,6 +16,7 @@
 package de.arbeitsagentur.keycloak.oid4vp;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.math.BigInteger;
@@ -61,7 +62,6 @@ class Oid4vpIdentityProviderFactoryTest {
         assertThat(properties)
                 .extracting(ProviderConfigProperty::getName)
                 .contains(
-                        Oid4vpIdentityProviderConfig.ENFORCE_HAIP,
                         Oid4vpIdentityProviderConfig.RESPONSE_MODE,
                         Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME,
                         Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM,
@@ -169,5 +169,56 @@ class Oid4vpIdentityProviderFactoryTest {
         return "-----BEGIN PRIVATE KEY-----\n"
                 + Base64.getMimeEncoder(64, "\n".getBytes()).encodeToString(privateKey.getEncoded())
                 + "\n-----END PRIVATE KEY-----\n";
+    }
+
+    @Test
+    void validateVerifierCertificate_certificateBoundSchemeWithoutCertificate_isReported() {
+        Oid4vpIdentityProviderConfig config = new Oid4vpIdentityProviderConfig();
+        config.setAlias("oid4vp-missing-certificate");
+        config.setClientIdScheme("x509_hash");
+
+        assertThatThrownBy(() -> Oid4vpIdentityProviderFactory.validateVerifierCertificate(config))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("requires an X.509 certificate");
+    }
+
+    @Test
+    void validateVerifierCertificate_plainSchemeNeedsNoCertificate() {
+        Oid4vpIdentityProviderConfig config = new Oid4vpIdentityProviderConfig();
+        config.setAlias("oid4vp-plain");
+        config.setClientIdScheme("plain");
+
+        assertThatCode(() -> Oid4vpIdentityProviderFactory.validateVerifierCertificate(config))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void removedSettingsAreReportedInsteadOfApplied() {
+        Oid4vpIdentityProviderConfig config = new Oid4vpIdentityProviderConfig();
+        config.setAlias("oid4vp-upgraded");
+        config.getConfig().put(Oid4vpIdentityProviderConfig.REMOVED_ENFORCE_HAIP, "true");
+        config.getConfig().put(Oid4vpIdentityProviderConfig.REMOVED_USE_ID_TOKEN_SUBJECT, "true");
+
+        assertThatCode(() -> {
+                    Oid4vpIdentityProviderFactory.warnIfEnforceHaipIsConfigured(config);
+                    Oid4vpIdentityProviderFactory.warnIfUseIdTokenSubjectIsConfigured(config);
+                })
+                .doesNotThrowAnyException();
+
+        assertThat(config.getClientIdScheme())
+                .as("the removed flag no longer overrides the configured scheme")
+                .isEqualTo("x509_hash");
+    }
+
+    @Test
+    void absentRemovedSettingsAreNotReported() {
+        Oid4vpIdentityProviderConfig config = new Oid4vpIdentityProviderConfig();
+        config.setAlias("oid4vp-clean");
+
+        assertThatCode(() -> {
+                    Oid4vpIdentityProviderFactory.warnIfEnforceHaipIsConfigured(config);
+                    Oid4vpIdentityProviderFactory.warnIfUseIdTokenSubjectIsConfigured(config);
+                })
+                .doesNotThrowAnyException();
     }
 }

@@ -36,8 +36,8 @@ import org.keycloak.utils.StringUtil;
  * Configuration model for the OID4VP Identity Provider.
  *
  * <p>Wraps the Keycloak {@link IdentityProviderModel} and provides typed accessors for all
- * OID4VP-specific settings: credential formats, client ID schemes, HAIP enforcement, trust list
- * URL, SSE polling parameters, and claim mappings. Implements {@link Oid4vpConfigProvider} for
+ * OID4VP-specific settings: credential formats, client ID schemes, trust material references,
+ * SSE polling parameters, and claim mappings. Implements {@link Oid4vpConfigProvider} for
  * use by domain services without depending on the full Keycloak model.
  */
 public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implements Oid4vpConfigProvider {
@@ -92,9 +92,20 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final int DEFAULT_KB_JWT_MAX_AGE_SECONDS = 300;
     public static final int DEFAULT_REQUEST_OBJECT_LIFESPAN_SECONDS = 10;
 
-    public static final String USE_ID_TOKEN_SUBJECT = "useIdTokenSubject";
+    /**
+     * Removed setting. It bundled the client id scheme, the response mode, the verifier certificate
+     * rules and the credential chain requirement into one flag. The first three are configured
+     * directly now, and the last is derived from the trust material identity providers serving a
+     * credential. Kept to detect and report stale configurations.
+     */
+    public static final String REMOVED_ENFORCE_HAIP = "enforceHaip";
 
-    public static final String ENFORCE_HAIP = "enforceHaip";
+    /**
+     * Removed setting. Self-Issued OpenID Provider support is gone, so the subject always comes
+     * from a presented credential or from the transient user mode. Kept to detect and report stale
+     * configurations.
+     */
+    public static final String REMOVED_USE_ID_TOKEN_SUBJECT = "useIdTokenSubject";
 
     public Oid4vpIdentityProviderConfig() {
         super();
@@ -144,7 +155,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     }
 
     public Oid4vpClientIdScheme getResolvedClientIdScheme() {
-        return Oid4vpClientIdScheme.resolve(getConfig().get(CLIENT_ID_SCHEME), isEnforceHaip());
+        return Oid4vpClientIdScheme.resolve(getConfig().get(CLIENT_ID_SCHEME));
     }
 
     public void setClientIdScheme(String scheme) {
@@ -156,7 +167,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     }
 
     public Oid4vpResponseMode getResolvedResponseMode() {
-        return Oid4vpResponseMode.resolve(getConfig().get(RESPONSE_MODE), isEnforceHaip());
+        return Oid4vpResponseMode.resolve(getConfig().get(RESPONSE_MODE));
     }
 
     public void setResponseMode(String responseMode) {
@@ -206,7 +217,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
                 aggregated.credentials(),
                 getPrincipalCredentialId(),
                 getPrincipalAttribute(),
-                !isUseIdTokenSubject() && !isTransientUsersEnabled()));
+                !isTransientUsersEnabled()));
         if (!problems.isEmpty()) {
             throw new IllegalArgumentException(String.join("; ", problems));
         }
@@ -255,18 +266,6 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         getConfig().put(TRUST_MATERIAL_IDPS, aliases);
     }
 
-    public boolean isEnforceHaip() {
-        return getBoolConfig(ENFORCE_HAIP, true);
-    }
-
-    public void setEnforceHaip(boolean enforce) {
-        getConfig().put(ENFORCE_HAIP, String.valueOf(enforce));
-    }
-
-    public boolean isUseIdTokenSubject() {
-        return !isEnforceHaip() && getBoolConfig(USE_ID_TOKEN_SUBJECT, false);
-    }
-
     @Override
     public boolean isTransientUsersEnabled() {
         return getBoolConfig(TRANSIENT_USERS, false);
@@ -274,10 +273,6 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public void setTransientUsersEnabled(boolean enabled) {
         setTransientUsers(Boolean.valueOf(enabled));
-    }
-
-    public void setUseIdTokenSubject(boolean use) {
-        getConfig().put(USE_ID_TOKEN_SUBJECT, String.valueOf(use));
     }
 
     public String getAllowedIssuers() {

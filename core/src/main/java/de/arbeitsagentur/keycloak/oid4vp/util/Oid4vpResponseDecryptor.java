@@ -15,7 +15,6 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
-import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.ID_TOKEN;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.VP_TOKEN;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.DecryptedResponse;
@@ -32,7 +31,7 @@ import org.keycloak.util.JsonSerialization;
 /**
  * Decrypts wallet responses encrypted with {@code direct_post.jwt} response mode.
  *
- * <p>When HAIP is enabled, the verifier includes an ephemeral encryption key in the request
+ * <p>With the direct_post.jwt response mode the verifier includes an ephemeral encryption key in the request
  * object's {@code client_metadata}. The wallet encrypts its response (containing the
  * {@code vp_token}) as a JWE using that key. This class extracts the KID from the JWE header
  * to look up the matching private key, then decrypts the payload.
@@ -90,7 +89,6 @@ public class Oid4vpResponseDecryptor {
                 Object errorDescObj = payloadMap.get(OAuth2Constants.ERROR_DESCRIPTION);
                 return new DecryptedResponse(
                         null,
-                        null,
                         state,
                         mdocGeneratedNonce,
                         errorObj.toString(),
@@ -103,13 +101,7 @@ public class Oid4vpResponseDecryptor {
                 vpToken = vpTokenObj instanceof String s ? s : JsonSerialization.writeValueAsString(vpTokenObj);
             }
 
-            String idToken = null;
-            Object idTokenObj = payloadMap.get(ID_TOKEN);
-            if (idTokenObj instanceof String s) {
-                idToken = s;
-            }
-
-            return new DecryptedResponse(vpToken, idToken, state, mdocGeneratedNonce, null, null);
+            return new DecryptedResponse(vpToken, state, mdocGeneratedNonce, null, null);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to decrypt response: " + e.getMessage(), e);
         }

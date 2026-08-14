@@ -28,7 +28,6 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
 import de.arbeitsagentur.keycloak.oid4vp.mapper.ClaimPath;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
-import de.arbeitsagentur.keycloak.oid4vp.verification.SelfIssuedIdTokenValidator;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenVerifier;
 import java.util.LinkedHashSet;
@@ -50,9 +49,8 @@ import org.keycloak.utils.StringUtil;
  *
  * <p>Orchestrates the post-response phase of the OID4VP flow: validates the state parameter,
  * delegates VP token verification to {@link VpTokenProcessor}, enforces issuer/credential type
- * allow-lists, resolves the user identity from the configured mapping claim (or from a SIOPv2
- * Self-Issued ID Token when {@code useIdTokenSubject} is enabled), and populates the brokered
- * identity context with credential claims for downstream mappers.
+ * allow-lists, resolves the user identity from the configured mapping claim, and populates the
+ * brokered identity context with credential claims for downstream mappers.
  *
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-7">OID4VP 1.0 §7 — VP Token Validation</a>
  */
@@ -76,12 +74,9 @@ public class Oid4vpCallbackProcessor {
         this.vpTokenVerifier = vpTokenVerifier;
     }
 
-    // Validates the VP token (and optionally a Self-Issued ID Token) and builds a brokered identity context.
+    // Validates the VP token and builds a brokered identity context.
     public BrokeredIdentityContext process(
-            Oid4vpRequestObjectStore.RequestContextEntry requestContext,
-            String vpToken,
-            String idToken,
-            String mdocGeneratedNonce) {
+            Oid4vpRequestObjectStore.RequestContextEntry requestContext, String vpToken, String mdocGeneratedNonce) {
 
         if (requestContext == null || StringUtil.isBlank(requestContext.state())) {
             throw new IdentityBrokerException("Missing request context");
@@ -129,10 +124,6 @@ public class Oid4vpCallbackProcessor {
         if (configProvider.isTransientUsersEnabled()) {
             subject = buildTransientSubject(requestContext);
             identityKey = primary.generateIdentityKey(subject);
-        } else if (configProvider.isUseIdTokenSubject()) {
-            subject = validateIdTokenAndExtractSubject(
-                    idToken, requestContext.effectiveClientId(), requestContext.nonce());
-            identityKey = primary.generateIdentityKey(subject);
         } else {
             VerifiedCredential subjectCredential = principalCredential(requestContext, vpResult, primary);
             subject = extractSubjectFromCredential(subjectCredential.claimsNode(), subjectCredential);
@@ -151,23 +142,9 @@ public class Oid4vpCallbackProcessor {
         return context;
     }
 
-    private String validateIdTokenAndExtractSubject(String idToken, String clientId, String expectedNonce) {
-        if (StringUtil.isBlank(idToken)) {
-            throw new IdentityBrokerException("ID token subject mode enabled but no id_token received");
-        }
-        try {
-            SelfIssuedIdTokenValidator validator = new SelfIssuedIdTokenValidator(configProvider.getClockSkewSeconds());
-            String subject = validator.validate(idToken, clientId, expectedNonce);
-            LOG.debugf("ID token validated, subject (JWK Thumbprint): %s", subject);
-            return subject;
-        } catch (IllegalArgumentException e) {
-            throw new IdentityBrokerException("ID token validation failed: " + e.getMessage(), e);
-        }
-    }
-
     /**
      * The credential the subject is read from. With a configured principal credential id the
-     * subject always comes from that credential; otherwise it comes from the first requested
+     * subject always comes from that credential. Without one it comes from the first requested
      * credential the wallet actually presented, so the identity does not depend on how the claims
      * of several credentials merge.
      */

@@ -21,8 +21,7 @@ import java.util.Map;
  * The Keycloak verifier configuration matching one conformance plan variant. Derived from the
  * plan name and its variant selection.
  */
-public record VerifierScenario(
-        CredentialProfile profile, String clientIdScheme, String responseMode, boolean enforceHaip) {
+public record VerifierScenario(CredentialProfile profile, String clientIdScheme, String responseMode) {
 
     public static VerifierScenario fromVariant(String planName, Map<String, String> planVariant) {
         // The vp_profile plan variant is authoritative when present. The HAIP plan does not expose
@@ -33,7 +32,9 @@ public record VerifierScenario(
                 ? CredentialProfile.ISO_MDL
                 : CredentialProfile.SD_JWT_VC;
         String clientIdScheme = haip ? "x509_hash" : planVariant.get("client_id_prefix");
-        String responseMode = planVariant.get("response_mode");
-        return new VerifierScenario(profile, clientIdScheme, responseMode, haip);
+        // The haip profile pins the encrypted response mode, the plain profile defaults to the
+        // unencrypted one when the variant leaves it open.
+        String responseMode = planVariant.getOrDefault("response_mode", haip ? "direct_post.jwt" : "direct_post");
+        return new VerifierScenario(profile, clientIdScheme, haip ? "direct_post.jwt" : responseMode);
     }
 }

@@ -39,6 +39,4 @@ public record RequestObjectParams(
         String x509SigningKeyJwk,
         String responseEncryptionKeyJson,
         String walletNonce,
-        Oid4vpResponseMode responseMode,
-        boolean useIdTokenSubject,
-        boolean enforceHaip) {}
+        Oid4vpResponseMode responseMode) {}

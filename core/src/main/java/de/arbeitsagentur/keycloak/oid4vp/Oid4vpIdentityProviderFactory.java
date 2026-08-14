@@ -42,39 +42,29 @@ import org.keycloak.utils.StringUtil;
  *
  * <p>Registered via {@code META-INF/services} and discovered by Keycloak at startup.
  * Defines all configuration properties shown in the Admin Console, resolves X.509 signing keys
- * from inline PEM certificates, and validates HAIP configuration on provider creation.
+ * from inline PEM certificates, and validates the verifier certificate on provider creation.
  */
 public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFactory<Oid4vpIdentityProvider> {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProviderFactory.class);
 
     private static final Map<String, String> RESOLVED_KEY_CACHE = new ConcurrentHashMap<>();
-    private static final Set<String> WARNED_MISSING_CERTIFICATE_BINDINGS = ConcurrentHashMap.newKeySet();
     private static final Set<String> WARNED_MISSING_TRUST_MATERIAL_IDPS = ConcurrentHashMap.newKeySet();
     private static final Set<String> WARNED_REMOVED_TRUSTED_AUTHORITIES_MODE = ConcurrentHashMap.newKeySet();
+    private static final Set<String> WARNED_REMOVED_ENFORCE_HAIP = ConcurrentHashMap.newKeySet();
+    private static final Set<String> WARNED_REMOVED_USE_ID_TOKEN_SUBJECT = ConcurrentHashMap.newKeySet();
 
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES;
 
     static {
         CONFIG_PROPERTIES = ProviderConfigurationBuilder.create()
                 .property()
-                .name(Oid4vpIdentityProviderConfig.ENFORCE_HAIP)
-                .label("Enforce HAIP Compliance")
-                .helpText("Enable OpenID4VC High Assurance Interoperability Profile (HAIP) compliance. "
-                        + "When enabled, the effective response_mode is forced to direct_post.jwt and the "
-                        + "effective client_id_scheme is forced to x509_hash. "
-                        + "Request objects are signed using the Keycloak realm signing key by default "
-                        + "(ensure an ES256 key is active), or the x509 signing key if provided in the PEM.")
-                .type(ProviderConfigProperty.BOOLEAN_TYPE)
-                .defaultValue("true")
-                .add()
-                .property()
                 .name(Oid4vpIdentityProviderConfig.RESPONSE_MODE)
                 .label("Response Mode")
-                .helpText("Response mode for wallet callbacks: direct_post or direct_post.jwt. "
-                        + "HAIP overrides this to direct_post.jwt.")
+                .helpText("Response mode for wallet callbacks. direct_post.jwt encrypts the wallet response "
+                        + "and is what wallets following the high assurance profile expect.")
                 .type(ProviderConfigProperty.LIST_TYPE)
-                .defaultValue(Oid4vpConstants.RESPONSE_MODE_DIRECT_POST)
+                .defaultValue(Oid4vpConstants.RESPONSE_MODE_DIRECT_POST_JWT)
                 .options(List.of(
                         Oid4vpConstants.RESPONSE_MODE_DIRECT_POST, Oid4vpConstants.RESPONSE_MODE_DIRECT_POST_JWT))
                 .add()
@@ -131,10 +121,10 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .property()
                 .name(Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME)
                 .label("Client ID Scheme")
-                .helpText("Scheme for client_id in redirect flows: x509_san_dns, x509_hash, or plain. "
-                        + "HAIP overrides this to x509_hash.")
+                .helpText("Scheme for client_id in redirect flows. x509_hash identifies the verifier by the hash "
+                        + "of its certificate and is what wallets following the high assurance profile expect.")
                 .type(ProviderConfigProperty.LIST_TYPE)
-                .defaultValue(Oid4vpClientIdScheme.X509_SAN_DNS.configValue())
+                .defaultValue(Oid4vpClientIdScheme.X509_HASH.configValue())
                 .options(List.of(
                         Oid4vpClientIdScheme.X509_SAN_DNS.configValue(),
                         Oid4vpClientIdScheme.X509_HASH.configValue(),
@@ -147,7 +137,7 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                         "PEM-encoded X.509 certificate chain for x509_san_dns or x509_hash client ID schemes. "
                                 + "Required whenever the effective client ID scheme is certificate-bound. "
                                 + "May include a PRIVATE KEY block to override the realm signing key for request objects. "
-                                + "When HAIP is enabled for x509_hash, configure a CA-issued verifier chain, not a self-signed leaf.")
+                                + "Wallets following the high assurance profile expect a CA-issued chain, not a self-signed leaf.")
                 .type(ProviderConfigProperty.TEXT_TYPE)
                 .add()
                 .property()
@@ -174,16 +164,6 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .defaultValue(
                         String.valueOf(Oid4vpIdentityProviderConfig.DEFAULT_ISSUER_METADATA_MAX_CACHE_TTL_SECONDS))
-                .add()
-                .property()
-                .name(Oid4vpIdentityProviderConfig.USE_ID_TOKEN_SUBJECT)
-                .label("Use ID Token Subject (SIOPv2)")
-                .helpText("When enabled, requests a Self-Issued ID Token alongside the VP Token. "
-                        + "The user's subject is determined from the ID Token's sub claim (JWK Thumbprint) "
-                        + "instead of a credential claim. The VP Token is still required for credential attributes. "
-                        + "Ignored when HAIP is enabled.")
-                .type(ProviderConfigProperty.BOOLEAN_TYPE)
-                .defaultValue("false")
                 .add()
                 .property()
                 .name(Oid4vpIdentityProviderConfig.STATUS_LIST_MAX_CACHE_TTL_SECONDS)
@@ -220,9 +200,11 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
         validateTransientUserMode(config);
 
         resolveX509SigningKey(config);
-        validateHaipConfig(config);
+        validateVerifierCertificate(config);
         warnIfTrustMaterialIdpsAreMissing(config);
         warnIfTrustedAuthoritiesModeIsConfigured(config);
+        warnIfEnforceHaipIsConfigured(config);
+        warnIfUseIdTokenSubjectIsConfigured(config);
 
         return new Oid4vpIdentityProvider(session, config);
     }
@@ -238,25 +220,12 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
         return Profile.getInstance() != null && Profile.isFeatureEnabled(Profile.Feature.TRANSIENT_USERS);
     }
 
-    private static void validateHaipConfig(Oid4vpIdentityProviderConfig config) {
+    static void validateVerifierCertificate(Oid4vpIdentityProviderConfig config) {
         if (!config.getResolvedClientIdScheme().isCertificateBound()) {
             return;
         }
 
-        if (!config.isEnforceHaip() && StringUtil.isBlank(config.getX509CertificatePem())) {
-            String warningKey =
-                    config.getAlias() + "|" + config.getResolvedClientIdScheme().configValue();
-            if (WARNED_MISSING_CERTIFICATE_BINDINGS.add(warningKey)) {
-                LOG.warnf(
-                        "OID4VP IdP '%s': The effective client_id_scheme requires an X.509 certificate, but none is configured. "
-                                + "Certificate-bound client_id schemes require a certificate.",
-                        config.getAlias());
-            }
-            return;
-        }
-
-        config.getResolvedClientIdScheme()
-                .validateCertificateBinding(config.getX509CertificatePem(), config.isEnforceHaip());
+        config.getResolvedClientIdScheme().validateCertificateBinding(config.getX509CertificatePem());
     }
 
     private static void warnIfTrustMaterialIdpsAreMissing(Oid4vpIdentityProviderConfig config) {
@@ -287,6 +256,41 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                             + "identity providers serving its credential type; use their 'servedCredentialTypes' and "
                             + "'advertiseTrustedAuthorities' settings instead.",
                     config.getAlias(), configured);
+        }
+    }
+
+    /**
+     * Points admins at the settings that replaced the removed HAIP flag, because an upgraded realm
+     * keeps the key and the effective client id scheme and response mode now come from their own
+     * settings.
+     */
+    static void warnIfEnforceHaipIsConfigured(Oid4vpIdentityProviderConfig config) {
+        String configured = config.getConfig().get(Oid4vpIdentityProviderConfig.REMOVED_ENFORCE_HAIP);
+        if (StringUtil.isBlank(configured)) {
+            return;
+        }
+        if (WARNED_REMOVED_ENFORCE_HAIP.add(config.getAlias())) {
+            LOG.warnf(
+                    "OID4VP IdP '%s': the setting 'enforceHaip' (value '%s') was removed and is ignored. "
+                            + "This provider now uses client_id_scheme '%s' and response_mode '%s' as configured, and "
+                            + "takes the credential chain requirement from the trust material identity providers "
+                            + "serving each credential.",
+                    config.getAlias(), configured, config.getClientIdScheme(), config.getResponseMode());
+        }
+    }
+
+    /** Reports the removed Self-Issued OpenID Provider setting, which no longer resolves a subject. */
+    static void warnIfUseIdTokenSubjectIsConfigured(Oid4vpIdentityProviderConfig config) {
+        String configured = config.getConfig().get(Oid4vpIdentityProviderConfig.REMOVED_USE_ID_TOKEN_SUBJECT);
+        if (StringUtil.isBlank(configured) || !Boolean.parseBoolean(configured)) {
+            return;
+        }
+        if (WARNED_REMOVED_USE_ID_TOKEN_SUBJECT.add(config.getAlias())) {
+            LOG.warnf(
+                    "OID4VP IdP '%s': the setting 'useIdTokenSubject' was removed and is ignored. "
+                            + "Self-Issued ID Tokens are no longer requested, so the subject comes from the "
+                            + "credential named by 'principalCredentialId' or from the transient user mode.",
+                    config.getAlias());
         }
     }
 

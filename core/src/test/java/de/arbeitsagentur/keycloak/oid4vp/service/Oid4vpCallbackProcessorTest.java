@@ -21,9 +21,7 @@ import static org.assertj.core.api.Assertions.*;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.ECDSASigner;
-import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
@@ -67,7 +65,6 @@ class Oid4vpCallbackProcessorTest {
         config = new Oid4vpIdentityProviderConfig();
         config.setAlias("oid4vp");
         config.setEnabled(true);
-        config.setEnforceHaip(false);
         config.setPrincipalAttribute("sub");
     }
 
@@ -75,8 +72,8 @@ class Oid4vpCallbackProcessorTest {
     void process_validSdJwt_returnsBrokeredIdentityContext() {
         VerifiedCredential credential = sdJwtCredential(Map.of("sub", "user1"));
 
-        BrokeredIdentityContext result = processor(resultOf(credential))
-                .process(requestContext("test-state", "test-nonce"), "vp-token", null, null);
+        BrokeredIdentityContext result =
+                processor(resultOf(credential)).process(requestContext("test-state", "test-nonce"), "vp-token", null);
 
         assertThat(result).isNotNull();
         assertThat(result.getUsername()).isEqualTo("user1");
@@ -93,7 +90,7 @@ class Oid4vpCallbackProcessorTest {
     void process_missingRequestContext_throws() {
         Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))));
 
-        assertThatThrownBy(() -> processor.process(null, "token", null, null))
+        assertThatThrownBy(() -> processor.process(null, "token", null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("Missing request context");
     }
@@ -102,7 +99,7 @@ class Oid4vpCallbackProcessorTest {
     void process_missingVpToken_throws() {
         Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))));
 
-        assertThatThrownBy(() -> processor.process(requestContext("state", "nonce"), null, null, null))
+        assertThatThrownBy(() -> processor.process(requestContext("state", "nonce"), null, null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("Missing vp_token");
     }
@@ -112,7 +109,7 @@ class Oid4vpCallbackProcessorTest {
         config.setAllowedIssuers("https://trusted-issuer.example");
         Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))));
 
-        assertThatThrownBy(() -> processor.process(requestContext("state", "nonce"), "vp-token", null, null))
+        assertThatThrownBy(() -> processor.process(requestContext("state", "nonce"), "vp-token", null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("Issuer not allowed");
     }
@@ -126,7 +123,7 @@ class Oid4vpCallbackProcessorTest {
                 "cred-1", FORMAT_SD_JWT_VC, "GoodType", List.of(new RequestedClaim(null, "sub")), List.of());
 
         assertThatThrownBy(() -> processor.process(
-                        requestContext("state", "nonce", List.of(requested), "GoodType"), "vp-token", null, null))
+                        requestContext("state", "nonce", List.of(requested), "GoodType"), "vp-token", null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("Credential type not trusted by this OID4VP IdP");
     }
@@ -135,7 +132,7 @@ class Oid4vpCallbackProcessorTest {
     void process_missingPrincipalClaim_throws() {
         Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of())));
 
-        assertThatThrownBy(() -> processor.process(requestContext("state", "nonce"), "vp-token", null, null))
+        assertThatThrownBy(() -> processor.process(requestContext("state", "nonce"), "vp-token", null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("Missing principal claim");
     }
@@ -145,7 +142,7 @@ class Oid4vpCallbackProcessorTest {
         config.setTransientUsersEnabled(true);
 
         BrokeredIdentityContext result = processor(resultOf(sdJwtCredential(Map.of())))
-                .process(requestContext("state", "nonce"), "vp-token", null, null);
+                .process(requestContext("state", "nonce"), "vp-token", null);
 
         assertThat(result.getUsername()).startsWith("transient-state-");
         assertThat(result.getId()).isNotBlank();
@@ -154,54 +151,6 @@ class Oid4vpCallbackProcessorTest {
                 .isEqualTo(result.getUsername());
     }
 
-    @Test
-    void process_transientUsersEnabled_ignoresIdTokenSubjectMode() {
-        config.setTransientUsersEnabled(true);
-        config.setUseIdTokenSubject(true);
-
-        BrokeredIdentityContext result = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))))
-                .process(requestContext("state", "nonce"), "vp-token", null, null);
-
-        assertThat(result.getUsername()).startsWith("transient-state-");
-        assertThat(result.getContextData().get(Oid4vpMapperUtils.CONTEXT_SUBJECT_KEY))
-                .isEqualTo(result.getUsername());
-    }
-
-    @Test
-    void process_withIdTokenSubject_usesJwkThumbprintAsSub() throws Exception {
-        config.setUseIdTokenSubject(true);
-
-        VerifiedCredential credential = sdJwtCredential(Map.of("sub", "user1"));
-        ECKey walletKey = new ECKeyGenerator(Curve.P_256).generate();
-        String idToken = buildSelfIssuedIdToken(walletKey, "test-client", "test-nonce");
-
-        BrokeredIdentityContext result = processor(resultOf(credential))
-                .process(requestContext("test-state", "test-nonce"), "dummy-vp-token", idToken, null);
-
-        String expectedSub = walletKey.computeThumbprint("SHA-256").toString();
-        String expectedIdentityKey = credential.generateIdentityKey(expectedSub);
-        // BrokeredIdentityContext lowercases the username internally
-        assertThat(result.getUsername()).isEqualToIgnoringCase(expectedSub);
-        assertThat(result.getId()).isEqualTo(expectedIdentityKey);
-        assertThat(result.getContextData().get(Oid4vpMapperUtils.CONTEXT_SUBJECT_KEY))
-                .isEqualTo(expectedSub);
-        assertThat(result.getContextData()).containsKey(Oid4vpMapperUtils.CONTEXT_CREDENTIALS_KEY);
-    }
-
-    @Test
-    void process_idTokenSubjectEnabled_noIdToken_throws() {
-        config.setUseIdTokenSubject(true);
-        Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))));
-
-        assertThatThrownBy(() ->
-                        processor.process(requestContext("test-state", "test-nonce"), "dummy-vp-token", null, null))
-                .isInstanceOf(IdentityBrokerException.class)
-                .hasMessageContaining("no id_token received");
-    }
-
-    // The same user presents an SD-JWT and an mDoc credential whose principal values differ only
-    // in casing; both logins must resolve to the same brokered identity. The mDoc principal is
-    // found by looking the element up in the presented namespace.
     @Test
     void process_claimMappedSubjectsMatchIgnoringCase() {
         config.setPrincipalAttribute("family_name");
@@ -220,9 +169,9 @@ class Oid4vpCallbackProcessorTest {
                 PresentationType.MDOC);
 
         BrokeredIdentityContext upperResult = processor(resultOf(sdJwtCredential))
-                .process(requestContext("state-upper", "nonce-upper"), "vp-upper", null, null);
+                .process(requestContext("state-upper", "nonce-upper"), "vp-upper", null);
         BrokeredIdentityContext lowerResult = processor(resultOf(mdocCredential))
-                .process(requestContext("state-lower", "nonce-lower"), "vp-lower", null, null);
+                .process(requestContext("state-lower", "nonce-lower"), "vp-lower", null);
 
         assertThat(upperResult.getId()).isEqualTo(lowerResult.getId());
     }
@@ -238,10 +187,7 @@ class Oid4vpCallbackProcessorTest {
                 List.of());
 
         assertThatThrownBy(() -> processor.process(
-                        requestContext("state", "nonce", List.of(requested), "IdentityCredential"),
-                        "vp-token",
-                        null,
-                        null))
+                        requestContext("state", "nonce", List.of(requested), "IdentityCredential"), "vp-token", null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("requested claims")
                 .hasMessageContaining("given_name");
@@ -258,7 +204,7 @@ class Oid4vpCallbackProcessorTest {
                 List.of(List.of(0, 1), List.of(0)));
 
         BrokeredIdentityContext result = processor.process(
-                requestContext("state", "nonce", List.of(requested), "IdentityCredential"), "vp-token", null, null);
+                requestContext("state", "nonce", List.of(requested), "IdentityCredential"), "vp-token", null);
 
         assertThat(result.getUsername()).isEqualTo("user1");
     }
@@ -278,10 +224,7 @@ class Oid4vpCallbackProcessorTest {
                 List.of(List.of(0, 1), List.of(0, 2)));
 
         assertThatThrownBy(() -> processor.process(
-                        requestContext("state", "nonce", List.of(requested), "IdentityCredential"),
-                        "vp-token",
-                        null,
-                        null))
+                        requestContext("state", "nonce", List.of(requested), "IdentityCredential"), "vp-token", null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("requested claims");
     }
@@ -294,7 +237,6 @@ class Oid4vpCallbackProcessorTest {
         assertThatThrownBy(() -> processor.process(
                         requestContext("state", "nonce", List.of(requestedSub()), credentialSets, "IdentityCredential"),
                         "vp-token",
-                        null,
                         null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("does not satisfy any option")
@@ -310,7 +252,6 @@ class Oid4vpCallbackProcessorTest {
         BrokeredIdentityContext result = processor.process(
                 requestContext("state", "nonce", List.of(requestedSub()), credentialSets, "IdentityCredential"),
                 "vp-token",
-                null,
                 null);
 
         assertThat(result.getUsername()).isEqualTo("user1");
@@ -326,7 +267,6 @@ class Oid4vpCallbackProcessorTest {
         BrokeredIdentityContext result = processor.process(
                 requestContext("state", "nonce", List.of(requestedSub()), credentialSets, "IdentityCredential"),
                 "vp-token",
-                null,
                 null);
 
         assertThat(result.getUsername()).isEqualTo("user1");
@@ -339,10 +279,7 @@ class Oid4vpCallbackProcessorTest {
                 "other", FORMAT_SD_JWT_VC, "IdentityCredential", List.of(new RequestedClaim(null, "sub")), List.of());
 
         assertThatThrownBy(() -> processor.process(
-                        requestContext("state", "nonce", List.of(requested), "IdentityCredential"),
-                        "vp-token",
-                        null,
-                        null))
+                        requestContext("state", "nonce", List.of(requested), "IdentityCredential"), "vp-token", null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("cred-1")
                 .hasMessageContaining("not requested");

@@ -45,8 +45,8 @@ import org.keycloak.util.KeyWrapperUtil;
  * <p>Policy:
  * <ol>
  *   <li>Prefer x5c validation: a pinned trusted leaf or a PKIX path to the issuance trust anchors</li>
- *   <li>When HAIP is not enforced, fall back to JWT VC issuer metadata</li>
- *   <li>Finally, try directly trusted issuer certificates and trusted issuer JWKs</li>
+ *   <li>Then the issuer keys the credential's trust domain publishes, matched on iss and kid</li>
+ *   <li>Finally, when that trust domain publishes no keys, fall back to JWT VC issuer metadata</li>
  * </ol>
  */
 public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
@@ -55,13 +55,10 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
 
     private final ResolvedTrust trust;
     private final JwtVcIssuerMetadataResolver issuerMetadataResolver;
-    private final boolean strictX5cVerification;
 
-    public Oid4vpTrustedSdJwtIssuer(
-            ResolvedTrust trust, JwtVcIssuerMetadataResolver issuerMetadataResolver, boolean strictX5cVerification) {
+    public Oid4vpTrustedSdJwtIssuer(ResolvedTrust trust, JwtVcIssuerMetadataResolver issuerMetadataResolver) {
         this.trust = trust != null ? trust : ResolvedTrust.empty();
         this.issuerMetadataResolver = issuerMetadataResolver;
-        this.strictX5cVerification = strictX5cVerification;
     }
 
     @Override
@@ -109,28 +106,27 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
     }
 
     /**
-     * Whether a certificate chain is mandatory for this credential: because HAIP is enforced, or
-     * because the trust material serving it can only validate chains. Pinned issuer certificates
-     * and published issuer keys make a chainless credential a configured case, for example a
-     * credential signed with a key whose certificate is trusted directly.
+     * Whether a certificate chain is mandatory for this credential. It is when the trust material
+     * serving the credential can only validate chains. Pinned issuer certificates and published
+     * issuer keys make a chainless credential a configured case, for example a credential signed
+     * with a key whose certificate is trusted directly.
      */
     private boolean requiresCertificateChain() {
-        return strictX5cVerification || (trust.hasCertificateChainAnchors() && !trust.hasChainlessIssuerTrust());
+        return trust.hasCertificateChainAnchors() && !trust.hasChainlessIssuerTrust();
     }
 
     private List<SignatureVerifierContext> resolveIssuerVerifiersFromX5c(IssuerSignedJWT issuerSignedJWT) {
         JWSHeader header = issuerSignedJWT.getJwsHeader();
         List<String> x5c = header != null ? header.getX5c() : null;
         if (x5c == null || x5c.isEmpty()) {
-            if (strictX5cVerification) {
-                throw new IllegalStateException("HAIP requires SD-JWT issuer certificates in the x5c header");
+            if (requiresCertificateChain()) {
+                throw new IllegalStateException(
+                        "The trust material of this credential mandates an x5c certificate chain, but the SD-JWT "
+                                + "carries none");
             }
             return null;
         }
         if (!trust.hasX509Trust()) {
-            if (strictX5cVerification) {
-                throw new IllegalStateException("No trusted keys available for SD-JWT x5c signature verification");
-            }
             // The trust domain of this credential identifies its issuer by key, so the presented
             // chain is not the route to validate it.
             return null;

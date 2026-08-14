@@ -274,14 +274,14 @@ class DcqlQueryBuilderTest {
 
     @Test
     void aggregateFromMappers_withoutMappers_returnsEmpty() {
-        assertThat(aggregate(Stream.of(), config("oid4vp", false, "sub"))).isEmpty();
+        assertThat(aggregate(Stream.of(), config("oid4vp", "sub"))).isEmpty();
     }
 
     @Test
     void aggregateFromMappers_readsSdJwtMapperAndAddsPrincipalClaim() {
         IdentityProviderMapperModel mapper = sdJwtMapper("IdentityCredential", "given_name", " 1-full , 2-min ");
 
-        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", false, "sub"));
+        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", "sub"));
 
         assertThat(result).hasSize(1);
         CredentialTypeSpec type = result.values().iterator().next();
@@ -298,7 +298,7 @@ class DcqlQueryBuilderTest {
     void aggregateFromMappers_readsMdocMapperWithNamespaceAndPrincipal() {
         IdentityProviderMapperModel mapper = mdocMapper("org.iso.18013.5.1.mDL", "org.iso.18013.5.1", "family_name");
 
-        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", false, "given_name"));
+        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", "given_name"));
 
         CredentialTypeSpec type = result.values().iterator().next();
         assertThat(type.format()).isEqualTo("mso_mdoc");
@@ -312,7 +312,7 @@ class DcqlQueryBuilderTest {
     void aggregateFromMappers_mdocNamespaceDefaultsToDoctype() {
         IdentityProviderMapperModel mapper = mdocMapper("eu.europa.ec.eudi.pid.1", null, "family_name");
 
-        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", false, "family_name"));
+        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", "family_name"));
 
         CredentialTypeSpec type = result.values().iterator().next();
         assertThat(type.claimSpecs()).containsExactly(ClaimSpec.mdoc("eu.europa.ec.eudi.pid.1", "family_name"));
@@ -322,7 +322,7 @@ class DcqlQueryBuilderTest {
     void aggregateFromMappers_doesNotDuplicateExistingPrincipalClaim() {
         IdentityProviderMapperModel mapper = sdJwtMapper("IdentityCredential", "sub", null);
 
-        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", false, "sub"));
+        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", "sub"));
 
         CredentialTypeSpec type = result.values().iterator().next();
         assertThat(type.claimSpecs()).extracting(ClaimSpec::path).containsExactly("sub");
@@ -332,7 +332,7 @@ class DcqlQueryBuilderTest {
     void aggregateFromMappers_transientUsersEnabled_skipsPrincipalClaim() {
         IdentityProviderMapperModel mapper = sdJwtMapper("IdentityCredential", "given_name", null);
 
-        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", false, true, "sub"));
+        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", true, "sub"));
 
         CredentialTypeSpec type = result.values().iterator().next();
         assertThat(type.claimSpecs()).extracting(ClaimSpec::path).containsExactly("given_name");
@@ -357,7 +357,7 @@ class DcqlQueryBuilderTest {
         IdentityProviderMapperModel other = sdJwtMapper("urn:eudi:diploma:1", "family_name", null, "shared");
 
         DcqlQueryBuilder.AggregatedCredentials aggregated =
-                DcqlQueryBuilder.aggregateFromMappers(Stream.of(pid, other), config("oid4vp", false, "family_name"));
+                DcqlQueryBuilder.aggregateFromMappers(Stream.of(pid, other), config("oid4vp", "family_name"));
 
         assertThat(aggregated.problems())
                 .as("a credential id addresses exactly one credential")
@@ -372,7 +372,7 @@ class DcqlQueryBuilderTest {
         IdentityProviderMapperModel second = sdJwtMapper("urn:eudi:pid:1", "given_name", null, "pid");
 
         DcqlQueryBuilder.AggregatedCredentials aggregated =
-                DcqlQueryBuilder.aggregateFromMappers(Stream.of(first, second), config("oid4vp", false, "family_name"));
+                DcqlQueryBuilder.aggregateFromMappers(Stream.of(first, second), config("oid4vp", "family_name"));
 
         assertThat(aggregated.problems()).isEmpty();
         assertThat(aggregated.credentials()).containsOnlyKeys("pid");
@@ -387,7 +387,7 @@ class DcqlQueryBuilderTest {
         IdentityProviderMapperModel sdJwtMapper = sdJwtMapper("urn:eudi:pid:1", "family_name", null);
 
         Map<String, CredentialTypeSpec> result =
-                aggregate(Stream.of(mdocMapper, sdJwtMapper), config("oid4vp", false, "family_name"));
+                aggregate(Stream.of(mdocMapper, sdJwtMapper), config("oid4vp", "family_name"));
 
         assertThat(result.keySet())
                 .as("credential order must not depend on mapper enumeration order")
@@ -399,8 +399,7 @@ class DcqlQueryBuilderTest {
         IdentityProviderMapperModel sdJwt = sdJwtMapper("urn:eudi:pid:1", "family_name", null);
         IdentityProviderMapperModel mdoc = mdocMapper("org.iso.18013.5.1.mDL", "org.iso.18013.5.1", "family_name");
 
-        Map<String, CredentialTypeSpec> result =
-                aggregate(Stream.of(sdJwt, mdoc), config("oid4vp", false, "family_name"));
+        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(sdJwt, mdoc), config("oid4vp", "family_name"));
 
         assertThat(result)
                 .as("credential ids must be stable across mapper changes, not positional")
@@ -411,7 +410,7 @@ class DcqlQueryBuilderTest {
     void aggregateFromMappers_explicitCredentialId_isUsedAsQueryId() {
         IdentityProviderMapperModel mapper = sdJwtMapper("urn:eudi:pid:1", "family_name", null, "pid");
 
-        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", false, "family_name"));
+        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", "family_name"));
 
         assertThat(result).containsOnlyKeys("pid");
     }
@@ -421,8 +420,7 @@ class DcqlQueryBuilderTest {
         IdentityProviderMapperModel full = sdJwtMapper("urn:eudi:pid:1", "given_name", null, "pid_full");
         IdentityProviderMapperModel minimal = sdJwtMapper("urn:eudi:pid:1", "family_name", null, "pid_minimal");
 
-        Map<String, CredentialTypeSpec> result =
-                aggregate(Stream.of(full, minimal), config("oid4vp", false, "family_name"));
+        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(full, minimal), config("oid4vp", "family_name"));
 
         assertThat(result)
                 .as("the credential id is the grouping key, so one type can be requested twice")
@@ -536,12 +534,11 @@ class DcqlQueryBuilderTest {
         return ((List<Map<String, Object>>) result.get("credentials")).get(0);
     }
 
-    private static Oid4vpConfigProvider config(String alias, boolean useIdTokenSubject, String principal) {
-        return config(alias, useIdTokenSubject, false, principal);
+    private static Oid4vpConfigProvider config(String alias, String principal) {
+        return config(alias, false, principal);
     }
 
-    private static Oid4vpConfigProvider config(
-            String alias, boolean useIdTokenSubject, boolean transientUsersEnabled, String principal) {
+    private static Oid4vpConfigProvider config(String alias, boolean transientUsersEnabled, String principal) {
         return new Oid4vpConfigProvider() {
             @Override
             public String getAlias() {
@@ -581,11 +578,6 @@ class DcqlQueryBuilderTest {
             @Override
             public int getCrossDeviceCompleteTtlSeconds() {
                 return 0;
-            }
-
-            @Override
-            public boolean isUseIdTokenSubject() {
-                return useIdTokenSubject;
             }
 
             @Override

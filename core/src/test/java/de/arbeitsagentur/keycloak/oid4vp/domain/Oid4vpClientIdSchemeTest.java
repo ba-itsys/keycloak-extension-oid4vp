@@ -50,19 +50,15 @@ class Oid4vpClientIdSchemeTest {
     }
 
     @Test
-    void resolve_defaultsToX509SanDnsWhenUnset() {
-        assertThat(Oid4vpClientIdScheme.resolve(null)).isEqualTo(Oid4vpClientIdScheme.X509_SAN_DNS);
-    }
-
-    @Test
     void resolve_respectsConfiguredPlainScheme() {
         assertThat(Oid4vpClientIdScheme.resolve("plain")).isEqualTo(Oid4vpClientIdScheme.PLAIN);
     }
 
     @Test
-    void resolve_haipOverridesConfiguredSchemeToX509Hash() {
-        assertThat(Oid4vpClientIdScheme.resolve("x509_san_dns", true)).isEqualTo(Oid4vpClientIdScheme.X509_HASH);
-        assertThat(Oid4vpClientIdScheme.resolve("plain", true)).isEqualTo(Oid4vpClientIdScheme.X509_HASH);
+    void resolve_unsetOrUnknownDefaultsToX509Hash() {
+        assertThat(Oid4vpClientIdScheme.resolve(null)).isEqualTo(Oid4vpClientIdScheme.X509_HASH);
+        assertThat(Oid4vpClientIdScheme.resolve("  ")).isEqualTo(Oid4vpClientIdScheme.X509_HASH);
+        assertThat(Oid4vpClientIdScheme.resolve("bogus")).isEqualTo(Oid4vpClientIdScheme.X509_HASH);
     }
 
     @Test
@@ -110,32 +106,55 @@ class Oid4vpClientIdSchemeTest {
     }
 
     @Test
-    void validateCertificateBinding_haipRejectsSelfSignedX509HashCertificate() throws Exception {
+    void validateCertificateBinding_acceptsSelfSignedCertificateBecauseTheWalletDecides() throws Exception {
         String pemCertificate = toPem(generateCertificate("self-signed.example.org"));
 
-        assertThatThrownBy(() -> Oid4vpClientIdScheme.X509_HASH.validateCertificateBinding(pemCertificate, true))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("CA-issued");
+        // A wallet following the high assurance profile rejects this, which the verifier warns
+        // about, but the decision is the wallet's and not every deployment faces such a wallet.
+        assertThatCode(() -> Oid4vpClientIdScheme.X509_HASH.validateCertificateBinding(pemCertificate))
+                .doesNotThrowAnyException();
     }
 
     @Test
-    void validateCertificateBinding_haipAcceptsCaIssuedX509HashCertificate() throws Exception {
+    void validateCertificateBinding_acceptsCaIssuedChain() throws Exception {
         KeyPair issuerKeyPair = generateEcKey().toKeyPair();
         X509Certificate caCertificate = generateCaCertificate("issuer.example.org", issuerKeyPair);
         X509Certificate leafCertificate = generateCertificate("leaf.example.org", issuerKeyPair, caCertificate);
         String pemChain = toPem(leafCertificate) + toPem(caCertificate);
 
-        assertThatCode(() -> Oid4vpClientIdScheme.X509_HASH.validateCertificateBinding(pemChain, true))
+        assertThatCode(() -> Oid4vpClientIdScheme.X509_HASH.validateCertificateBinding(pemChain))
                 .doesNotThrowAnyException();
     }
 
     @Test
-    void validateCertificateBinding_haipAcceptsSingleNonSelfSignedLeafCertificate() throws Exception {
+    void validateCertificateBinding_acceptsSingleNonSelfSignedLeafCertificate() throws Exception {
         KeyPair issuerKeyPair = generateEcKey().toKeyPair();
         X509Certificate caCertificate = generateCaCertificate("issuer.example.org", issuerKeyPair);
         X509Certificate leafCertificate = generateCertificate("leaf.example.org", issuerKeyPair, caCertificate);
 
-        assertThatCode(() -> Oid4vpClientIdScheme.X509_HASH.validateCertificateBinding(toPem(leafCertificate), true))
+        assertThatCode(() -> Oid4vpClientIdScheme.X509_HASH.validateCertificateBinding(toPem(leafCertificate)))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void validateCertificateBinding_rejectsAChainWhoseLinksDoNotSignEachOther() throws Exception {
+        KeyPair issuerKeyPair = generateEcKey().toKeyPair();
+        X509Certificate caCertificate = generateCaCertificate("issuer.example.org", issuerKeyPair);
+        X509Certificate foreignLeaf = generateCertificate("foreign.example.org");
+        String pemChain = toPem(foreignLeaf) + toPem(caCertificate);
+
+        // The verifier puts this chain into the request object, so an incoherent one is its own bug
+        assertThatThrownBy(() -> Oid4vpClientIdScheme.X509_HASH.validateCertificateBinding(pemChain))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void validateCertificateBinding_certificateBoundSchemeNeedsACertificate() {
+        assertThatThrownBy(() -> Oid4vpClientIdScheme.X509_HASH.validateCertificateBinding("  "))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("requires an X.509 certificate");
+
+        assertThatCode(() -> Oid4vpClientIdScheme.PLAIN.validateCertificateBinding(null))
                 .doesNotThrowAnyException();
     }
 

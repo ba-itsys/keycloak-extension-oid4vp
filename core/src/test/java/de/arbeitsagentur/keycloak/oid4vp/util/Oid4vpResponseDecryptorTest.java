@@ -123,26 +123,14 @@ class Oid4vpResponseDecryptorTest {
     }
 
     @Test
-    void decrypt_payloadWithIdToken_extractsIdToken() throws Exception {
+    void decrypt_payloadWithIdToken_ignoresIt() throws Exception {
         String vpToken = "eyJhbGciOiJFUzI1NiJ9.test.sig~";
-        String idToken = "eyJhbGciOiJFUzI1NiJ9.id-token-payload.sig";
-        String jwe = encryptPayload(Map.of("vp_token", vpToken, "id_token", idToken), null);
+        String jwe = encryptPayload(
+                Map.of("vp_token", vpToken, "id_token", "eyJhbGciOiJFUzI1NiJ9.id-token-payload.sig"), null);
 
         DecryptedResponse result = decryptor.decrypt(jwe, encryptionKey);
 
         assertThat(result.vpToken()).isEqualTo(vpToken);
-        assertThat(result.idToken()).isEqualTo(idToken);
-    }
-
-    @Test
-    void decrypt_payloadWithoutIdToken_idTokenIsNull() throws Exception {
-        String vpToken = "eyJhbGciOiJFUzI1NiJ9.test.sig~";
-        String jwe = encryptPayload(Map.of("vp_token", vpToken), null);
-
-        DecryptedResponse result = decryptor.decrypt(jwe, encryptionKey);
-
-        assertThat(result.vpToken()).isEqualTo(vpToken);
-        assertThat(result.idToken()).isNull();
     }
 
     @Test

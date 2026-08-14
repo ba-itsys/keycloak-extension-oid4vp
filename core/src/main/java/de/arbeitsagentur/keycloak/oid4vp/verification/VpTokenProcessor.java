@@ -66,7 +66,6 @@ public class VpTokenProcessor implements VpTokenVerifier {
             Supplier<CredentialTrustPlan> trustPlanSupplier,
             Duration statusListMaxCacheTtl,
             Duration issuerMetadataMaxCacheTtl,
-            boolean strictX5cVerification,
             int clockSkewSeconds,
             int kbJwtMaxAgeSeconds) {}
 
@@ -88,8 +87,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
         this.sdJwtVerifier = new SdJwtVerifier(
                 config.clockSkewSeconds(),
                 config.kbJwtMaxAgeSeconds(),
-                new JwtVcIssuerMetadataResolver(config.session(), config.issuerMetadataMaxCacheTtl()),
-                config.strictX5cVerification());
+                new JwtVcIssuerMetadataResolver(config.session(), config.issuerMetadataMaxCacheTtl()));
         this.mdocVerifier = new MdocVerifier();
         this.trustPlanSupplier = config.trustPlanSupplier();
         this.statusListVerifier = new StatusListVerifier(config.session(), config.statusListMaxCacheTtl());
@@ -297,7 +295,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
         /**
          * The credential id of a VP token that is a bare credential instead of the credential id
          * keyed object OID4VP 1.0 §8.1 defines. It can only be attributed when exactly one
-         * credential was requested; otherwise the response stays under the legacy id and is
+         * credential was requested. Otherwise the response stays under the legacy id and is
          * verified against the providers that serve every credential type.
          */
         String singleCredentialId() {

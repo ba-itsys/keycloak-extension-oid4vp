@@ -31,7 +31,9 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SdJwtVerificationResult;
 import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
+import de.arbeitsagentur.keycloak.oid4vp.trust.TestCertificates;
 import de.arbeitsagentur.keycloak.oid4vp.trust.TestTrust;
+import de.arbeitsagentur.keycloak.oid4vp.trust.X509TrustMaterial;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -43,6 +45,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import javax.security.auth.x500.X500Principal;
 import org.bouncycastle.asn1.x509.BasicConstraints;
 import org.bouncycastle.asn1.x509.Extension;
@@ -394,6 +397,41 @@ class SdJwtVerifierTest {
     }
 
     @Test
+    void verify_trustMaterialWithAnchorsOnlyAndNoX5c_throws() throws Exception {
+        SdJwtVerifier verifier = new SdJwtVerifier(
+                60,
+                300,
+                new FakeIssuerMetadataResolver(new JwtVcIssuerMetadataResolver.ResolvedIssuerKey(
+                        "unused",
+                        signingKey.toECPublicKey(),
+                        List.of(),
+                        Instant.now().plusSeconds(3600))));
+        // A trust domain of certificate authorities alone can only validate chains, so a credential
+        // that carries none cannot be verified against it.
+        ResolvedTrust anchorsOnly = new ResolvedTrust(
+                List.of(new X509TrustMaterial(
+                        Set.of(TestCertificates.issue(
+                                TestCertificates.generateKeyPair(),
+                                TestCertificates.generateKeyPair(),
+                                "CN=CA",
+                                "CN=CA",
+                                true)),
+                        List.of())),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of());
+        ECKey issuerKey = new ECKeyGenerator(Curve.P_256).keyID("issuer-key").generate();
+        String sdJwt = buildSignedJwtWithKeyAndKid(
+                        Map.of("iss", "https://issuer.example", "vct", "PID"), issuerKey, "issuer-key")
+                + "~";
+
+        assertThatThrownBy(() -> verifier.verify(sdJwt, null, null, anchorsOnly))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("mandates an x5c certificate chain");
+    }
+
+    @Test
     void verify_withIssuerMetadataResolverAndKid_fallsBackWhenX5cIsUnavailable() throws Exception {
         ECKey metadataKey = new ECKeyGenerator(Curve.P_256).keyID("issuer-key").generate();
         SdJwtVerifier verifierWithFallback = new SdJwtVerifier(
@@ -403,8 +441,7 @@ class SdJwtVerifierTest {
                         "issuer-key",
                         metadataKey.toECPublicKey(),
                         List.of(),
-                        Instant.now().plusSeconds(3600))),
-                false);
+                        Instant.now().plusSeconds(3600))));
 
         String jwt = buildSignedJwtWithKeyAndKid(
                 Map.of("iss", "https://issuer.example", "vct", "PID"), metadataKey, "issuer-key");
@@ -417,30 +454,8 @@ class SdJwtVerifierTest {
     }
 
     @Test
-    void verify_haipModeWithoutX5c_throws() throws Exception {
-        SdJwtVerifier strictVerifier = new SdJwtVerifier(
-                60,
-                300,
-                new FakeIssuerMetadataResolver(new JwtVcIssuerMetadataResolver.ResolvedIssuerKey(
-                        "unused",
-                        signingKey.toECPublicKey(),
-                        List.of(),
-                        Instant.now().plusSeconds(3600))),
-                true);
-        ECKey unsignedX5cKey =
-                new ECKeyGenerator(Curve.P_256).keyID("issuer-key").generate();
-        String jwt = buildSignedJwtWithKeyAndKid(
-                Map.of("iss", "https://issuer.example", "vct", "PID"), unsignedX5cKey, "issuer-key");
-        String sdJwt = jwt + "~";
-
-        assertThatThrownBy(() -> strictVerifier.verify(sdJwt, null, null, ResolvedTrust.empty()))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("HAIP requires SD-JWT issuer certificates in the x5c header");
-    }
-
-    @Test
     void verify_prefersX5cOverIssuerMetadataFallback() throws Exception {
-        SdJwtVerifier verifierWithFallback = new SdJwtVerifier(60, 300, new FailingIssuerMetadataResolver(), false);
+        SdJwtVerifier verifierWithFallback = new SdJwtVerifier(60, 300, new FailingIssuerMetadataResolver());
         String jwt = buildSignedJwt(Map.of("iss", "https://issuer.example", "vct", "PID"));
         String sdJwt = jwt + "~";
 
