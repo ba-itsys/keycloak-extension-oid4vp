@@ -82,7 +82,7 @@ sequenceDiagram
     TrustList-->>Keycloak: ETSI TS 119 602 trust list JWT
     Note over Keycloak: Used for x5c / mDoc issuer trust and for status-list signer trust
 
-    opt Outside HAIP and no usable x5c chain
+    opt No usable x5c chain
         Keycloak->>IssuerMeta: GET /.well-known/jwt-vc-issuer and optional jwks_uri
         IssuerMeta-->>Keycloak: Issuer metadata / JWKS
     end

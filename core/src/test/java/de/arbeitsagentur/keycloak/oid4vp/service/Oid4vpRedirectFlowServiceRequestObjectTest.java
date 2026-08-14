@@ -47,7 +47,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.common.crypto.CryptoIntegration;
 
-class Oid4vpRedirectFlowServiceHaipTest {
+class Oid4vpRedirectFlowServiceRequestObjectTest {
 
     private Oid4vpRedirectFlowService service;
     private ECKey signingKey;
@@ -55,7 +55,7 @@ class Oid4vpRedirectFlowServiceHaipTest {
 
     @BeforeAll
     static void initCrypto() {
-        CryptoIntegration.init(Oid4vpRedirectFlowServiceHaipTest.class.getClassLoader());
+        CryptoIntegration.init(Oid4vpRedirectFlowServiceRequestObjectTest.class.getClassLoader());
     }
 
     @BeforeEach
@@ -217,26 +217,8 @@ class Oid4vpRedirectFlowServiceHaipTest {
     }
 
     @Test
-    void requestObject_withoutHaip_useIdTokenSubject_setsResponseTypeAndScope() throws Exception {
-        SignedRequestObject result = buildRequestObject(Oid4vpResponseMode.DIRECT_POST, true, false);
-        Map<String, Object> claims = parseClaims(result.jwt());
-
-        assertThat(claims.get("response_type")).isEqualTo("vp_token id_token");
-        assertThat(claims.get("scope")).isEqualTo("openid");
-    }
-
-    @Test
-    void requestObject_withHaip_useIdTokenSubject_keepsVpTokenOnly() throws Exception {
-        SignedRequestObject result = buildRequestObject(Oid4vpResponseMode.DIRECT_POST, true, true);
-        Map<String, Object> claims = parseClaims(result.jwt());
-
-        assertThat(claims.get("response_type")).isEqualTo("vp_token");
-        assertThat(claims).doesNotContainKey("scope");
-    }
-
-    @Test
-    void requestObject_noIdTokenSubject_noScope() throws Exception {
-        SignedRequestObject result = buildRequestObject(Oid4vpResponseMode.DIRECT_POST, false);
+    void requestObject_asksForAVpTokenOnly() throws Exception {
+        SignedRequestObject result = buildRequestObject(Oid4vpResponseMode.DIRECT_POST);
         Map<String, Object> claims = parseClaims(result.jwt());
 
         assertThat(claims.get("response_type")).isEqualTo("vp_token");
@@ -247,7 +229,7 @@ class Oid4vpRedirectFlowServiceHaipTest {
     void requestObject_includesDcqlQueryAsJsonObject() throws Exception {
         SignedRequestObject result = buildRequestObject("""
                 {"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{"vct_values":["custom-vct"]},"claims":[{"path":["given_name"]}]}]}
-                """, Oid4vpResponseMode.DIRECT_POST, false, true);
+                """, Oid4vpResponseMode.DIRECT_POST);
 
         Map<String, Object> claims = parseClaims(result.jwt());
         @SuppressWarnings("unchecked")
@@ -260,24 +242,12 @@ class Oid4vpRedirectFlowServiceHaipTest {
     }
 
     private SignedRequestObject buildRequestObject(Oid4vpResponseMode responseMode) {
-        return buildRequestObject(responseMode, false, true);
-    }
-
-    private SignedRequestObject buildRequestObject(Oid4vpResponseMode responseMode, boolean useIdTokenSubject) {
-        return buildRequestObject(responseMode, useIdTokenSubject, true);
-    }
-
-    private SignedRequestObject buildRequestObject(
-            Oid4vpResponseMode responseMode, boolean useIdTokenSubject, boolean enforceHaip) {
         return buildRequestObject(
                 "{\"credentials\":[{\"id\":\"test\",\"format\":\"dc+sd-jwt\",\"meta\":{\"vct_values\":[\"IdentityCredential\"]},\"claims\":[{\"path\":[\"sub\"]}]}]}",
-                responseMode,
-                useIdTokenSubject,
-                enforceHaip);
+                responseMode);
     }
 
-    private SignedRequestObject buildRequestObject(
-            String dcqlQuery, Oid4vpResponseMode responseMode, boolean useIdTokenSubject, boolean enforceHaip) {
+    private SignedRequestObject buildRequestObject(String dcqlQuery, Oid4vpResponseMode responseMode) {
         return service.buildSignedRequestObject(new RequestObjectParams(
                 dcqlQuery,
                 null,
@@ -290,9 +260,7 @@ class Oid4vpRedirectFlowServiceHaipTest {
                 signingKeyJwk,
                 null,
                 null,
-                responseMode,
-                useIdTokenSubject,
-                enforceHaip));
+                responseMode));
     }
 
     @SuppressWarnings("unchecked")

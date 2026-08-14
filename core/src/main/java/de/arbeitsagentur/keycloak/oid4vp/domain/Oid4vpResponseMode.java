@@ -36,19 +36,16 @@ public enum Oid4vpResponseMode {
         return this == DIRECT_POST_JWT;
     }
 
-    public static Oid4vpResponseMode resolve(String rawValue, boolean enforceHaip) {
-        return enforceHaip ? DIRECT_POST_JWT : resolve(rawValue);
-    }
-
+    /** The configured response mode, defaulting to the encrypted one. */
     public static Oid4vpResponseMode resolve(String rawValue) {
         if (StringUtil.isBlank(rawValue)) {
-            return DIRECT_POST;
+            return DIRECT_POST_JWT;
         }
         for (Oid4vpResponseMode mode : values()) {
             if (mode.parameterValue.equalsIgnoreCase(rawValue)) {
                 return mode;
             }
         }
-        return DIRECT_POST;
+        return DIRECT_POST_JWT;
     }
 }

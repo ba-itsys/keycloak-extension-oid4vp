@@ -40,22 +40,17 @@ public class SdJwtVerifier {
     private final int clockSkewSeconds;
     private final int kbJwtMaxAgeSeconds;
     private final JwtVcIssuerMetadataResolver issuerMetadataResolver;
-    private final boolean strictX5cVerification;
     private final SdJwtPresentationConsumer presentationConsumer = new SdJwtPresentationConsumer();
 
     public SdJwtVerifier(int clockSkewSeconds, int kbJwtMaxAgeSeconds) {
-        this(clockSkewSeconds, kbJwtMaxAgeSeconds, null, false);
+        this(clockSkewSeconds, kbJwtMaxAgeSeconds, null);
     }
 
     public SdJwtVerifier(
-            int clockSkewSeconds,
-            int kbJwtMaxAgeSeconds,
-            JwtVcIssuerMetadataResolver issuerMetadataResolver,
-            boolean strictX5cVerification) {
+            int clockSkewSeconds, int kbJwtMaxAgeSeconds, JwtVcIssuerMetadataResolver issuerMetadataResolver) {
         this.clockSkewSeconds = clockSkewSeconds;
         this.kbJwtMaxAgeSeconds = kbJwtMaxAgeSeconds;
         this.issuerMetadataResolver = issuerMetadataResolver;
-        this.strictX5cVerification = strictX5cVerification;
     }
 
     public boolean isSdJwt(String token) {
@@ -102,7 +97,7 @@ public class SdJwtVerifier {
             presentationConsumer.verifySdJwtPresentation(
                     sdJwtVP,
                     requirements,
-                    List.of(new Oid4vpTrustedSdJwtIssuer(trust, issuerMetadataResolver, strictX5cVerification)),
+                    List.of(new Oid4vpTrustedSdJwtIssuer(trust, issuerMetadataResolver)),
                     issuerOpts,
                     kbOptsBuilder.build());
 

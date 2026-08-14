@@ -40,7 +40,7 @@ public enum Oid4vpClientIdScheme {
 
     private static final int DNS_SUBJECT_ALT_NAME = 2;
     private static final Logger LOG = Logger.getLogger(Oid4vpClientIdScheme.class);
-    private static final Set<String> WARNED_SINGLE_LEAF_PEMS = ConcurrentHashMap.newKeySet();
+    private static final Set<String> WARNED_VERIFIER_CERTIFICATE_PEMS = ConcurrentHashMap.newKeySet();
 
     private final String configValue;
     private final String prefix;
@@ -66,16 +66,21 @@ public enum Oid4vpClientIdScheme {
         return this != PLAIN;
     }
 
-    public void validateCertificateBinding(String pemCertificate, boolean enforceHaip) {
+    /**
+     * Validates the configured verifier certificate for this scheme. The verifier puts this chain
+     * into the request object and derives its client id from the leaf, so it has to be coherent and
+     * currently valid. Whether a wallet accepts the certificate is the wallet's decision against its
+     * own relying party trust list, so a configuration a wallet is likely to reject is warned about
+     * rather than rejected here.
+     */
+    public void validateCertificateBinding(String pemCertificate) {
         if (!isCertificateBound()) {
             return;
         }
         if (StringUtil.isBlank(pemCertificate)) {
             throw new IllegalStateException("Certificate-bound client_id_scheme requires an X.509 certificate");
         }
-        if (enforceHaip) {
-            validateHaipVerifierCertificateChain(pemCertificate);
-        }
+        validateEmittedVerifierCertificateChain(pemCertificate);
     }
 
     public String computeClientId(String clientId, String pemCertificate) {
@@ -89,23 +94,17 @@ public enum Oid4vpClientIdScheme {
         };
     }
 
-    public static Oid4vpClientIdScheme resolve(String rawValue, boolean enforceHaip) {
-        if (enforceHaip) {
-            return X509_HASH;
-        }
-        return resolve(rawValue);
-    }
-
+    /** The configured scheme, defaulting to the certificate-bound scheme wallets expect. */
     public static Oid4vpClientIdScheme resolve(String rawValue) {
         if (StringUtil.isBlank(rawValue)) {
-            return X509_SAN_DNS;
+            return X509_HASH;
         }
         for (Oid4vpClientIdScheme scheme : values()) {
             if (scheme.configValue.equalsIgnoreCase(rawValue)) {
                 return scheme;
             }
         }
-        return X509_SAN_DNS;
+        return X509_HASH;
     }
 
     private static String extractDnsSubjectAlternativeName(String pemCertificate) {
@@ -145,15 +144,11 @@ public enum Oid4vpClientIdScheme {
         return certificates.get(0);
     }
 
-    private static void validateHaipVerifierCertificateChain(String pemCertificate) {
+    private static void validateEmittedVerifierCertificateChain(String pemCertificate) {
         try {
             List<X509Certificate> certificates = parseCertificateChain(pemCertificate);
-            if (certificates.size() == 1) {
-                validateSingleHaipLeaf(certificates.get(0));
-                warnSingleLeafAssumptionOnce(pemCertificate);
-                return;
-            }
-            X5cChainValidator.validateConfiguredVerifierChain(certificates);
+            X5cChainValidator.validateEmittedVerifierChain(certificates);
+            warnAboutLikelyWalletRejectionOnce(pemCertificate, certificates);
         } catch (IllegalStateException e) {
             throw e;
         } catch (Exception e) {
@@ -161,20 +156,26 @@ public enum Oid4vpClientIdScheme {
         }
     }
 
-    private static void validateSingleHaipLeaf(X509Certificate certificate) {
-        if (certificate.getBasicConstraints() >= 0) {
-            throw new IllegalStateException("HAIP verifier leaf certificate must not be a CA certificate");
+    /**
+     * Reports a configuration wallets following the high assurance profile reject, without failing
+     * it: that profile requires the verifier certificate to be CA-issued, while a closed deployment
+     * may well run against wallets that accept a self-signed one.
+     */
+    private static void warnAboutLikelyWalletRejectionOnce(String pemCertificate, List<X509Certificate> certificates) {
+        X509Certificate leaf = certificates.get(0);
+        String problem = null;
+        if (leaf.getSubjectX500Principal().equals(leaf.getIssuerX500Principal())) {
+            problem = "the verifier certificate is self-signed";
+        } else if (certificates.size() == 1) {
+            problem = "only the leaf certificate is configured, so its issuing CA cannot be confirmed here";
+        } else if (leaf.getBasicConstraints() >= 0) {
+            problem = "the verifier leaf certificate is a CA certificate";
         }
-        if (certificate.getSubjectX500Principal().equals(certificate.getIssuerX500Principal())) {
-            throw new IllegalStateException("HAIP requires x509_hash verifier certificates to be CA-issued");
-        }
-    }
-
-    private static void warnSingleLeafAssumptionOnce(String pemCertificate) {
-        String warningKey = computePemHash(pemCertificate);
-        if (WARNED_SINGLE_LEAF_PEMS.add(warningKey)) {
-            LOG.warn("HAIP verifier certificate configuration contains only the leaf certificate. "
-                    + "Startup validation cannot confirm the issuing CA; relying on external trust lists at runtime.");
+        if (problem != null && WARNED_VERIFIER_CERTIFICATE_PEMS.add(computePemHash(pemCertificate))) {
+            LOG.warnf(
+                    "Verifier certificate configuration: %s. Wallets following the high assurance profile require a "
+                            + "CA-issued verifier certificate and are likely to reject the authorization request.",
+                    problem);
         }
     }
 

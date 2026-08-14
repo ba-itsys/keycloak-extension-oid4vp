@@ -20,7 +20,7 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
  *
  * @param jwt the compact-serialized signed JWT (JWS) containing the authorization request claims
  * @param encryptionKeyJson the ephemeral ECDH-ES private key as JSON (for later response decryption),
- *     or {@code null} if HAIP response encryption is not enabled
+ *     or {@code null} when the response mode does not encrypt the wallet response
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1">OID4VP 1.0 §5.1 — Signed Request Object</a>
  */
 public record SignedRequestObject(String jwt, String encryptionKeyJson) {}

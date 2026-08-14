@@ -63,7 +63,6 @@ class Oid4vpIdentityProviderConfigTest {
         assertThat(config.isTransientUsersEnabled()).isFalse();
         assertThat(config.isSameDeviceEnabled()).isTrue();
         assertThat(config.isCrossDeviceEnabled()).isTrue();
-        assertThat(config.isEnforceHaip()).isTrue();
         assertThat(config.getCredentialSets()).isNull();
         assertThat(config.getPrincipalCredentialId()).isNull();
     }
@@ -76,73 +75,34 @@ class Oid4vpIdentityProviderConfigTest {
     }
 
     @Test
-    void haipEnabled_useIdTokenSubject_isForcedFalse() {
-        config.setEnforceHaip(true);
-        config.setUseIdTokenSubject(true);
-
-        assertThat(config.isUseIdTokenSubject()).isFalse();
-    }
-
-    @Test
-    void useIdTokenSubject_respectsConfiguredValueWhenHaipDisabled() {
-        config.setEnforceHaip(false);
-        config.setUseIdTokenSubject(true);
-
-        assertThat(config.isUseIdTokenSubject()).isTrue();
-    }
-
-    @Test
-    void haipEnabled_clientIdScheme_overridesToX509Hash() {
-        config.setEnforceHaip(true);
+    void clientIdScheme_respectsConfiguredValue() {
         config.setClientIdScheme("x509_san_dns");
-        assertThat(config.getClientIdScheme()).isEqualTo("x509_hash");
-    }
+        assertThat(config.getClientIdScheme()).isEqualTo("x509_san_dns");
 
-    @Test
-    void haipEnabled_clientIdScheme_keepsX509Hash() {
-        config.setEnforceHaip(true);
-        config.setClientIdScheme("x509_hash");
-        assertThat(config.getClientIdScheme()).isEqualTo("x509_hash");
-    }
-
-    @Test
-    void haipEnabled_clientIdScheme_overridesPlainToX509Hash() {
-        config.setEnforceHaip(true);
         config.setClientIdScheme("plain");
+        assertThat(config.getClientIdScheme()).isEqualTo("plain");
+    }
+
+    @Test
+    void clientIdScheme_defaultsToX509HashWhenUnsetOrUnknown() {
+        assertThat(config.getClientIdScheme()).isEqualTo("x509_hash");
+
+        config.setClientIdScheme("bogus");
         assertThat(config.getClientIdScheme()).isEqualTo("x509_hash");
     }
 
     @Test
-    void clientIdScheme_respectsConfiguredValueWhenHaipDisabled() {
-        config.setEnforceHaip(false);
-        config.setClientIdScheme("x509_san_dns");
-        assertThat(config.getClientIdScheme()).isEqualTo("x509_san_dns");
-    }
-
-    @Test
-    void clientIdScheme_defaultsToX509SanDnsWhenUnset() {
-        config.setEnforceHaip(false);
-        assertThat(config.getClientIdScheme()).isEqualTo("x509_san_dns");
-    }
-
-    @Test
-    void haipEnabled_responseMode_overridesToDirectPostJwt() {
-        config.setEnforceHaip(true);
+    void responseMode_respectsConfiguredValue() {
         config.setResponseMode("direct_post");
-        assertThat(config.getResponseMode()).isEqualTo("direct_post.jwt");
-    }
-
-    @Test
-    void responseMode_respectsConfiguredEncryptedModeWhenHaipDisabled() {
-        config.setEnforceHaip(false);
-        config.setResponseMode("direct_post.jwt");
-        assertThat(config.getResponseMode()).isEqualTo("direct_post.jwt");
-    }
-
-    @Test
-    void responseMode_defaultsToDirectPostWhenHaipDisabled() {
-        config.setEnforceHaip(false);
         assertThat(config.getResponseMode()).isEqualTo("direct_post");
+    }
+
+    @Test
+    void responseMode_defaultsToDirectPostJwtWhenUnsetOrUnknown() {
+        assertThat(config.getResponseMode()).isEqualTo("direct_post.jwt");
+
+        config.setResponseMode("bogus");
+        assertThat(config.getResponseMode()).isEqualTo("direct_post.jwt");
     }
 
     @Test

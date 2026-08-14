@@ -56,8 +56,6 @@ public interface Oid4vpConfigProvider {
 
     int getCrossDeviceCompleteTtlSeconds();
 
-    boolean isUseIdTokenSubject();
-
     boolean isTransientUsersEnabled();
 
     int getClockSkewSeconds();

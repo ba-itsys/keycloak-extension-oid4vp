@@ -190,25 +190,6 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
-    void loginWithIdTokenSubject() throws Exception {
-        testApp().reset();
-        flow.clearBrowserSession();
-        deleteAllOid4vpUsers();
-
-        setIdpConfig(Map.of(
-                Oid4vpIdentityProviderConfig.ENFORCE_HAIP, "false",
-                Oid4vpIdentityProviderConfig.USE_ID_TOKEN_SUBJECT, "true"));
-
-        flow.navigateToLoginPage();
-        flow.clickOid4vpIdpButton();
-        String walletUrl = flow.getSameDeviceWalletUrl();
-        Oid4vpLoginFlowHelper.WalletResponse response = flow.submitToWallet(walletUrl);
-        flow.waitForLoginCompletion(response);
-        flow.completeFirstBrokerLoginIfNeeded("id-token-user");
-        flow.assertLoginSucceeded();
-    }
-
-    @Test
     void sessionMapperStoresCredentialClaimInSessionAndMapsItToIdToken() throws Exception {
         testApp().reset();
         flow.clearBrowserSession();

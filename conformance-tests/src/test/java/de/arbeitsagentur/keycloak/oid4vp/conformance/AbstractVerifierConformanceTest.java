@@ -279,7 +279,6 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
         config.put("clientSecret", "not-used");
         config.put(Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME, scenario.clientIdScheme());
         config.put(Oid4vpIdentityProviderConfig.RESPONSE_MODE, scenario.responseMode());
-        config.put(Oid4vpIdentityProviderConfig.ENFORCE_HAIP, String.valueOf(scenario.enforceHaip()));
         config.put(Oid4vpIdentityProviderConfig.SAME_DEVICE_ENABLED, "true");
         config.put(Oid4vpIdentityProviderConfig.CROSS_DEVICE_ENABLED, "false");
         config.put(Oid4vpIdentityProviderConfig.STATUS_LIST_MAX_CACHE_TTL_SECONDS, "0");

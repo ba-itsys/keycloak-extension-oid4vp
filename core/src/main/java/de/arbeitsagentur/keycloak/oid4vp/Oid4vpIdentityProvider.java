@@ -97,7 +97,6 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                                 this::resolveTrustPlan,
                                 config.getStatusListMaxCacheTtl(),
                                 config.getIssuerMetadataMaxCacheTtl(),
-                                config.isEnforceHaip(),
                                 config.getClockSkewSeconds(),
                                 config.getKbJwtMaxAgeSeconds())));
 
@@ -218,7 +217,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 credentialTypes,
                 getConfig().getPrincipalCredentialId(),
                 getConfig().getPrincipalAttribute(),
-                !getConfig().isUseIdTokenSubject() && !getConfig().isTransientUsersEnabled());
+                !getConfig().isTransientUsersEnabled());
         if (!problems.isEmpty()) {
             throw new IdentityBrokerException(INVALID_CREDENTIAL_SETS + String.join("; ", problems));
         }

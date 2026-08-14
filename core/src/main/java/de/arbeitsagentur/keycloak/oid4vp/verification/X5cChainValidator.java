@@ -111,7 +111,14 @@ public final class X5cChainValidator {
         return keyUsage == null || (keyUsage.length > 5 && keyUsage[5]);
     }
 
-    public static void validateConfiguredVerifierChain(List<X509Certificate> chain) throws Exception {
+    /**
+     * Validates the verifier certificate chain the verifier itself puts into the request object
+     * {@code x5c} header and derives its client id from. Only what the verifier emits is checked:
+     * every certificate has to be currently valid and every certificate has to be signed by the
+     * next one. Whether the chain is acceptable is the wallet's decision, made against its own
+     * relying party trust list, so no policy about certificate authorities is enforced here.
+     */
+    public static void validateEmittedVerifierChain(List<X509Certificate> chain) throws Exception {
         if (chain.isEmpty()) {
             throw new IllegalStateException("Verifier x5c chain is empty");
         }
@@ -133,11 +140,6 @@ public final class X5cChainValidator {
             }
         }
 
-        X509Certificate leaf = chain.get(0);
-        if (leaf.getBasicConstraints() >= 0) {
-            throw new IllegalStateException("HAIP verifier leaf certificate must not be a CA certificate");
-        }
-
         for (int i = 0; i < chain.size() - 1; i++) {
             X509Certificate certificate = chain.get(i);
             X509Certificate issuer = chain.get(i + 1);
@@ -146,14 +148,6 @@ public final class X5cChainValidator {
                         "Verifier certificate issuer at position " + (i + 1) + " is not a CA certificate");
             }
             certificate.verify(issuer.getPublicKey());
-        }
-
-        X509Certificate top = chain.get(chain.size() - 1);
-        if (top.getBasicConstraints() < 0) {
-            throw new IllegalStateException("Verifier x5c top certificate must be a CA certificate");
-        }
-        if (chain.size() == 1) {
-            throw new IllegalStateException("HAIP requires x509_hash verifier certificates to be CA-issued");
         }
     }
 

@@ -95,9 +95,7 @@ public class Oid4vpRequestObjectService {
                             config.getX509SigningKeyJwk(),
                             requestContext.encryptionKeyJson(),
                             walletNonce,
-                            responseMode,
-                            config.isUseIdTokenSubject(),
-                            config.isEnforceHaip()));
+                            responseMode));
 
             String responseJwt = maybeEncryptRequestObject(signedRequest.jwt(), walletMetadataJson);
             return Response.ok(responseJwt).type(REQUEST_OBJECT_CONTENT_TYPE).build();

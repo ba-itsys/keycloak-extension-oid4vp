@@ -166,14 +166,12 @@ public class Oid4vpIdentityProviderEndpoint {
     public Response handlePost(
             @FormParam(OAuth2Constants.STATE) String state,
             @FormParam(VP_TOKEN) String vpToken,
-            @FormParam(ID_TOKEN) String idToken,
             @FormParam(RESPONSE) String encryptedResponse,
             @FormParam(OAuth2Constants.ERROR) String error,
             @FormParam(OAuth2Constants.ERROR_DESCRIPTION) String errorDescription) {
 
         try {
-            IncomingPost incomingPost =
-                    new IncomingPost(state, vpToken, idToken, encryptedResponse, error, errorDescription);
+            IncomingPost incomingPost = new IncomingPost(state, vpToken, encryptedResponse, error, errorDescription);
             ResolvedRequest resolvedRequest = resolveRequest(incomingPost.state(), incomingPost.encryptedResponse());
             AuthenticationSessionModel authSession =
                     authSessionResolver.resolveFromRequestContext(resolvedRequest.requestContext());
@@ -194,7 +192,6 @@ public class Oid4vpIdentityProviderEndpoint {
                     resolvedRequest.requestContext(),
                     submission.state(),
                     submission.vpToken(),
-                    submission.idToken(),
                     submission.mdocGeneratedNonce(),
                     FLOW_CROSS_DEVICE.equals(resolvedRequest.requestContext().flow()));
         } catch (IdentityBrokerException e) {
@@ -206,12 +203,7 @@ public class Oid4vpIdentityProviderEndpoint {
     }
 
     private record IncomingPost(
-            String state,
-            String vpToken,
-            String idToken,
-            String encryptedResponse,
-            String error,
-            String errorDescription) {}
+            String state, String vpToken, String encryptedResponse, String error, String errorDescription) {}
 
     private record ResolvedRequest(
             String state, Oid4vpRequestObjectStore.RequestContextEntry requestContext, Oid4vpJwk kidBasedKey) {}
@@ -219,7 +211,6 @@ public class Oid4vpIdentityProviderEndpoint {
     private record ResolvedSubmission(
             String state,
             String vpToken,
-            String idToken,
             String error,
             String errorDescription,
             String mdocGeneratedNonce,
@@ -270,7 +261,6 @@ public class Oid4vpIdentityProviderEndpoint {
             return new ResolvedSubmission(
                     resolvedRequest.state(),
                     incomingPost.vpToken(),
-                    incomingPost.idToken(),
                     incomingPost.error(),
                     incomingPost.errorDescription(),
                     null,
@@ -287,7 +277,6 @@ public class Oid4vpIdentityProviderEndpoint {
         return new ResolvedSubmission(
                 resolvedState,
                 decrypted.vpToken(),
-                decrypted.idToken(),
                 decrypted.error(),
                 decrypted.errorDescription(),
                 decrypted.mdocGeneratedNonce(),
@@ -401,13 +390,12 @@ public class Oid4vpIdentityProviderEndpoint {
             Oid4vpRequestObjectStore.RequestContextEntry requestContext,
             String state,
             String vpToken,
-            String idToken,
             String mdocGeneratedNonce,
             boolean isCrossDeviceFlow) {
 
         try {
             BrokeredIdentityContext context =
-                    provider.getCallbackProcessor().process(requestContext, vpToken, idToken, mdocGeneratedNonce);
+                    provider.getCallbackProcessor().process(requestContext, vpToken, mdocGeneratedNonce);
             return directPostService.storeAndSignal(authSession, requestContext.state(), context, isCrossDeviceFlow);
         } catch (IdentityBrokerException e) {
             return handleError("identity_provider_error", e.getMessage(), state);

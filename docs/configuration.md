@@ -25,8 +25,7 @@ Example realm import fragment:
         "clientIdScheme": "x509_san_dns",
         "responseMode": "direct_post.jwt",
         "x509CertificatePem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
-        "walletScheme": "openid4vp://",
-        "enforceHaip": "false"
+        "walletScheme": "openid4vp://"
       }
     }
   ]
@@ -60,9 +59,8 @@ The configuration is validated when the identity provider is saved, and again wh
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `principalAttribute` | Dot notation path of the claim used as the unique user identifier. For mDoc credentials the path addresses a data element, looked up in each presented namespace. Not required when `useIdTokenSubject` is enabled. Ignored when OID4VP transient users are enabled. | `sub` |
+| `principalAttribute` | Dot notation path of the claim used as the unique user identifier. For mDoc credentials the path addresses a data element, looked up in each presented namespace. Ignored when OID4VP transient users are enabled. | `sub` |
 | `principalCredentialId` | Credential id whose claims identify the user. Must be part of every option of every required credential set and must request `principalAttribute` in every claim set option. Empty takes the subject from the first requested credential the wallet presents, which requires every credential to carry `principalAttribute`. | *(none)* |
-| `useIdTokenSubject` | When HAIP is disabled, requests an additional self-issued `id_token` and uses its subject as the user identifier. The VP token remains required for credential attributes. Ignored when HAIP is enabled. | `false` |
 | `doNotStoreUsers` | Native Keycloak IdP setting. When enabled, OID4VP switches to transient per-login identities, ignores configured identifying claims, and relies on Keycloak transient users. Requires the Keycloak `transient-users` feature to be enabled. | `false` |
 | `clockSkewSeconds` | Allowed clock skew for ID token time checks. | `60` |
 
@@ -77,7 +75,7 @@ To use this extension as a wallet connector without creating persisted Keycloak 
 Behavior in this mode:
 
 - The extension always generates a random per-login transient identifier.
-- `principalAttribute` and `useIdTokenSubject` are ignored for subject resolution.
+- `principalAttribute` is ignored for subject resolution.
 - OID4VP user-attribute mappers still apply, but the target user is transient and is not persisted after the session ends.
 - Session-note mappers are often the best fit when relying parties only need token-time claim propagation.
 
@@ -90,13 +88,13 @@ This mode is intended for credentials that do not carry a stable account identif
 | `sameDeviceEnabled` | Enables same-device wallet login. | `true` |
 | `crossDeviceEnabled` | Enables cross-device QR-code wallet login. | `true` |
 | `walletScheme` | URI scheme used to invoke the wallet app. | `openid4vp://` |
-| `responseMode` | Wallet callback response mode: `direct_post` or `direct_post.jwt`. | `direct_post` |
+| `responseMode` | Wallet callback response mode. `direct_post.jwt` encrypts the wallet response and is what wallets following the high assurance profile expect. | `direct_post.jwt` |
 
 ### Client Authentication (X.509)
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `clientIdScheme` | Wallet/verifier client ID scheme: `plain`, `x509_san_dns`, or `x509_hash`. | `x509_san_dns` |
+| `clientIdScheme` | Wallet/verifier client ID scheme: `plain`, `x509_san_dns`, or `x509_hash`. `x509_hash` identifies the verifier by the hash of its certificate and is what wallets following the high assurance profile expect. | `x509_hash` |
 | `x509CertificatePem` | PEM-encoded verifier certificate material used for client ID derivation and request-object header material. | *(required for x509 schemes)* |
 | `x509SigningKeyJwk` | Explicit signing JWK override. Normally derived automatically. | *(auto-derived)* |
 | `verifierInfo` | JSON value for the request object's `verifier_info` claim. | *(none)* |
@@ -110,7 +108,6 @@ This mode is intended for credentials that do not carry a stable account identif
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `enforceHaip` | Enables the HAIP-oriented effective configuration (`direct_post.jwt` and `x509_hash`). | `true` |
 | `trustMaterialIdps` | Comma-separated aliases of trust material identity providers (see below). Each referenced provider contributes trust anchors, directly trusted issuer certificates, issuer keys, and revocation trust for the credential types it serves. | *(none)* |
 | `allowedIssuers` | Comma-separated list of allowed SD-JWT issuer (`iss`) values, or `*`. mDoc credentials are not checked against this list because mDoc does not define a standard canonical credential-issuer string equivalent to SD-JWT `iss`. | `*` |
 | `clockSkewSeconds` | Clock skew tolerance for credential verification. | `60` |
@@ -171,9 +168,9 @@ For SD-JWT VC verification, the verifier tries issuer-key resolution in this ord
 
 1. `x5c` certificate-chain validation: a pinned trusted leaf certificate or a PKIX path to the trust anchors
 2. The issuer keys the credential's trust domain publishes, matched on the credential's `iss` and JOSE `kid`
-3. When HAIP is disabled and the trust domain publishes no issuer keys, JWT VC issuer metadata lookup via `iss` + `kid` from `/.well-known/jwt-vc-issuer`, including `jwks_uri`
+3. When the trust domain publishes no issuer keys, JWT VC issuer metadata lookup via `iss` + `kid` from `/.well-known/jwt-vc-issuer`, including `jwks_uri`
 
-A certificate chain is mandatory when HAIP is enforced, or when the credential's trust domain consists of CA anchors alone. Pinned issuer certificates and published issuer keys make a chainless credential a configured case rather than a missing chain.
+A certificate chain is mandatory when the credential's trust domain consists of CA anchors alone. Pinned issuer certificates and published issuer keys make a chainless credential a configured case rather than a missing chain.
 
 By default, the verifier only trusts the credential types this IdP actually requested in its DCQL query. Those types come from the credential types declared on the configured OID4VP mappers.
 

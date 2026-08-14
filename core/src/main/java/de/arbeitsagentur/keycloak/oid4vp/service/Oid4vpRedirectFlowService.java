@@ -152,11 +152,7 @@ public class Oid4vpRedirectFlowService {
         claims.put("iss", params.clientId());
         claims.put("aud", SELF_ISSUED_V2);
         claims.put(OAuth2Constants.CLIENT_ID, params.clientId());
-        boolean includeIdToken = params.useIdTokenSubject() && !params.enforceHaip();
-        claims.put(OAuth2Constants.RESPONSE_TYPE, includeIdToken ? RESPONSE_TYPE_VP_TOKEN_ID_TOKEN : VP_TOKEN);
-        if (includeIdToken) {
-            claims.put(OAuth2Constants.SCOPE, "openid");
-        }
+        claims.put(OAuth2Constants.RESPONSE_TYPE, VP_TOKEN);
         claims.put(OIDCLoginProtocol.RESPONSE_MODE_PARAM, params.responseMode().parameterValue());
         claims.put(RESPONSE_URI, params.responseUri());
         claims.put(OIDCLoginProtocol.NONCE_PARAM, params.nonce());

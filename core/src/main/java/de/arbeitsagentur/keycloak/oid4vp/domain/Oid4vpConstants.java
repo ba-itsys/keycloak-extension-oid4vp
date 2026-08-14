@@ -99,13 +99,7 @@ public final class Oid4vpConstants {
     public static final String RESPONSE_MODE_DIRECT_POST = "direct_post";
     public static final String RESPONSE_MODE_DIRECT_POST_JWT = "direct_post.jwt";
 
-    // Response type values
-    public static final String RESPONSE_TYPE_VP_TOKEN_ID_TOKEN = "vp_token id_token";
-
-    // ID Token parameter
-    public static final String ID_TOKEN = "id_token";
-
-    // Self-Issued OpenID Provider v2 static identifier
+    // Audience of a request object addressed to any wallet, per OID4VP 1.0 §5.1
     // https://openid.net/specs/openid-connect-self-issued-v2-1_0-ID1.html#name-static-self-issued-openid-p
     public static final String SELF_ISSUED_V2 = "https://self-issued.me/v2";
 
