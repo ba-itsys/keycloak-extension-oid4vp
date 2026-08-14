@@ -4,7 +4,7 @@
 
   <groupId>de.arbeitsagentur.opdt</groupId>
   <artifactId>keycloak-extension-oid4vp-parent</artifactId>
-  <version>0.8.0</version>
+  <version>0.8.1-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <name>keycloak-extension-oid4vp-parent</name>
