@@ -15,6 +15,7 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
 import java.time.Duration;
@@ -63,8 +64,8 @@ public class Oid4vpRequestObjectStore {
             String nonce,
             String encryptionKeyJson,
             String encryptionJwkThumbprint,
-            List<String> configuredCredentialTypes,
-            List<RequestedCredential> requestedCredentials) {}
+            List<RequestedCredential> requestedCredentials,
+            List<CredentialSet> credentialSets) {}
 
     // Stores a state → request context mapping. Called when the login page is rendered.
     public void storeRequestContext(KeycloakSession session, RequestContextEntry entry) {

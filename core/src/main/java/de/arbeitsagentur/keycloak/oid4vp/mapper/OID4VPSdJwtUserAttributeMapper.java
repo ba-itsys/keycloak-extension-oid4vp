@@ -57,6 +57,7 @@ public class OID4VPSdJwtUserAttributeMapper extends AbstractOID4VPClaimMapper {
                     + "to map to those predefined user properties.")
             .type(ProviderConfigProperty.USER_PROFILE_ATTRIBUTE_LIST_TYPE)
             .add()
+            .property(credentialIdProperty())
             .property(claimSetIdsProperty())
             .build();
 

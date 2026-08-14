@@ -41,15 +41,27 @@ The DCQL query is generated from the configured OID4VP mappers. The mapper type 
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `credentialSetMode` | How credential sets are combined: `optional` or `all`. | `optional` |
-| `credentialSetPurpose` | Human-readable purpose string included in the DCQL credential set. | *(none)* |
+| `credentialSets` | DCQL `credential_sets` constraints in specification syntax, referencing credential ids. Empty requires every configured credential. | *(none)* |
 | `requestObjectLifespanSeconds` | Lifespan of the signed request object JWT used by the wallet fetch. | `10` |
+
+Each mapper contributes to the credential named by its `credential.id`. Mappers sharing an id form one credential entry, so the same credential type can be requested twice with different claims. An empty `credential.id` derives the id from format and credential type: `sdjwt_urn_eudi_pid_1`, `mdoc_org_iso_18013_5_1_mDL`. DCQL restricts ids to letters, digits, `_` and `-`.
+
+`credentialSets` lists alternative credential combinations in preference order. To request a PID together with an mDL but accept the PID alone:
+
+```json
+[{"purpose": "Login", "options": [["sdjwt_urn_eudi_pid_1", "mdoc_org_iso_18013_5_1_mDL"], ["sdjwt_urn_eudi_pid_1"]]}]
+```
+
+`required` defaults to `true`; an entry with `"required": false` describes an optional extra credential. Without `credentialSets` the query carries no `credential_sets` member, which per DCQL requires every credential in the query.
+
+The configuration is validated when the identity provider is saved, and again when the DCQL query is built, because identity provider mappers have no validation hook of their own. A presented credential set that satisfies no option of a required set rejects the login.
 
 ### User Mapping
 
 | Key | Description | Default |
 |-----|-------------|---------|
 | `principalAttribute` | Dot notation path of the claim used as the unique user identifier. For mDoc credentials the path addresses a data element, looked up in each presented namespace. Not required when `useIdTokenSubject` is enabled. Ignored when OID4VP transient users are enabled. | `sub` |
+| `principalCredentialId` | Credential id whose claims identify the user. Must be part of every option of every required credential set and must request `principalAttribute` in every claim set option. Empty takes the subject from the first requested credential the wallet presents, which requires every credential to carry `principalAttribute`. | *(none)* |
 | `useIdTokenSubject` | When HAIP is disabled, requests an additional self-issued `id_token` and uses its subject as the user identifier. The VP token remains required for credential attributes. Ignored when HAIP is enabled. | `false` |
 | `doNotStoreUsers` | Native Keycloak IdP setting. When enabled, OID4VP switches to transient per-login identities, ignores configured identifying claims, and relies on Keycloak transient users. Requires the Keycloak `transient-users` feature to be enabled. | `false` |
 | `clockSkewSeconds` | Allowed clock skew for ID token time checks. | `60` |
@@ -165,7 +177,7 @@ Each mapper declares a credential type (VCT or doctype) and a claim path. The cl
 
 mDoc mappers additionally declare the ISO 18013-5 `namespace` of the data element, defaulting to the credential type (doctype). The claim path addresses the element within that namespace; deeper path steps select into structured element values on the mapper side only. Element values holding serialized JSON objects or arrays become nested structures in the claims JSON, so they follow the same path rules as SD-JWT claims.
 
-These mappers drive the generated DCQL request: every credential type present in the mappers becomes a DCQL credential entry, and every claim path becomes a requested claim. The response is validated against this query, so all requested claims are known to the verifier.
+These mappers drive the generated DCQL request: every distinct `credential.id` present in the mappers becomes a DCQL credential entry, and every claim path becomes a requested claim. The response is validated against this query, so all requested claims are known to the verifier.
 
 ### Claim Sets
 

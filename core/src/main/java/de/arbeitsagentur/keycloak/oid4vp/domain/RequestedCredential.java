@@ -32,7 +32,7 @@ import org.keycloak.sdjwt.consumer.PresentationRequirements;
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.4">OID4VP 1.0 §6.4 — Claims Query</a>
  */
 public record RequestedCredential(
-        String format, String type, List<RequestedClaim> claims, List<List<Integer>> claimSets)
+        String id, String format, String type, List<RequestedClaim> claims, List<List<Integer>> claimSets)
         implements PresentationRequirements {
 
     /** One requested claim: the mDoc namespace (null for SD-JWT) and the claim path. */
@@ -58,11 +58,11 @@ public record RequestedCredential(
     }
 
     /** Derives the requested claims model for a credential type aggregated from IdP mappers. */
-    public static RequestedCredential of(CredentialTypeSpec spec) {
+    public static RequestedCredential of(String credentialId, CredentialTypeSpec spec) {
         List<RequestedClaim> claims = spec.claimSpecs().stream()
                 .map(claimSpec -> new RequestedClaim(claimSpec.namespace(), claimSpec.path()))
                 .toList();
-        return new RequestedCredential(spec.format(), spec.type(), claims, spec.claimSetOptionIndexes());
+        return new RequestedCredential(credentialId, spec.format(), spec.type(), claims, spec.claimSetOptionIndexes());
     }
 
     /** Whether this requested credential entry matches a verified credential's format and type. */

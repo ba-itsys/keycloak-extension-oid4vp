@@ -37,20 +37,34 @@ public class Oid4vpRealmConfig implements RealmConfig {
                         .redirectUris("*")
                         .webOrigins("*")
                         .attribute("pkce.code.challenge.method", "S256")
-                        .protocolMappers(credentialFamilyNameIdTokenMapper()));
+                        .protocolMappers(
+                                credentialFamilyNameIdTokenMapper(),
+                                sessionNoteIdTokenMapper("sd-jwt-family-name", "sdJwtFamilyName", "sd_jwt_family_name"),
+                                sessionNoteIdTokenMapper("mdoc-family-name", "mdocFamilyName", "mdoc_family_name")));
     }
 
     // Maps the credentialFamilyName session note set by the IdP session mapper into the id token
     private static ProtocolMapperRepresentation credentialFamilyNameIdTokenMapper() {
+        return sessionNoteIdTokenMapper("credential-family-name", "credentialFamilyName", "credential_family_name");
+    }
+
+    // Maps a session note set by an IdP session mapper into the id token, so a test can observe
+    // which credential a claim was imported from.
+    private static ProtocolMapperRepresentation sessionNoteIdTokenMapper(
+            String name, String sessionNote, String claimName) {
         ProtocolMapperRepresentation mapper = new ProtocolMapperRepresentation();
-        mapper.setName("credential-family-name-id-token");
+        mapper.setName(name + "-id-token");
         mapper.setProtocol("openid-connect");
         mapper.setProtocolMapper("oidc-usersessionmodel-note-mapper");
         mapper.setConfig(Map.of(
-                "user.session.note", "credentialFamilyName",
-                "claim.name", "credential_family_name",
-                "jsonType.label", "String",
-                "id.token.claim", "true"));
+                "user.session.note",
+                sessionNote,
+                "claim.name",
+                claimName,
+                "jsonType.label",
+                "String",
+                "id.token.claim",
+                "true"));
         return mapper;
     }
 }

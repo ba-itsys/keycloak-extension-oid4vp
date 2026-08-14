@@ -38,7 +38,7 @@ class RequestedCredentialTest {
                         ClaimSpec.sdJwt("family_name"),
                         ClaimSpec.sdJwt("birthdate", List.of("1-full", "2-min"))));
 
-        RequestedCredential requested = RequestedCredential.of(spec);
+        RequestedCredential requested = RequestedCredential.of("cred1", spec);
 
         assertThat(requested.format()).isEqualTo("dc+sd-jwt");
         assertThat(requested.type()).isEqualTo("urn:eudi:pid:1");
@@ -55,13 +55,15 @@ class RequestedCredentialTest {
         CredentialTypeSpec spec = new CredentialTypeSpec(
                 "dc+sd-jwt", "urn:eudi:pid:1", List.of(ClaimSpec.sdJwt("given_name"), ClaimSpec.sdJwt("family_name")));
 
-        assertThat(RequestedCredential.of(spec).claimSets()).isEmpty();
+        assertThat(RequestedCredential.of("cred1", spec).claimSets()).isEmpty();
     }
 
     @Test
     void matches_comparesFormatAndType() {
-        RequestedCredential sdJwt = new RequestedCredential("dc+sd-jwt", "urn:eudi:pid:1", List.of(), List.of());
-        RequestedCredential mdoc = new RequestedCredential("mso_mdoc", "eu.europa.ec.eudi.pid.1", List.of(), List.of());
+        RequestedCredential sdJwt =
+                new RequestedCredential("cred1", "dc+sd-jwt", "urn:eudi:pid:1", List.of(), List.of());
+        RequestedCredential mdoc =
+                new RequestedCredential("cred1", "mso_mdoc", "eu.europa.ec.eudi.pid.1", List.of(), List.of());
 
         VerifiedCredential sdJwtCredential = new VerifiedCredential(
                 "c1", "https://issuer.example", "urn:eudi:pid:1", Map.of(), PresentationType.SD_JWT);
@@ -77,6 +79,7 @@ class RequestedCredentialTest {
     @Test
     void missingClaims_withoutClaimSets_requiresAllClaims() throws Exception {
         RequestedCredential requested = new RequestedCredential(
+                "cred1",
                 "dc+sd-jwt",
                 "urn:eudi:pid:1",
                 List.of(claim("given_name"), claim("family_name"), claim("birthdate")),
@@ -91,6 +94,7 @@ class RequestedCredentialTest {
     @Test
     void missingClaims_claimSets_acceptsAnySatisfiedOption() throws Exception {
         RequestedCredential requested = new RequestedCredential(
+                "cred1",
                 "dc+sd-jwt",
                 "urn:eudi:pid:1",
                 List.of(claim("given_name"), claim("family_name"), claim("birthdate")),
@@ -107,6 +111,7 @@ class RequestedCredentialTest {
     @Test
     void missingClaims_claimSets_reportsPreferredOptionWhenNoneSatisfied() throws Exception {
         RequestedCredential requested = new RequestedCredential(
+                "cred1",
                 "dc+sd-jwt",
                 "urn:eudi:pid:1",
                 List.of(claim("given_name"), claim("family_name"), claim("birthdate")),
@@ -119,8 +124,9 @@ class RequestedCredentialTest {
     @Test
     void missingClaims_resolvesNestedAndNamespacedClaims() throws Exception {
         RequestedCredential sdJwt = new RequestedCredential(
-                "dc+sd-jwt", "urn:eudi:pid:1", List.of(claim("address.street_address")), List.of());
+                "cred1", "dc+sd-jwt", "urn:eudi:pid:1", List.of(claim("address.street_address")), List.of());
         RequestedCredential mdoc = new RequestedCredential(
+                "cred1",
                 "mso_mdoc",
                 "org.iso.18013.5.1.mDL",
                 List.of(new RequestedClaim("org.iso.18013.5.1", "family_name")),
@@ -138,7 +144,7 @@ class RequestedCredentialTest {
     @Test
     void checkIfSatisfiedBy_throwsWithMissingClaims() throws Exception {
         RequestedCredential requested = new RequestedCredential(
-                "dc+sd-jwt", "urn:eudi:pid:1", List.of(claim("given_name"), claim("family_name")), List.of());
+                "cred1", "dc+sd-jwt", "urn:eudi:pid:1", List.of(claim("given_name"), claim("family_name")), List.of());
 
         JsonNode presented = json("""
                 {"given_name": "Erika"}""");

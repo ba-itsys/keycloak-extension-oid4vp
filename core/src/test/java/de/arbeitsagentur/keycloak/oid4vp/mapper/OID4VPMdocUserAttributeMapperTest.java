@@ -17,17 +17,13 @@ package de.arbeitsagentur.keycloak.oid4vp.mapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
-import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
+import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.models.Constants;
 import org.keycloak.models.IdentityProviderMapperModel;
-import org.keycloak.util.JsonSerialization;
 
 /**
  * Covers the mDoc specifics on top of the shared claim mapper behavior: elements are addressed
@@ -90,9 +86,8 @@ class OID4VPMdocUserAttributeMapperTest {
 
     @Test
     void sdJwtPresentationMapsNothing() throws Exception {
-        BrokeredIdentityContext context = mdlContext("""
+        BrokeredIdentityContext context = MapperTestContexts.context(PresentationType.SD_JWT, MDL_DOCTYPE, """
                 {"org.iso.18013.5.1": {"given_name": "Erika"}}""");
-        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CREDENTIAL_FORMAT_KEY, Oid4vpConstants.FORMAT_SD_JWT_VC);
 
         mapper.preprocessFederatedIdentity(
                 null, null, model("given_name", "firstName", MDL_NAMESPACE, MDL_DOCTYPE), context);
@@ -140,14 +135,6 @@ class OID4VPMdocUserAttributeMapperTest {
     }
 
     private static BrokeredIdentityContext contextWithClaims(String claimsJson, String doctype) throws Exception {
-        JsonNode claims = JsonSerialization.readValue(claimsJson, JsonNode.class);
-        Oid4vpIdentityProviderConfig config = new Oid4vpIdentityProviderConfig();
-        config.setAlias("oid4vp");
-        config.setEnabled(true);
-        BrokeredIdentityContext context = new BrokeredIdentityContext("test-user", config);
-        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CLAIMS_KEY, claims);
-        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CREDENTIAL_FORMAT_KEY, Oid4vpConstants.FORMAT_MSO_MDOC);
-        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_CREDENTIAL_TYPE_KEY, doctype);
-        return context;
+        return MapperTestContexts.context(PresentationType.MDOC, doctype, claimsJson);
     }
 }

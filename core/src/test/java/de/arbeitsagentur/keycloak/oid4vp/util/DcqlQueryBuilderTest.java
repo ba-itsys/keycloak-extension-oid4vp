@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.arbeitsagentur.keycloak.oid4vp.domain.ClaimSpec;
+import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
@@ -84,35 +85,6 @@ class DcqlQueryBuilderTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> meta = (Map<String, Object>) cred.get("meta");
         assertThat(meta.get("doctype_value")).isEqualTo("org.iso.18013.5.1.mDL");
-    }
-
-    @Test
-    void build_multipleCredentialTypes_generatesCredentialSets() throws Exception {
-        builder.addCredentialType("dc+sd-jwt", "Type1", List.of());
-        builder.addCredentialType("dc+sd-jwt", "Type2", List.of());
-
-        String json = builder.build();
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> result = objectMapper.readValue(json, Map.class);
-        assertThat(result).containsKey("credential_sets");
-    }
-
-    @Test
-    void build_allCredentialsRequiredAndPurpose_appliesSingleCredentialSetOption() throws Exception {
-        builder.setAllCredentialsRequired(true).setPurpose("Need both credentials");
-        builder.addCredentialType("dc+sd-jwt", "Type1", List.of());
-        builder.addCredentialType("mso_mdoc", "org.iso.18013.5.1.mDL", List.of());
-
-        String json = builder.build();
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> result = objectMapper.readValue(json, Map.class);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> credentialSets = (List<Map<String, Object>>) result.get("credential_sets");
-        assertThat(credentialSets).hasSize(1);
-        assertThat(credentialSets.get(0).get("purpose")).isEqualTo("Need both credentials");
-        assertThat(credentialSets.get(0).get("options")).isEqualTo(List.of(List.of("cred1", "cred2")));
     }
 
     @Test
@@ -257,7 +229,7 @@ class DcqlQueryBuilderTest {
                 new CredentialTypeSpec("dc+sd-jwt", "IdentityCredential", List.of(ClaimSpec.sdJwt("sub"))));
 
         DcqlQueryBuilder result = DcqlQueryBuilder.fromMapperSpecs(
-                objectMapper, specs, false, "Test purpose", Oid4vpTrustedAuthoritiesMode.NONE, null, List.of());
+                objectMapper, specs, List.of(), Oid4vpTrustedAuthoritiesMode.NONE, null, List.of());
         String json = result.build();
 
         @SuppressWarnings("unchecked")
@@ -273,23 +245,21 @@ class DcqlQueryBuilderTest {
                 new CredentialTypeSpec("dc+sd-jwt", "IdentityCredential", List.of(ClaimSpec.sdJwt("sub"))));
 
         DcqlQueryBuilder result = DcqlQueryBuilder.fromMapperSpecs(
-                objectMapper, specs, false, null, List.of("https://trust-list.example.com/tl.jwt"));
+                objectMapper, specs, List.of(), List.of("https://trust-list.example.com/tl.jwt"));
 
         assertThat(firstCredential(result.build())).containsKey("trusted_authorities");
     }
 
     @Test
     void aggregateFromMappers_withoutMappers_returnsEmpty() {
-        assertThat(DcqlQueryBuilder.aggregateFromMappers(Stream.of(), config("oid4vp", false, "sub")))
-                .isEmpty();
+        assertThat(aggregate(Stream.of(), config("oid4vp", false, "sub"))).isEmpty();
     }
 
     @Test
     void aggregateFromMappers_readsSdJwtMapperAndAddsPrincipalClaim() {
         IdentityProviderMapperModel mapper = sdJwtMapper("IdentityCredential", "given_name", " 1-full , 2-min ");
 
-        Map<String, CredentialTypeSpec> result =
-                DcqlQueryBuilder.aggregateFromMappers(Stream.of(mapper), config("oid4vp", false, "sub"));
+        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", false, "sub"));
 
         assertThat(result).hasSize(1);
         CredentialTypeSpec type = result.values().iterator().next();
@@ -306,8 +276,7 @@ class DcqlQueryBuilderTest {
     void aggregateFromMappers_readsMdocMapperWithNamespaceAndPrincipal() {
         IdentityProviderMapperModel mapper = mdocMapper("org.iso.18013.5.1.mDL", "org.iso.18013.5.1", "family_name");
 
-        Map<String, CredentialTypeSpec> result =
-                DcqlQueryBuilder.aggregateFromMappers(Stream.of(mapper), config("oid4vp", false, "given_name"));
+        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", false, "given_name"));
 
         CredentialTypeSpec type = result.values().iterator().next();
         assertThat(type.format()).isEqualTo("mso_mdoc");
@@ -321,8 +290,7 @@ class DcqlQueryBuilderTest {
     void aggregateFromMappers_mdocNamespaceDefaultsToDoctype() {
         IdentityProviderMapperModel mapper = mdocMapper("eu.europa.ec.eudi.pid.1", null, "family_name");
 
-        Map<String, CredentialTypeSpec> result =
-                DcqlQueryBuilder.aggregateFromMappers(Stream.of(mapper), config("oid4vp", false, "family_name"));
+        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", false, "family_name"));
 
         CredentialTypeSpec type = result.values().iterator().next();
         assertThat(type.claimSpecs()).containsExactly(ClaimSpec.mdoc("eu.europa.ec.eudi.pid.1", "family_name"));
@@ -332,8 +300,7 @@ class DcqlQueryBuilderTest {
     void aggregateFromMappers_doesNotDuplicateExistingPrincipalClaim() {
         IdentityProviderMapperModel mapper = sdJwtMapper("IdentityCredential", "sub", null);
 
-        Map<String, CredentialTypeSpec> result =
-                DcqlQueryBuilder.aggregateFromMappers(Stream.of(mapper), config("oid4vp", false, "sub"));
+        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", false, "sub"));
 
         CredentialTypeSpec type = result.values().iterator().next();
         assertThat(type.claimSpecs()).extracting(ClaimSpec::path).containsExactly("sub");
@@ -343,8 +310,7 @@ class DcqlQueryBuilderTest {
     void aggregateFromMappers_transientUsersEnabled_skipsPrincipalClaim() {
         IdentityProviderMapperModel mapper = sdJwtMapper("IdentityCredential", "given_name", null);
 
-        Map<String, CredentialTypeSpec> result =
-                DcqlQueryBuilder.aggregateFromMappers(Stream.of(mapper), config("oid4vp", false, true, "sub"));
+        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", false, true, "sub"));
 
         CredentialTypeSpec type = result.values().iterator().next();
         assertThat(type.claimSpecs()).extracting(ClaimSpec::path).containsExactly("given_name");
@@ -359,26 +325,166 @@ class DcqlQueryBuilderTest {
         IdentityProviderMapperModel blankType = sdJwtMapper(" ", "given_name", null);
         IdentityProviderMapperModel invalidPath = sdJwtMapper("IdentityCredential", "degrees[x]", null);
 
-        assertThat(DcqlQueryBuilder.aggregateFromMappers(
-                        Stream.of(foreign, blankType, invalidPath), config("oid4vp", true, "sub")))
+        assertThat(aggregate(Stream.of(foreign, blankType, invalidPath), config("oid4vp", true, "sub")))
                 .isEmpty();
     }
 
     @Test
-    void aggregateFromMappers_ordersCredentialTypesByFormatAndType() {
+    void aggregateFromMappers_duplicateCredentialIdAcrossCredentialTypes_isReported() {
+        IdentityProviderMapperModel pid = sdJwtMapper("urn:eudi:pid:1", "family_name", null, "shared");
+        IdentityProviderMapperModel other = sdJwtMapper("urn:eudi:diploma:1", "family_name", null, "shared");
+
+        DcqlQueryBuilder.AggregatedCredentials aggregated =
+                DcqlQueryBuilder.aggregateFromMappers(Stream.of(pid, other), config("oid4vp", false, "family_name"));
+
+        assertThat(aggregated.problems())
+                .as("a credential id addresses exactly one credential")
+                .singleElement()
+                .asString()
+                .contains("shared", "urn:eudi:pid:1", "urn:eudi:diploma:1");
+    }
+
+    @Test
+    void aggregateFromMappers_sameCredentialIdForTheSameCredentialType_isOneCredential() {
+        IdentityProviderMapperModel first = sdJwtMapper("urn:eudi:pid:1", "family_name", null, "pid");
+        IdentityProviderMapperModel second = sdJwtMapper("urn:eudi:pid:1", "given_name", null, "pid");
+
+        DcqlQueryBuilder.AggregatedCredentials aggregated =
+                DcqlQueryBuilder.aggregateFromMappers(Stream.of(first, second), config("oid4vp", false, "family_name"));
+
+        assertThat(aggregated.problems()).isEmpty();
+        assertThat(aggregated.credentials()).containsOnlyKeys("pid");
+        assertThat(aggregated.credentials().get("pid").claimSpecs())
+                .extracting(ClaimSpec::path)
+                .contains("family_name", "given_name");
+    }
+
+    @Test
+    void aggregateFromMappers_ordersCredentialsByCredentialId() {
         IdentityProviderMapperModel mdocMapper = mdocMapper("eu.europa.ec.eudi.pid.1", null, "family_name");
         IdentityProviderMapperModel sdJwtMapper = sdJwtMapper("urn:eudi:pid:1", "family_name", null);
 
-        Map<String, CredentialTypeSpec> result = DcqlQueryBuilder.aggregateFromMappers(
-                Stream.of(mdocMapper, sdJwtMapper), config("oid4vp", false, "family_name"));
+        Map<String, CredentialTypeSpec> result =
+                aggregate(Stream.of(mdocMapper, sdJwtMapper), config("oid4vp", false, "family_name"));
 
-        assertThat(result.values())
+        assertThat(result.keySet())
                 .as("credential order must not depend on mapper enumeration order")
-                .extracting(CredentialTypeSpec::format)
-                .containsExactly("dc+sd-jwt", "mso_mdoc");
+                .containsExactly("mdoc_eu_europa_ec_eudi_pid_1", "sdjwt_urn_eudi_pid_1");
+    }
+
+    @Test
+    void aggregateFromMappers_blankCredentialId_derivesFormatPrefixedSlug() {
+        IdentityProviderMapperModel sdJwt = sdJwtMapper("urn:eudi:pid:1", "family_name", null);
+        IdentityProviderMapperModel mdoc = mdocMapper("org.iso.18013.5.1.mDL", "org.iso.18013.5.1", "family_name");
+
+        Map<String, CredentialTypeSpec> result =
+                aggregate(Stream.of(sdJwt, mdoc), config("oid4vp", false, "family_name"));
+
+        assertThat(result)
+                .as("credential ids must be stable across mapper changes, not positional")
+                .containsOnlyKeys("sdjwt_urn_eudi_pid_1", "mdoc_org_iso_18013_5_1_mDL");
+    }
+
+    @Test
+    void aggregateFromMappers_explicitCredentialId_isUsedAsQueryId() {
+        IdentityProviderMapperModel mapper = sdJwtMapper("urn:eudi:pid:1", "family_name", null, "pid");
+
+        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", false, "family_name"));
+
+        assertThat(result).containsOnlyKeys("pid");
+    }
+
+    @Test
+    void aggregateFromMappers_sameTypeDifferentCredentialIds_producesTwoEntries() {
+        IdentityProviderMapperModel full = sdJwtMapper("urn:eudi:pid:1", "given_name", null, "pid_full");
+        IdentityProviderMapperModel minimal = sdJwtMapper("urn:eudi:pid:1", "family_name", null, "pid_minimal");
+
+        Map<String, CredentialTypeSpec> result =
+                aggregate(Stream.of(full, minimal), config("oid4vp", false, "family_name"));
+
+        assertThat(result)
+                .as("the credential id is the grouping key, so one type can be requested twice")
+                .containsOnlyKeys("pid_full", "pid_minimal");
+        assertThat(result.get("pid_full").claimSpecs())
+                .extracting(ClaimSpec::path)
+                .contains("given_name");
+        assertThat(result.get("pid_minimal").claimSpecs())
+                .extracting(ClaimSpec::path)
+                .doesNotContain("given_name");
+    }
+
+    @Test
+    void build_credentialSets_emittedVerbatim() throws Exception {
+        builder.addCredentialType("pid", "dc+sd-jwt", "urn:eudi:pid:1", List.of());
+        builder.addCredentialType("mdl", "mso_mdoc", "org.iso.18013.5.1.mDL", List.of());
+        builder.setCredentialSets(
+                List.of(new CredentialSet(List.of(List.of("pid", "mdl"), List.of("pid")), true, "Login")));
+
+        String json = builder.build();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> result = objectMapper.readValue(json, Map.class);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> credentialSets = (List<Map<String, Object>>) result.get("credential_sets");
+        assertThat(credentialSets).hasSize(1);
+        assertThat(credentialSets.get(0).get("options")).isEqualTo(List.of(List.of("pid", "mdl"), List.of("pid")));
+        assertThat(credentialSets.get(0).get("purpose")).isEqualTo("Login");
+        assertThat(credentialSets.get(0))
+                .as("required defaults to true in DCQL, so it is only written when false")
+                .doesNotContainKey("required");
+    }
+
+    @Test
+    void build_optionalCredentialSet_writesRequiredFalse() throws Exception {
+        builder.addCredentialType("mdl", "mso_mdoc", "org.iso.18013.5.1.mDL", List.of());
+        builder.setCredentialSets(List.of(new CredentialSet(List.of(List.of("mdl")), false, null)));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> result = objectMapper.readValue(builder.build(), Map.class);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> credentialSets = (List<Map<String, Object>>) result.get("credential_sets");
+        assertThat(credentialSets.get(0).get("required")).isEqualTo(false);
+    }
+
+    @Test
+    void build_withoutCredentialSets_omitsCredentialSets() throws Exception {
+        builder.addCredentialType("dc+sd-jwt", "Type1", List.of());
+        builder.addCredentialType("mso_mdoc", "org.iso.18013.5.1.mDL", List.of());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> result = objectMapper.readValue(builder.build(), Map.class);
+
+        assertThat(result)
+                .as("no credential_sets means the DCQL default: every credential is required")
+                .doesNotContainKey("credential_sets");
+    }
+
+    @Test
+    void build_addCredentialTypeWithoutId_derivesTheSameSlugAsTheAggregation() throws Exception {
+        builder.addCredentialType("dc+sd-jwt", "urn:eudi:pid:1", List.of());
+
+        assertThat(firstCredential(builder.build()).get("id")).isEqualTo("sdjwt_urn_eudi_pid_1");
+    }
+
+    private static Map<String, CredentialTypeSpec> aggregate(
+            Stream<IdentityProviderMapperModel> mappers, Oid4vpConfigProvider config) {
+        return DcqlQueryBuilder.aggregateFromMappers(mappers, config).credentials();
     }
 
     private static IdentityProviderMapperModel sdJwtMapper(String vct, String claim, String claimSetIds) {
+        return sdJwtMapper(vct, claim, claimSetIds, null);
+    }
+
+    private static IdentityProviderMapperModel sdJwtMapper(
+            String vct, String claim, String claimSetIds, String credentialId) {
+        IdentityProviderMapperModel mapper = sdJwtMapperWithoutId(vct, claim, claimSetIds);
+        if (credentialId != null) {
+            mapper.getConfig().put(AbstractOID4VPClaimMapper.CREDENTIAL_ID, credentialId);
+        }
+        return mapper;
+    }
+
+    private static IdentityProviderMapperModel sdJwtMapperWithoutId(String vct, String claim, String claimSetIds) {
         IdentityProviderMapperModel mapper = new IdentityProviderMapperModel();
         mapper.setIdentityProviderMapper(OID4VPSdJwtUserAttributeMapper.PROVIDER_ID);
         mapper.setConfig(new LinkedHashMap<>());
@@ -428,6 +534,11 @@ class DcqlQueryBuilderTest {
             @Override
             public String getPrincipalAttribute() {
                 return principal;
+            }
+
+            @Override
+            public String getPrincipalCredentialId() {
+                return null;
             }
 
             @Override

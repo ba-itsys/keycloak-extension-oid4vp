@@ -24,11 +24,10 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
 import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.function.Supplier;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.IdentityBrokerException;
@@ -185,7 +184,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
 
         try {
             Map<String, Object> wrapper = objectMapper.readValue(vpToken, Map.class);
-            List<VerifiedCredential> credentials = new ArrayList<>();
+            Map<String, VerifiedCredential> credentials = new LinkedHashMap<>();
 
             for (Map.Entry<String, Object> entry : wrapper.entrySet()) {
                 String credentialId = entry.getKey();
@@ -199,8 +198,11 @@ public class VpTokenProcessor implements VpTokenVerifier {
                             alternateResponseUri,
                             mdocGeneratedNonce,
                             encryptionJwkThumbprint);
+                    // A credential id addresses one credential in the query, so several
+                    // presentations under one id are answers to the same request and the first
+                    // verified one is used.
                     if (cred != null) {
-                        credentials.add(cred);
+                        credentials.putIfAbsent(credentialId, cred);
                     }
                 }
             }
@@ -209,16 +211,9 @@ public class VpTokenProcessor implements VpTokenVerifier {
                 throw new IdentityBrokerException("No valid credentials found in multi-credential VP token");
             }
 
-            VerifiedCredential primary = credentials.get(0);
-            boolean mixedCredentialTypes = credentials.stream()
-                    .skip(1)
-                    .map(VerifiedCredential::credentialType)
-                    .anyMatch(type -> !Objects.equals(type, primary.credentialType()));
-            if (mixedCredentialTypes) {
-                throw new IdentityBrokerException("Only one credential type is currently supported in vp_token");
-            }
-
-            return new VpTokenResult(Map.of(primary.credentialId(), primary), primary.claims());
+            Map<String, Object> mergedClaims = new LinkedHashMap<>();
+            credentials.values().forEach(credential -> mergedClaims.putAll(credential.claims()));
+            return new VpTokenResult(credentials, mergedClaims);
         } catch (IdentityBrokerException e) {
             throw e;
         } catch (Exception e) {

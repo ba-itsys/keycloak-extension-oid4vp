@@ -80,6 +80,7 @@ public final class Oid4vpConstants {
     public static final String DCQL_CLAIMS = "claims";
     public static final String DCQL_CLAIM_SETS = "claim_sets";
     public static final String DCQL_OPTIONS = "options";
+    public static final String DCQL_REQUIRED = "required";
     public static final String DCQL_PURPOSE = "purpose";
     public static final String DCQL_FORMAT = "format";
     public static final String DCQL_ID = "id";

@@ -21,6 +21,17 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-7">OID4VP 1.0 §7 — VP Token</a>
  */
 public enum PresentationType {
-    SD_JWT,
-    MDOC
+    SD_JWT(Oid4vpConstants.FORMAT_SD_JWT_VC),
+    MDOC(Oid4vpConstants.FORMAT_MSO_MDOC);
+
+    private final String dcqlFormat;
+
+    PresentationType(String dcqlFormat) {
+        this.dcqlFormat = dcqlFormat;
+    }
+
+    /** The DCQL credential format string of this presentation format. */
+    public String dcqlFormat() {
+        return dcqlFormat;
+    }
 }

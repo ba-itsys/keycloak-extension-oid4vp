@@ -18,9 +18,11 @@ package de.arbeitsagentur.keycloak.oid4vp;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpClientIdScheme;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpCredentialSetsValidator;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PreparedDcqlQuery;
@@ -71,6 +73,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final int DEFAULT_LOGIN_TIMEOUT_SECONDS = 1800;
     private static final int QR_CODE_SIZE = 250;
+    private static final String INVALID_CREDENTIAL_SETS = "Invalid OID4VP credential set configuration: ";
     private final Oid4vpRedirectFlowService redirectFlowService;
     private final Oid4vpQrCodeService qrCodeService;
     private final Oid4vpCallbackProcessor callbackProcessor;
@@ -153,17 +156,23 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
     public PreparedDcqlQuery prepareDcqlQueryFromConfig() {
         RealmModel realm = session.getContext().getRealm();
-        Map<String, CredentialTypeSpec> credentialTypes = realm == null
-                ? Map.of()
+        DcqlQueryBuilder.AggregatedCredentials aggregated = realm == null
+                ? new DcqlQueryBuilder.AggregatedCredentials(Map.of(), List.of())
                 : DcqlQueryBuilder.aggregateFromMappers(
                         realm.getIdentityProviderMappersByAliasStream(
                                 getConfig().getAlias()),
                         getConfig());
+        if (!aggregated.problems().isEmpty()) {
+            throw new IdentityBrokerException(INVALID_CREDENTIAL_SETS + String.join("; ", aggregated.problems()));
+        }
+        Map<String, CredentialTypeSpec> credentialTypes = aggregated.credentials();
 
         if (credentialTypes.isEmpty()) {
             throw new IdentityBrokerException(
                     "No DCQL query configured. Add at least one OID4VP mapper with a credential type to the identity provider.");
         }
+
+        List<CredentialSet> credentialSets = validatedCredentialSets(credentialTypes);
 
         Oid4vpTrustedAuthoritiesMode trustedAuthoritiesMode = getConfig().getTrustedAuthoritiesMode();
         ResolvedTrust trustedAuthoritiesTrust =
@@ -172,15 +181,41 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         String dcqlQuery = DcqlQueryBuilder.fromMapperSpecs(
                         OBJECT_MAPPER,
                         credentialTypes,
-                        getConfig().isAllCredentialsRequired(),
-                        getConfig().getCredentialSetPurpose(),
+                        credentialSets,
                         trustedAuthoritiesMode,
                         trustedAuthoritiesTrust.trustListUrls(),
                         trustedAuthoritiesTrust.authorityKeyIdentifiers())
                 .build();
-        List<RequestedCredential> requestedCredentials =
-                credentialTypes.values().stream().map(RequestedCredential::of).toList();
-        return new PreparedDcqlQuery(dcqlQuery, requestedCredentials);
+        List<RequestedCredential> requestedCredentials = credentialTypes.entrySet().stream()
+                .map(entry -> RequestedCredential.of(entry.getKey(), entry.getValue()))
+                .toList();
+        return new PreparedDcqlQuery(dcqlQuery, requestedCredentials, credentialSets);
+    }
+
+    /**
+     * The credential set configuration is validated again here because identity provider mappers
+     * have no validation hook: a mapper edited after the provider was last saved can invalidate a
+     * configuration the admin console accepted. Failing here is deliberate, since an inconsistent
+     * query would only be rejected by the wallet with an opaque error.
+     */
+    private List<CredentialSet> validatedCredentialSets(Map<String, CredentialTypeSpec> credentialTypes) {
+        List<CredentialSet> credentialSets;
+        try {
+            credentialSets = getConfig().getParsedCredentialSets();
+        } catch (IllegalArgumentException e) {
+            throw new IdentityBrokerException(INVALID_CREDENTIAL_SETS + e.getMessage(), e);
+        }
+
+        List<String> problems = Oid4vpCredentialSetsValidator.problems(
+                credentialSets,
+                credentialTypes,
+                getConfig().getPrincipalCredentialId(),
+                getConfig().getPrincipalAttribute(),
+                !getConfig().isUseIdTokenSubject() && !getConfig().isTransientUsersEnabled());
+        if (!problems.isEmpty()) {
+            throw new IdentityBrokerException(INVALID_CREDENTIAL_SETS + String.join("; ", problems));
+        }
+        return credentialSets;
     }
 
     /** Resolves the aggregated trust material of the configured trust material identity providers. */
@@ -298,8 +333,8 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 nonce,
                 encryptionKeyJson,
                 encryptionJwkThumbprint,
-                preparedDcqlQuery.configuredCredentialTypes(),
-                preparedDcqlQuery.requestedCredentials());
+                preparedDcqlQuery.requestedCredentials(),
+                preparedDcqlQuery.credentialSets());
         requestObjectStore.storeRequestContext(session, requestContext);
 
         URI requestUri = request.getUriInfo()

@@ -101,7 +101,7 @@ class VpTokenProcessorTest {
     }
 
     @Test
-    void process_multiCredentialWrapperWithDifferentTypes_throws() throws Exception {
+    void process_multiCredentialWrapperWithDifferentTypes_keepsBoth() throws Exception {
         String credJwt1 = buildSdJwt(Map.of(
                 "iss",
                 "issuer1",
@@ -127,14 +127,18 @@ class VpTokenProcessorTest {
         wrapper.put("cred1", sdJwt1);
         wrapper.put("cred2", sdJwt2);
 
-        assertThatThrownBy(() -> processor.process(
-                        request(objectMapper.writeValueAsString(wrapper), "client-id", "nonce", null)))
-                .isInstanceOf(IdentityBrokerException.class)
-                .hasMessageContaining("Only one credential type is currently supported");
+        VpTokenResult result =
+                processor.process(request(objectMapper.writeValueAsString(wrapper), "client-id", "nonce", null));
+
+        assertThat(result.credentials()).containsOnlyKeys("cred1", "cred2");
+        assertThat(result.credentials().get("cred1").credentialType()).isEqualTo("Type1");
+        assertThat(result.credentials().get("cred2").credentialType()).isEqualTo("Type2");
+        assertThat(result.credentials().get("cred1").claims()).containsEntry("name", "Alice");
+        assertThat(result.credentials().get("cred2").claims()).containsEntry("email", "alice@test.com");
     }
 
     @Test
-    void process_multiCredentialWrapperWithSameType_usesFirstCredential() throws Exception {
+    void process_multiCredentialWrapperWithSameType_keepsBoth() throws Exception {
         String credJwt1 = buildSdJwt(Map.of(
                 "iss",
                 "issuer1",
@@ -163,14 +167,13 @@ class VpTokenProcessorTest {
         VpTokenResult result =
                 processor.process(request(objectMapper.writeValueAsString(wrapper), "client-id", "nonce", null));
 
-        assertThat(result.credentials()).hasSize(1);
-        assertThat(result.getPrimaryCredential().credentialId()).isEqualTo("cred1");
-        assertThat(result.getPrimaryCredential().credentialType()).isEqualTo("IdentityCredential");
-        assertThat(result.mergedClaims()).containsEntry("name", "Alice");
+        assertThat(result.credentials()).containsOnlyKeys("cred1", "cred2");
+        assertThat(result.credentials().get("cred1").claims()).containsEntry("name", "Alice");
+        assertThat(result.credentials().get("cred2").claims()).containsEntry("email", "alice@test.com");
     }
 
     @Test
-    void process_wrapperEntryWithSameType_usesFirstCredential() throws Exception {
+    void process_severalPresentationsUnderOneCredentialId_usesFirst() throws Exception {
         String credJwt1 = buildSdJwt(Map.of(
                 "iss",
                 "issuer1",

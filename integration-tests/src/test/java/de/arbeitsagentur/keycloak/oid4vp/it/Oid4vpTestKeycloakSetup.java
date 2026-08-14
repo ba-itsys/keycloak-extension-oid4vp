@@ -16,13 +16,19 @@
 package de.arbeitsagentur.keycloak.oid4vp.it;
 
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
+import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialId;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
+import de.arbeitsagentur.keycloak.oid4vp.mapper.AbstractOID4VPClaimMapper;
+import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPMdocUserAttributeMapper;
+import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPMdocUserSessionAttributeMapper;
 import de.arbeitsagentur.keycloak.oid4vp.trust.EtsiTrustListIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.trust.EtsiTrustListIdentityProviderFactory;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.representations.idm.FederatedIdentityRepresentation;
 import org.keycloak.representations.idm.IdentityProviderMapperRepresentation;
@@ -36,6 +42,10 @@ public final class Oid4vpTestKeycloakSetup {
 
     public static final String SD_JWT_PID_VCT = "urn:eudi:pid:1";
     public static final String MDOC_PID_DOCTYPE = "eu.europa.ec.eudi.pid.1";
+    public static final String SD_JWT_PID_CREDENTIAL_ID =
+            CredentialId.defaultFor(Oid4vpConstants.FORMAT_SD_JWT_VC, SD_JWT_PID_VCT);
+    public static final String MDOC_PID_CREDENTIAL_ID =
+            CredentialId.defaultFor(Oid4vpConstants.FORMAT_MSO_MDOC, MDOC_PID_DOCTYPE);
 
     private Oid4vpTestKeycloakSetup() {}
 
@@ -76,8 +86,44 @@ public final class Oid4vpTestKeycloakSetup {
         config.put(Oid4vpIdentityProviderConfig.STATUS_LIST_MAX_CACHE_TTL_SECONDS, "0");
         config.put(Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM, x509CertPem);
         config.put(Oid4vpIdentityProviderConfig.SAME_DEVICE_ENABLED, "true");
+        config.put(
+                Oid4vpIdentityProviderConfig.CREDENTIAL_SETS,
+                alternativeCredentialSets(SD_JWT_PID_CREDENTIAL_ID, MDOC_PID_CREDENTIAL_ID));
         idp.setConfig(config);
         return idp;
+    }
+
+    /** A credential set that accepts any one of the given credentials, each as its own option. */
+    public static String alternativeCredentialSets(String... credentialIds) {
+        String options = Arrays.stream(credentialIds)
+                .map(credentialId -> "[\"" + credentialId + "\"]")
+                .collect(Collectors.joining(", "));
+        return "[{\"options\": [" + options + "]}]";
+    }
+
+    /** The distinct credential ids the given mappers contribute to, in query order. */
+    public static List<String> credentialIdsOf(List<IdentityProviderMapperRepresentation> mappers) {
+        return mappers.stream()
+                .map(Oid4vpTestKeycloakSetup::credentialIdOf)
+                .distinct()
+                .sorted()
+                .toList();
+    }
+
+    private static String credentialIdOf(IdentityProviderMapperRepresentation mapper) {
+        String configured = mapper.getConfig().get(AbstractOID4VPClaimMapper.CREDENTIAL_ID);
+        if (configured != null && !configured.isBlank()) {
+            return configured;
+        }
+        return CredentialId.defaultFor(
+                formatOf(mapper), mapper.getConfig().get(AbstractOID4VPClaimMapper.CREDENTIAL_TYPE));
+    }
+
+    private static String formatOf(IdentityProviderMapperRepresentation mapper) {
+        String providerId = mapper.getIdentityProviderMapper();
+        boolean mdoc = OID4VPMdocUserSessionAttributeMapper.PROVIDER_ID.equals(providerId)
+                || OID4VPMdocUserAttributeMapper.PROVIDER_ID.equals(providerId);
+        return mdoc ? Oid4vpConstants.FORMAT_MSO_MDOC : Oid4vpConstants.FORMAT_SD_JWT_VC;
     }
 
     // Default identity provider mapper storing the credential's family name as a session note.
@@ -95,8 +141,8 @@ public final class Oid4vpTestKeycloakSetup {
 
     /**
      * Mappers that drive the auto-generated DCQL query: SD-JWT PID and mDoc PID with the claims
-     * the wallet's default credentials carry. Credential set mode 'optional' (the default) lets
-     * the wallet present either credential.
+     * the wallet's default credentials carry. The credential sets configured on the identity
+     * provider let the wallet present either credential.
      */
     public static List<IdentityProviderMapperRepresentation> defaultDcqlMappers() {
         List<IdentityProviderMapperRepresentation> mappers = new ArrayList<>(sdJwtPidMappers());

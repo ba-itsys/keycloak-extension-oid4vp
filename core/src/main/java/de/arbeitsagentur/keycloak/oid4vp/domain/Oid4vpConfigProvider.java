@@ -42,6 +42,12 @@ public interface Oid4vpConfigProvider {
      */
     String getPrincipalAttribute();
 
+    /**
+     * The credential id the subject is read from, or blank to read it from the first requested
+     * credential the wallet presents.
+     */
+    String getPrincipalCredentialId();
+
     int getSsePollIntervalMs();
 
     int getSseTimeoutSeconds();

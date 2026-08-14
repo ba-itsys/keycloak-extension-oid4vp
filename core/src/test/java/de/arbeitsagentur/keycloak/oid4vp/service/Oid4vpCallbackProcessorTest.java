@@ -27,7 +27,9 @@ import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
+import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
+import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential.RequestedClaim;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
@@ -78,13 +80,13 @@ class Oid4vpCallbackProcessorTest {
 
         assertThat(result).isNotNull();
         assertThat(result.getUsername()).isEqualTo("user1");
-        assertThat(result.getContextData()).containsKey(Oid4vpMapperUtils.CONTEXT_CLAIMS_KEY);
+        PresentedCredential presented =
+                Oid4vpMapperUtils.presentedCredentials(result).get("cred-1");
+        assertThat(presented.claims()).containsEntry("sub", "user1");
+        assertThat(presented.type()).isEqualTo("IdentityCredential");
+        assertThat(presented.format()).isEqualTo(FORMAT_SD_JWT_VC);
         assertThat(result.getContextData().get(Oid4vpMapperUtils.CONTEXT_ISSUER_KEY))
                 .isEqualTo("https://issuer.example");
-        assertThat(result.getContextData().get(Oid4vpMapperUtils.CONTEXT_CREDENTIAL_TYPE_KEY))
-                .isEqualTo("IdentityCredential");
-        assertThat(result.getContextData().get(Oid4vpMapperUtils.CONTEXT_CREDENTIAL_FORMAT_KEY))
-                .isEqualTo(FORMAT_SD_JWT_VC);
     }
 
     @Test
@@ -120,9 +122,11 @@ class Oid4vpCallbackProcessorTest {
         VerifiedCredential credential = new VerifiedCredential(
                 "cred-1", "https://issuer.example", "BadType", Map.of("sub", "user1"), PresentationType.SD_JWT);
         Oid4vpCallbackProcessor processor = processor(resultOf(credential));
+        RequestedCredential requested = new RequestedCredential(
+                "cred-1", FORMAT_SD_JWT_VC, "GoodType", List.of(new RequestedClaim(null, "sub")), List.of());
 
-        assertThatThrownBy(
-                        () -> processor.process(requestContext("state", "nonce", "GoodType"), "vp-token", null, null))
+        assertThatThrownBy(() -> processor.process(
+                        requestContext("state", "nonce", List.of(requested), "GoodType"), "vp-token", null, null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("Credential type not trusted by this OID4VP IdP");
     }
@@ -181,7 +185,7 @@ class Oid4vpCallbackProcessorTest {
         assertThat(result.getId()).isEqualTo(expectedIdentityKey);
         assertThat(result.getContextData().get(Oid4vpMapperUtils.CONTEXT_SUBJECT_KEY))
                 .isEqualTo(expectedSub);
-        assertThat(result.getContextData()).containsKey(Oid4vpMapperUtils.CONTEXT_CLAIMS_KEY);
+        assertThat(result.getContextData()).containsKey(Oid4vpMapperUtils.CONTEXT_CREDENTIALS_KEY);
     }
 
     @Test
@@ -227,6 +231,7 @@ class Oid4vpCallbackProcessorTest {
     void process_rejectsPresentationMissingRequestedClaims() {
         Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))));
         RequestedCredential requested = new RequestedCredential(
+                "cred-1",
                 FORMAT_SD_JWT_VC,
                 "IdentityCredential",
                 List.of(new RequestedClaim(null, "sub"), new RequestedClaim(null, "given_name")),
@@ -246,6 +251,7 @@ class Oid4vpCallbackProcessorTest {
     void process_acceptsPresentationSatisfyingFallbackClaimSet() {
         Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))));
         RequestedCredential requested = new RequestedCredential(
+                "cred-1",
                 FORMAT_SD_JWT_VC,
                 "IdentityCredential",
                 List.of(new RequestedClaim(null, "sub"), new RequestedClaim(null, "given_name")),
@@ -262,6 +268,7 @@ class Oid4vpCallbackProcessorTest {
         Oid4vpCallbackProcessor processor =
                 processor(resultOf(sdJwtCredential(Map.of("email", "a@example.org", "sub", "user1"))));
         RequestedCredential requested = new RequestedCredential(
+                "cred-1",
                 FORMAT_SD_JWT_VC,
                 "IdentityCredential",
                 List.of(
@@ -277,6 +284,73 @@ class Oid4vpCallbackProcessorTest {
                         null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("requested claims");
+    }
+
+    @Test
+    void process_rejectsPresentationSatisfyingNoCredentialSetOption() {
+        Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))));
+        List<CredentialSet> credentialSets = List.of(new CredentialSet(List.of(List.of("cred-1", "mdl")), true, null));
+
+        assertThatThrownBy(() -> processor.process(
+                        requestContext("state", "nonce", List.of(requestedSub()), credentialSets, "IdentityCredential"),
+                        "vp-token",
+                        null,
+                        null))
+                .isInstanceOf(IdentityBrokerException.class)
+                .hasMessageContaining("does not satisfy any option")
+                .hasMessageContaining("mdl");
+    }
+
+    @Test
+    void process_acceptsPresentationSatisfyingFallbackCredentialSetOption() {
+        Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))));
+        List<CredentialSet> credentialSets =
+                List.of(new CredentialSet(List.of(List.of("cred-1", "mdl"), List.of("cred-1")), true, null));
+
+        BrokeredIdentityContext result = processor.process(
+                requestContext("state", "nonce", List.of(requestedSub()), credentialSets, "IdentityCredential"),
+                "vp-token",
+                null,
+                null);
+
+        assertThat(result.getUsername()).isEqualTo("user1");
+    }
+
+    @Test
+    void process_ignoresUnsatisfiedOptionalCredentialSet() {
+        Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))));
+        List<CredentialSet> credentialSets = List.of(
+                new CredentialSet(List.of(List.of("cred-1")), true, null),
+                new CredentialSet(List.of(List.of("mdl")), false, null));
+
+        BrokeredIdentityContext result = processor.process(
+                requestContext("state", "nonce", List.of(requestedSub()), credentialSets, "IdentityCredential"),
+                "vp-token",
+                null,
+                null);
+
+        assertThat(result.getUsername()).isEqualTo("user1");
+    }
+
+    @Test
+    void process_rejectsCredentialIdThatWasNotRequested() {
+        Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))));
+        RequestedCredential requested = new RequestedCredential(
+                "other", FORMAT_SD_JWT_VC, "IdentityCredential", List.of(new RequestedClaim(null, "sub")), List.of());
+
+        assertThatThrownBy(() -> processor.process(
+                        requestContext("state", "nonce", List.of(requested), "IdentityCredential"),
+                        "vp-token",
+                        null,
+                        null))
+                .isInstanceOf(IdentityBrokerException.class)
+                .hasMessageContaining("cred-1")
+                .hasMessageContaining("not requested");
+    }
+
+    private static RequestedCredential requestedSub() {
+        return new RequestedCredential(
+                "cred-1", FORMAT_SD_JWT_VC, "IdentityCredential", List.of(new RequestedClaim(null, "sub")), List.of());
     }
 
     // ===== Helper Methods =====
@@ -318,13 +392,22 @@ class Oid4vpCallbackProcessorTest {
 
     private Oid4vpRequestObjectStore.RequestContextEntry requestContext(
             String state, String nonce, String... configuredCredentialTypes) {
-        return requestContext(state, nonce, null, configuredCredentialTypes);
+        return requestContext(state, nonce, null, List.of(), configuredCredentialTypes);
     }
 
     private Oid4vpRequestObjectStore.RequestContextEntry requestContext(
             String state,
             String nonce,
             List<RequestedCredential> requestedCredentials,
+            String... configuredCredentialTypes) {
+        return requestContext(state, nonce, requestedCredentials, List.of(), configuredCredentialTypes);
+    }
+
+    private Oid4vpRequestObjectStore.RequestContextEntry requestContext(
+            String state,
+            String nonce,
+            List<RequestedCredential> requestedCredentials,
+            List<CredentialSet> credentialSets,
             String... configuredCredentialTypes) {
         return new Oid4vpRequestObjectStore.RequestContextEntry(
                 state,
@@ -336,7 +419,7 @@ class Oid4vpCallbackProcessorTest {
                 nonce,
                 null,
                 null,
-                List.of(configuredCredentialTypes),
-                requestedCredentials);
+                requestedCredentials,
+                credentialSets);
     }
 }

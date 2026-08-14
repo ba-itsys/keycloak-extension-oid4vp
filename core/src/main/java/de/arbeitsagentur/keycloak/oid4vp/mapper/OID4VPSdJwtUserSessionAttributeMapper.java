@@ -49,6 +49,7 @@ public class OID4VPSdJwtUserSessionAttributeMapper extends AbstractOID4VPClaimMa
             .helpText("Name of the user session attribute to store the claim in.")
             .type(ProviderConfigProperty.STRING_TYPE)
             .add()
+            .property(credentialIdProperty())
             .property(claimSetIdsProperty())
             .build();
 

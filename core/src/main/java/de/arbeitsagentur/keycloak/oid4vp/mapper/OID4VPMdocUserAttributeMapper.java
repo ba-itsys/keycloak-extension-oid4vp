@@ -17,8 +17,8 @@ package de.arbeitsagentur.keycloak.oid4vp.mapper;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
+import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredential;
 import java.util.List;
-import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.models.IdentityProviderMapperModel;
 import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.provider.ProviderConfigurationBuilder;
@@ -47,6 +47,7 @@ public class OID4VPMdocUserAttributeMapper extends OID4VPSdJwtUserAttributeMappe
                     + "to map to those predefined user properties.")
             .type(ProviderConfigProperty.USER_PROFILE_ATTRIBUTE_LIST_TYPE)
             .add()
+            .property(credentialIdProperty())
             .property(claimSetIdsProperty())
             .build();
 
@@ -98,13 +99,12 @@ public class OID4VPMdocUserAttributeMapper extends OID4VPSdJwtUserAttributeMappe
     }
 
     @Override
-    protected JsonNode claimsRoot(IdentityProviderMapperModel mapperModel, BrokeredIdentityContext context) {
+    protected JsonNode claimsRoot(IdentityProviderMapperModel mapperModel, PresentedCredential credential) {
         String namespace = namespace(mapperModel);
         if (namespace == null) {
             logger.warnf("No namespace or credential type configured for mapper %s", mapperModel.getName());
             return null;
         }
-        JsonNode claims = credentialClaims(context);
-        return claims != null ? claims.get(namespace) : null;
+        return credential.claimsNode().get(namespace);
     }
 }

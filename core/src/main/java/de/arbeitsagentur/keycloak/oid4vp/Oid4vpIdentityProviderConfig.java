@@ -15,13 +15,22 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpClientIdScheme;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpCredentialSetsValidator;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpResponseMode;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpTrustedAuthoritiesMode;
+import de.arbeitsagentur.keycloak.oid4vp.util.DcqlQueryBuilder;
+import de.arbeitsagentur.keycloak.oid4vp.util.DcqlQueryBuilder.AggregatedCredentials;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import org.keycloak.models.IdentityProviderModel;
+import org.keycloak.models.RealmModel;
+import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 
 /**
@@ -48,10 +57,8 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public static final String VERIFIER_INFO = "verifierInfo";
 
-    public static final String CREDENTIAL_SET_MODE = "credentialSetMode";
-    public static final String CREDENTIAL_SET_MODE_OPTIONAL = "optional";
-    public static final String CREDENTIAL_SET_MODE_ALL = "all";
-    public static final String CREDENTIAL_SET_PURPOSE = "credentialSetPurpose";
+    public static final String CREDENTIAL_SETS = "credentialSets";
+    public static final String PRINCIPAL_CREDENTIAL_ID = "principalCredentialId";
 
     /** Comma separated aliases of trust material identity providers, same key as upstream. */
     public static final String TRUST_MATERIAL_IDPS = "trustMaterialIdps";
@@ -176,25 +183,64 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         getConfig().put(VERIFIER_INFO, verifierInfo);
     }
 
-    public String getCredentialSetMode() {
-        String mode = getConfig().get(CREDENTIAL_SET_MODE);
-        return StringUtil.isNotBlank(mode) ? mode : CREDENTIAL_SET_MODE_OPTIONAL;
+    /**
+     * Validated by Keycloak when the identity provider is created or updated, so a broken
+     * credential set configuration is rejected in the admin console instead of failing a login.
+     *
+     * <p>On create the provider has no mappers yet, so only the rules that need no mapper
+     * knowledge apply. Identity provider mappers themselves have no validation hook, which is why
+     * the same rules run again when the DCQL query is built.
+     */
+    @Override
+    public void validate(RealmModel realm) {
+        super.validate(realm);
+
+        AggregatedCredentials aggregated = configuredCredentials(realm);
+        List<String> problems = new ArrayList<>(aggregated.problems());
+        problems.addAll(Oid4vpCredentialSetsValidator.problems(
+                getParsedCredentialSets(),
+                aggregated.credentials(),
+                getPrincipalCredentialId(),
+                getPrincipalAttribute(),
+                !isUseIdTokenSubject() && !isTransientUsersEnabled()));
+        if (!problems.isEmpty()) {
+            throw new IllegalArgumentException(String.join("; ", problems));
+        }
     }
 
-    public void setCredentialSetMode(String mode) {
-        getConfig().put(CREDENTIAL_SET_MODE, mode);
+    /**
+     * The parsed DCQL credential sets, empty when none are configured.
+     *
+     * @throws IllegalArgumentException when the configured value is not a valid credential set list
+     */
+    public List<CredentialSet> getParsedCredentialSets() {
+        return StringUtil.isBlank(getCredentialSets())
+                ? List.of()
+                : CredentialSet.parse(JsonSerialization.mapper, getCredentialSets());
     }
 
-    public boolean isAllCredentialsRequired() {
-        return CREDENTIAL_SET_MODE_ALL.equals(getCredentialSetMode());
+    /** The credentials the identity provider's mappers request, empty while it has no mappers. */
+    private AggregatedCredentials configuredCredentials(RealmModel realm) {
+        if (realm == null || StringUtil.isBlank(getAlias())) {
+            return new AggregatedCredentials(Map.of(), List.of());
+        }
+        return DcqlQueryBuilder.aggregateFromMappers(realm.getIdentityProviderMappersByAliasStream(getAlias()), this);
     }
 
-    public String getCredentialSetPurpose() {
-        return getConfig().get(CREDENTIAL_SET_PURPOSE);
+    public String getCredentialSets() {
+        return getConfig().get(CREDENTIAL_SETS);
     }
 
-    public void setCredentialSetPurpose(String purpose) {
-        getConfig().put(CREDENTIAL_SET_PURPOSE, purpose);
+    public void setCredentialSets(String credentialSetsJson) {
+        getConfig().put(CREDENTIAL_SETS, credentialSetsJson);
+    }
+
+    public String getPrincipalCredentialId() {
+        return getConfig().get(PRINCIPAL_CREDENTIAL_ID);
+    }
+
+    public void setPrincipalCredentialId(String principalCredentialId) {
+        getConfig().put(PRINCIPAL_CREDENTIAL_ID, principalCredentialId);
     }
 
     public String getTrustMaterialIdps() {
