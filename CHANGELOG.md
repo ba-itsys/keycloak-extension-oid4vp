@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.7.0...v0.8.0) (2026-08-14)
+
+
+### Features
+
+* credential set support and validation ([610f439](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/610f4391270de4f4d5c96da5d81ff20c6c17a776))
+
 ## [0.7.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.6.6...v0.7.0) (2026-08-13)
 
 
