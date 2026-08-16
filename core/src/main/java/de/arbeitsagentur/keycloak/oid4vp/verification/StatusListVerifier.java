@@ -236,13 +236,12 @@ public class StatusListVerifier {
         return expiry;
     }
 
-    private String fetchStatusListJwt(String uri) throws Exception {
+    String fetchStatusListJwt(String uri) throws Exception {
         if (session != null) {
             return SimpleHttp.doGet(uri, session)
                     .header("Accept", "application/statuslist+jwt")
                     .asString();
         }
-        // Fallback for tests without KeycloakSession
         throw new IllegalStateException("No KeycloakSession available for HTTP requests");
     }
 

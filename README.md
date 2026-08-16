@@ -33,7 +33,7 @@ Supported capabilities:
 
 At login time, Keycloak allocates a `state` for each enabled browser flow and renders either a same-device deep link, a cross-device QR code, or both. The `state` is carried in the `request_uri`. The wallet fetches the `request_uri`, Keycloak generates a signed request object for that fetch, and the wallet posts the resulting presentation (echoing the `state`) to the verifier endpoint. After successful verification, Keycloak generates a single-use `response_code` and the browser completes the login through `/complete-auth?state=...&response_code=...`. The browser presents that `response_code`, and the request is bound to the original Keycloak authentication session, so the public `state` alone cannot drive completion.
 
-For SD-JWT VC, the verifier prefers `x5c`-based issuer verification. Without a usable `x5c` chain it uses the issuer keys published by the credential's trust domain, and when that domain publishes none it can resolve the issuer signing key from JWT VC issuer metadata at `/.well-known/jwt-vc-issuer`, including `jwks_uri` documents, using the JOSE `kid`.
+For SD-JWT VC, the verifier prefers `x5c`-based issuer verification. Without a usable `x5c` chain it uses the issuer keys published by the credential's trust domain. Only when the identity provider references no trust material providers at all does it resolve the issuer signing key from JWT VC issuer metadata at `/.well-known/jwt-vc-issuer`, including `jwks_uri` documents, using the JOSE `kid`. With trust material providers configured, a credential type none of them serves fails closed.
 
 For the full flow, security model, and request/state lifecycle, see [docs/request-flow.md](docs/request-flow.md).
 

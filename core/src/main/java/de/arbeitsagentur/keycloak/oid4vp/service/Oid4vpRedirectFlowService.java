@@ -78,7 +78,8 @@ public class Oid4vpRedirectFlowService {
      * {@code http(s)} wallet authorization endpoint URL (e.g. {@code http://localhost:8085/authorize})
      * for wallets reachable at a web URL — both forms receive the same query parameters.
      */
-    public URI buildWalletAuthorizationUrl(String walletScheme, String clientId, URI requestUri) {
+    public URI buildWalletAuthorizationUrl(
+            String walletScheme, String clientId, URI requestUri, boolean requestUriMethodPost) {
         String scheme = StringUtil.isNotBlank(walletScheme) ? walletScheme : DEFAULT_WALLET_SCHEME;
         String separator = "?";
         if (isWalletEndpointUrl(scheme)) {
@@ -96,6 +97,11 @@ public class Oid4vpRedirectFlowService {
                 .append(REQUEST_URI)
                 .append("=")
                 .append(URLEncoder.encode(requestUri.toString(), StandardCharsets.UTF_8));
+        // OID4VP 1.0 §5.10: without request_uri_method the wallet retrieves the request object with GET.
+        // Advertising post lets a conforming wallet POST its wallet_metadata and wallet_nonce.
+        if (requestUriMethodPost) {
+            url.append("&").append(REQUEST_URI_METHOD).append("=").append(REQUEST_URI_METHOD_POST);
+        }
         return URI.create(url.toString());
     }
 
@@ -244,7 +250,6 @@ public class Oid4vpRedirectFlowService {
 
         var meta = new LinkedHashMap<String, Object>();
         meta.put("vp_formats_supported", vpFormats);
-        // Encryption key material and methods only apply when an encrypted response mode is used.
         if (responseEncryptionKey != null) {
             Map<String, Object> jwk =
                     parseJsonObject(responseEncryptionKey.toPublicJwk().toJson());

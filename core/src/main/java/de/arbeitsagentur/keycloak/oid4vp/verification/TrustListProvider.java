@@ -71,12 +71,10 @@ public class TrustListProvider {
     private final List<X509Certificate> signingCertificates;
     private volatile String currentLoTEType;
 
-    /** Creates a provider that fetches the trust list from the given URL. */
     public TrustListProvider(KeycloakSession session, String trustListUrl) {
         this(session, trustListUrl, null, null, null);
     }
 
-    /** Creates a provider that fetches the trust list from the given URL with a cache TTL cap. */
     public TrustListProvider(KeycloakSession session, String trustListUrl, Duration maxCacheTtl) {
         this(session, trustListUrl, maxCacheTtl, null, null);
     }
@@ -229,8 +227,12 @@ public class TrustListProvider {
      * `aki` values are meant to represent certificate extension values.
      */
     public List<String> getTrustedAuthorityKeyIdentifiers() {
+        return authorityKeyIdentifiersOf(getIssuanceCertificates());
+    }
+
+    private List<String> authorityKeyIdentifiersOf(List<X509Certificate> certificates) {
         LinkedHashSet<String> authorityKeyIdentifiers = new LinkedHashSet<>();
-        for (X509Certificate certificate : getIssuanceCertificates()) {
+        for (X509Certificate certificate : certificates) {
             String authorityKeyIdentifier = extractAuthorityKeyIdentifier(certificate);
             if (authorityKeyIdentifier != null) {
                 authorityKeyIdentifiers.add(authorityKeyIdentifier);

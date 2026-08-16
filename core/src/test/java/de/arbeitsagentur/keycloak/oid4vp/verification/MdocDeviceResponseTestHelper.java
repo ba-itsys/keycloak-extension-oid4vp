@@ -46,6 +46,9 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import javax.security.auth.x500.X500Principal;
+import org.bouncycastle.asn1.x509.BasicConstraints;
+import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.KeyUsage;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
@@ -75,9 +78,12 @@ class MdocDeviceResponseTestHelper {
 
     final KeyPair issuerKeyPair;
     final KeyPair deviceKeyPair;
-    final X509Certificate issuerCert;
+    X509Certificate issuerCert;
     final MdocAlgorithmSpec algorithm;
     String docType = "org.iso.18013.5.1.mDL";
+    String msoDocType;
+    KeyPair deviceSigningKeyPair;
+    boolean tamperDeviceSignature;
     String namespace = "org.iso.18013.5.1";
     String[][] claimPairs = {{"given_name", "John"}, {"family_name", "Doe"}};
     Instant validFrom = Instant.now().minus(1, ChronoUnit.HOURS);
@@ -94,8 +100,48 @@ class MdocDeviceResponseTestHelper {
         this.issuerCert = generateSelfSignedCert(issuerKeyPair, algorithm.certificateSignatureAlgorithm());
     }
 
+    /**
+     * Signs with a self-signed certificate carrying a CA profile (CA:TRUE, keyCertSign), the shape
+     * of the OpenID conformance suite's hard-coded mDL document signer certificate.
+     */
+    MdocDeviceResponseTestHelper caProfileIssuerCert() throws Exception {
+        X500Principal subject = new X500Principal("CN=Test mDoc CA Profile Issuer");
+        Instant now = Instant.now();
+        this.issuerCert = new JcaX509CertificateConverter()
+                .getCertificate(new JcaX509v3CertificateBuilder(
+                                subject,
+                                BigInteger.valueOf(System.currentTimeMillis()),
+                                Date.from(now.minus(1, ChronoUnit.HOURS)),
+                                Date.from(now.plus(365, ChronoUnit.DAYS)),
+                                subject,
+                                issuerKeyPair.getPublic())
+                        .addExtension(Extension.basicConstraints, true, new BasicConstraints(0))
+                        .addExtension(Extension.keyUsage, true, new KeyUsage(KeyUsage.keyCertSign | KeyUsage.cRLSign))
+                        .build(new JcaContentSignerBuilder(algorithm.certificateSignatureAlgorithm())
+                                .build(issuerKeyPair.getPrivate())));
+        return this;
+    }
+
     MdocDeviceResponseTestHelper docType(String docType) {
         this.docType = docType;
+        return this;
+    }
+
+    /** A Mobile Security Object docType differing from the document-level one. */
+    MdocDeviceResponseTestHelper msoDocType(String msoDocType) {
+        this.msoDocType = msoDocType;
+        return this;
+    }
+
+    /** Signs deviceAuth with the given key instead of the deviceKey the MSO announces. */
+    MdocDeviceResponseTestHelper deviceSignedWith(KeyPair keyPair) {
+        this.deviceSigningKeyPair = keyPair;
+        return this;
+    }
+
+    /** Flips a byte of the device signature after signing. */
+    MdocDeviceResponseTestHelper tamperDeviceSignature() {
+        this.tamperDeviceSignature = true;
         return this;
     }
 
@@ -125,6 +171,18 @@ class MdocDeviceResponseTestHelper {
      * @param sessionTranscript the session transcript CBOR to sign in deviceAuth (null to skip deviceAuth)
      */
     String build(CBORItemList sessionTranscript) throws Exception {
+        return build(sessionTranscript, false);
+    }
+
+    /**
+     * Builds a complete DeviceResponse whose first presented element value differs from the value the
+     * MSO digest was computed over, so digest verification must reject it.
+     */
+    String buildWithTamperedElementValue(CBORItemList sessionTranscript) throws Exception {
+        return build(sessionTranscript, true);
+    }
+
+    private String build(CBORItemList sessionTranscript, boolean tamperFirstElementValue) throws Exception {
         // Build IssuerSignedItems and compute digests
         List<CBORItem> elements = new ArrayList<>();
         List<CBORPair> digestPairs = new ArrayList<>();
@@ -140,11 +198,21 @@ class MdocDeviceResponseTestHelper {
             // Wrap in tag-24 (as per ISO 18013-5)
             byte[] itemBytes = item.encode();
             CBORTaggedItem taggedItem = new CBORTaggedItem(24, new CBORByteArray(itemBytes));
-            elements.add(taggedItem);
 
-            // Digest is SHA-256 of the tag-24 wrapped bytes
+            // Digest is SHA-256 of the tag-24 wrapped bytes of the genuine item.
             byte[] digest = sha256.digest(taggedItem.encode());
             digestPairs.add(new CBORPair(new CBORInteger(i), new CBORByteArray(digest)));
+
+            if (tamperFirstElementValue && i == 0) {
+                CBORPairList altered = new CBORPairList(List.of(
+                        new CBORPair(new CBORString("digestID"), new CBORInteger(i)),
+                        new CBORPair(new CBORString("random"), new CBORByteArray(new byte[] {(byte) i, 1, 2, 3})),
+                        new CBORPair(new CBORString("elementIdentifier"), new CBORString(claimPairs[i][0])),
+                        new CBORPair(new CBORString("elementValue"), new CBORString(claimPairs[i][1] + "-tampered"))));
+                elements.add(new CBORTaggedItem(24, new CBORByteArray(altered.encode())));
+            } else {
+                elements.add(taggedItem);
+            }
         }
 
         CBORPairList nameSpaces =
@@ -206,7 +274,7 @@ class MdocDeviceResponseTestHelper {
         return new CBORPairList(List.of(
                 new CBORPair(new CBORString("version"), new CBORString("1.0")),
                 new CBORPair(new CBORString("digestAlgorithm"), new CBORString("SHA-256")),
-                new CBORPair(new CBORString("docType"), new CBORString(docType)),
+                new CBORPair(new CBORString("docType"), new CBORString(msoDocType != null ? msoDocType : docType)),
                 new CBORPair(new CBORString("valueDigests"), valueDigests),
                 new CBORPair(new CBORString("validityInfo"), validityInfo),
                 new CBORPair(new CBORString("deviceKeyInfo"), deviceKeyInfo)));
@@ -259,7 +327,11 @@ class MdocDeviceResponseTestHelper {
                 .bodyAttributes(protectedHeader)
                 .payload(payload)
                 .build();
-        byte[] signature = new COSESigner(deviceKeyPair.getPrivate()).sign(sigStructure, algorithm.coseAlgorithm());
+        KeyPair signingKeyPair = deviceSigningKeyPair != null ? deviceSigningKeyPair : deviceKeyPair;
+        byte[] signature = new COSESigner(signingKeyPair.getPrivate()).sign(sigStructure, algorithm.coseAlgorithm());
+        if (tamperDeviceSignature) {
+            signature[signature.length / 2] ^= 0x01;
+        }
 
         // Build device signature COSE_Sign1
         CBORItem deviceSignature = new COSESign1Builder()

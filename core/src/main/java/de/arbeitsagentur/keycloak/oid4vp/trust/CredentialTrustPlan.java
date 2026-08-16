@@ -126,7 +126,11 @@ public class CredentialTrustPlan {
                 List.copyOf(directIssuerCertificates),
                 trustedIssuerKeys,
                 List.copyOf(revocationCertificates),
-                TrustedAuthority.merge(trustedAuthorities));
+                TrustedAuthority.merge(trustedAuthorities),
+                // Any configured provider means trust is declared: a credential type no provider
+                // serves resolves to nothing and fails closed instead of falling back to the
+                // issuer's self-published metadata.
+                hasProviders());
     }
 
     /** A provider without declared credential types serves all of them. */

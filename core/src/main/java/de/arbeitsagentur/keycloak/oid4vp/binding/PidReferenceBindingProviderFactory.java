@@ -29,9 +29,13 @@ import org.keycloak.provider.ProviderConfigurationBuilder;
  * for. A person is identified by a PID, and the credential this Keycloak issues carries the account
  * that person signs in to.
  *
- * <p>The defaults are the mandatory PID attributes of the EUDI wallet, in both formats. They
- * identify a person and change rarely. A change is not a lockout: the user signs in with a password
- * once and receives a credential bound to the PID of today.
+ * <p>The defaults identify a person and change rarely, so a change is not a lockout: the user signs
+ * in with a password once and receives a credential bound to the PID of today. They include
+ * {@code personal_administrative_number}, which distinguishes two people who share a name and a date
+ * of birth; it is only bound when the PID actually carries it, so where it is absent the binding
+ * falls back to the mandatory name and birthdate attributes and two such homonyms would share the
+ * same binding material. A deployment whose PIDs do not carry a unique identifier should configure a
+ * claim that is unique to the person.
  *
  * <p>Configured through the server configuration, because the login that issues a credential and the
  * login that presents it again have to select the same claims, and those two run in places that
@@ -39,7 +43,7 @@ import org.keycloak.provider.ProviderConfigurationBuilder;
  *
  * <pre>
  * --spi-oid4vp-reference-credential-binding-pid-credential-types=urn:eudi:pid:1
- * --spi-oid4vp-reference-credential-binding-pid-claims=given_name,family_name,birthdate
+ * --spi-oid4vp-reference-credential-binding-pid-claims=given_name,family_name,birthdate,personal_administrative_number
  * </pre>
  */
 public class PidReferenceBindingProviderFactory implements ReferenceCredentialBindingProviderFactory {
@@ -52,8 +56,11 @@ public class PidReferenceBindingProviderFactory implements ReferenceCredentialBi
     /** Claim paths to bind to, in the dot notation the OID4VP mappers use. Required. */
     public static final String CLAIMS = "claims";
 
-    static final String DEFAULT_CREDENTIAL_TYPES = "urn:eudi:pid:1,eu.europa.ec.eudi.pid.1";
-    static final String DEFAULT_CLAIMS = "given_name,family_name,birthdate";
+    // The default claim names are the SD-JWT PID names, so only the SD-JWT PID is covered by
+    // default. An mDoc PID uses different data element names (birth_date) and needs an explicit
+    // configuration of both settings.
+    static final String DEFAULT_CREDENTIAL_TYPES = "urn:eudi:pid:1";
+    static final String DEFAULT_CLAIMS = "given_name,family_name,birthdate,personal_administrative_number";
 
     private Set<String> credentialTypes = Set.copyOf(parse(DEFAULT_CREDENTIAL_TYPES));
     private List<String> claimPaths = parseClaims(DEFAULT_CLAIMS);
@@ -123,7 +130,9 @@ public class PidReferenceBindingProviderFactory implements ReferenceCredentialBi
                 .label("Claim paths")
                 .helpText("Claim paths the issued credential is bound to, in dot notation. At least one is required. "
                         + "Prefer claims that identify a person and change rarely, because every change of one of "
-                        + "them costs the user a password login.")
+                        + "them costs the user a password login. Include a claim that is unique to the person, such "
+                        + "as personal_administrative_number, so two people who share a name and a date of birth do "
+                        + "not share the same binding material.")
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .defaultValue(DEFAULT_CLAIMS)
                 .add()

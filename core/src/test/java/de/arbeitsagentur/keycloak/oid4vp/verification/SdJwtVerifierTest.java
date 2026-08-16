@@ -33,6 +33,7 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.SdJwtVerificationResult;
 import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
 import de.arbeitsagentur.keycloak.oid4vp.trust.TestCertificates;
 import de.arbeitsagentur.keycloak.oid4vp.trust.TestTrust;
+import de.arbeitsagentur.keycloak.oid4vp.trust.TrustedIssuerCertificate;
 import de.arbeitsagentur.keycloak.oid4vp.trust.X509TrustMaterial;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
@@ -49,6 +50,8 @@ import java.util.Set;
 import javax.security.auth.x500.X500Principal;
 import org.bouncycastle.asn1.x509.BasicConstraints;
 import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.GeneralName;
+import org.bouncycastle.asn1.x509.GeneralNames;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.operator.ContentSigner;
@@ -59,6 +62,8 @@ import org.junit.jupiter.api.Test;
 import org.keycloak.common.crypto.CryptoIntegration;
 
 class SdJwtVerifierTest {
+
+    private static final String ISSUER = "https://issuer.example";
 
     private SdJwtVerifier verifier;
     private ECKey signingKey;
@@ -280,6 +285,46 @@ class SdJwtVerifierTest {
     }
 
     @Test
+    void verify_presentationWithoutKbJwt_throwsWhenSessionParametersAreExpected() throws Exception {
+        ECKey holderKey = new ECKeyGenerator(Curve.P_256).generate();
+        String credJwt = buildSignedJwt(Map.of(
+                "iss",
+                ISSUER,
+                "vct",
+                "IdentityCredential",
+                "cnf",
+                Map.of("jwk", holderKey.toPublicJWK().toJSONObject())));
+
+        assertThatThrownBy(() -> verifier.verify(
+                        credJwt + "~", "https://verifier.example", "test-nonce", TestTrust.ofCertificates(signingCert)))
+                .as("a presentation without holder binding must not pass where key binding is expected")
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void verify_kbJwtWithTamperedSdHash_throws() throws Exception {
+        ECKey holderKey = new ECKeyGenerator(Curve.P_256).generate();
+        String credJwt = buildSignedJwt(Map.of(
+                "iss",
+                ISSUER,
+                "vct",
+                "IdentityCredential",
+                "cnf",
+                Map.of("jwk", holderKey.toPublicJWK().toJSONObject())));
+
+        // The KB-JWT commits to a different presentation than the one it travels with.
+        String foreignCredJwt = buildSignedJwt(Map.of("iss", ISSUER));
+        String kbJwtBoundToForeignPresentation = buildSdJwtVpWithKbJwt(
+                        foreignCredJwt, holderKey, "https://verifier.example", "test-nonce", Instant.now())
+                .substring(foreignCredJwt.length() + 1);
+        String sdJwt = credJwt + "~" + kbJwtBoundToForeignPresentation;
+
+        assertThatThrownBy(() -> verifier.verify(
+                        sdJwt, "https://verifier.example", "test-nonce", TestTrust.ofCertificates(signingCert)))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
     void verify_kbJwtMissingCnfJwk_throws() throws Exception {
         // Build credential JWT without cnf
         String credJwt = buildSignedJwt(Map.of("iss", "https://issuer.example"));
@@ -333,7 +378,7 @@ class SdJwtVerifierTest {
     void verify_x5cChainWithCaTrust_succeeds() throws Exception {
         // CA key + cert
         ECKey caKey = new ECKeyGenerator(Curve.P_256).generate();
-        X509Certificate caCert = generateSelfSignedCert(caKey, "CN=Test CA");
+        X509Certificate caCert = generateSelfSignedCaCert(caKey, "CN=Test CA");
 
         // End-entity key + cert signed by CA
         ECKey entityKey = new ECKeyGenerator(Curve.P_256).generate();
@@ -355,7 +400,7 @@ class SdJwtVerifierTest {
     void verify_x5cChainWithFullChain_succeeds() throws Exception {
         // CA key + cert
         ECKey caKey = new ECKeyGenerator(Curve.P_256).generate();
-        X509Certificate caCert = generateSelfSignedCert(caKey, "CN=Test CA");
+        X509Certificate caCert = generateSelfSignedCaCert(caKey, "CN=Test CA");
 
         // End-entity key + cert signed by CA
         ECKey entityKey = new ECKeyGenerator(Curve.P_256).generate();
@@ -372,11 +417,57 @@ class SdJwtVerifierTest {
         assertThat(result.issuer()).isEqualTo("https://issuer.example");
     }
 
+    // SD-JWT VC section 3.5: with an x5c chain, the iss value must match a subject alternative
+    // name of the leaf certificate, so one trusted issuer cannot claim to be another.
+    @Test
+    void verify_x5cChainIssuerNotInLeafSan_throws() throws Exception {
+        ECKey caKey = new ECKeyGenerator(Curve.P_256).generate();
+        X509Certificate caCert = generateSelfSignedCaCert(caKey, "CN=Test CA");
+        ECKey entityKey = new ECKeyGenerator(Curve.P_256).generate();
+        X509Certificate entityCert = generateCaSignedCert(
+                entityKey,
+                caKey,
+                caCert,
+                "CN=Test Issuer",
+                new GeneralName(GeneralName.uniformResourceIdentifier, "https://other-issuer.example"));
+
+        String jwt = buildSignedJwtWithKey(Map.of("iss", ISSUER, "vct", "PID"), entityKey, List.of(entityCert));
+
+        assertThatThrownBy(() -> verifier.verify(jwt + "~", null, null, anchorsOnly(caCert)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("subject alternative name");
+    }
+
+    @Test
+    void verify_x5cChainIssuerHostAsDnsNameSan_succeeds() throws Exception {
+        ECKey caKey = new ECKeyGenerator(Curve.P_256).generate();
+        X509Certificate caCert = generateSelfSignedCaCert(caKey, "CN=Test CA");
+        ECKey entityKey = new ECKeyGenerator(Curve.P_256).generate();
+        X509Certificate entityCert = generateCaSignedCert(
+                entityKey, caKey, caCert, "CN=Test Issuer", new GeneralName(GeneralName.dNSName, "issuer.example"));
+
+        String jwt = buildSignedJwtWithKey(Map.of("iss", ISSUER, "vct", "PID"), entityKey, List.of(entityCert));
+
+        SdJwtVerificationResult result = verifier.verify(jwt + "~", null, null, anchorsOnly(caCert));
+
+        assertThat(result.issuer()).isEqualTo(ISSUER);
+    }
+
+    private static ResolvedTrust anchorsOnly(X509Certificate caCert) {
+        return new ResolvedTrust(
+                List.of(new X509TrustMaterial(Set.of(caCert), List.of())),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                true);
+    }
+
     @Test
     void verify_x5cChainUntrustedCa_throws() throws Exception {
         // CA key + cert (not in trust list)
         ECKey caKey = new ECKeyGenerator(Curve.P_256).generate();
-        X509Certificate caCert = generateSelfSignedCert(caKey, "CN=Untrusted CA");
+        X509Certificate caCert = generateSelfSignedCaCert(caKey, "CN=Untrusted CA");
 
         // End-entity key + cert signed by untrusted CA
         ECKey entityKey = new ECKeyGenerator(Curve.P_256).generate();
@@ -384,7 +475,7 @@ class SdJwtVerifierTest {
 
         // Different CA in trust list
         ECKey trustedCaKey = new ECKeyGenerator(Curve.P_256).generate();
-        X509Certificate trustedCaCert = generateSelfSignedCert(trustedCaKey, "CN=Trusted CA");
+        X509Certificate trustedCaCert = generateSelfSignedCaCert(trustedCaKey, "CN=Trusted CA");
 
         String jwt = buildSignedJwtWithKey(
                 Map.of("iss", "https://issuer.example", "vct", "PID"), entityKey, List.of(entityCert));
@@ -393,7 +484,7 @@ class SdJwtVerifierTest {
         // Neither the x5c chain nor direct key matching should work
         assertThatThrownBy(() -> verifier.verify(sdJwt, null, null, TestTrust.ofCertificates(trustedCaCert)))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Signature could not be verified");
+                .hasMessageContaining("Failed to validate the x5c certificate chain");
     }
 
     @Test
@@ -420,7 +511,8 @@ class SdJwtVerifierTest {
                 List.of(),
                 List.of(),
                 List.of(),
-                List.of());
+                List.of(),
+                true);
         ECKey issuerKey = new ECKeyGenerator(Curve.P_256).keyID("issuer-key").generate();
         String sdJwt = buildSignedJwtWithKeyAndKid(
                         Map.of("iss", "https://issuer.example", "vct", "PID"), issuerKey, "issuer-key")
@@ -453,6 +545,33 @@ class SdJwtVerifierTest {
         assertThat(result.credentialType()).isEqualTo("PID");
     }
 
+    // When a trust source is declared for the credential type but resolves to nothing (for example a
+    // trust list that is momentarily unreachable), the issuer's self-published metadata must not be
+    // trusted as a fallback: the credential fails closed instead of accepting attacker-chosen keys.
+    @Test
+    void verify_declaredButEmptyTrustSource_doesNotFallBackToIssuerMetadata() throws Exception {
+        ECKey metadataKey = new ECKeyGenerator(Curve.P_256).keyID("issuer-key").generate();
+        SdJwtVerifier verifierWithFallback = new SdJwtVerifier(
+                60,
+                300,
+                new FakeIssuerMetadataResolver(new JwtVcIssuerMetadataResolver.ResolvedIssuerKey(
+                        "issuer-key",
+                        metadataKey.toECPublicKey(),
+                        List.of(),
+                        Instant.now().plusSeconds(3600))));
+        String sdJwt = buildSignedJwtWithKeyAndKid(
+                        Map.of("iss", "https://issuer.example", "vct", "PID"), metadataKey, "issuer-key")
+                + "~";
+
+        // A declared trust source that currently resolves to no anchors, keys or certificates.
+        ResolvedTrust declaredButUnavailable =
+                new ResolvedTrust(List.of(), List.of(), List.of(), List.of(), List.of(), true);
+
+        assertThatThrownBy(() -> verifierWithFallback.verify(sdJwt, null, null, declaredButUnavailable))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("No trusted keys available");
+    }
+
     @Test
     void verify_prefersX5cOverIssuerMetadataFallback() throws Exception {
         SdJwtVerifier verifierWithFallback = new SdJwtVerifier(60, 300, new FailingIssuerMetadataResolver());
@@ -464,6 +583,73 @@ class SdJwtVerifierTest {
 
         assertThat(result.issuer()).isEqualTo("https://issuer.example");
         assertThat(result.credentialType()).isEqualTo("PID");
+    }
+
+    // A pinned issuer certificate is trusted only for the issuer it is bound to. An SD-JWT presenting
+    // that certificate in its x5c while claiming a different issuer must not be accepted, so a
+    // certificate published for one issuer cannot validate a credential claiming another.
+    @Test
+    void verify_x5cCertificateBoundToIssuer_rejectsCredentialFromAnotherIssuer() throws Exception {
+        ResolvedTrust boundToIssuerA = new ResolvedTrust(
+                List.of(),
+                List.of(new TrustedIssuerCertificate("https://issuer-a.example", signingCert)),
+                List.of(),
+                List.of(),
+                List.of(),
+                true);
+        String sdJwt = buildSignedJwt(Map.of("iss", "https://issuer-b.example", "vct", "PID")) + "~";
+
+        assertThatThrownBy(() -> verifier.verify(sdJwt, null, null, boundToIssuerA))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void verify_expiredPinnedIssuerCertificateInX5c_throws() throws Exception {
+        X509Certificate expiredCert = generateExpiredSelfSignedCert(signingKey);
+        ResolvedTrust pinned = new ResolvedTrust(
+                List.of(),
+                List.of(new TrustedIssuerCertificate(ISSUER, expiredCert)),
+                List.of(),
+                List.of(),
+                List.of(),
+                true);
+        String jwt = buildSignedJwtWithKey(Map.of("iss", ISSUER, "vct", "PID"), signingKey, List.of(expiredCert));
+
+        assertThatThrownBy(() -> verifier.verify(jwt + "~", null, null, pinned))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void verify_expiredPinnedIssuerCertificateWithoutX5c_throws() throws Exception {
+        X509Certificate expiredCert = generateExpiredSelfSignedCert(signingKey);
+        ResolvedTrust pinned = new ResolvedTrust(
+                List.of(),
+                List.of(new TrustedIssuerCertificate(ISSUER, expiredCert)),
+                List.of(),
+                List.of(),
+                List.of(),
+                true);
+        String jwt = buildSignedJwtWithKeyAndKid(Map.of("iss", ISSUER, "vct", "PID"), signingKey, null);
+
+        assertThatThrownBy(() -> verifier.verify(jwt + "~", null, null, pinned))
+                .as("an expired certificate must not keep verifying just because the credential omits the chain")
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void verify_x5cCertificateBoundToIssuer_acceptsCredentialFromThatIssuer() throws Exception {
+        ResolvedTrust boundToIssuerA = new ResolvedTrust(
+                List.of(),
+                List.of(new TrustedIssuerCertificate("https://issuer-a.example", signingCert)),
+                List.of(),
+                List.of(),
+                List.of(),
+                true);
+        String sdJwt = buildSignedJwt(Map.of("iss", "https://issuer-a.example", "vct", "PID")) + "~";
+
+        SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, boundToIssuerA);
+
+        assertThat(result.issuer()).isEqualTo("https://issuer-a.example");
     }
 
     // ===== Helper Methods =====
@@ -568,11 +754,38 @@ class SdJwtVerifierTest {
         return signedJWT.serialize();
     }
 
+    /** A self-signed end entity signer certificate, the shape a trust list pins directly. */
     private static X509Certificate generateSelfSignedCert(ECKey ecKey) throws Exception {
-        return generateSelfSignedCert(ecKey, "CN=Test SD-JWT Issuer");
+        ECPublicKey publicKey = ecKey.toECPublicKey();
+        X500Principal subject = new X500Principal("CN=Test SD-JWT Issuer");
+        Instant now = Instant.now();
+        JcaX509v3CertificateBuilder certBuilder = new JcaX509v3CertificateBuilder(
+                subject,
+                BigInteger.valueOf(System.currentTimeMillis()),
+                Date.from(now.minus(1, ChronoUnit.HOURS)),
+                Date.from(now.plus(365, ChronoUnit.DAYS)),
+                subject,
+                publicKey);
+        ContentSigner signer = new JcaContentSignerBuilder("SHA256withECDSA").build(ecKey.toECPrivateKey());
+        return new JcaX509CertificateConverter().getCertificate(certBuilder.build(signer));
     }
 
-    private static X509Certificate generateSelfSignedCert(ECKey ecKey, String dn) throws Exception {
+    private static X509Certificate generateExpiredSelfSignedCert(ECKey ecKey) throws Exception {
+        X500Principal subject = new X500Principal("CN=Expired SD-JWT Issuer");
+        Instant now = Instant.now();
+        JcaX509v3CertificateBuilder certBuilder = new JcaX509v3CertificateBuilder(
+                subject,
+                BigInteger.valueOf(System.currentTimeMillis()),
+                Date.from(now.minus(365, ChronoUnit.DAYS)),
+                Date.from(now.minus(1, ChronoUnit.DAYS)),
+                subject,
+                ecKey.toECPublicKey());
+        certBuilder.addExtension(Extension.basicConstraints, true, new BasicConstraints(true));
+        ContentSigner signer = new JcaContentSignerBuilder("SHA256withECDSA").build(ecKey.toECPrivateKey());
+        return new JcaX509CertificateConverter().getCertificate(certBuilder.build(signer));
+    }
+
+    private static X509Certificate generateSelfSignedCaCert(ECKey ecKey, String dn) throws Exception {
         ECPublicKey publicKey = ecKey.toECPublicKey();
         X500Principal subject = new X500Principal(dn);
         Instant now = Instant.now();
@@ -592,6 +805,13 @@ class SdJwtVerifierTest {
 
     private static X509Certificate generateCaSignedCert(
             ECKey subjectKey, ECKey caKey, X509Certificate caCert, String dn) throws Exception {
+        return generateCaSignedCert(
+                subjectKey, caKey, caCert, dn, new GeneralName(GeneralName.uniformResourceIdentifier, ISSUER));
+    }
+
+    private static X509Certificate generateCaSignedCert(
+            ECKey subjectKey, ECKey caKey, X509Certificate caCert, String dn, GeneralName subjectAlternativeName)
+            throws Exception {
         Instant now = Instant.now();
         JcaX509v3CertificateBuilder certBuilder = new JcaX509v3CertificateBuilder(
                 caCert.getSubjectX500Principal(),
@@ -601,6 +821,7 @@ class SdJwtVerifierTest {
                 new X500Principal(dn),
                 subjectKey.toECPublicKey());
         certBuilder.addExtension(Extension.basicConstraints, true, new BasicConstraints(false));
+        certBuilder.addExtension(Extension.subjectAlternativeName, false, new GeneralNames(subjectAlternativeName));
 
         ContentSigner signer = new JcaContentSignerBuilder("SHA256withECDSA").build(caKey.toECPrivateKey());
 

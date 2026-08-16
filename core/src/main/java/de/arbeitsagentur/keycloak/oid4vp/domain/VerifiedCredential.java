@@ -33,21 +33,12 @@ public record VerifiedCredential(
         Map<String, Object> claims,
         PresentationType presentationType) {
 
-    /**
-     * Generates a stable identity key from the subject claim only.
-     * The key is scoped to the IdP alias by Keycloak, so issuer is not included —
-     * this allows the same user to authenticate with different credential formats
-     * (SD-JWT / mDoc) and still be matched to the same Keycloak identity.
-     */
+    /** The identity key of the subject claim, see {@link Oid4vpIdentityKey#of}. */
     public String generateIdentityKey(String subject) {
         return Oid4vpIdentityKey.of(subject);
     }
 
-    /**
-     * Generates a stable identity key with case-insensitive subject matching.
-     * Intended for human-readable credential claims that may vary in casing
-     * across formats while representing the same user identity.
-     */
+    /** The case-insensitive identity key of the subject, see {@link Oid4vpIdentityKey#caseInsensitive}. */
     public String generateCaseInsensitiveIdentityKey(String subject) {
         return Oid4vpIdentityKey.caseInsensitive(subject);
     }

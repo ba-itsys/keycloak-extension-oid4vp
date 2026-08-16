@@ -34,7 +34,12 @@ class Oid4vpWalletAuthorizationUrlTest {
     }
 
     private String build(String walletScheme) {
-        return service.buildWalletAuthorizationUrl(walletScheme, CLIENT_ID, REQUEST_URI)
+        return service.buildWalletAuthorizationUrl(walletScheme, CLIENT_ID, REQUEST_URI, false)
+                .toString();
+    }
+
+    private String buildWithPost(String walletScheme) {
+        return service.buildWalletAuthorizationUrl(walletScheme, CLIENT_ID, REQUEST_URI, true)
                 .toString();
     }
 
@@ -75,5 +80,15 @@ class Oid4vpWalletAuthorizationUrlTest {
     @Test
     void blankSchemeFallsBackToDefault() {
         assertThat(build(" ")).startsWith("openid4vp://?client_id=");
+    }
+
+    @Test
+    void requestUriMethodPostIsNotAdvertisedByDefault() {
+        assertThat(build("openid4vp://")).doesNotContain("request_uri_method");
+    }
+
+    @Test
+    void requestUriMethodPostIsAdvertisedWhenEnabled() {
+        assertThat(buildWithPost("openid4vp://")).contains("&request_uri_method=post");
     }
 }

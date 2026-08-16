@@ -25,6 +25,7 @@ import de.arbeitsagentur.keycloak.oid4vp.binding.ReferenceCredentialBinding;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredential;
+import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredentials;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential.RequestedClaim;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
@@ -108,6 +109,26 @@ class Oid4vpCallbackProcessorTest {
         assertThatThrownBy(() -> processor.process(requestContext("state", "nonce"), "vp-token", null))
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("Issuer not allowed");
+    }
+
+    // The allow-list must reject a disallowed issuer wherever it appears, not only on the first
+    // credential: every presented credential's claims reach the mappers in a multi-credential response.
+    @Test
+    void process_multiCredentialWithDisallowedSecondIssuer_throws() {
+        config.setAllowedIssuers("https://issuer.example");
+        VerifiedCredential allowed = sdJwtCredential(Map.of("sub", "user1"));
+        VerifiedCredential disallowed = new VerifiedCredential(
+                "cred-2",
+                "https://evil-issuer.example",
+                "IdentityCredential",
+                Map.of("given_name", "Mallory"),
+                PresentationType.SD_JWT);
+        Oid4vpCallbackProcessor processor = processor(resultOf(allowed, disallowed));
+
+        assertThatThrownBy(() ->
+                        processor.process(requestContext("state", "nonce", "IdentityCredential"), "vp-token", null))
+                .isInstanceOf(IdentityBrokerException.class)
+                .hasMessageContaining("Issuer not allowed: https://evil-issuer.example");
     }
 
     @Test
@@ -235,6 +256,25 @@ class Oid4vpCallbackProcessorTest {
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("requested claims")
                 .hasMessageContaining("given_name");
+    }
+
+    // Without credential_sets every requested credential is required (OID4VP 1.0, section 6.1).
+    @Test
+    void process_rejectsPresentationOmittingARequestedCredential() {
+        Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))));
+        RequestedCredential presented =
+                new RequestedCredential("cred-1", FORMAT_SD_JWT_VC, "IdentityCredential", List.of(), List.of());
+        RequestedCredential omitted =
+                new RequestedCredential("cred-2", FORMAT_SD_JWT_VC, "BadgeCredential", List.of(), List.of());
+
+        assertThatThrownBy(() -> processor.process(
+                        requestContext(
+                                "state", "nonce", List.of(presented, omitted), "IdentityCredential", "BadgeCredential"),
+                        "vp-token",
+                        null))
+                .isInstanceOf(IdentityBrokerException.class)
+                .hasMessageContaining("missing requested credentials")
+                .hasMessageContaining("cred-2");
     }
 
     @Test
@@ -405,6 +445,52 @@ class Oid4vpCallbackProcessorTest {
                 .hasMessageContaining("None of the credentials carrying the subject");
     }
 
+    @Test
+    void process_subjectCredentialWithheldBinding_fallsBackToAFreshSubject() {
+        // A subject credential this realm issues alongside bindable credentials is always bound to
+        // them. One presented next to such credentials but carrying no binding claim (for example
+        // because the binding claim was left out of the issued credential's visible claims, or because
+        // it was combined with another holder's PID) has had its binding withheld, so it does not
+        // identify a returning user: the login falls back to a fresh subject, as on a first login.
+        config.setPrincipalAttributes("cred-1:sub");
+        config.setAllowMissingSubjectCredential(true);
+        VerifiedCredential subjectCredential = sdJwtCredential(Map.of("sub", "user1"));
+        VerifiedCredential otherHoldersPid = new VerifiedCredential(
+                "pid",
+                "https://pid.example",
+                "IdentityCredential",
+                Map.of("given_name", "Mallory"),
+                PresentationType.SD_JWT);
+        ReferenceBindingCheck presentationBindsToOthers = new FixedReferenceBindingCheck(true, true);
+
+        BrokeredIdentityContext result = processor(
+                        resultOf(subjectCredential, otherHoldersPid), presentationBindsToOthers)
+                .process(requestContext("state", "nonce"), "vp-token", null);
+
+        assertThat(result.getUsername()).startsWith("oid4vp-").isNotEqualToIgnoringCase("user1");
+        assertThat(result.getContextData()).containsKey(Oid4vpMapperUtils.CONTEXT_GENERATED_SUBJECT_KEY);
+    }
+
+    @Test
+    void process_subjectCredentialWithheldBinding_withoutFallbackSetting_fails() {
+        // Without allowMissingSubjectCredential the presentation is required to carry a usable subject
+        // credential, so a withheld binding leaves nothing to identify the user and the login fails.
+        config.setPrincipalAttributes("cred-1:sub");
+        VerifiedCredential subjectCredential = sdJwtCredential(Map.of("sub", "user1"));
+        VerifiedCredential otherHoldersPid = new VerifiedCredential(
+                "pid",
+                "https://pid.example",
+                "IdentityCredential",
+                Map.of("given_name", "Mallory"),
+                PresentationType.SD_JWT);
+        ReferenceBindingCheck presentationBindsToOthers = new FixedReferenceBindingCheck(true, true);
+
+        assertThatThrownBy(() -> processor(resultOf(subjectCredential, otherHoldersPid), presentationBindsToOthers)
+                        .process(requestContext("state", "nonce"), "vp-token", null))
+                .isInstanceOf(IdentityBrokerException.class)
+                .hasMessageContaining("None of the credentials carrying the subject");
+    }
+
     /** The presentation this scenario is built for: a PID, next to a credential bound elsewhere. */
     private static VpTokenResult pidAndCredentialBoundElsewhere() {
         VerifiedCredential pid = new VerifiedCredential(
@@ -473,16 +559,40 @@ class Oid4vpCallbackProcessorTest {
         return new Oid4vpCallbackProcessor(config, config, null, verifier, referenceBindingCheck);
     }
 
+    /** Reference binding check double with fixed answers, so tests control both of its questions. */
+    private record FixedReferenceBindingCheck(boolean bound, boolean bindsToOthers) implements ReferenceBindingCheck {
+        @Override
+        public boolean boundToPresentation(
+                PresentedCredentials credentials, String subjectCredentialId, String claimedBinding) {
+            return bound;
+        }
+
+        @Override
+        public boolean bindsToOtherCredentials(PresentedCredentials credentials, String subjectCredentialId) {
+            return bindsToOthers;
+        }
+    }
+
     /** Accepts the presented credential, which was issued for a presentation like this one. */
     private static final ReferenceBindingCheck ISSUED_FOR_THIS_PRESENTATION =
-            (credentials, subjectCredentialId, claimedBinding) -> true;
+            new FixedReferenceBindingCheck(true, false);
 
     /** Refuses the presented credential, which was issued for another presentation. */
     private static final ReferenceBindingCheck ISSUED_FOR_ANOTHER_PRESENTATION =
-            (credentials, subjectCredentialId, claimedBinding) -> false;
+            new FixedReferenceBindingCheck(false, false);
 
     private static VpTokenResult resultOf(VerifiedCredential credential) {
         return new VpTokenResult(Map.of(credential.credentialId(), credential), Map.of());
+    }
+
+    private static VpTokenResult resultOf(VerifiedCredential... credentials) {
+        Map<String, VerifiedCredential> byId = new LinkedHashMap<>();
+        Map<String, Object> mergedClaims = new LinkedHashMap<>();
+        for (VerifiedCredential credential : credentials) {
+            byId.put(credential.credentialId(), credential);
+            mergedClaims.putAll(credential.claims());
+        }
+        return new VpTokenResult(byId, mergedClaims);
     }
 
     private static VerifiedCredential sdJwtCredential(Map<String, Object> claims) {

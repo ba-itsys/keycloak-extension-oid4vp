@@ -20,9 +20,22 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.node.IntNode;
 import com.fasterxml.jackson.databind.node.TextNode;
+import com.nimbusds.jose.JOSEObjectType;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.ECDSASigner;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.security.cert.X509Certificate;
+import java.security.interfaces.ECPrivateKey;
+import java.security.spec.ECGenParameterSpec;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.zip.Deflater;
@@ -247,6 +260,68 @@ class StatusListVerifierTest {
                         "status", Map.of("status_list", Map.of("uri", "https://issuer.example/status", "idx", 0)))))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Unable to verify credential revocation status");
+    }
+
+    @Test
+    void statusListSignedByTheRevocationCertificateIsAccepted() throws Exception {
+        KeyPair signer = generateEcKeyPair();
+        X509Certificate signerCert = MdocDeviceResponseTestHelper.generateSelfSignedCert(signer);
+        String uri = "https://issuer.example/status/signed";
+        StatusListVerifier verifierWithJwt = verifierServing(signedStatusListJwt(signer, uri));
+
+        verifierWithJwt.checkRevocationStatus(
+                Map.of("status", Map.of("status_list", Map.of("uri", uri, "idx", 0))), List.of(signerCert));
+    }
+
+    @Test
+    void statusListSignedByAForeignKeyIsRejected() throws Exception {
+        KeyPair signer = generateEcKeyPair();
+        X509Certificate unrelatedCert = MdocDeviceResponseTestHelper.generateSelfSignedCert(generateEcKeyPair());
+        String uri = "https://issuer.example/status/signed";
+        StatusListVerifier verifierWithJwt = verifierServing(signedStatusListJwt(signer, uri));
+
+        assertThatThrownBy(() -> verifierWithJwt.checkRevocationStatus(
+                        Map.of("status", Map.of("status_list", Map.of("uri", uri, "idx", 0))), List.of(unrelatedCert)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no trusted key matched");
+    }
+
+    private StatusListVerifier verifierServing(String statusListJwt) {
+        return new StatusListVerifier() {
+            @Override
+            String fetchStatusListJwt(String uri) {
+                return statusListJwt;
+            }
+        };
+    }
+
+    /** A statuslist+jwt whose single status entry is 0 (not revoked). */
+    private static String signedStatusListJwt(KeyPair signer, String uri) throws Exception {
+        Deflater deflater = new Deflater(Deflater.DEFAULT_COMPRESSION, true);
+        deflater.setInput(new byte[] {0x00});
+        deflater.finish();
+        byte[] compressed = new byte[64];
+        int length = deflater.deflate(compressed);
+        deflater.end();
+        String lst = Base64.getUrlEncoder().withoutPadding().encodeToString(Arrays.copyOf(compressed, length));
+
+        SignedJWT jwt = new SignedJWT(
+                new JWSHeader.Builder(JWSAlgorithm.ES256)
+                        .type(new JOSEObjectType("statuslist+jwt"))
+                        .build(),
+                new JWTClaimsSet.Builder()
+                        .subject(uri)
+                        .expirationTime(Date.from(Instant.now().plusSeconds(600)))
+                        .claim("status_list", Map.of("bits", 1, "lst", lst))
+                        .build());
+        jwt.sign(new ECDSASigner((ECPrivateKey) signer.getPrivate()));
+        return jwt.serialize();
+    }
+
+    private static KeyPair generateEcKeyPair() throws Exception {
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("EC");
+        generator.initialize(new ECGenParameterSpec("secp256r1"));
+        return generator.generateKeyPair();
     }
 
     @Test

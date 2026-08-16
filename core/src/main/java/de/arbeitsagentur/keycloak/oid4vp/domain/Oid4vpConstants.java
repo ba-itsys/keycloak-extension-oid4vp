@@ -68,6 +68,8 @@ public final class Oid4vpConstants {
     // OID4VP protocol parameters
     public static final String VP_TOKEN = "vp_token";
     public static final String REQUEST_URI = "request_uri";
+    public static final String REQUEST_URI_METHOD = "request_uri_method";
+    public static final String REQUEST_URI_METHOD_POST = "post";
     public static final String DCQL_QUERY = "dcql_query";
     public static final String CLIENT_METADATA = "client_metadata";
     public static final String VERIFIER_INFO = "verifier_info";

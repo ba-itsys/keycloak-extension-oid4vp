@@ -30,8 +30,7 @@ import org.keycloak.utils.StringUtil;
  * <p>Trust anchors come from an ETSI TS 119 602 trust list URL (fetched, cached and refreshed by
  * {@code TrustListProvider}), from a pasted PEM certificate bundle, or both. The
  * {@code trustedCertificates} and {@code requiredExtendedKeyUsages} keys match the upstream
- * {@code DefaultTrustIdentityProviderConfig} so instances migrate cleanly once Keycloak ships
- * X.509 trust material support.
+ * {@code DefaultTrustIdentityProviderConfig}.
  */
 public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
 

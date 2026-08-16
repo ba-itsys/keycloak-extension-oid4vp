@@ -46,9 +46,9 @@ import org.keycloak.utils.StringUtil;
  * immediately because passive keys stay published while credentials signed with them are still
  * valid.
  *
- * <p>A realm key whose certificate is issued by a CA is a plain X.509 trust domain instead: put
- * that CA into an {@link EtsiTrustListIdentityProvider} so presented chains are validated against
- * it.
+ * <p>A realm key certificate issued by an external CA works the same way: the signing leaf is
+ * trusted directly, so a credential presenting the full chain validates against the pinned leaf
+ * without the CA being configured anywhere in Keycloak.
  */
 public class KeycloakRealmIssuerIdentityProvider
         implements Oid4vpTrustMaterialIdentityProvider<KeycloakRealmIssuerIdentityProviderConfig> {
@@ -209,11 +209,14 @@ public class KeycloakRealmIssuerIdentityProvider
             }
         }
 
+        // Only the signing leaf is pinned. A CA-issued realm key's chain must not widen the pinned
+        // set: the CA belongs to a chain-validating trust provider, not to the directly trusted keys.
         private static void collectCertificates(KeyWrapper key, Set<X509Certificate> certificates) {
-            if (key.getCertificateChain() != null && !key.getCertificateChain().isEmpty()) {
-                certificates.addAll(key.getCertificateChain());
-            } else if (key.getCertificate() != null) {
+            if (key.getCertificate() != null) {
                 certificates.add(key.getCertificate());
+            } else if (key.getCertificateChain() != null
+                    && !key.getCertificateChain().isEmpty()) {
+                certificates.add(key.getCertificateChain().get(0));
             }
         }
     }

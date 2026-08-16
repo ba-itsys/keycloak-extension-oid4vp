@@ -185,7 +185,7 @@ The issuer side of the realm needs the following.
 3. A realm signing key whose certificate a certificate authority issued. Keycloak refuses to issue an SD-JWT credential with a self-signed signing certificate.
 4. A credential scope for the employee credential, of protocol `oid4vc`, with the credential configuration id, the credential type, the format `dc+sd-jwt` and a signing algorithm. Set `vc.binding_required` to `true` and `vc.binding_required_proof_types` to `jwt`, so the wallet proves possession of its key and receives a credential it can present with a key binding JWT.
 5. The mapper `oid4vp-bound-subject-mapper` on that scope, with `claim.name` set to the claim `principalAttributes` names for this credential, `sub` in this example. It writes the subject the login was bound to, and the reference credential binding of that login.
-6. `vc.credential_build_config.sd_jwt.visible_claims` set to `id,iat,nbf,exp,jti,oid4vp_reference_binding`. The verifier reads the reference credential binding of every credential it is offered as a subject, so it may not sit behind selective disclosure. The claims Keycloak keeps visible by default have to stay in that list, because the setting replaces them.
+6. `vc.credential_build_config.sd_jwt.visible_claims` set to `id,iat,nbf,exp,jti,oid4vp_reference_binding`. The verifier reads the reference credential binding of every credential it is offered as a subject, so it may not sit behind selective disclosure. If it does, and the subject credential is presented alongside credentials the binding would cover, the verifier does not accept that credential as the subject: the login falls back to a fresh subject and issues a bound credential again, as on a first login, instead of trusting a subject credential whose binding was withheld. The claims Keycloak keeps visible by default have to stay in that list, because the setting replaces them.
 7. A client with OID4VCI enabled that has the credential scope, named by `offerClientId`. The wallet has to ask for the credential as this client.
 
 Keycloak only offers a credential to a user who is entitled to it. The authenticator grants that entitlement during the login and records the subject and the reference credential binding on it, so an entitlement granted by an administrator instead would yield a credential that identifies nobody.
@@ -202,14 +202,14 @@ What it recognises is the person those credentials name, not the credential inst
 
 The digest is an HMAC over a realm secret. The value rides in a credential the wallet shows to other verifiers, and a plain hash of names and dates is recovered from a candidate list within seconds. Passive realm keys are accepted when the binding is checked, so a key rotation does not invalidate what is already issued.
 
-Which claims of which credentials the digest covers is a deployment decision, made through the `oid4vp-reference-credential-binding` provider. The `pid` provider ships with the extension and binds the issued credential to the mandatory PID attributes, in both credential formats. It takes its selection from the server configuration, because the login that issues a credential and the login that presents it again share no other configuration.
+Which claims of which credentials the digest covers is a deployment decision, made through the `oid4vp-reference-credential-binding` provider. The `pid` provider ships with the extension and binds the issued credential to the mandatory attributes of the SD-JWT PID. It takes its selection from the server configuration, because the login that issues a credential and the login that presents it again share no other configuration.
 
 ```properties
---spi-oid4vp-reference-credential-binding-pid-credential-types=urn:eudi:pid:1,eu.europa.ec.eudi.pid.1
---spi-oid4vp-reference-credential-binding-pid-claims=given_name,family_name,birthdate
+--spi-oid4vp-reference-credential-binding-pid-credential-types=urn:eudi:pid:1
+--spi-oid4vp-reference-credential-binding-pid-claims=given_name,family_name,birthdate,personal_administrative_number
 ```
 
-Those are the defaults, so a deployment presenting a PID needs no configuration. Credentials are selected by type, which is the VCT of an SD-JWT credential and the doctype of an mDoc.
+Those are the defaults, so a deployment presenting an SD-JWT PID needs no configuration. Credentials are selected by type, which is the VCT of an SD-JWT credential and the doctype of an mDoc. A deployment binding to the mDoc PID configures its doctype `eu.europa.ec.eudi.pid.1` together with the mDoc element names, `birth_date` rather than `birthdate`. The default selection includes `personal_administrative_number`, which distinguishes two people who share a name and a date of birth; it is only bound when the PID actually carries it, so a deployment whose PIDs omit it should name another claim that is unique to the person.
 
 Claims are read exactly as the [IdP mappers](#idp-mappers) read them, by a path in dot notation. A nested claim of an SD-JWT credential is addressed as `place_of_birth.locality`, an array as `nationalities[]`, and an mDoc path resolves inside the namespace of the credential. One selection therefore covers both formats, and a path means the same thing here as in a mapper.
 
@@ -244,8 +244,9 @@ This mode is intended for credentials that do not carry a stable account identif
 |-----|-------------|---------|
 | `sameDeviceEnabled` | Enables same-device wallet login. | `true` |
 | `crossDeviceEnabled` | Enables cross-device QR-code wallet login. | `true` |
-| `walletScheme` | URI scheme used to invoke the wallet app. | `openid4vp://` |
+| `walletScheme` | URI scheme used to invoke the wallet app, for the same-device and cross-device flows alike. | `openid4vp://` |
 | `responseMode` | Wallet callback response mode. `direct_post.jwt` encrypts the wallet response and is what wallets following the high assurance profile expect. | `direct_post.jwt` |
+| `requestUriMethodPost` | Advertises `request_uri_method=post` so a conforming wallet retrieves the request object with POST (OID4VP 1.0 §5.10), sending its `wallet_metadata` and `wallet_nonce`. This enables request-object encryption and `wallet_nonce` replay protection. Leave off for wallets that retrieve the request object with GET only. | `false` |
 
 ### Client Authentication (X.509)
 
@@ -288,9 +289,9 @@ Selection uses the credential type that was **requested** under the DCQL credent
 |------|--------------------|----------------|----------------------------------|---------------|
 | ETSI trust list | `x5c` chain | PKIX path to the anchors of the Issuance services on the list | `etsi_tl` with the list URL, `aki` with the key identifiers | `etsi-trust-list` with `trustListUrl` |
 | Pinned certificate bundle | `x5c` chain, or nothing | PKIX path to the CA certificates, and end entity certificates are trusted directly | `aki` with the key identifiers | `etsi-trust-list` with `trustedCertificates` |
-| Keycloak-issued, CA-chained realm key | `x5c` chain to the CA that issued the realm key certificate | as the pinned bundle, with that CA as anchor | `aki`, a private CA has nothing else to advertise | `etsi-trust-list` with the CA in `trustedCertificates` |
+| Keycloak-issued, CA-chained realm key | `x5c` chain to the CA that issued the realm key certificate | the realm key certificate as a directly trusted leaf | none | `keycloak-realm-issuer` |
 | Keycloak-issued, chainless | JOSE `kid` only | the realm's published signature keys and the realm key certificates, both trusted for the realm issuer alone | none | `keycloak-realm-issuer` |
-| mDoc | `x5chain` in COSE | PKIX path or a pinned leaf certificate | `etsi_tl` or `aki` | an X.509 provider, because there is no COSE `kid` route for a key-only provider to serve a doctype |
+| mDoc | `x5chain` in COSE | PKIX path or a pinned leaf certificate; a chain whose leaf is itself a configured trust anchor is trusted directly, which accepts a self-signed document signer certificate placed on a trust list | `etsi_tl` or `aki` | an X.509 provider, because there is no COSE `kid` route for a key-only provider to serve a doctype |
 | Issuer JWKS | JOSE `kid` only | the keys the provider publishes, trusted for any issuer | none | Keycloak's `default-trust` with `jwksUrl` or a pasted JWK |
 | Revocation | status list JWT | the status list certificates of the providers serving that credential | not applicable | follows the credential's trust domain |
 
@@ -326,13 +327,13 @@ Trust material for credentials this Keycloak issues itself. The material is the 
 | `issuerRealm` | Name of the realm whose signature keys sign the credentials. | *(the realm the OID4VP identity provider runs in)* |
 | `issuer` | The credential `iss` the realm keys are trusted for. | *(derived from the issuer realm, the value its JWT VC issuer metadata publishes)* |
 
-A realm key whose certificate is issued by a CA is a plain X.509 trust domain instead: put that CA into an `etsi-trust-list` instance so presented chains are validated against it.
+A realm key certificate issued by an external CA works the same way: the signing leaf is trusted directly, so a credential presenting the full chain validates against the pinned leaf without the CA being configured anywhere in Keycloak.
 
 For SD-JWT VC verification, the verifier tries issuer-key resolution in this order:
 
-1. `x5c` certificate-chain validation: a pinned trusted leaf certificate or a PKIX path to the trust anchors
+1. `x5c` certificate-chain validation: a pinned trusted leaf certificate bound to the credential's `iss`, or a PKIX path to the trust anchors with the `iss` matching a subject alternative name of the leaf certificate
 2. The issuer keys the credential's trust domain publishes, matched on the credential's `iss` and JOSE `kid`
-3. When the trust domain publishes no issuer keys, JWT VC issuer metadata lookup via `iss` + `kid` from `/.well-known/jwt-vc-issuer`, including `jwks_uri`
+3. When the identity provider references no trust material providers at all, JWT VC issuer metadata lookup via `iss` + `kid` from `/.well-known/jwt-vc-issuer`, including `jwks_uri`. With trust material providers configured, a credential type none of them serves fails closed, as does a declared trust domain that currently resolves to nothing.
 
 A certificate chain is mandatory when the credential's trust domain consists of CA anchors alone. Pinned issuer certificates and published issuer keys make a chainless credential a configured case rather than a missing chain.
 

@@ -21,6 +21,7 @@ import static org.assertj.core.api.Assertions.*;
 import com.authlete.cbor.CBORBoolean;
 import com.authlete.cbor.CBORByteArray;
 import com.authlete.cbor.CBORInteger;
+import com.authlete.cbor.CBORItem;
 import com.authlete.cbor.CBORItemList;
 import com.authlete.cbor.CBORPair;
 import com.authlete.cbor.CBORPairList;
@@ -112,7 +113,7 @@ class MdocVerifierTest {
                     "family_name", "Doe"
                 });
 
-        MdocVerificationResult result = verifier.verifyWithTrustedCerts(token, TestTrust.ofCertificates(signingCert));
+        MdocVerificationResult result = verifier.verifyIssuerSigned(token, TestTrust.ofCertificates(signingCert));
 
         assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
         assertThat(namespaceClaims(result, "org.iso.18013.5.1"))
@@ -133,7 +134,7 @@ class MdocVerifierTest {
                 new String[] {"number", "123"},
                 new String[] {"broken", "{not json"});
 
-        MdocVerificationResult result = verifier.verifyWithTrustedCerts(token, TestTrust.ofCertificates(signingCert));
+        MdocVerificationResult result = verifier.verifyIssuerSigned(token, TestTrust.ofCertificates(signingCert));
 
         Map<String, Object> claims = namespaceClaims(result, "org.iso.18013.5.1");
         assertThat(claims).containsEntry("address", Map.of("locality", "London"));
@@ -148,7 +149,7 @@ class MdocVerifierTest {
         CBORPairList root = new CBORPairList(List.of(new CBORPair(new CBORString("documents"), new CBORItemList())));
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(root.encode());
 
-        assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(token, TestTrust.ofCertificates(signingCert)))
+        assertThatThrownBy(() -> verifier.verifyIssuerSigned(token, TestTrust.ofCertificates(signingCert)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Empty documents array");
     }
@@ -159,29 +160,40 @@ class MdocVerifierTest {
                 new CBORPairList(List.of(new CBORPair(new CBORString("something_else"), new CBORString("value"))));
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(root.encode());
 
-        assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(token, TestTrust.ofCertificates(signingCert)))
+        assertThatThrownBy(() -> verifier.verifyIssuerSigned(token, TestTrust.ofCertificates(signingCert)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Unknown mDoc structure");
     }
 
     @Test
-    void verify_noKeyMaterial_throws() {
+    void verify_noKeyMaterial_throws() throws Exception {
+        String token =
+                buildSignedMdoc("org.iso.18013.5.1.mDL", "org.iso.18013.5.1", new String[] {"given_name", "John"});
+
+        assertThatThrownBy(() -> verifier.verifyIssuerSigned(token, ResolvedTrust.empty()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("No trusted keys available");
+    }
+
+    // A DeviceResponse document that carries its data elements at the top level instead of inside a
+    // signed issuerSigned structure must be rejected: only issuer-signed values may become claims.
+    @Test
+    void verify_documentWithoutIssuerSigned_throws() {
         CBORPairList item = new CBORPairList(List.of(
                 new CBORPair(new CBORString("elementIdentifier"), new CBORString("given_name")),
                 new CBORPair(new CBORString("elementValue"), new CBORString("John"))));
-
         CBORPairList nameSpaces =
                 new CBORPairList(List.of(new CBORPair(new CBORString("org.iso.18013.5.1"), new CBORItemList(item))));
-
-        CBORPairList root = new CBORPairList(List.of(
+        CBORPairList document = new CBORPairList(List.of(
                 new CBORPair(new CBORString("nameSpaces"), nameSpaces),
                 new CBORPair(new CBORString("docType"), new CBORString("org.iso.18013.5.1.mDL"))));
-
+        CBORPairList root =
+                new CBORPairList(List.of(new CBORPair(new CBORString("documents"), new CBORItemList(document))));
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(root.encode());
 
-        assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(token, ResolvedTrust.empty()))
+        assertThatThrownBy(() -> verifier.verifyIssuerSigned(token, TestTrust.ofCertificates(signingCert)))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("No trusted keys available");
+                .hasMessageContaining("no issuerSigned structure");
     }
 
     @Test
@@ -200,7 +212,7 @@ class MdocVerifierTest {
 
         String token = buildSignedMdocWithNameSpaces("org.iso.18013.5.1.mDL", nameSpaces);
 
-        MdocVerificationResult result = verifier.verifyWithTrustedCerts(token, TestTrust.ofCertificates(signingCert));
+        MdocVerificationResult result = verifier.verifyIssuerSigned(token, TestTrust.ofCertificates(signingCert));
 
         assertThat(namespaceClaims(result, "org.iso.18013.5.1")).containsEntry("given_name", "Alice");
         assertThat(namespaceClaims(result, "org.iso.18013.5.1.aamva")).containsEntry("age_over_18", true);
@@ -216,7 +228,7 @@ class MdocVerifierTest {
                 42,
                 new String[] {"given_name", "Alice"});
 
-        MdocVerificationResult result = verifier.verifyWithTrustedCerts(token, TestTrust.ofCertificates(signingCert));
+        MdocVerificationResult result = verifier.verifyIssuerSigned(token, TestTrust.ofCertificates(signingCert));
 
         assertThat(result.claims()).containsKey("status");
         Map<String, Object> status = (Map<String, Object>) result.claims().get("status");
@@ -233,7 +245,7 @@ class MdocVerifierTest {
         MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper(algorithm);
 
         MdocVerificationResult result =
-                verifier.verifyWithTrustedCerts(helper.build(), TestTrust.ofCertificates(helper.issuerCert));
+                verifier.verifyIssuerSigned(helper.build(), TestTrust.ofCertificates(helper.issuerCert));
 
         assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
         assertThat(namespaceClaims(result, "org.iso.18013.5.1")).containsEntry("given_name", "John");
@@ -297,44 +309,43 @@ class MdocVerifierTest {
     }
 
     private String buildSignedMdocWithMso(String docType, CBORPairList nameSpaces, CBORPairList mso) throws Exception {
-        // Tag-24 wrap the MSO
-        byte[] msoBytes = mso.encode();
-        byte[] payload = new CBORTaggedItem(24, new CBORByteArray(msoBytes)).encode();
+        CBORPairList issuerSigned = new CBORPairList(List.of(
+                new CBORPair(new CBORString("nameSpaces"), nameSpaces),
+                new CBORPair(new CBORString("issuerAuth"), signMso(mso))));
 
-        // Build and sign COSE_Sign1
+        CBORPairList document = new CBORPairList(List.of(
+                new CBORPair(new CBORString("docType"), new CBORString(docType)),
+                new CBORPair(new CBORString("issuerSigned"), issuerSigned)));
+
+        return wrapInDeviceResponse(document);
+    }
+
+    private CBORItem signMso(CBORPairList mso) throws Exception {
+        // Tag-24 wrap the MSO, then sign it as a COSE_Sign1 (issuerAuth).
+        byte[] payload = new CBORTaggedItem(24, new CBORByteArray(mso.encode())).encode();
         var protectedHeader =
                 new COSEProtectedHeaderBuilder().alg(COSE_ALG_ES256).build();
         var unprotectedHeader =
                 new COSEUnprotectedHeaderBuilder().x5chain(List.of(signingCert)).build();
-
         var sigStructure = new SigStructureBuilder()
                 .signature1()
                 .bodyAttributes(protectedHeader)
                 .payload(payload)
                 .build();
         byte[] signature = new COSESigner(signingKeyPair.getPrivate()).sign(sigStructure, COSE_ALG_ES256);
-
-        var issuerAuth = new COSESign1Builder()
+        return new COSESign1Builder()
                 .protectedHeader(protectedHeader)
                 .unprotectedHeader(unprotectedHeader)
                 .payload(payload)
                 .signature(signature)
                 .build();
+    }
 
-        // Build document structure
-        CBORPairList issuerSigned = new CBORPairList(List.of(
-                new CBORPair(new CBORString("nameSpaces"), nameSpaces),
-                new CBORPair(new CBORString("issuerAuth"), issuerAuth)));
-
-        CBORPairList document = new CBORPairList(List.of(
-                new CBORPair(new CBORString("docType"), new CBORString(docType)),
-                new CBORPair(new CBORString("issuerSigned"), issuerSigned)));
-
+    private static String wrapInDeviceResponse(CBORPairList document) {
         CBORPairList root = new CBORPairList(List.of(
                 new CBORPair(new CBORString("documents"), new CBORItemList(document)),
                 new CBORPair(new CBORString("version"), new CBORString("1.0")),
                 new CBORPair(new CBORString("status"), new CBORInteger(0))));
-
         return Base64.getUrlEncoder().withoutPadding().encodeToString(root.encode());
     }
 
@@ -376,8 +387,31 @@ class MdocVerifierTest {
             CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
             String token = helper.build(transcript);
 
-            MdocVerificationResult result = verifier.verifyWithTrustedCerts(
+            MdocVerificationResult result = verifier.verifyPresentation(
                     token, TestTrust.ofCertificates(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null);
+
+            assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
+            assertThat(namespaceClaims(result, "org.iso.18013.5.1")).containsEntry("given_name", "John");
+        }
+
+        /**
+         * The OpenID conformance suite signs its mDLs directly with a self-signed CA profile
+         * certificate, which a trust list serves as a PKIX anchor rather than a pinned end entity
+         * certificate. A chain consisting of exactly that anchor is trusted without path building.
+         */
+        @Test
+        void verifyWithSessionTranscript_signerIsTheTrustAnchorItself_passes() throws Exception {
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper().caProfileIssuerCert();
+            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            String token = helper.build(transcript);
+
+            ResolvedTrust trust = TestTrust.ofCertificates(helper.issuerCert);
+            assertThat(trust.pinnedCertificates())
+                    .as("the CA profile signer certificate must not be served as a pinned certificate")
+                    .isEmpty();
+
+            MdocVerificationResult result =
+                    verifier.verifyPresentation(token, trust, CLIENT_ID, NONCE, RESPONSE_URI, null, null);
 
             assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
             assertThat(namespaceClaims(result, "org.iso.18013.5.1")).containsEntry("given_name", "John");
@@ -392,7 +426,7 @@ class MdocVerifierTest {
                     MdocSessionTranscriptBuilder.buildIso18013_7(CLIENT_ID, NONCE, RESPONSE_URI, MDOC_GENERATED_NONCE);
             String token = helper.build(transcript);
 
-            MdocVerificationResult result = verifier.verifyWithTrustedCerts(
+            MdocVerificationResult result = verifier.verifyPresentation(
                     token,
                     TestTrust.ofCertificates(helper.issuerCert),
                     CLIENT_ID,
@@ -411,7 +445,7 @@ class MdocVerifierTest {
             CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
             String token = helper.build(transcript);
 
-            assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(
+            assertThatThrownBy(() -> verifier.verifyPresentation(
                             token,
                             TestTrust.ofCertificates(helper.issuerCert),
                             CLIENT_ID,
@@ -423,6 +457,63 @@ class MdocVerifierTest {
         }
 
         @Test
+        void verifyWithSessionTranscript_deviceSignatureByForeignKey_fails() throws Exception {
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
+            MdocDeviceResponseTestHelper foreign = new MdocDeviceResponseTestHelper();
+            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            String token = helper.deviceSignedWith(foreign.deviceKeyPair).build(transcript);
+
+            assertThatThrownBy(() -> verifier.verifyPresentation(
+                            token,
+                            TestTrust.ofCertificates(helper.issuerCert),
+                            CLIENT_ID,
+                            NONCE,
+                            RESPONSE_URI,
+                            null,
+                            null))
+                    .as("a device signature not made with the MSO deviceKey does not bind the holder")
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("deviceAuth");
+        }
+
+        @Test
+        void verifyWithSessionTranscript_tamperedDeviceSignature_fails() throws Exception {
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
+            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            String token = helper.tamperDeviceSignature().build(transcript);
+
+            assertThatThrownBy(() -> verifier.verifyPresentation(
+                            token,
+                            TestTrust.ofCertificates(helper.issuerCert),
+                            CLIENT_ID,
+                            NONCE,
+                            RESPONSE_URI,
+                            null,
+                            null))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("deviceAuth");
+        }
+
+        @Test
+        void verifyWithSessionTranscript_documentDocTypeDiffersFromMso_fails() throws Exception {
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
+            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            String token = helper.msoDocType("eu.europa.ec.eudi.pid.1").build(transcript);
+
+            assertThatThrownBy(() -> verifier.verifyPresentation(
+                            token,
+                            TestTrust.ofCertificates(helper.issuerCert),
+                            CLIENT_ID,
+                            NONCE,
+                            RESPONSE_URI,
+                            null,
+                            null))
+                    .as("a wallet must not relabel an issuer-signed credential through the unsigned document docType")
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("docType");
+        }
+
+        @Test
         void verifyWithSessionTranscript_isoFallbackWhenMdocNoncePresent() throws Exception {
             // Build with ISO format, verify should succeed since OID4VP fails and falls back to ISO
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
@@ -431,7 +522,7 @@ class MdocVerifierTest {
             String token = helper.build(transcript);
 
             // Verify passes — OID4VP 1.0 is tried first, then falls back to ISO 18013-7
-            MdocVerificationResult result = verifier.verifyWithTrustedCerts(
+            MdocVerificationResult result = verifier.verifyPresentation(
                     token,
                     TestTrust.ofCertificates(helper.issuerCert),
                     CLIENT_ID,
@@ -454,7 +545,7 @@ class MdocVerifierTest {
             String token = helper.build(transcript);
 
             // Should pass — digests computed correctly by helper
-            MdocVerificationResult result = verifier.verifyWithTrustedCerts(
+            MdocVerificationResult result = verifier.verifyPresentation(
                     token, TestTrust.ofCertificates(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null);
 
             assertThat(result.claims()).isNotEmpty();
@@ -473,7 +564,7 @@ class MdocVerifierTest {
             CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
             String token = helper.build(transcript);
 
-            assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(
+            assertThatThrownBy(() -> verifier.verifyPresentation(
                             token,
                             TestTrust.ofCertificates(helper.issuerCert),
                             CLIENT_ID,
@@ -494,7 +585,7 @@ class MdocVerifierTest {
             CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
             String token = helper.build(transcript);
 
-            assertThatThrownBy(() -> verifier.verifyWithTrustedCerts(
+            assertThatThrownBy(() -> verifier.verifyPresentation(
                             token,
                             TestTrust.ofCertificates(helper.issuerCert),
                             CLIENT_ID,
@@ -505,5 +596,97 @@ class MdocVerifierTest {
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("not yet valid");
         }
+    }
+
+    // Regression tests for the two mDoc presentation bypasses: an intercepted issuer-signed document
+    // replayed without holder proof, and fabricated values that escape digest verification.
+    @Nested
+    class PresentationHardening {
+
+        // Finding 1: the issuer-signed part of an mDoc is static and interceptable, so a presentation
+        // without deviceSigned carries no proof that the holder key was present. It must be rejected,
+        // not silently accepted by skipping device authentication.
+        @Test
+        void verifyPresentation_withoutDeviceSigned_isRejected() throws Exception {
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
+            String issuerSignedOnly = helper.build(); // valid issuer signature and digests, but no deviceSigned
+
+            assertThatThrownBy(() -> verifier.verifyPresentation(
+                            issuerSignedOnly,
+                            TestTrust.ofCertificates(helper.issuerCert),
+                            CLIENT_ID,
+                            NONCE,
+                            RESPONSE_URI,
+                            null,
+                            null))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("deviceSigned");
+        }
+
+        // Finding 2: data elements outside the signed issuerSigned structure must never become claims,
+        // even when the document also carries a genuine issuerAuth. Claims are read from the same
+        // issuer-signed namespaces that digest verification covers.
+        @Test
+        void verifyIssuerSigned_forgedTopLevelNamespace_isIgnored() throws Exception {
+            String token = buildMdocWithForgedTopLevelNamespace(
+                    "org.iso.18013.5.1.mDL", "org.iso.18013.5.1", new String[] {"given_name", "Mallory"});
+
+            MdocVerificationResult result = verifier.verifyIssuerSigned(token, TestTrust.ofCertificates(signingCert));
+
+            assertThat(result.claims()).doesNotContainKey("org.iso.18013.5.1");
+        }
+
+        // The same forged document offered as a presentation is rejected outright: its fabricated values
+        // are not digest-covered, and value-digest verification is mandatory for a presentation.
+        @Test
+        void verifyPresentation_forgedTopLevelNamespace_isRejected() throws Exception {
+            String token = buildMdocWithForgedTopLevelNamespace(
+                    "org.iso.18013.5.1.mDL", "org.iso.18013.5.1", new String[] {"given_name", "Mallory"});
+
+            assertThatThrownBy(() -> verifier.verifyPresentation(
+                            token, TestTrust.ofCertificates(signingCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("value digests");
+        }
+
+        // Finding 2: tampering an issuer-signed element value breaks its MSO digest, so a presentation
+        // carrying the altered value is rejected.
+        @Test
+        void verifyPresentation_tamperedElementValue_isRejected() throws Exception {
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
+            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            String tampered = helper.buildWithTamperedElementValue(transcript);
+
+            assertThatThrownBy(() -> verifier.verifyPresentation(
+                            tampered,
+                            TestTrust.ofCertificates(helper.issuerCert),
+                            CLIENT_ID,
+                            NONCE,
+                            RESPONSE_URI,
+                            null,
+                            null))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("Digest");
+        }
+    }
+
+    // Builds a DeviceResponse whose issuerSigned namespaces are empty but which carries fabricated data
+    // elements in a top-level nameSpaces sibling, i.e. values covered by neither the issuer signature nor
+    // the MSO digests.
+    private String buildMdocWithForgedTopLevelNamespace(String docType, String namespace, String[]... claimPairs)
+            throws Exception {
+        CBORPairList forged =
+                new CBORPairList(List.of(new CBORPair(new CBORString(namespace), buildElements(claimPairs))));
+        CBORPairList mso = new CBORPairList(List.of(
+                new CBORPair(new CBORString("docType"), new CBORString(docType)),
+                new CBORPair(new CBORString("version"), new CBORString("1.0"))));
+        CBORPairList issuerSigned = new CBORPairList(List.of(
+                new CBORPair(new CBORString("nameSpaces"), new CBORPairList(List.of())),
+                new CBORPair(new CBORString("issuerAuth"), signMso(mso))));
+        CBORPairList document = new CBORPairList(List.of(
+                new CBORPair(new CBORString("docType"), new CBORString(docType)),
+                new CBORPair(new CBORString("nameSpaces"), forged),
+                new CBORPair(new CBORString("issuerSigned"), issuerSigned)));
+        return wrapInDeviceResponse(document);
     }
 }

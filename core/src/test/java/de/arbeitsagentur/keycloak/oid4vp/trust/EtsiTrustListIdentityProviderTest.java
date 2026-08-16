@@ -75,7 +75,9 @@ class EtsiTrustListIdentityProviderTest {
         assertThat(materials.get(0).requiredExtendedKeyUsages()).containsExactly("1.0.18013.5.1.2");
 
         assertThat(provider.resolveKeys(EMPTY_REQUEST)).isEmpty();
-        assertThat(provider.directIssuerCertificates()).containsExactly(ca, endEntity);
+        assertThat(provider.directIssuerCertificates())
+                .as("the CA certificate is a trust anchor, only the end entity certificate is trusted directly")
+                .containsExactly(endEntity);
         assertThat(provider.revocationCertificates()).containsExactly(ca, endEntity);
         assertThat(provider.trustedAuthorities())
                 .as("a pasted bundle without key identifiers has nothing to advertise")
@@ -168,7 +170,9 @@ class EtsiTrustListIdentityProviderTest {
         assertThat(materials).hasSize(1);
         assertThat(materials.get(0).trustAnchors()).containsExactlyInAnyOrder(tlCa, staticCa);
         assertThat(provider.revocationCertificates()).containsExactly(tlCa, staticCa);
-        assertThat(provider.directIssuerCertificates()).containsExactly(tlCa, staticCa);
+        assertThat(provider.directIssuerCertificates())
+                .as("both sources contribute CA certificates only, which are anchors rather than direct issuer certs")
+                .isEmpty();
     }
 
     @Test
@@ -183,6 +187,22 @@ class EtsiTrustListIdentityProviderTest {
         assertThat(provider.trustedAuthorities()).hasSize(1);
         assertThat(provider.trustedAuthorities().get(0).type()).isEqualTo(TrustedAuthorityType.AKI);
         assertThat(provider.trustedAuthorities().get(0).values()).hasSize(1);
+    }
+
+    @Test
+    void advertisesAuthorityKeyIdentifiersOfAFreshlyPulledTrustList() throws Exception {
+        KeyPair caKp = generateKeyPair();
+        X509Certificate ca = generateCertWithSki(caKp, "CN=SKI CA");
+
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
+        config.setTrustListUrl("https://tl.example/list.jwt");
+        EtsiTrustListIdentityProvider provider =
+                new EtsiTrustListIdentityProvider(config, new FixedTrustListProvider(List.of(ca), null), null);
+
+        assertThat(provider.trustedAuthorities())
+                .as("the aki entries do not depend on an earlier verification having warmed a cache")
+                .anyMatch(authority -> authority.type() == TrustedAuthorityType.AKI
+                        && authority.values().size() == 1);
     }
 
     @Test

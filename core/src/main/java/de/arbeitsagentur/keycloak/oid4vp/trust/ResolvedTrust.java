@@ -16,10 +16,14 @@
 package de.arbeitsagentur.keycloak.oid4vp.trust;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthority;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.security.PublicKey;
 import java.security.cert.CertificateExpiredException;
 import java.security.cert.CertificateNotYetValidException;
+import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
+import java.util.Collection;
 import java.util.List;
 import org.keycloak.common.VerificationException;
 
@@ -36,13 +40,20 @@ import org.keycloak.common.VerificationException;
  * @param revocationCertificates    certificates of status list (revocation) services
  * @param trustedAuthorities        the DCQL {@code trusted_authorities} entries these providers
  *                                  advertise for the credential
+ * @param hasDeclaredTrustSource    whether any trust material provider is configured. Derived from
+ *                                  configuration, so it is the same whether or not the trust material
+ *                                  is currently reachable: a credential type no provider serves and a
+ *                                  declared source that resolves to no anchors (empty lists here) both
+ *                                  fail closed instead of falling back to trusting the issuer's own
+ *                                  self-published metadata.
  */
 public record ResolvedTrust(
         List<X509TrustMaterial> issuanceTrust,
         List<TrustedIssuerCertificate> directIssuerCertificates,
         List<TrustedIssuerKey> trustedIssuerKeys,
         List<X509Certificate> revocationCertificates,
-        List<TrustedAuthority> trustedAuthorities) {
+        List<TrustedAuthority> trustedAuthorities,
+        boolean hasDeclaredTrustSource) {
 
     public ResolvedTrust {
         issuanceTrust = List.copyOf(issuanceTrust);
@@ -53,7 +64,7 @@ public record ResolvedTrust(
     }
 
     public static ResolvedTrust empty() {
-        return new ResolvedTrust(List.of(), List.of(), List.of(), List.of(), List.of());
+        return new ResolvedTrust(List.of(), List.of(), List.of(), List.of(), List.of(), false);
     }
 
     public boolean hasIssuerTrust() {
@@ -126,11 +137,33 @@ public record ResolvedTrust(
      * honoring that material's extended key usage policy.
      */
     public PublicKey validateIssuerChain(List<X509Certificate> chain) throws VerificationException {
+        return validateIssuerChain(chain, null);
+    }
+
+    /**
+     * Validates a credential issuer certificate chain for a credential of the given issuer and returns
+     * the leaf key. When {@code issuer} is non-null (formats that name their issuer, such as SD-JWT),
+     * only directly trusted certificates bound to that issuer satisfy the pinned fast path, and a chain
+     * built to the PKIX anchors is additionally bound to the issuer through the leaf certificate's
+     * subject alternative names (SD-JWT VC section 3.5), so a certificate trusted for one issuer cannot
+     * validate a credential claiming another. When {@code issuer} is null (formats without an issuer
+     * identifier, such as mDoc), every pinned certificate is eligible and the trust material's
+     * credential-type scope keeps trust domains apart.
+     *
+     * <p>A chain whose leaf is itself one of the configured trust anchors is complete without path
+     * building: the trust source pins that exact certificate, so only its validity window is
+     * checked. Path building could never accept it anyway, because a leaf must be an end entity
+     * certificate. This is how an mDoc signed directly by a trust listed self-signed document
+     * signer certificate validates, such as the OpenID conformance suite's hard-coded mDL signer
+     * (conformance-suite issue #1663).
+     */
+    public PublicKey validateIssuerChain(List<X509Certificate> chain, String issuer) throws VerificationException {
         if (chain.isEmpty()) {
             throw new VerificationException("The x5c certificate chain is empty");
         }
         X509Certificate leaf = chain.get(0);
-        if (pinnedCertificates().contains(leaf)) {
+        List<X509Certificate> pinned = issuer != null ? issuerCertificatesFor(issuer) : pinnedCertificates();
+        if (pinned.contains(leaf) || (issuer == null && isTrustAnchor(leaf))) {
             try {
                 leaf.checkValidity();
             } catch (CertificateExpiredException | CertificateNotYetValidException e) {
@@ -147,11 +180,62 @@ public record ResolvedTrust(
             try {
                 X509CertificateChainValidator.validateCertificateChain(
                         chain, material.trustAnchors(), material.requiredExtendedKeyUsages());
+                if (issuer != null) {
+                    requireIssuerMatchesLeafSan(leaf, issuer);
+                }
                 return leaf.getPublicKey();
             } catch (VerificationException e) {
-                lastFailure = e;
+                if (lastFailure == null) {
+                    lastFailure = e;
+                }
             }
         }
         throw lastFailure;
+    }
+
+    /** Whether the certificate is itself one of the configured PKIX trust anchors. */
+    private boolean isTrustAnchor(X509Certificate certificate) {
+        return issuanceTrust.stream()
+                .anyMatch(material -> material.trustAnchors().contains(certificate));
+    }
+
+    /**
+     * SD-JWT VC section 3.5: with an {@code x5c} chain, the {@code iss} value must appear as a
+     * uniformResourceIdentifier subject alternative name of the leaf certificate, or its host as a
+     * dNSName entry for an HTTPS issuer.
+     */
+    private static void requireIssuerMatchesLeafSan(X509Certificate leaf, String issuer) throws VerificationException {
+        Collection<List<?>> subjectAlternativeNames;
+        try {
+            subjectAlternativeNames = leaf.getSubjectAlternativeNames();
+        } catch (CertificateParsingException e) {
+            throw new VerificationException("The leaf certificate's subject alternative names are unreadable", e);
+        }
+        if (subjectAlternativeNames != null) {
+            String issuerHost = hostOfHttpsUri(issuer);
+            for (List<?> entry : subjectAlternativeNames) {
+                if (entry.size() < 2 || !(entry.get(1) instanceof String name)) {
+                    continue;
+                }
+                int type = entry.get(0) instanceof Integer i ? i : -1;
+                if (type == 6 && name.equals(issuer)) {
+                    return;
+                }
+                if (type == 2 && issuerHost != null && name.equalsIgnoreCase(issuerHost)) {
+                    return;
+                }
+            }
+        }
+        throw new VerificationException("The credential issuer '" + issuer
+                + "' does not match any subject alternative name of the validated leaf certificate");
+    }
+
+    private static String hostOfHttpsUri(String issuer) {
+        try {
+            URI uri = new URI(issuer);
+            return "https".equalsIgnoreCase(uri.getScheme()) ? uri.getHost() : null;
+        } catch (URISyntaxException e) {
+            return null;
+        }
     }
 }

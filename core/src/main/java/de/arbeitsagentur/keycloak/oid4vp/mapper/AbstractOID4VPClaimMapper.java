@@ -137,11 +137,8 @@ public abstract class AbstractOID4VPClaimMapper extends AbstractIdentityProvider
 
     /** The credential id this mapper contributes to, mirroring the DCQL query generation. */
     private String credentialId(IdentityProviderMapperModel mapperModel, String credentialType) {
-        String configured = mapperModel.getConfig().get(CREDENTIAL_ID);
-        if (StringUtil.isNotBlank(configured)) {
-            return configured.trim();
-        }
-        return CredentialId.defaultFor(credentialFormat(), credentialType.trim());
+        return CredentialId.resolve(
+                mapperModel.getConfig().get(CREDENTIAL_ID), credentialFormat(), credentialType.trim());
     }
 
     /** The node claim paths of this mapper resolve against; mDoc mappers narrow it to a namespace. */

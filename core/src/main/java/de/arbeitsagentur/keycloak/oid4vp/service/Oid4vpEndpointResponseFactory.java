@@ -15,30 +15,14 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.service;
 
-import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.UriBuilder;
 import java.util.Map;
 import org.keycloak.OAuth2Constants;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
 import org.keycloak.util.JsonSerialization;
 
 /** Builds the small JSON and redirect responses returned by the OID4VP endpoint. */
 public class Oid4vpEndpointResponseFactory {
-
-    private final KeycloakSession session;
-    private final RealmModel realm;
-    private final Oid4vpIdentityProviderConfig config;
-
-    public Oid4vpEndpointResponseFactory(
-            KeycloakSession session, RealmModel realm, Oid4vpIdentityProviderConfig config) {
-        this.session = session;
-        this.realm = realm;
-        this.config = config;
-    }
 
     public static Response jsonRedirectResponse(String redirectUri) {
         try {
@@ -66,19 +50,5 @@ public class Oid4vpEndpointResponseFactory {
                     .type(MediaType.APPLICATION_JSON)
                     .build();
         }
-    }
-
-    public String buildErrorRedirectUri(String error, String errorDescription, String state) {
-        String base = Oid4vpConstants.buildEndpointBaseUrl(
-                session.getContext().getUri().getBaseUri(), realm.getName(), config.getAlias());
-        UriBuilder builder = UriBuilder.fromUri(base);
-        if (state != null) {
-            builder.queryParam(OAuth2Constants.STATE, state);
-        }
-        builder.queryParam(OAuth2Constants.ERROR, error);
-        if (errorDescription != null) {
-            builder.queryParam(OAuth2Constants.ERROR_DESCRIPTION, errorDescription);
-        }
-        return builder.build().toString();
     }
 }
