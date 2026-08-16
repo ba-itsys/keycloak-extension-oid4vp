@@ -154,8 +154,11 @@ class Oid4vpTrustMaterialResolverTest {
                 new Oid4vpTrustMaterialResolver((session, alias) -> providers.get(alias)).resolvePlan(null, "pid-tl");
 
         assertThat(plan.serves(BADGE)).isFalse();
-        assertThat(plan.forCredentialType(BADGE)).isEqualTo(ResolvedTrust.empty());
         assertThat(plan.forCredentialType(BADGE).hasIssuerTrust()).isFalse();
+        assertThat(plan.forCredentialType(BADGE).hasDeclaredTrustSource())
+                .as("a configured trust plan covers every type, so an unserved one fails closed instead of"
+                        + " falling back to the issuer's self-published metadata")
+                .isTrue();
     }
 
     @Test
@@ -197,13 +200,10 @@ class Oid4vpTrustMaterialResolverTest {
                 TestTrust.anyIssuer(List.of(certificate)),
                 List.of(),
                 List.of(certificate),
-                trustedAuthorities);
+                trustedAuthorities,
+                true);
     }
 
-    /**
-     * Double for a provider that only implements the upstream contract. The extension methods stay
-     * at their defaults, matching what the resolver's adapter produces for Keycloak's default-trust.
-     */
     /** Double for a provider that implements the upstream contract only, such as default-trust. */
     private record UpstreamOnlyTrustDouble(IdentityProviderModel config, List<JWK> keys)
             implements TrustMaterialIdentityProvider<IdentityProviderModel> {

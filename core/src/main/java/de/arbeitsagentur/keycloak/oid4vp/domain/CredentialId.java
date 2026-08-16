@@ -43,6 +43,20 @@ public final class CredentialId {
         return formatPrefix(format) + "_" + slug(type);
     }
 
+    /**
+     * The credential id a mapper contributes to: its configured id when that is a valid DCQL id, and the
+     * id derived from format and type otherwise. Request-side DCQL generation and response-side mapping
+     * must resolve the id the same way, so that a mapper configured with an invalid id maps against the
+     * same credential the wallet was asked to present rather than silently mapping nothing.
+     */
+    public static String resolve(String configuredId, String format, String type) {
+        String trimmed = configuredId == null ? null : configuredId.trim();
+        if (trimmed != null && !trimmed.isEmpty() && isValid(trimmed)) {
+            return trimmed;
+        }
+        return defaultFor(format, type);
+    }
+
     public static boolean isValid(String credentialId) {
         return credentialId != null && VALID_ID.matcher(credentialId).matches();
     }

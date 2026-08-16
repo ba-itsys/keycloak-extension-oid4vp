@@ -112,7 +112,12 @@ public class EtsiTrustListIdentityProvider
 
     @Override
     public List<X509Certificate> directIssuerCertificates() {
-        return issuanceCertificates();
+        // CA certificates are exposed as PKIX trust anchors through resolveX509Trust; only end entity
+        // certificates are trusted directly, so a CA certificate cannot be accepted as a pinned leaf
+        // on the fast path that skips end-entity certificate checks.
+        return issuanceCertificates().stream()
+                .filter(certificate -> !X5cChainValidator.isCaCertificate(certificate))
+                .toList();
     }
 
     @Override
@@ -165,11 +170,13 @@ public class EtsiTrustListIdentityProvider
         return authorityKeyIdentifiers;
     }
 
+    // Advertised while building the authorization request. A cold cache fetches the trust list; an
+    // unreachable one resolves to no aki entries instead of failing the request, so the login page
+    // still renders and the etsi_tl URL lets the wallet resolve the list itself.
     private List<String> resolveAuthorityKeyIdentifiers() {
         Set<String> identifiers = new LinkedHashSet<>();
         if (urlTrustList != null) {
             identifiers.addAll(urlTrustList.getTrustedAuthorityKeyIdentifiers());
-            enforceExpectedLoTEType();
         }
         if (staticTrustList != null) {
             identifiers.addAll(staticTrustList.getTrustedAuthorityKeyIdentifiers());

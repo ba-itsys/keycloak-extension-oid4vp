@@ -26,7 +26,6 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredentials;
  * ReferenceCredentialBindingProvider} behind it, which selects the claims. This exists so the
  * verifier can ask for an answer that needs the realm keys without holding a session of its own.
  */
-@FunctionalInterface
 public interface ReferenceBindingCheck {
 
     /**
@@ -34,4 +33,12 @@ public interface ReferenceBindingCheck {
      * carrying no reference credential binding is accepted in any presentation.
      */
     boolean boundToPresentation(PresentedCredentials credentials, String subjectCredentialId, String claimedBinding);
+
+    /**
+     * Whether the presentation carries other credentials a reference credential binding would cover.
+     * A subject credential this realm issues alongside such credentials is always bound to them, so a
+     * subject credential presented next to them yet carrying no binding claim has had that binding
+     * withheld and must not be accepted as the subject.
+     */
+    boolean bindsToOtherCredentials(PresentedCredentials credentials, String subjectCredentialId);
 }

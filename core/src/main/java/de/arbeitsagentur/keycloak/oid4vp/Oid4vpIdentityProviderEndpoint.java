@@ -107,7 +107,7 @@ public class Oid4vpIdentityProviderEndpoint {
         this.requestObjectStore = requestObjectStore;
         this.authSessionResolver = new Oid4vpAuthSessionResolver(session, realm, requestObjectStore);
         this.responseDecryptor = new Oid4vpResponseDecryptor();
-        this.responseFactory = new Oid4vpEndpointResponseFactory(session, realm, provider.getConfig());
+        this.responseFactory = new Oid4vpEndpointResponseFactory();
         this.directPostService = new Oid4vpDirectPostService(session, realm, provider.getConfig(), requestObjectStore);
         this.sseService = new Oid4vpCrossDeviceSseService(session, realm, provider.getConfig());
         this.requestObjectService = new Oid4vpRequestObjectService(
@@ -137,7 +137,6 @@ public class Oid4vpIdentityProviderEndpoint {
             message = "No credential response received";
         }
 
-        // Resolve the auth session from state so callback.error() can render Keycloak's error page.
         // callback.error() requires an active auth session in the KeycloakContext.
         if (StringUtil.isNotBlank(state)) {
             try {

@@ -20,6 +20,8 @@ import de.arbeitsagentur.keycloak.oid4vp.trust.TrustedIssuerKey;
 import de.arbeitsagentur.keycloak.oid4vp.trust.X509CertificateChainValidator;
 import de.arbeitsagentur.keycloak.oid4vp.verification.JwtVcIssuerMetadataResolver.ResolvedIssuerKey;
 import java.security.PublicKey;
+import java.security.cert.CertificateExpiredException;
+import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.X509Certificate;
 import java.security.interfaces.ECPublicKey;
 import java.util.ArrayList;
@@ -86,7 +88,11 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
             return directVerifiers;
         }
 
-        if (issuerMetadataResolver != null && !trust.hasIssuerKeyTrust()) {
+        // Web-of-trust discovery from the credential's own issuer metadata is only a route when the
+        // verifier declares no trust source for this credential type. A declared source that resolves
+        // to nothing (for example a trust list that is momentarily unreachable) fails closed here
+        // rather than silently trusting whatever keys the issuer publishes about itself.
+        if (issuerMetadataResolver != null && !trust.hasIssuerKeyTrust() && !trust.hasDeclaredTrustSource()) {
             try {
                 ResolvedIssuerKey issuerKey = resolveIssuerKeyFromMetadata(issuerSignedJWT);
                 LOG.debug("SD-JWT issuer key resolved via issuer metadata fallback");
@@ -131,9 +137,12 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
             // chain is not the route to validate it.
             return null;
         }
+        String issuer = issuerSignedJWT.getPayload().path("iss").asText(null);
         try {
             List<X509Certificate> chain = X509CertificateChainValidator.decodeCertificateChain(x5c);
-            PublicKey leafKey = trust.validateIssuerChain(chain);
+            // Bind the chain to the credential's issuer, so a pinned certificate trusted for one issuer
+            // cannot validate a credential that claims to come from another.
+            PublicKey leafKey = trust.validateIssuerChain(chain, issuer);
             LOG.debug("SD-JWT x5c chain validated against trust material, using leaf certificate key");
             return List.of(toVerifierContext(leafKey));
         } catch (Exception e) {
@@ -185,6 +194,12 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
 
         List<SignatureVerifierContext> verifiers = new ArrayList<>();
         for (X509Certificate certificate : trust.issuerCertificatesFor(issuer)) {
+            try {
+                certificate.checkValidity();
+            } catch (CertificateExpiredException | CertificateNotYetValidException e) {
+                LOG.debugf("Skipping directly trusted issuer certificate outside its validity: %s", e.getMessage());
+                continue;
+            }
             verifiers.add(toVerifierContext(certificate.getPublicKey()));
         }
         for (TrustedIssuerKey trustedIssuerKey : trust.issuerKeysFor(issuer, keyId)) {

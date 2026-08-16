@@ -117,11 +117,6 @@ public class VpTokenProcessor implements VpTokenVerifier {
         return plan != null ? plan : CredentialTrustPlan.empty();
     }
 
-    /**
-     * Processes a VP token: detects format, verifies credentials, checks revocation status.
-     *
-     * @param request the wallet response plus verification context
-     */
     @Override
     public VpTokenResult process(Request request) {
         CredentialTrustSelection trust =
@@ -162,9 +157,8 @@ public class VpTokenProcessor implements VpTokenVerifier {
                 String credentialId = entry.getKey();
                 for (String credential : extractCredentialStrings(entry.getValue())) {
                     VerifiedCredential cred = verifyCredential(credentialId, credential, request, trust);
-                    // A credential id addresses one credential in the query, so several
-                    // presentations under one id are answers to the same request and the first
-                    // verified one is used.
+                    // Several presentations under one id answer the same request: the first one is
+                    // used, and an invalid duplicate aborts the login during its own verification.
                     if (cred != null) {
                         credentials.putIfAbsent(credentialId, cred);
                     }
@@ -215,9 +209,8 @@ public class VpTokenProcessor implements VpTokenVerifier {
         }
 
         if (mdocVerifier.isMdoc(credential)) {
-            // Use alternateResponseUri as the response_uri for session transcript
             byte[] jwkThumbprintBytes = decodeJwkThumbprint(request.encryptionJwkThumbprint());
-            MdocVerificationResult result = mdocVerifier.verifyWithTrustedCerts(
+            MdocVerificationResult result = mdocVerifier.verifyPresentation(
                     credential,
                     trust,
                     request.clientId(),
@@ -297,8 +290,8 @@ public class VpTokenProcessor implements VpTokenVerifier {
         /**
          * The credential id of a VP token that is a bare credential instead of the credential id
          * keyed object OID4VP 1.0 §8.1 defines. It can only be attributed when exactly one
-         * credential was requested; otherwise it falls back to a placeholder id and is verified
-         * against the providers serving every credential type.
+         * credential was requested; otherwise the placeholder id is not among the requested ids
+         * and the presentation is rejected.
          */
         String singleCredentialId() {
             if (credentialTypeById.size() == 1) {
@@ -306,8 +299,8 @@ public class VpTokenProcessor implements VpTokenVerifier {
             }
             if (credentialTypeById.size() > 1) {
                 LOG.warnf(
-                        "VP token is a bare credential, but %d credentials were requested. It cannot be attributed to "
-                                + "a credential id and is verified against trust material that serves every credential type.",
+                        "VP token is a bare credential, but %d credentials were requested, so it cannot be attributed "
+                                + "to a credential id and is rejected.",
                         credentialTypeById.size());
             }
             return UNATTRIBUTED_CREDENTIAL_ID;

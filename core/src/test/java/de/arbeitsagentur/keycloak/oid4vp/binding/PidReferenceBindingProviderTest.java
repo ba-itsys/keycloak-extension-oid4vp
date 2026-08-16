@@ -80,20 +80,36 @@ class PidReferenceBindingProviderTest {
     }
 
     @Test
-    void findsTheSameClaimsInsideAnMdocNamespace() {
+    void mdocPidIsNotCoveredByTheDefaults() {
         Map<String, Object> namespace = new LinkedHashMap<>();
         namespace.put("given_name", "Erika");
         namespace.put("family_name", "Mustermann");
-        namespace.put("birthdate", "1964-08-12");
+        namespace.put("birth_date", "1964-08-12");
+        Map<String, PresentedCredential> credentials =
+                Map.of(MDOC_PID, new PresentedCredential("mso_mdoc", PID_DOCTYPE, Map.of(PID_DOCTYPE, namespace)));
+
+        assertThat(DEFAULTS.bindingMaterial(new PresentedCredentials(credentials), EMPLOYEE))
+                .as("the default claim names are the SD-JWT PID names, so only the SD-JWT PID is bound by default")
+                .isEmpty();
+    }
+
+    @Test
+    void findsTheConfiguredClaimsInsideAnMdocNamespace() {
+        PidReferenceBindingProvider mdocPid = new PidReferenceBindingProvider(
+                Set.of(PID_DOCTYPE), List.of("given_name", "family_name", "birth_date"));
+        Map<String, Object> namespace = new LinkedHashMap<>();
+        namespace.put("given_name", "Erika");
+        namespace.put("family_name", "Mustermann");
+        namespace.put("birth_date", "1964-08-12");
         Map<String, PresentedCredential> credentials =
                 Map.of(MDOC_PID, new PresentedCredential("mso_mdoc", PID_DOCTYPE, Map.of(PID_DOCTYPE, namespace)));
 
         Map<String, BoundCredential> material =
-                DEFAULTS.bindingMaterial(new PresentedCredentials(credentials), EMPLOYEE);
+                mdocPid.bindingMaterial(new PresentedCredentials(credentials), EMPLOYEE);
 
         assertThat(material.get(MDOC_PID).claims())
                 .as("an mDoc keeps its data elements inside a namespace, and the path is tried in each one")
-                .containsOnlyKeys("given_name", "family_name", "birthdate");
+                .containsOnlyKeys("given_name", "family_name", "birth_date");
     }
 
     @Test

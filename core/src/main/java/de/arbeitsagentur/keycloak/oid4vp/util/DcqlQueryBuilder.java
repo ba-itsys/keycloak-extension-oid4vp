@@ -261,10 +261,6 @@ public class DcqlQueryBuilder {
     }
 
     /**
-     * The principal claim appended for a credential type so the subject is always requested. For
-     * mDoc credentials the element is requested in the namespace the credential's own mappers use.
-     */
-    /**
      * The claim spec that requests the subject of one credential. The configured path starts at the
      * root of the presentation, so for an mDoc its first step is the namespace DCQL asks for
      * separately.
@@ -360,17 +356,12 @@ public class DcqlQueryBuilder {
     /** The credential id a mapper contributes to: its explicit id, or the one derived from format and type. */
     private static String credentialIdOfMapper(IdentityProviderMapperModel mapper, CredentialTypeKey typeKey) {
         String configured = mapper.getConfig().get(AbstractOID4VPClaimMapper.CREDENTIAL_ID);
-        if (StringUtil.isBlank(configured)) {
-            return CredentialId.defaultFor(typeKey.format(), typeKey.type());
-        }
-        String credentialId = configured.trim();
-        if (!CredentialId.isValid(credentialId)) {
+        if (StringUtil.isNotBlank(configured) && !CredentialId.isValid(configured.trim())) {
             LOG.warnf(
                     "Mapper %s configures the invalid credential id '%s'; falling back to the derived id",
-                    mapper.getName(), credentialId);
-            return CredentialId.defaultFor(typeKey.format(), typeKey.type());
+                    mapper.getName(), configured.trim());
         }
-        return credentialId;
+        return CredentialId.resolve(configured, typeKey.format(), typeKey.type());
     }
 
     private record CredentialTypeKey(String format, String type) {}

@@ -15,11 +15,15 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.it.framework;
 
+import io.github.dominikschlosser.eudi.Credential;
 import io.github.dominikschlosser.eudi.EudiWalletContainer;
 import io.github.dominikschlosser.eudi.PresentationResponse;
 import io.github.dominikschlosser.eudi.TrustListIndexEntry;
 import io.github.dominikschlosser.eudi.WalletClient;
 import java.net.URI;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * An eudi-dev wallet managed by the test framework. The wallet runs in a Docker container with
@@ -32,10 +36,16 @@ public final class TestWallet implements AutoCloseable {
 
     private final EudiWalletContainer container;
     private final String baseUrl;
+    // The credentials the container was seeded with, restored on every reset so a test that
+    // deletes or replaces credentials cannot leak that change into later tests.
+    private final List<String> seededCredentials;
 
     TestWallet(EudiWalletContainer container, String baseUrl) {
         this.container = container;
         this.baseUrl = baseUrl;
+        this.seededCredentials = container.client().getCredentials().stream()
+                .map(Credential::raw)
+                .toList();
     }
 
     public EudiWalletContainer container() {
@@ -76,10 +86,21 @@ public final class TestWallet implements AutoCloseable {
         return baseUrl + "/api/trustlists/" + trustList.id();
     }
 
-    // Resets per-test wallet state such as preferred formats and scripted errors
+    // Resets per-test wallet state: preferred formats, scripted errors, and the credential store
     public void resetState() {
         client().clearPreferredFormat();
         client().clearNextError();
+        restoreSeededCredentials();
+    }
+
+    private void restoreSeededCredentials() {
+        Set<String> current =
+                client().getCredentials().stream().map(Credential::raw).collect(Collectors.toSet());
+        if (current.equals(Set.copyOf(seededCredentials))) {
+            return;
+        }
+        client().deleteAllCredentials();
+        seededCredentials.forEach(client()::importCredential);
     }
 
     @Override

@@ -17,9 +17,11 @@ package de.arbeitsagentur.keycloak.oid4vp.binding;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredentials;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.stream.Stream;
 import javax.crypto.Mac;
 import javax.crypto.SecretKey;
 import org.jboss.logging.Logger;
@@ -91,8 +93,29 @@ public final class ReferenceCredentialBinding {
 
     /** The check of this realm, which the identity provider hands to the verifier. */
     public static ReferenceBindingCheck checkOf(KeycloakSession session) {
-        return (credentials, credentialId, claimedBinding) ->
-                of(session, session.getContext().getRealm()).matches(credentials, credentialId, claimedBinding);
+        return new ReferenceBindingCheck() {
+            @Override
+            public boolean boundToPresentation(
+                    PresentedCredentials credentials, String subjectCredentialId, String claimedBinding) {
+                return of(session, session.getContext().getRealm())
+                        .matches(credentials, subjectCredentialId, claimedBinding);
+            }
+
+            @Override
+            public boolean bindsToOtherCredentials(PresentedCredentials credentials, String subjectCredentialId) {
+                return of(session, session.getContext().getRealm())
+                        .bindsToOtherCredentials(credentials, subjectCredentialId);
+            }
+        };
+    }
+
+    /**
+     * Whether the presentation carries credentials a reference credential binding would bind to, other
+     * than the subject credential itself. Used to reject a subject credential that should have been
+     * bound to them but carries no binding claim.
+     */
+    public boolean bindsToOtherCredentials(PresentedCredentials credentials, String subjectCredentialId) {
+        return material(credentials, subjectCredentialId) != null;
     }
 
     /**
@@ -131,7 +154,10 @@ public final class ReferenceCredentialBinding {
             return false;
         }
         String message = REFERENCE_CONTEXT + material;
-        return secrets.allAccepted().stream().anyMatch(secret -> claimedBinding.equals(digest(secret, message)));
+        byte[] claimed = claimedBinding.getBytes(StandardCharsets.UTF_8);
+        return secrets.allAccepted().stream()
+                .anyMatch(secret ->
+                        MessageDigest.isEqual(claimed, digest(secret, message).getBytes(StandardCharsets.UTF_8)));
     }
 
     /**
@@ -175,13 +201,20 @@ public final class ReferenceCredentialBinding {
 
         @Override
         public List<SecretKey> allAccepted() {
-            // Every realm key that can key an HMAC, so a rotation does not invalidate what is issued
-            return session.keys()
-                    .getKeysStream(realm)
-                    .filter(key -> KeyUse.SIG.equals(key.getUse()))
-                    .map(KeyWrapper::getSecretKey)
-                    .filter(secret -> secret != null)
-                    .toList();
+            return acceptedSecrets(session.keys().getKeysStream(realm));
         }
+    }
+
+    /**
+     * Every enabled realm key that can key an HMAC, so a rotation does not invalidate what is
+     * issued while a disabled key stops verifying immediately.
+     */
+    static List<SecretKey> acceptedSecrets(Stream<KeyWrapper> realmKeys) {
+        return realmKeys
+                .filter(key -> key.getStatus() != null && key.getStatus().isEnabled())
+                .filter(key -> KeyUse.SIG.equals(key.getUse()))
+                .map(KeyWrapper::getSecretKey)
+                .filter(secret -> secret != null)
+                .toList();
     }
 }

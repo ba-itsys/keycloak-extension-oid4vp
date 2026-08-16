@@ -80,7 +80,6 @@ public class Oid4vpCallbackProcessor {
         this.vpTokenVerifier = vpTokenVerifier;
     }
 
-    // Validates the VP token and builds a brokered identity context.
     public BrokeredIdentityContext process(
             Oid4vpRequestObjectStore.RequestContextEntry requestContext, String vpToken, String mdocGeneratedNonce) {
 
@@ -116,14 +115,17 @@ public class Oid4vpCallbackProcessor {
                 primary.credentialType(),
                 primary.claims().keySet());
 
-        String issuer = primary.issuer();
-
-        // This allow-list only applies to formats that expose a canonical issuer string.
-        // In practice that means SD-JWT, because mDoc does not define a standard issuer identifier
-        // equivalent to SD-JWT `iss`.
-        if (issuer != null && !configProvider.isIssuerAllowed(issuer)) {
-            throw new IdentityBrokerException("Issuer not allowed: " + issuer);
+        // Every presented credential must come from an allowed issuer, not only the first one: in a
+        // multi-credential presentation each credential's claims reach the mappers, so a disallowed
+        // issuer must be rejected wherever it appears.
+        for (VerifiedCredential presented : vpResult.credentials().values()) {
+            String presentedIssuer = presented.issuer();
+            if (presentedIssuer != null && !configProvider.isIssuerAllowed(presentedIssuer)) {
+                throw new IdentityBrokerException("Issuer not allowed: " + presentedIssuer);
+            }
         }
+
+        String issuer = primary.issuer();
         enforceCredentialSets(requestContext, enforceRequestedClaims(requestContext, vpResult));
 
         String subject;
@@ -177,11 +179,25 @@ public class Oid4vpCallbackProcessor {
         }
         for (PrincipalAttribute principalAttribute : principalAttributes) {
             VerifiedCredential credential = vpResult.credentials().get(principalAttribute.credentialId());
-            if (credential != null) {
-                // The path starts at the root of the presentation, so an mDoc path names its own
-                // namespace and none has to be guessed at.
-                return new SubjectSource(credential, principalAttribute.claimPath(), credential.claimsNode());
+            if (credential == null) {
+                continue;
             }
+            if (!hasUsableSubjectBinding(vpResult, credential)) {
+                // A subject credential this realm issues is always bound to the credentials present at
+                // issuance. One presented next to such credentials but carrying no reference credential
+                // binding has had that binding withheld, so it does not identify a returning user: the
+                // login falls through to a fresh subject, authenticates by other means, and a bound
+                // credential is issued again, exactly as on a first login.
+                LOG.warnf(
+                        "OID4VP IdP '%s': the credential '%s' carries no reference credential binding but was "
+                                + "presented alongside credentials a binding would cover, so it is not used as the "
+                                + "subject",
+                        idpModel.getAlias(), principalAttribute.credentialId());
+                continue;
+            }
+            // The path starts at the root of the presentation, so an mDoc path names its own
+            // namespace and none has to be guessed at.
+            return new SubjectSource(credential, principalAttribute.claimPath(), credential.claimsNode());
         }
         if (!configProvider.isAllowMissingSubjectCredential()) {
             throw new IdentityBrokerException("None of the credentials carrying the subject ["
@@ -263,6 +279,26 @@ public class Oid4vpCallbackProcessor {
     }
 
     /**
+     * Whether a credential may identify a returning user. A credential carrying a matching reference
+     * credential binding may (a non-matching one was already dropped as issued for another
+     * presentation). A credential carrying none may too, unless the presentation also contains
+     * credentials a binding would cover: a subject credential this realm issues is always bound to such
+     * credentials, so one presented next to them without a binding has had it withheld and must not be
+     * trusted to identify a user. A subject credential presented on its own, or a login whose subject
+     * comes from a credential this realm did not issue and did not bind, has no such material and is
+     * unaffected.
+     */
+    private boolean hasUsableSubjectBinding(VpTokenResult vpResult, VerifiedCredential subjectCredential) {
+        boolean carriesBinding =
+                subjectCredential.claims().get(ReferenceCredentialBinding.REFERENCE_BINDING_CLAIM) != null;
+        if (carriesBinding) {
+            return true;
+        }
+        return !referenceBindingCheck.bindsToOtherCredentials(
+                PresentedCredentials.of(vpResult.credentials()), subjectCredential.credentialId());
+    }
+
+    /**
      * A pseudonymous subject for a presentation that carried no subject credential. Nothing in the
      * presentation identifies the user, so the login that follows establishes which user this
      * subject belongs to, and an issuer puts it into the credential that identifies them next time.
@@ -324,12 +360,15 @@ public class Oid4vpCallbackProcessor {
     /**
      * Validates that the presented credentials satisfy one complete option of every required
      * credential set. Only credentials that passed their own claim validation count, so a
-     * credential that withheld requested claims cannot satisfy an option.
+     * credential that withheld requested claims cannot satisfy an option. Without credential
+     * sets every requested credential is required (OID4VP 1.0, section 6.1), so a wallet cannot
+     * silently omit credentials whose claims the mappers depend on.
      */
     private void enforceCredentialSets(
             Oid4vpRequestObjectStore.RequestContextEntry requestContext, Set<String> satisfiedCredentialIds) {
         List<CredentialSet> credentialSets = requestContext.credentialSets();
         if (credentialSets == null || credentialSets.isEmpty()) {
+            enforceAllRequestedCredentialsPresented(requestContext, satisfiedCredentialIds);
             return;
         }
         for (CredentialSet credentialSet : credentialSets) {
@@ -346,6 +385,28 @@ public class Oid4vpCallbackProcessor {
                         + "credential set. The preferred option [" + String.join(", ", preferredOption)
                         + "] is missing: " + String.join(", ", missing));
             }
+        }
+    }
+
+    private void enforceAllRequestedCredentialsPresented(
+            Oid4vpRequestObjectStore.RequestContextEntry requestContext, Set<String> satisfiedCredentialIds) {
+        List<RequestedCredential> requestedCredentials = requestContext.requestedCredentials();
+        if (requestedCredentials == null) {
+            return;
+        }
+        // The subject credential this realm issues may be absent when the configuration expects
+        // that: the login then continues towards issuing it.
+        Set<String> allowedMissing = configProvider.isAllowMissingSubjectCredential()
+                ? Set.copyOf(PrincipalAttribute.credentialIdsOf(configProvider.getPrincipalAttributes()))
+                : Set.of();
+        List<String> missing = requestedCredentials.stream()
+                .map(RequestedCredential::id)
+                .filter(credentialId -> !satisfiedCredentialIds.contains(credentialId))
+                .filter(credentialId -> !allowedMissing.contains(credentialId))
+                .toList();
+        if (!missing.isEmpty()) {
+            throw new IdentityBrokerException(
+                    "The presentation is missing requested credentials: " + String.join(", ", missing));
         }
     }
 }

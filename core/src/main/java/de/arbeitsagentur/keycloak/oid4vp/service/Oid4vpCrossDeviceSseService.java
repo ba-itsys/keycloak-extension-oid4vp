@@ -66,10 +66,6 @@ public class Oid4vpCrossDeviceSseService {
         this.sessionFactory = session.getKeycloakSessionFactory();
     }
 
-    public void subscribe(String state, SseEventSink eventSink, Sse sse) {
-        subscribe(state, eventSink, sse, null);
-    }
-
     public void subscribe(String state, SseEventSink eventSink, Sse sse, AuthenticationSessionModel authSession) {
         PendingConnection connection = new PendingConnection(
                 state,

@@ -48,6 +48,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final String SAME_DEVICE_ENABLED = "sameDeviceEnabled";
     public static final String CROSS_DEVICE_ENABLED = "crossDeviceEnabled";
     public static final String WALLET_SCHEME = "walletScheme";
+    public static final String REQUEST_URI_METHOD_POST = "requestUriMethodPost";
 
     public static final String CLIENT_ID_SCHEME = "clientIdScheme";
     public static final String RESPONSE_MODE = "responseMode";
@@ -123,6 +124,22 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public void setWalletScheme(String scheme) {
         getConfig().put(WALLET_SCHEME, scheme);
+    }
+
+    /**
+     * Whether the authorization request advertises {@code request_uri_method=post}. When it does, a
+     * conforming wallet retrieves the request object with POST (OID4VP 1.0 §5.10), which lets it send
+     * its {@code wallet_metadata} and {@code wallet_nonce}, enabling request-object encryption and
+     * wallet-nonce replay protection. Absent the parameter, the wallet must use GET, so those features
+     * are unreachable. Off by default, because a wallet that cannot POST the request object would be
+     * unable to start the flow.
+     */
+    public boolean isRequestUriMethodPost() {
+        return getBoolConfig(REQUEST_URI_METHOD_POST, false);
+    }
+
+    public void setRequestUriMethodPost(boolean requestUriMethodPost) {
+        getConfig().put(REQUEST_URI_METHOD_POST, String.valueOf(requestUriMethodPost));
     }
 
     public String getClientIdScheme() {
@@ -277,13 +294,6 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         getConfig().put(ALLOWED_ISSUERS, issuers);
     }
 
-    /**
-     * Checks whether the verified SD-JWT issuer is allowed.
-     *
-     * <p>This is currently evaluated only for credentials with a canonical issuer string. In
-     * practice that means SD-JWT `iss` values. mDoc credentials are not checked here because mDoc
-     * does not define a standard canonical credential-issuer string equivalent to SD-JWT `iss`.
-     */
     public boolean isIssuerAllowed(String issuer) {
         return isValueAllowed(issuer, getAllowedIssuers());
     }

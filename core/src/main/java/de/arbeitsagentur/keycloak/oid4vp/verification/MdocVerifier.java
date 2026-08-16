@@ -69,16 +69,30 @@ public class MdocVerifier {
         }
     }
 
-    /** Issuer signature verification only (no device auth, digest, or validity checks). */
-    public MdocVerificationResult verifyWithTrustedCerts(String deviceResponseToken, ResolvedTrust trust) {
-        return verifyWithTrustedCerts(deviceResponseToken, trust, null, null, null, null, null);
+    /**
+     * Verifies only the issuer signature (and its value digests when the MSO carries them) of an mDoc.
+     *
+     * <p>This is not a wallet-presentation check: it performs no device authentication and does not bind
+     * the credential to a session, so it must not be used to accept a presented credential. Use
+     * {@link #verifyPresentation} for that.
+     */
+    public MdocVerificationResult verifyIssuerSigned(String deviceResponseToken, ResolvedTrust trust) {
+        return verify(deviceResponseToken, trust, null);
     }
 
     /**
-     * Full verification: issuer signature, device authentication, value digests, MSO validity.
-     * OID4VP 1.0 transcript is tried first; ISO 18013-7 as fallback when mdocGeneratedNonce is present.
+     * Fully verifies an mDoc presented in a VP token: issuer signature, MSO validity window, value
+     * digests, and device authentication that binds the presentation to this session.
+     *
+     * <p>Device authentication and value-digest verification are mandatory here (ISO/IEC 18013-5, 9.1.2):
+     * a {@code DeviceResponse} that omits {@code deviceSigned}, omits the Mobile Security Object, or whose
+     * issuer-signed values are not digest-covered is rejected rather than silently accepted. The OID4VP 1.0
+     * session transcript is tried first, with the ISO/IEC 18013-7 transcript as a fallback when
+     * {@code mdocGeneratedNonce} is present.
+     *
+     * @see <a href="https://www.iso.org/standard/69084.html">ISO/IEC 18013-5:2021, 9.1.2 (mdoc authentication)</a>
      */
-    public MdocVerificationResult verifyWithTrustedCerts(
+    public MdocVerificationResult verifyPresentation(
             String deviceResponseToken,
             ResolvedTrust trust,
             String clientId,
@@ -86,30 +100,75 @@ public class MdocVerifier {
             String responseUri,
             String mdocGeneratedNonce,
             byte[] jwkThumbprint) {
+        if (clientId == null || nonce == null || responseUri == null) {
+            throw new IllegalStateException(
+                    "mDoc presentation verification requires client_id, nonce and response_uri");
+        }
+        return verify(
+                deviceResponseToken,
+                trust,
+                new DeviceAuthContext(clientId, nonce, responseUri, mdocGeneratedNonce, jwkThumbprint));
+    }
+
+    /** Session-binding inputs for device authentication; {@code null} selects issuer-signature-only mode. */
+    private record DeviceAuthContext(
+            String clientId, String nonce, String responseUri, String mdocGeneratedNonce, byte[] jwkThumbprint) {}
+
+    private MdocVerificationResult verify(
+            String deviceResponseToken, ResolvedTrust trust, DeviceAuthContext deviceAuth) {
         try {
             CBORPairList document = parseDocument(decodeBase64(deviceResponseToken));
+
+            CBORPairList issuerSigned = map(document, "issuerSigned");
+            if (issuerSigned == null) {
+                throw new IllegalStateException("mDoc document carries no issuerSigned structure");
+            }
             CBORPairList mso = parseMso(document);
+            if (mso == null) {
+                throw new IllegalStateException("mDoc issuerAuth carries no Mobile Security Object");
+            }
 
-            String docType = str(document, "docType");
-            if (docType == null) docType = mso != null ? str(mso, "docType") : null;
-            if (docType == null) docType = "mso_mdoc";
+            String docType = resolveDocType(document, mso);
 
-            Map<String, Object> claims = extractClaims(document, mso);
             verifyIssuerSignature(document, trust);
+            validateValidity(mso);
+            // Claims and digests are both read from the issuer-signed namespaces, so a document can never
+            // present one set of values while a different set is digest-checked.
+            verifyDigests(mso, issuerSigned, deviceAuth != null);
+            Map<String, Object> claims = extractClaims(issuerSigned, mso);
 
-            if (mso != null) {
-                validateValidity(mso);
-                verifyDigests(mso, document);
-                if (clientId != null && nonce != null && responseUri != null && val(document, "deviceSigned") != null) {
-                    verifyDeviceAuth(
-                            document, mso, docType, clientId, nonce, responseUri, mdocGeneratedNonce, jwkThumbprint);
-                }
+            if (deviceAuth != null) {
+                verifyDeviceAuth(
+                        document,
+                        mso,
+                        docType,
+                        deviceAuth.clientId(),
+                        deviceAuth.nonce(),
+                        deviceAuth.responseUri(),
+                        deviceAuth.mdocGeneratedNonce(),
+                        deviceAuth.jwkThumbprint());
             }
 
             return new MdocVerificationResult(claims, docType);
         } catch (Exception e) {
             throw wrapIfNeeded(e, "mDoc verification failed: ");
         }
+    }
+
+    /**
+     * The document-level docType must equal the issuer-signed MSO docType (ISO/IEC 18013-5, 9.1.2);
+     * the MSO value wins because only it is covered by the issuer signature.
+     */
+    private String resolveDocType(CBORPairList document, CBORPairList mso) {
+        String documentDocType = str(document, "docType");
+        String msoDocType = str(mso, "docType");
+        if (documentDocType != null && msoDocType != null && !documentDocType.equals(msoDocType)) {
+            throw new IllegalStateException("mDoc docType '" + documentDocType
+                    + "' does not match the Mobile Security Object docType '" + msoDocType + "'");
+        }
+        if (msoDocType != null) return msoDocType;
+        if (documentDocType != null) return documentDocType;
+        return "mso_mdoc";
     }
 
     private CBORPairList parseDocument(byte[] bytes) {
@@ -128,24 +187,21 @@ public class MdocVerifier {
         throw new IllegalStateException("Unknown mDoc structure");
     }
 
-    private Map<String, Object> extractClaims(CBORPairList document, CBORPairList mso) {
+    private Map<String, Object> extractClaims(CBORPairList issuerSigned, CBORPairList mso) {
         Map<String, Object> claims = new LinkedHashMap<>();
 
-        CBORPairList nameSpaces = map(map(document, "issuerSigned"), "nameSpaces");
-        if (nameSpaces == null) nameSpaces = map(document, "nameSpaces");
-        if (nameSpaces == null) return claims;
-
-        for (var nsPair : nameSpaces.getPairs()) {
-            String namespace = stringValue(nsPair.getKey());
-            if (namespace != null && nsPair.getValue() instanceof CBORItemList elementsList) {
-                addNamespaceClaims(claims, namespace, elementsList);
+        CBORPairList nameSpaces = map(issuerSigned, "nameSpaces");
+        if (nameSpaces != null) {
+            for (var nsPair : nameSpaces.getPairs()) {
+                String namespace = stringValue(nsPair.getKey());
+                if (namespace != null && nsPair.getValue() instanceof CBORItemList elementsList) {
+                    addNamespaceClaims(claims, namespace, elementsList);
+                }
             }
         }
 
-        if (mso != null) {
-            CBORItem status = val(mso, "status");
-            if (status != null) claims.put("status", cborToJava(status));
-        }
+        CBORItem status = val(mso, "status");
+        if (status != null) claims.put("status", cborToJava(status));
         return claims;
     }
 
@@ -236,6 +292,7 @@ public class MdocVerifier {
             // material is scoped to is what keeps the trust domains apart here.
             for (X509Certificate cert : trust.pinnedCertificates()) {
                 try {
+                    cert.checkValidity();
                     if (new COSEVerifier(cert.getPublicKey()).verify(sign1)) return;
                 } catch (Exception ignored) {
                 }
@@ -277,7 +334,6 @@ public class MdocVerifier {
         CBORItem deviceNameSpaces = val(map(document, "deviceSigned"), "nameSpaces");
         if (deviceNameSpaces == null) deviceNameSpaces = new CBORPairList(List.of());
 
-        // Try OID4VP 1.0 first (default)
         CBORItemList oid4vpTranscript =
                 MdocSessionTranscriptBuilder.buildOid4vp(clientId, nonce, responseUri, jwkThumbprint);
         if (tryVerifyDevice(deviceSign1, deviceKey, oid4vpTranscript, docType, deviceNameSpaces)) {
@@ -285,7 +341,6 @@ public class MdocVerifier {
             return;
         }
 
-        // Fallback to ISO 18013-7 if mdocGeneratedNonce is present
         if (mdocGeneratedNonce != null && !mdocGeneratedNonce.isBlank()) {
             CBORItemList isoTranscript =
                     MdocSessionTranscriptBuilder.buildIso18013_7(clientId, nonce, responseUri, mdocGeneratedNonce);
@@ -345,10 +400,16 @@ public class MdocVerifier {
         }
     }
 
-    private void verifyDigests(CBORPairList mso, CBORPairList document) {
+    private void verifyDigests(CBORPairList mso, CBORPairList issuerSigned, boolean mandatory) {
         CBORPairList valueDigests = map(mso, "valueDigests");
-        CBORPairList nameSpaces = map(map(document, "issuerSigned"), "nameSpaces");
-        if (valueDigests == null || nameSpaces == null) return;
+        CBORPairList nameSpaces = map(issuerSigned, "nameSpaces");
+        if (valueDigests == null || nameSpaces == null) {
+            if (mandatory) {
+                throw new IllegalStateException(
+                        "mDoc presentation is missing the value digests that authenticate its claims");
+            }
+            return;
+        }
 
         try {
             for (var nsPair : nameSpaces.getPairs()) {
@@ -365,7 +426,7 @@ public class MdocVerifier {
     private void verifyNamespaceDigests(CBORPairList valueDigests, String namespace, CBORItemList elements) {
         CBORPairList nsDigests = map(valueDigests, namespace);
         if (nsDigests == null) {
-            return;
+            throw new IllegalStateException("mDoc namespace " + namespace + " has no value digests in the MSO");
         }
 
         for (CBORItem element : elements.getItems()) {
@@ -377,7 +438,7 @@ public class MdocVerifier {
         CBORPairList item = unwrapTag24(element);
         CBORItem digestIdValue = item != null ? val(item, "digestID") : null;
         if (digestIdValue == null) {
-            return;
+            throw new IllegalStateException("mDoc issuer-signed item is missing its digestID");
         }
 
         int digestId = intValue(digestIdValue);

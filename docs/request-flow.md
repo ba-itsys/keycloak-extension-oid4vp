@@ -127,9 +127,9 @@ This:
 - Calls `VpTokenProcessor.process(vpToken, clientId, nonce, responseUri, mdocGeneratedNonce, encryptionJwkThumbprint)`:
   - SD-JWT: `SdJwtVerifier.verify()` — delegates to Keycloak's `SdJwtVP.verify()` which performs:
     1. **Issuer signature verification** — validates the SD-JWT's JWS signature using the issuer's public key, resolved in this order:
-       - `x5c` certificate-chain validation against the resolved trust material: a pinned trusted leaf certificate or a PKIX path to the trust anchors (`ResolvedTrust.validateIssuerChain`)
+       - `x5c` certificate-chain validation against the resolved trust material: a pinned trusted leaf certificate bound to the credential's `iss`, or a PKIX path to the trust anchors with `iss` matching a subject alternative name of the leaf (`ResolvedTrust.validateIssuerChain`)
        - the issuer keys the credential's trust domain publishes, matched on `iss` and JOSE `kid`
-       - when that trust domain publishes no keys: JWT VC issuer metadata lookup via `iss` + `kid` (`JwtVcIssuerMetadataResolver`), including `jwks_uri`
+       - when no trust material providers are configured at all: JWT VC issuer metadata lookup via `iss` + `kid` (`JwtVcIssuerMetadataResolver`), including `jwks_uri`
     2. **Issuer JWT time checks** — `exp` (must not be expired), `nbf` (must be valid now), both with configurable clock skew (default 60s). No `iat` freshness check on the issuer JWT (old credentials are valid as long as `exp` holds)
     3. **Selective disclosure digest verification** — SHA-256 hashes of disclosed claims match the `_sd` digests in the issuer JWT
     4. **KB-JWT signature verification** — verifies the Key Binding JWT signature against the holder's public key from the credential's `cnf.jwk` claim

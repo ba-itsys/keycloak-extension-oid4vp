@@ -38,7 +38,6 @@ import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor;
 import jakarta.ws.rs.core.Response;
 import java.net.URI;
-import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -71,7 +70,6 @@ import org.keycloak.utils.StringUtil;
 public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdentityProviderConfig> {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProvider.class);
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final int DEFAULT_LOGIN_TIMEOUT_SECONDS = 1800;
     private static final int QR_CODE_SIZE = 250;
@@ -288,29 +286,24 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         FlowEntry crossDeviceFlow = null;
         String qrCodeBase64 = null;
 
+        // A failure here (for example an invalid credential-set configuration, see validatedCredentialSets)
+        // is deliberately not swallowed: it propagates to performLogin, which renders Keycloak's error
+        // page instead of a wallet login page with no button and no QR code.
         if (sameDeviceEnabled) {
-            try {
-                sameDeviceFlow = createFlowEntry(
-                        request,
-                        loginContext,
-                        Oid4vpConstants.FLOW_SAME_DEVICE,
-                        getConfig().getWalletScheme());
-            } catch (Exception e) {
-                LOG.errorf(e, "Failed to build same-device wallet URL: %s", e.getMessage());
-            }
+            sameDeviceFlow = createFlowEntry(
+                    request,
+                    loginContext,
+                    Oid4vpConstants.FLOW_SAME_DEVICE,
+                    getConfig().getWalletScheme());
         }
 
         if (crossDeviceEnabled) {
-            try {
-                crossDeviceFlow = createFlowEntry(
-                        request,
-                        loginContext,
-                        Oid4vpConstants.FLOW_CROSS_DEVICE,
-                        Oid4vpConstants.DEFAULT_WALLET_SCHEME);
-                qrCodeBase64 = qrCodeService.generateQrCode(crossDeviceFlow.walletUrl(), QR_CODE_SIZE, QR_CODE_SIZE);
-            } catch (Exception e) {
-                LOG.errorf(e, "Failed to build cross-device wallet URL: %s", e.getMessage());
-            }
+            crossDeviceFlow = createFlowEntry(
+                    request,
+                    loginContext,
+                    Oid4vpConstants.FLOW_CROSS_DEVICE,
+                    getConfig().getWalletScheme());
+            qrCodeBase64 = qrCodeService.generateQrCode(crossDeviceFlow.walletUrl(), QR_CODE_SIZE, QR_CODE_SIZE);
         }
 
         return new RedirectFlowData(sameDeviceFlow, crossDeviceFlow, qrCodeBase64);
@@ -358,7 +351,11 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 .path(state)
                 .build();
         String walletUrl = redirectFlowService
-                .buildWalletAuthorizationUrl(walletScheme, loginContext.effectiveClientId(), requestUri)
+                .buildWalletAuthorizationUrl(
+                        walletScheme,
+                        loginContext.effectiveClientId(),
+                        requestUri,
+                        getConfig().isRequestUriMethodPost())
                 .toString();
         return new FlowEntry(state, walletUrl);
     }

@@ -15,15 +15,18 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.trust;
 
+import de.arbeitsagentur.keycloak.oid4vp.verification.X5cChainValidator;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
 /**
  * Builds {@link ResolvedTrust} aggregates for tests the way the ETSI trust list identity provider
- * partitions its certificates: CA certificates become PKIX trust anchors, every certificate is
- * also a directly trusted issuer certificate, and the same set serves revocation checks.
+ * partitions its certificates: CA certificates become PKIX trust anchors, only end entity
+ * certificates are directly trusted issuer certificates, and the whole set serves revocation
+ * checks.
  */
 public final class TestTrust {
 
@@ -31,14 +34,18 @@ public final class TestTrust {
 
     public static ResolvedTrust ofCertificates(List<X509Certificate> certificates) {
         Set<X509Certificate> anchors = new LinkedHashSet<>();
+        List<X509Certificate> endEntityCertificates = new ArrayList<>();
         for (X509Certificate certificate : certificates) {
-            if (certificate.getBasicConstraints() >= 0) {
+            if (X5cChainValidator.isCaCertificate(certificate)) {
                 anchors.add(certificate);
+            } else {
+                endEntityCertificates.add(certificate);
             }
         }
         List<X509TrustMaterial> issuanceTrust =
                 anchors.isEmpty() ? List.of() : List.of(new X509TrustMaterial(anchors, List.of()));
-        return new ResolvedTrust(issuanceTrust, anyIssuer(certificates), List.of(), certificates, List.of());
+        return new ResolvedTrust(
+                issuanceTrust, anyIssuer(endEntityCertificates), List.of(), certificates, List.of(), true);
     }
 
     /** Certificates the way a trust list contributes them: trusted, but not tied to an issuer. */
@@ -52,7 +59,7 @@ public final class TestTrust {
 
     /** Trust that identifies the issuer by key instead of by certificate, as a JWKS trust domain does. */
     public static ResolvedTrust ofIssuerKeys(TrustedIssuerKey... issuerKeys) {
-        return new ResolvedTrust(List.of(), List.of(), List.of(issuerKeys), List.of(), List.of());
+        return new ResolvedTrust(List.of(), List.of(), List.of(issuerKeys), List.of(), List.of(), true);
     }
 
     /** A plan with one provider serving the given credential types, or every type when none are given. */

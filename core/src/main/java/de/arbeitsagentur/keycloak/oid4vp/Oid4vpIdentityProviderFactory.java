@@ -18,18 +18,22 @@ package de.arbeitsagentur.keycloak.oid4vp;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpClientIdScheme;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpSigningKeyParser;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.AbstractIdentityProviderFactory;
 import org.keycloak.common.Profile;
+import org.keycloak.common.util.Base64Url;
 import org.keycloak.common.util.PemUtils;
 import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.models.KeycloakSession;
@@ -48,8 +52,32 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
 
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProviderFactory.class);
 
-    private static final Map<String, String> RESOLVED_KEY_CACHE = new ConcurrentHashMap<>();
-    private static final Set<String> WARNED_MISSING_TRUST_MATERIAL_IDPS = ConcurrentHashMap.newKeySet();
+    private static final int MAX_CACHE_ENTRIES = 256;
+
+    // Bounded and keyed by a fingerprint of the PEM, not the PEM itself: config edits change the PEM
+    // and would otherwise grow this without limit, and the raw PEM carries the private key, so it must
+    // not be retained as a cache key.
+    private static final Map<String, String> RESOLVED_KEY_CACHE = boundedLru(MAX_CACHE_ENTRIES);
+    private static final Set<String> WARNED_MISSING_TRUST_MATERIAL_IDPS =
+            Collections.newSetFromMap(boundedLru(MAX_CACHE_ENTRIES));
+
+    private static <V> Map<String, V> boundedLru(int maxEntries) {
+        return Collections.synchronizedMap(new LinkedHashMap<String, V>(16, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, V> eldest) {
+                return size() > maxEntries;
+            }
+        });
+    }
+
+    private static String fingerprint(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+            return Base64Url.encode(digest);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to fingerprint the verifier PEM", e);
+        }
+    }
 
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES;
 
@@ -87,8 +115,7 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                         + "'sdjwt_urn_eudi_pid_1:sub, mdoc_eu_europa_ec_eudi_pid_1:eu\\.europa\\.ec\\.eudi\\.pid\\.1"
                         + ".family_name'. The first named credential a wallet presents supplies the subject, every "
                         + "required credential set option has to contain one of them, and each has to request its "
-                        + "claim in every claim set option. "
-                        + "requested. Required unless OID4VP transient users are enabled.")
+                        + "claim in every claim set option. Required unless OID4VP transient users are enabled.")
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
@@ -123,6 +150,16 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .helpText("Custom URL scheme for wallet apps (e.g., openid4vp://, haip://).")
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .defaultValue(Oid4vpConstants.DEFAULT_WALLET_SCHEME)
+                .add()
+                .property()
+                .name(Oid4vpIdentityProviderConfig.REQUEST_URI_METHOD_POST)
+                .label("Request URI Method POST")
+                .helpText("Advertise request_uri_method=post so a conforming wallet retrieves the request object with "
+                        + "POST, sending its wallet_metadata and wallet_nonce (OID4VP 1.0 §5.10). This enables "
+                        + "request-object encryption and wallet_nonce replay protection. Leave off for wallets that "
+                        + "retrieve the request object with GET only.")
+                .type(ProviderConfigProperty.BOOLEAN_TYPE)
+                .defaultValue("false")
                 .add()
                 .property()
                 .name(Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME)
@@ -270,7 +307,8 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
         String certOnlyPem = String.join("\n", certPemBlocks);
         config.setX509CertificatePem(certOnlyPem);
 
-        String cached = RESOLVED_KEY_CACHE.get(pem);
+        String cacheKey = fingerprint(pem);
+        String cached = RESOLVED_KEY_CACHE.get(cacheKey);
         if (cached != null) {
             config.setX509SigningKeyJwk(cached);
             return;
@@ -296,7 +334,7 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
 
             String jwkJson = Oid4vpSigningKeyParser.serialize(publicKey, privateKey, certChain);
             config.setX509SigningKeyJwk(jwkJson);
-            RESOLVED_KEY_CACHE.put(pem, jwkJson);
+            RESOLVED_KEY_CACHE.put(cacheKey, jwkJson);
             LOG.debugf(
                     "Resolved x509 signing key from inline PEM (chain size=%d, kid=%s)",
                     certChain.size(), Oid4vpSigningKeyParser.extractKid(jwkJson));
