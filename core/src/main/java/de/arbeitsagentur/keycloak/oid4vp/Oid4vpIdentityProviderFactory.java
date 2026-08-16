@@ -50,9 +50,6 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
 
     private static final Map<String, String> RESOLVED_KEY_CACHE = new ConcurrentHashMap<>();
     private static final Set<String> WARNED_MISSING_TRUST_MATERIAL_IDPS = ConcurrentHashMap.newKeySet();
-    private static final Set<String> WARNED_REMOVED_TRUSTED_AUTHORITIES_MODE = ConcurrentHashMap.newKeySet();
-    private static final Set<String> WARNED_REMOVED_ENFORCE_HAIP = ConcurrentHashMap.newKeySet();
-    private static final Set<String> WARNED_REMOVED_USE_ID_TOKEN_SUBJECT = ConcurrentHashMap.newKeySet();
 
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES;
 
@@ -80,33 +77,31 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .type(ProviderConfigProperty.TEXT_TYPE)
                 .add()
                 .property()
-                .name(Oid4vpIdentityProviderConfig.PRINCIPAL_CREDENTIAL_ID)
-                .label("Principal Credential ID")
-                .helpText("Credential id whose claims identify the user. It must be part of every option of every "
-                        + "required credential set, and it must request the principal attribute in every claim set "
-                        + "option. Leave empty to take the subject from whichever requested credential the wallet "
-                        + "presents, which then requires every credential to carry the principal attribute.")
+                .name(Oid4vpIdentityProviderConfig.PRINCIPAL_ATTRIBUTES)
+                .label("Principal Attributes")
+                .helpText("The claims that identify the user, as a comma separated list of "
+                        + "'credentialId:claimPath' entries in the order they are tried. The claim belongs to the "
+                        + "credential because credentials do not agree on where the subject sits: the path starts at "
+                        + "the root of what the credential presents, so an mDoc names its namespace before the "
+                        + "element, with the dots of the namespace escaped, i.e. "
+                        + "'sdjwt_urn_eudi_pid_1:sub, mdoc_eu_europa_ec_eudi_pid_1:eu\\.europa\\.ec\\.eudi\\.pid\\.1"
+                        + ".family_name'. The first named credential a wallet presents supplies the subject, every "
+                        + "required credential set option has to contain one of them, and each has to request its "
+                        + "claim in every claim set option. "
+                        + "requested. Required unless OID4VP transient users are enabled.")
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
                 .name(Oid4vpIdentityProviderConfig.ALLOW_MISSING_SUBJECT_CREDENTIAL)
                 .label("Allow Missing Subject Credential")
                 .helpText("Accepts a presentation that does not carry the subject credential, for credentials this "
-                        + "Keycloak issues itself. The verifier then generates a pseudonymous subject, the first "
-                        + "broker login establishes which user it belongs to. Configure a first broker login flow "
-                        + "with 'idp-username-password-form' followed by 'oid4vp-subject-binding', which binds the "
-                        + "login to that user so the credential issued afterwards identifies them.")
+                        + "Keycloak issues itself. Requires 'Principal Attributes', which says which credentials "
+                        + "may be missing. The verifier then generates a pseudonymous subject, and the first broker "
+                        + "login establishes which user it belongs to. Configure a first broker login flow with "
+                        + "'idp-username-password-form' followed by 'oid4vp-subject-binding', which binds the login "
+                        + "to that user so the credential issued afterwards identifies them.")
                 .type(ProviderConfigProperty.BOOLEAN_TYPE)
                 .defaultValue("false")
-                .add()
-                .property()
-                .name(Oid4vpIdentityProviderConfig.PRINCIPAL_ATTRIBUTE)
-                .label("Principal Attribute")
-                .helpText("Dot notation path of the claim that identifies the user (e.g., 'sub'). "
-                        + "For mDoc credentials the path addresses a data element, looked up in each presented "
-                        + "namespace. Ignored when OID4VP transient users are enabled.")
-                .type(ProviderConfigProperty.STRING_TYPE)
-                .defaultValue("sub")
                 .add()
                 .property()
                 .name(Oid4vpIdentityProviderConfig.SAME_DEVICE_ENABLED)
@@ -213,9 +208,6 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
         resolveX509SigningKey(config);
         validateVerifierCertificate(config);
         warnIfTrustMaterialIdpsAreMissing(config);
-        warnIfTrustedAuthoritiesModeIsConfigured(config);
-        warnIfEnforceHaipIsConfigured(config);
-        warnIfUseIdTokenSubjectIsConfigured(config);
 
         return new Oid4vpIdentityProvider(session, config);
     }
@@ -247,60 +239,6 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
             LOG.warnf(
                     "OID4VP IdP '%s': trustMaterialIdps is empty. Credential signature verification has no trust "
                             + "anchors; configure a trust material identity provider (e.g. etsi-trust-list).",
-                    config.getAlias());
-        }
-    }
-
-    /**
-     * Points admins at the trust material identity providers when an upgraded realm still carries
-     * the removed trusted authorities setting, which no longer has any effect.
-     */
-    private static void warnIfTrustedAuthoritiesModeIsConfigured(Oid4vpIdentityProviderConfig config) {
-        String configured = config.getConfig().get(Oid4vpIdentityProviderConfig.REMOVED_TRUSTED_AUTHORITIES_MODE);
-        if (StringUtil.isBlank(configured)) {
-            return;
-        }
-        if (WARNED_REMOVED_TRUSTED_AUTHORITIES_MODE.add(config.getAlias())) {
-            LOG.warnf(
-                    "OID4VP IdP '%s': the setting 'trustedAuthoritiesMode' (value '%s') was removed and is ignored. "
-                            + "The DCQL trusted_authorities of a credential are now inherited from the trust material "
-                            + "identity providers serving its credential type; use their 'servedCredentialTypes' and "
-                            + "'advertiseTrustedAuthorities' settings instead.",
-                    config.getAlias(), configured);
-        }
-    }
-
-    /**
-     * Points admins at the settings that replaced the removed HAIP flag, because an upgraded realm
-     * keeps the key and the effective client id scheme and response mode now come from their own
-     * settings.
-     */
-    static void warnIfEnforceHaipIsConfigured(Oid4vpIdentityProviderConfig config) {
-        String configured = config.getConfig().get(Oid4vpIdentityProviderConfig.REMOVED_ENFORCE_HAIP);
-        if (StringUtil.isBlank(configured)) {
-            return;
-        }
-        if (WARNED_REMOVED_ENFORCE_HAIP.add(config.getAlias())) {
-            LOG.warnf(
-                    "OID4VP IdP '%s': the setting 'enforceHaip' (value '%s') was removed and is ignored. "
-                            + "This provider now uses client_id_scheme '%s' and response_mode '%s' as configured, and "
-                            + "takes the credential chain requirement from the trust material identity providers "
-                            + "serving each credential.",
-                    config.getAlias(), configured, config.getClientIdScheme(), config.getResponseMode());
-        }
-    }
-
-    /** Reports the removed Self-Issued OpenID Provider setting, which no longer resolves a subject. */
-    static void warnIfUseIdTokenSubjectIsConfigured(Oid4vpIdentityProviderConfig config) {
-        String configured = config.getConfig().get(Oid4vpIdentityProviderConfig.REMOVED_USE_ID_TOKEN_SUBJECT);
-        if (StringUtil.isBlank(configured) || !Boolean.parseBoolean(configured)) {
-            return;
-        }
-        if (WARNED_REMOVED_USE_ID_TOKEN_SUBJECT.add(config.getAlias())) {
-            LOG.warnf(
-                    "OID4VP IdP '%s': the setting 'useIdTokenSubject' was removed and is ignored. "
-                            + "Self-Issued ID Tokens are no longer requested, so the subject comes from the "
-                            + "credential named by 'principalCredentialId' or from the transient user mode.",
                     config.getAlias());
         }
     }

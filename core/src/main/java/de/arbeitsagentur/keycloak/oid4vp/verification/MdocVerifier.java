@@ -232,7 +232,9 @@ public class MdocVerifier {
                 if (leafKey != null && new COSEVerifier(leafKey).verify(sign1)) return;
             }
 
-            for (X509Certificate cert : trust.directIssuerCertificates()) {
+            // An mDoc names no issuer, so every pinned certificate is tried; the doctype the trust
+            // material is scoped to is what keeps the trust domains apart here.
+            for (X509Certificate cert : trust.pinnedCertificates()) {
                 try {
                     if (new COSEVerifier(cert.getPublicKey()).verify(sign1)) return;
                 } catch (Exception ignored) {

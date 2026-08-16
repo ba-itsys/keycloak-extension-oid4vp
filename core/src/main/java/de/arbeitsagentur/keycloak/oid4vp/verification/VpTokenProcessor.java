@@ -53,7 +53,8 @@ import org.keycloak.utils.StringUtil;
 public class VpTokenProcessor implements VpTokenVerifier {
 
     private static final Logger LOG = Logger.getLogger(VpTokenProcessor.class);
-    private static final String DEFAULT_CREDENTIAL_ID = "cred1";
+    /** Placeholder id of a bare credential that cannot be attributed to a requested one. */
+    private static final String UNATTRIBUTED_CREDENTIAL_ID = "cred1";
 
     private final SdJwtVerifier sdJwtVerifier;
     private final MdocVerifier mdocVerifier;
@@ -281,7 +282,8 @@ public class VpTokenProcessor implements VpTokenVerifier {
 
         ResolvedTrust forCredentialId(String credentialId) {
             if (credentialTypeById.isEmpty()) {
-                // No request context: legacy callers and tests that verify without a prepared query.
+                // A request that carries no DCQL query binds no id to a type, so only the providers
+                // serving every credential type can judge the response.
                 return trustPlan.forCredentialType(null);
             }
             String credentialType = credentialTypeById.get(credentialId);
@@ -295,8 +297,8 @@ public class VpTokenProcessor implements VpTokenVerifier {
         /**
          * The credential id of a VP token that is a bare credential instead of the credential id
          * keyed object OID4VP 1.0 §8.1 defines. It can only be attributed when exactly one
-         * credential was requested. Otherwise the response stays under the legacy id and is
-         * verified against the providers that serve every credential type.
+         * credential was requested; otherwise it falls back to a placeholder id and is verified
+         * against the providers serving every credential type.
          */
         String singleCredentialId() {
             if (credentialTypeById.size() == 1) {
@@ -308,7 +310,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
                                 + "a credential id and is verified against trust material that serves every credential type.",
                         credentialTypeById.size());
             }
-            return DEFAULT_CREDENTIAL_ID;
+            return UNATTRIBUTED_CREDENTIAL_ID;
         }
     }
 }

@@ -59,11 +59,33 @@ The configuration is validated when the identity provider is saved, and again wh
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `principalAttribute` | Dot notation path of the claim used as the unique user identifier. For mDoc credentials the path addresses a data element, looked up in each presented namespace. Ignored when OID4VP transient users are enabled. | `sub` |
-| `principalCredentialId` | Credential id whose claims identify the user. Must be part of every option of every required credential set and must request `principalAttribute` in every claim set option. Empty takes the subject from the first requested credential the wallet presents, which requires every credential to carry `principalAttribute`. | *(none)* |
-| `allowMissingSubjectCredential` | Accepts a presentation that does not carry the subject credential. See [Subject Credential Issued by This Keycloak](#subject-credential-issued-by-this-keycloak). | `false` |
+| `principalAttributes` | The claims that identify the user, as a comma separated list of `credentialId:claimPath` entries in the order they are tried. See [Which Claim Carries the Subject](#which-claim-carries-the-subject). Required unless OID4VP transient users are enabled. | *(none)* |
+| `allowMissingSubjectCredential` | Accepts a presentation that does not carry the subject credential. Requires `principalAttributes`, because the setting says which credentials may be missing. See [Subject Credential Issued by This Keycloak](#subject-credential-issued-by-this-keycloak). | `false` |
 | `doNotStoreUsers` | Native Keycloak IdP setting. When enabled, OID4VP switches to transient per-login identities, ignores configured identifying claims, and relies on Keycloak transient users. Requires the Keycloak `transient-users` feature to be enabled. | `false` |
 | `clockSkewSeconds` | Allowed clock skew for ID token time checks. | `60` |
+
+### Which Claim Carries the Subject
+
+`principalAttributes` says which claim of which credential identifies the user. It is required, because nothing else does: which claim carries the subject belongs to the credential rather than to the identity provider, so a single verifier-wide claim name cannot serve a query of several credentials.
+
+```properties
+principalAttributes = sdjwt_urn_eudi_pid_1:sub, mdoc_eu_europa_ec_eudi_pid_1:eu\.europa\.ec\.eudi\.pid\.1.family_name
+```
+
+Each entry is a DCQL credential id, a colon, and the claim of that credential.
+
+The claim path starts at the root of what the credential presented.
+
+- An SD-JWT credential presents its claims, so the path is the claim: `employee:sub`, or `employee:credential_subject.id` for a nested one.
+- An mDoc presents its data elements inside namespaces, so the path names the namespace before the element. The dots inside a namespace are escaped with a backslash, so the doctype namespace `eu.europa.ec.eudi.pid.1` is written `eu\.europa\.ec\.eudi\.pid\.1`. Nothing about the namespace is inferred from the presentation that way, and a credential carrying a second namespace cannot answer for the subject.
+
+The entries are tried in order, and the first one a wallet actually presented supplies the subject. A wallet holding the PID in one of two formats therefore reaches the same account either way, and which credential answers is the verifier's decision rather than the wallet's.
+
+The rules that are checked when the identity provider is saved:
+
+- Every required credential set option has to contain one of the named credentials, so no combination a wallet may present identifies nobody. `allowMissingSubjectCredential` lifts this rule.
+- Every named credential has to request its claim in every claim set option, so a wallet answering another option still presents a subject. The generated DCQL query adds that claim to the credential's entry.
+- A credential may be named once. Naming it twice leaves it unclear which claim carries the subject.
 
 ### Subject Credential Issued by This Keycloak
 
@@ -73,8 +95,7 @@ Configure the identity provider like this:
 
 ```properties
 credentialSets                = [{"options": [["pid", "employee"], ["pid"]]}]
-principalCredentialId         = employee
-principalAttribute            = sub
+principalAttributes           = employee:sub
 allowMissingSubjectCredential = true
 ```
 
@@ -83,16 +104,19 @@ Configure the authenticator `oid4vp-subject-binding` like this:
 ```properties
 credentialConfigurationId = employee-credential
 offerClientId             = wallet-vci
-grantEntitlement          = true
 ```
 
 The wallet may present both credentials or the PID alone, because the second option of the credential set allows the PID alone.
 
-**The user presents both credentials.** The `sub` claim of the employee credential holds the Keycloak user id. It identifies the user and the login proceeds like any other wallet login.
+**The user presents both credentials.** The principal claim of the employee credential holds the subject of the account. It identifies the user and the login proceeds like any other wallet login.
+
+Which claim that is comes from the `employee` entry of `principalAttributes`, which is `sub` in this example. Any other claim works as long as the issuer writes the subject into it, so the claim named there and `claim.name` on the issuing mapper have to be the same.
 
 **The user presents the PID alone.** Nothing in the presentation says who the user is. The verifier generates a subject of the form `oid4vp-<uuid>` and continues the login with it. Keycloak runs the first broker login flow, where the user signs in with username and password. The authenticator `oid4vp-subject-binding` then sets the brokered identity to the identity of that user, before Keycloak stores the link. The same authenticator entitles the user to the employee credential and ends the login in the Keycloak credential offer required action, which offers it.
 
-The issued credential carries the user id as its `sub` claim, written by the Keycloak mapper `oid4vc-subject-id-mapper`. Nothing has to travel from the presentation to the issuance, because the user id belongs to the user. The next presentation of that credential derives the same identity and reaches the same account.
+The issued credential carries a subject of its own in that claim, written by the mapper `oid4vp-bound-subject-mapper` of this extension. The subject is derived from the Keycloak user id with a realm secret, so the wallet and every verifier the credential is shown to read an opaque value rather than an internal identifier. The next presentation of that credential derives the same identity and reaches the same account.
+
+The authenticator records that subject on the entitlement it grants, and the mapper reads it back when the credential is issued. Keycloak redeems the pre-authorized code in a session of its own, so the entitlement is the only thing of the login the issuance sees.
 
 The offer is bound to the login that created it. Keycloak accepts the pre-authorized code only while the session of that login is still logged in, the user is unchanged, and the password of the user is unchanged. An offer cannot be redeemed after the user logs out.
 
@@ -118,15 +142,15 @@ sequenceDiagram
     Broker->>User: Ask for username and password
     User->>Broker: Sign in
     Broker->>Broker: oid4vp-subject-binding sets the brokered identity to the identity of the user
-    Broker->>Broker: oid4vp-subject-binding entitles the user to the employee credential
+    Broker->>Broker: oid4vp-subject-binding entitles the user, recording the subject and the reference binding
     Broker->>Broker: oid4vp-subject-binding requests the credential offer required action
     Broker->>Broker: Store the link with that identity
     Broker->>User: Show the credential offer
     User->>Wallet: Accept the offer
     Wallet->>Issuer: Redeem the pre-authorized code and request the credential
     Issuer->>Issuer: Check that the login session is still logged in
-    Issuer->>Issuer: Subject id mapper writes sub = user id
-    Issuer->>Wallet: Employee credential with sub = user id
+    Issuer->>Issuer: oid4vp-bound-subject-mapper reads both values off the entitlement
+    Issuer->>Wallet: Employee credential with the subject and the reference binding
     end
 
     rect rgb(235, 242, 250)
@@ -135,19 +159,24 @@ sequenceDiagram
     Verifier->>Wallet: Authorization request, credential_sets [[pid, employee], [pid]]
     Wallet->>Verifier: vp_token with the PID and the employee credential
     Verifier->>Verifier: Verify both credentials, each against the trust material serving its credential type
-    Verifier->>Verifier: Read sub from the employee credential
+    Verifier->>Verifier: Check the reference binding against the PID of this presentation
+    Verifier->>Verifier: Read the principal claim from the employee credential
     Verifier->>Broker: Brokered identity of that subject, which matches the stored link
     Broker->>User: Logged in, no password and no offer
     end
 ```
 
-Both logins reach the same account because the brokered identity is derived from the subject alone. The first login stores the identity of the user id when the user signs in. The second login derives the same value from the `sub` claim of the credential.
+Both logins reach the same account because both derive the same brokered identity. The identity is `Base64Url(SHA-256(subject))` over the trimmed and lowercased subject, so neither the issuer nor the credential format is part of it. Keycloak scopes it to the identity provider alias on its own.
 
-Two settings on the identity provider are required. `allowMissingSubjectCredential` accepts the presentation without the subject credential. `principalCredentialId` names the credential that carries the identifier.
+That identity is stored in the Keycloak federated identity link of this identity provider, which the first broker login flow writes when it finishes. Nothing is written to a user attribute, and the user id is never stored, not even inside the link.
+
+`allowMissingSubjectCredential` accepts the presentation without the subject credential and lifts the rule that every required credential set option has to contain one of the named credentials.
 
 The realm needs a first broker login flow that authenticates the user instead of creating one. Use a flow with `idp-username-password-form` followed by `oid4vp-subject-binding`, both required. The default flow creates a user when nothing matches an existing account, and a German PID matches nothing.
 
-The credential offer is configured on `oid4vp-subject-binding`, because that is where the login is bound to the user. `credentialConfigurationId` names the credential configuration of the issuer, which is what the offer offers, and an empty value means no offer. `offerClientId` names the client the offer is addressed to, which the wallet asks for the credential as. `grantEntitlement` entitles the user to the credential while the offer is made. Turn it off when an administrator grants the entitlement instead.
+A user who lost the credential runs that flow a second time, and Keycloak refuses to link a user it has linked already. The authenticator therefore replaces the existing link of this identity provider. The subject is derived from the user, so the link written a moment later holds the same identity.
+
+The credential offer is configured on `oid4vp-subject-binding`, because that is where the login is bound to the user. `credentialConfigurationId` names the credential configuration of the issuer, which is what the offer offers, and an empty value means no offer. `offerClientId` names the client the offer is addressed to, which the wallet asks for the credential as.
 
 The issuer side of the realm needs the following.
 
@@ -155,10 +184,42 @@ The issuer side of the realm needs the following.
 2. Verifiable credentials enabled on the realm. Keycloak refuses the `oid4vc` protocol for a realm that does not have them on.
 3. A realm signing key whose certificate a certificate authority issued. Keycloak refuses to issue an SD-JWT credential with a self-signed signing certificate.
 4. A credential scope for the employee credential, of protocol `oid4vc`, with the credential configuration id, the credential type, the format `dc+sd-jwt` and a signing algorithm. Set `vc.binding_required` to `true` and `vc.binding_required_proof_types` to `jwt`, so the wallet proves possession of its key and receives a credential it can present with a key binding JWT.
-5. The mapper `oid4vc-subject-id-mapper` on that scope, with `claim.name` set to `sub` and `userAttribute` set to `id`. The value `id` is the user id, which is the subject the login was bound to.
-6. A client with OID4VCI enabled that has the credential scope, named by `offerClientId`. The wallet has to ask for the credential as this client.
+5. The mapper `oid4vp-bound-subject-mapper` on that scope, with `claim.name` set to the claim `principalAttributes` names for this credential, `sub` in this example. It writes the subject the login was bound to, and the reference credential binding of that login.
+6. `vc.credential_build_config.sd_jwt.visible_claims` set to `id,iat,nbf,exp,jti,oid4vp_reference_binding`. The verifier reads the reference credential binding of every credential it is offered as a subject, so it may not sit behind selective disclosure. The claims Keycloak keeps visible by default have to stay in that list, because the setting replaces them.
+7. A client with OID4VCI enabled that has the credential scope, named by `offerClientId`. The wallet has to ask for the credential as this client.
 
-Keycloak only offers a credential to a user who is entitled to it. The authenticator grants that entitlement during the login, so no administrator has to grant it beforehand. An administrator can still grant it with `POST /admin/realms/{realm}/users/{id}/vc/credentials`, with `grantEntitlement` turned off.
+Keycloak only offers a credential to a user who is entitled to it. The authenticator grants that entitlement during the login and records the subject and the reference credential binding on it, so an entitlement granted by an administrator instead would yield a credential that identifies nobody.
+
+The offer is made on every login the authenticator binds, even when the user is entitled already, because arriving there means the presentation carried no subject credential.
+
+#### Reference Credential Binding
+
+The credential this Keycloak issues identifies an account on its own. Without more, an employee credential of one person and a PID of another would sign in as the first person, because the PID is verified but compared to nothing.
+
+The issued credential therefore carries a reference credential binding: a keyed digest of the credential types and claims it was issued alongside. The verifier recomputes that digest from the credentials of the presentation in front of it and treats the credential as not presented when the two differ, so neither its subject nor its claims reach the login. This is not the holder binding of OID4VC, which ties a credential to a wallet key. It ties a credential to the other credentials of a presentation.
+
+What it recognises is the person those credentials name, not the credential instances themselves. Binding to an instance is impossible: a PID is re-issued regularly and issued in batches, so every copy carries a different key and different dates. Two people who share every bound claim therefore share a binding, which is why the credential type is part of the digest and why the selection should name the claims that identify a person.
+
+The digest is an HMAC over a realm secret. The value rides in a credential the wallet shows to other verifiers, and a plain hash of names and dates is recovered from a candidate list within seconds. Passive realm keys are accepted when the binding is checked, so a key rotation does not invalidate what is already issued.
+
+Which claims of which credentials the digest covers is a deployment decision, made through the `oid4vp-reference-credential-binding` provider. The `pid` provider ships with the extension and binds the issued credential to the mandatory PID attributes, in both credential formats. It takes its selection from the server configuration, because the login that issues a credential and the login that presents it again share no other configuration.
+
+```properties
+--spi-oid4vp-reference-credential-binding-pid-credential-types=urn:eudi:pid:1,eu.europa.ec.eudi.pid.1
+--spi-oid4vp-reference-credential-binding-pid-claims=given_name,family_name,birthdate
+```
+
+Those are the defaults, so a deployment presenting a PID needs no configuration. Credentials are selected by type, which is the VCT of an SD-JWT credential and the doctype of an mDoc.
+
+Claims are read exactly as the [IdP mappers](#idp-mappers) read them, by a path in dot notation. A nested claim of an SD-JWT credential is addressed as `place_of_birth.locality`, an array as `nationalities[]`, and an mDoc path resolves inside the namespace of the credential. One selection therefore covers both formats, and a path means the same thing here as in a mapper.
+
+An object or array claim is read with its keys ordered, so a wallet that renders the same claim differently on the next login still produces the same binding. Mappers write their values the same way.
+
+At least one claim path is required. An empty `claims` is refused at startup, because binding to everything a credential carries would cover its issuance metadata as well, and a re-issued PID or another copy of a batch issued one would break the binding on the very next login.
+
+Every bound claim is one whose change costs the user a password login: the verifier treats the credential as not presented, the user signs in with a password, and receives a credential bound to the PID of today. Selecting fewer claims makes that rarer and the binding weaker. A deployment binding to something other than a PID writes its own provider for this SPI.
+
+A credential carrying no reference binding is accepted in any presentation, which is what a credential of another issuer is.
 
 ### Transient Login Mode
 
@@ -171,7 +232,7 @@ To use this extension as a wallet connector without creating persisted Keycloak 
 Behavior in this mode:
 
 - The extension always generates a random per-login transient identifier.
-- `principalAttribute` is ignored for subject resolution.
+- `principalAttributes` is ignored for subject resolution.
 - OID4VP user-attribute mappers still apply, but the target user is transient and is not persisted after the session ends.
 - Session-note mappers are often the best fit when relying parties only need token-time claim propagation.
 
@@ -215,7 +276,7 @@ Trust configuration lives on separate trust material identity providers, referen
 
 A response can carry credentials of several trust domains: a PID from a national trust list next to a credential this Keycloak issued itself. Trust is therefore resolved per credential, not once per identity provider.
 
-Every trust material identity provider declares the credential types it serves in `servedCredentialTypes`. A credential is verified against the material of the providers serving its credential type, and its DCQL entry advertises the `trusted_authorities` those providers expose. A provider that declares no credential types serves all of them, so a configuration that never sets the field behaves exactly as before.
+Every trust material identity provider declares the credential types it serves in `servedCredentialTypes`. A credential is verified against the material of the providers serving its credential type, and its DCQL entry advertises the `trusted_authorities` those providers expose. A provider that declares no credential types serves all of them.
 
 `servedCredentialTypes` is read from the configuration of the referenced provider, not from the provider type. A trust material provider that knows nothing of this extension is scoped the same way, by adding that key to its configuration.
 
@@ -228,7 +289,7 @@ Selection uses the credential type that was **requested** under the DCQL credent
 | ETSI trust list | `x5c` chain | PKIX path to the anchors of the Issuance services on the list | `etsi_tl` with the list URL, `aki` with the key identifiers | `etsi-trust-list` with `trustListUrl` |
 | Pinned certificate bundle | `x5c` chain, or nothing | PKIX path to the CA certificates, and end entity certificates are trusted directly | `aki` with the key identifiers | `etsi-trust-list` with `trustedCertificates` |
 | Keycloak-issued, CA-chained realm key | `x5c` chain to the CA that issued the realm key certificate | as the pinned bundle, with that CA as anchor | `aki`, a private CA has nothing else to advertise | `etsi-trust-list` with the CA in `trustedCertificates` |
-| Keycloak-issued, chainless | JOSE `kid` only | the realm's published signature keys, bound to the realm issuer, and the realm key certificates trusted directly | none | `keycloak-realm-issuer` |
+| Keycloak-issued, chainless | JOSE `kid` only | the realm's published signature keys and the realm key certificates, both trusted for the realm issuer alone | none | `keycloak-realm-issuer` |
 | mDoc | `x5chain` in COSE | PKIX path or a pinned leaf certificate | `etsi_tl` or `aki` | an X.509 provider, because there is no COSE `kid` route for a key-only provider to serve a doctype |
 | Issuer JWKS | JOSE `kid` only | the keys the provider publishes, trusted for any issuer | none | Keycloak's `default-trust` with `jwksUrl` or a pasted JWK |
 | Revocation | status list JWT | the status list certificates of the providers serving that credential | not applicable | follows the credential's trust domain |
@@ -257,7 +318,7 @@ A dedicated identity provider type carries the trust material. It never authenti
 
 ### Keycloak Realm Issuer Identity Provider (`keycloak-realm-issuer`)
 
-Trust material for credentials this Keycloak issues itself. The material is the signature key material of the issuing realm, read in process: the published JWKs bound to the realm's issuer identifier for credentials that identify their key by `kid`, and the realm key certificates as directly trusted issuer certificates for credentials that pin their leaf in `x5c`. Nothing has to be pasted, and a key rotation takes effect without reconfiguration because passive keys stay published while credentials signed with them are still valid.
+Trust material for credentials this Keycloak issues itself. The material is the signature key material of the issuing realm, read in process: the published JWKs for credentials that identify their key by `kid`, and the realm key certificates as directly trusted issuer certificates for credentials that pin their leaf in `x5c`. Both are bound to the realm's issuer identifier, so a credential claiming to come from somewhere else cannot borrow them. Nothing has to be pasted, and a key rotation takes effect without reconfiguration because passive keys stay published while credentials signed with them are still valid.
 
 | Key | Description | Default |
 |-----|-------------|---------|

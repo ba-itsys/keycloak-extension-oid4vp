@@ -47,14 +47,14 @@ public class EtsiTrustListIdentityProvider
     private final TrustListProvider urlTrustList;
     private final TrustListProvider staticTrustList;
 
-    // One provider instance serves one trust resolution, during which several methods ask for the
-    // same certificates, once for every credential type. Trust lists without freshness metadata are
-    // not cacheable across requests, so without memoising here every one of those asks would be
-    // another fetch. Failures are not memoised, so a failed resolution stays failed for this
-    // instance only.
-    private volatile List<X509Certificate> issuanceCertificates;
-    private volatile List<X509Certificate> revocationCertificates;
-    private volatile List<String> authorityKeyIdentifiers;
+    // One provider instance serves one trust resolution of one session, during which several methods
+    // ask for the same certificates, once for every credential type. Trust lists without freshness
+    // metadata are not cacheable across requests, so without memoising here every one of those asks
+    // would be another fetch. Failures are not memoised, so a failed resolution stays failed for
+    // this instance only.
+    private List<X509Certificate> issuanceCertificates;
+    private List<X509Certificate> revocationCertificates;
+    private List<String> authorityKeyIdentifiers;
 
     public EtsiTrustListIdentityProvider(KeycloakSession session, EtsiTrustListIdentityProviderConfig config) {
         this(
@@ -117,12 +117,10 @@ public class EtsiTrustListIdentityProvider
 
     @Override
     public List<X509Certificate> revocationCertificates() {
-        List<X509Certificate> memoized = revocationCertificates;
-        if (memoized == null) {
-            memoized = resolveRevocationCertificates();
-            revocationCertificates = memoized;
+        if (revocationCertificates == null) {
+            revocationCertificates = resolveRevocationCertificates();
         }
-        return memoized;
+        return revocationCertificates;
     }
 
     private List<X509Certificate> resolveRevocationCertificates() {
@@ -161,12 +159,10 @@ public class EtsiTrustListIdentityProvider
     }
 
     private List<String> authorityKeyIdentifiers() {
-        List<String> memoized = authorityKeyIdentifiers;
-        if (memoized == null) {
-            memoized = resolveAuthorityKeyIdentifiers();
-            authorityKeyIdentifiers = memoized;
+        if (authorityKeyIdentifiers == null) {
+            authorityKeyIdentifiers = resolveAuthorityKeyIdentifiers();
         }
-        return memoized;
+        return authorityKeyIdentifiers;
     }
 
     private List<String> resolveAuthorityKeyIdentifiers() {
@@ -185,12 +181,10 @@ public class EtsiTrustListIdentityProvider
     public void close() {}
 
     private List<X509Certificate> issuanceCertificates() {
-        List<X509Certificate> memoized = issuanceCertificates;
-        if (memoized == null) {
-            memoized = resolveIssuanceCertificates();
-            issuanceCertificates = memoized;
+        if (issuanceCertificates == null) {
+            issuanceCertificates = resolveIssuanceCertificates();
         }
-        return memoized;
+        return issuanceCertificates;
     }
 
     private List<X509Certificate> resolveIssuanceCertificates() {

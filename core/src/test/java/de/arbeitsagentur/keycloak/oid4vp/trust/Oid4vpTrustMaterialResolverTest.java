@@ -70,7 +70,7 @@ class Oid4vpTrustMaterialResolverTest {
         ResolvedTrust trust = plan.forCredentialType(PID);
 
         assertThat(trust.issuanceTrust()).isEqualTo(x509Trust.issuanceTrust());
-        assertThat(trust.directIssuerCertificates()).containsExactly(ca);
+        assertThat(trust.pinnedCertificates()).containsExactly(ca);
         assertThat(trust.revocationCertificates()).containsExactly(ca);
         assertThat(trust.trustedIssuerKeys()).containsExactly(TrustedIssuerKey.ofAnyIssuer(jwk));
         assertThat(trust.trustedAuthorities())
@@ -134,8 +134,8 @@ class Oid4vpTrustMaterialResolverTest {
                 .resolvePlan(null, "pid-tl,badge-ca");
 
         assertThat(plan.isScopedByCredentialType()).isTrue();
-        assertThat(plan.forCredentialType(PID).directIssuerCertificates()).containsExactly(pidCa);
-        assertThat(plan.forCredentialType(BADGE).directIssuerCertificates()).containsExactly(badgeCa);
+        assertThat(plan.forCredentialType(PID).pinnedCertificates()).containsExactly(pidCa);
+        assertThat(plan.forCredentialType(BADGE).pinnedCertificates()).containsExactly(badgeCa);
         assertThat(plan.forCredentialType(PID).trustedAuthorities())
                 .containsExactly(
                         new TrustedAuthority(TrustedAuthorityType.ETSI_TL, List.of("https://tl.example/eudi.jwt")),
@@ -167,12 +167,12 @@ class Oid4vpTrustMaterialResolverTest {
 
         Map<String, Oid4vpTrustMaterialIdentityProvider<?>> providers = Map.of(
                 "pid-tl", FixedTrustMaterialIdentityProvider.serving(trustOf(pidCa, "pid-aki", null), PID),
-                "legacy", FixedTrustMaterialIdentityProvider.serving(trustOf(anyCa, "any-aki", null)));
+                "any-ca", FixedTrustMaterialIdentityProvider.serving(trustOf(anyCa, "any-aki", null)));
         CredentialTrustPlan plan = new Oid4vpTrustMaterialResolver((session, alias) -> providers.get(alias))
-                .resolvePlan(null, "pid-tl,legacy");
+                .resolvePlan(null, "pid-tl,any-ca");
 
-        assertThat(plan.forCredentialType(PID).directIssuerCertificates()).containsExactlyInAnyOrder(pidCa, anyCa);
-        assertThat(plan.forCredentialType(BADGE).directIssuerCertificates()).containsExactly(anyCa);
+        assertThat(plan.forCredentialType(PID).pinnedCertificates()).containsExactlyInAnyOrder(pidCa, anyCa);
+        assertThat(plan.forCredentialType(BADGE).pinnedCertificates()).containsExactly(anyCa);
     }
 
     @Test
@@ -194,7 +194,7 @@ class Oid4vpTrustMaterialResolverTest {
                 .toList();
         return new ResolvedTrust(
                 List.of(new X509TrustMaterial(Set.of(certificate), List.of())),
-                List.of(certificate),
+                TestTrust.anyIssuer(List.of(certificate)),
                 List.of(),
                 List.of(certificate),
                 trustedAuthorities);

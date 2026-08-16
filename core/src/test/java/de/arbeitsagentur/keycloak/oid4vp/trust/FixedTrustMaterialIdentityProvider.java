@@ -68,6 +68,11 @@ public class FixedTrustMaterialIdentityProvider implements Oid4vpTrustMaterialId
 
     @Override
     public List<X509Certificate> directIssuerCertificates() {
+        return trust.pinnedCertificates();
+    }
+
+    @Override
+    public List<TrustedIssuerCertificate> trustedIssuerCertificates() {
         return trust.directIssuerCertificates();
     }
 

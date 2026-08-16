@@ -30,8 +30,7 @@ import org.keycloak.utils.StringUtil;
  * JWKs instead of a trust list, and without this it would be trusted for every credential of every
  * request that references it.
  *
- * <p>An empty value serves every credential type, which is what a provider that does not declare a
- * scope means and what keeps existing configurations working unchanged.
+ * <p>An empty value serves every credential type.
  */
 public final class ServedCredentialTypes {
 

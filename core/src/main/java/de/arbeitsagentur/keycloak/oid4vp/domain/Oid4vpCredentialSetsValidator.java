@@ -18,7 +18,6 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import org.keycloak.utils.StringUtil;
 
 /**
  * Validates the credential set configuration of an OID4VP identity provider.
@@ -37,6 +36,8 @@ public final class Oid4vpCredentialSetsValidator {
     /**
      * @param credentials the credentials aggregated from the mappers, keyed by credential id, or
      *     empty to check only what the identity provider configuration says on its own
+     * @param principalAttributes the credentials the subject may be read from, each with the claim
+     *     of it that carries the subject
      * @param principalClaimRequested false when the subject comes from a transient user, so no
      *     credential has to carry the principal claim
      * @param subjectCredentialMayBeMissing whether a presentation without the subject credential is
@@ -48,19 +49,13 @@ public final class Oid4vpCredentialSetsValidator {
     public static List<String> problems(
             List<CredentialSet> credentialSets,
             Map<String, CredentialTypeSpec> credentials,
-            String principalCredentialId,
-            String principalAttribute,
+            List<PrincipalAttribute> principalAttributes,
             boolean principalClaimRequested,
             boolean subjectCredentialMayBeMissing) {
 
         List<String> problems = referenceProblems(credentialSets, credentials);
         if (problems.isEmpty() && principalClaimRequested) {
-            problems = subjectProblems(
-                    credentialSets,
-                    credentials,
-                    principalCredentialId,
-                    principalAttribute,
-                    subjectCredentialMayBeMissing);
+            problems = subjectProblems(credentialSets, credentials, principalAttributes, subjectCredentialMayBeMissing);
         }
         return List.copyOf(problems);
     }
@@ -88,36 +83,48 @@ public final class Oid4vpCredentialSetsValidator {
     private static List<String> subjectProblems(
             List<CredentialSet> credentialSets,
             Map<String, CredentialTypeSpec> credentials,
-            String principalCredentialId,
-            String principalAttribute,
+            List<PrincipalAttribute> principalAttributes,
             boolean subjectCredentialMayBeMissing) {
-        List<String> problems = subjectCredentialMayBeMissing
-                ? List.of()
-                : principalCoverageProblems(credentialSets, principalCredentialId);
+        if (principalAttributes.isEmpty()) {
+            return List.of(
+                    "principalAttributes is required: it names the credentials the subject is read from, and the claim of each that carries it");
+        }
+        List<String> problems =
+                principalCoverageProblems(credentialSets, principalAttributes, subjectCredentialMayBeMissing);
         if (!problems.isEmpty() || credentials.isEmpty()) {
             return problems;
         }
-        return principalClaimProblems(credentials, principalCredentialId, principalAttribute);
+        return principalClaimProblems(credentials, principalAttributes);
     }
 
     /**
-     * Every option of every required credential set has to contain the subject credential,
+     * Every option of every required credential set has to contain one of the subject credentials,
      * otherwise a wallet can satisfy the query with a combination that identifies nobody. Optional
-     * sets are exempt because a required set always covers the subject.
+     * sets are exempt because a required set always covers the subject, and a configuration that
+     * expects the subject credential to be missing is exempt from that last rule alone.
      */
     private static List<String> principalCoverageProblems(
-            List<CredentialSet> credentialSets, String principalCredentialId) {
-        if (credentialSets.isEmpty() || StringUtil.isBlank(principalCredentialId)) {
+            List<CredentialSet> credentialSets,
+            List<PrincipalAttribute> principalAttributes,
+            boolean subjectCredentialMayBeMissing) {
+        if (credentialSets.isEmpty()) {
             return List.of();
         }
+        List<String> subjectCredentialIds = PrincipalAttribute.credentialIdsOf(principalAttributes);
 
-        boolean referenced = credentialSets.stream()
-                .anyMatch(
-                        credentialSet -> credentialSet.referencedCredentialIds().contains(principalCredentialId));
-        if (!referenced) {
-            return List.of(
-                    "principalCredentialId '" + principalCredentialId
-                            + "' is not referenced by any credentialSets option, so the subject credential would never be requested");
+        List<String> problems = new ArrayList<>();
+        for (String subjectCredentialId : subjectCredentialIds) {
+            boolean referenced = credentialSets.stream()
+                    .anyMatch(credentialSet ->
+                            credentialSet.referencedCredentialIds().contains(subjectCredentialId));
+            if (!referenced) {
+                problems.add(
+                        "principalAttributes names '" + subjectCredentialId
+                                + "', which no credentialSets option references, so that subject credential would never be requested");
+            }
+        }
+        if (!problems.isEmpty()) {
+            return problems;
         }
 
         List<CredentialSet> requiredSets =
@@ -126,66 +133,78 @@ public final class Oid4vpCredentialSetsValidator {
             return List.of(
                     "credentialSets contains no entry with required=true, so a wallet could satisfy the query without presenting any credential and no subject would be available");
         }
+        if (subjectCredentialMayBeMissing) {
+            return List.of();
+        }
 
-        List<String> problems = new ArrayList<>();
         for (CredentialSet credentialSet : requiredSets) {
             for (List<String> option : credentialSet.options()) {
-                if (!option.contains(principalCredentialId)) {
-                    problems.add("principalCredentialId '" + principalCredentialId
-                            + "' is missing from the required credentialSets option [" + String.join(", ", option)
-                            + "], which could therefore be satisfied without presenting the subject credential");
+                if (option.stream().noneMatch(subjectCredentialIds::contains)) {
+                    problems.add("the required credentialSets option [" + String.join(", ", option)
+                            + "] contains none of the subject credentials [" + String.join(", ", subjectCredentialIds)
+                            + "], so it could be satisfied without presenting one");
                 }
             }
         }
         return problems;
     }
 
-    /**
-     * The subject credential has to request the principal claim in every claim set option. Without
-     * a configured subject credential each credential can be the only one presented, so all of them
-     * have to carry it.
-     */
+    /** Every subject credential has to request its claim in every claim set option. */
     private static List<String> principalClaimProblems(
-            Map<String, CredentialTypeSpec> credentials, String principalCredentialId, String principalAttribute) {
-        if (StringUtil.isBlank(principalAttribute)) {
-            return List.of();
+            Map<String, CredentialTypeSpec> credentials, List<PrincipalAttribute> principalAttributes) {
+        List<String> problems = new ArrayList<>();
+        for (PrincipalAttribute principal : principalAttributes) {
+            CredentialTypeSpec credential = credentials.get(principal.credentialId());
+            if (credential == null) {
+                problems.add("principalAttributes names '" + principal.credentialId()
+                        + "', which is not a configured credential. Configured credential ids: "
+                        + String.join(", ", credentials.keySet()));
+                continue;
+            }
+            problems.addAll(principalClaimProblems(principal, credential));
         }
-        if (StringUtil.isBlank(principalCredentialId)) {
-            List<String> problems = new ArrayList<>();
-            credentials.forEach((credentialId, credential) ->
-                    problems.addAll(principalClaimProblems(credentialId, credential, principalAttribute)));
-            return problems;
-        }
-
-        CredentialTypeSpec principalCredential = credentials.get(principalCredentialId);
-        if (principalCredential == null) {
-            return List.of("principalCredentialId '" + principalCredentialId
-                    + "' does not name a configured credential. Configured credential ids: "
-                    + String.join(", ", credentials.keySet()));
-        }
-        return principalClaimProblems(principalCredentialId, principalCredential, principalAttribute);
+        return problems;
     }
 
-    private static List<String> principalClaimProblems(
-            String credentialId, CredentialTypeSpec credential, String principalAttribute) {
+    /**
+     * A subject credential has to request its claim. For an mDoc the path names the namespace
+     * before the element, and DCQL asks for the two separately, so both halves have to match a
+     * requested claim.
+     */
+    private static List<String> principalClaimProblems(PrincipalAttribute principal, CredentialTypeSpec credential) {
+        String credentialId = principal.credentialId();
+        if (!Oid4vpConstants.FORMAT_MSO_MDOC.equals(credential.format())) {
+            return claimProblems(credentialId, credential, principal.claimPath(), null);
+        }
+        String namespace = principal.mdocNamespace();
+        if (namespace == null) {
+            return List.of("principalAttributes names '" + credentialId + ":" + principal.claimPath()
+                    + "', but an mDoc keeps its data elements inside a namespace, so the path has to name the"
+                    + " namespace before the element");
+        }
+        return claimProblems(credentialId, credential, principal.mdocElementPath(), namespace);
+    }
+
+    private static List<String> claimProblems(
+            String credentialId, CredentialTypeSpec credential, String claimPath, String namespace) {
         List<ClaimSpec> claimSpecs = credential.claimSpecs();
         List<Integer> principalIndexes = new ArrayList<>();
         for (int i = 0; i < claimSpecs.size(); i++) {
-            if (principalAttribute.equals(claimSpecs.get(i).path())) {
+            ClaimSpec claimSpec = claimSpecs.get(i);
+            boolean sameNamespace = namespace == null || namespace.equals(claimSpec.namespace());
+            if (sameNamespace && claimPath.equals(claimSpec.path())) {
                 principalIndexes.add(i);
             }
         }
         if (principalIndexes.isEmpty()) {
-            return List.of(
-                    "credential '" + credentialId + "' does not request the principal claim '"
-                            + principalAttribute
-                            + "', so a presentation of it alone would not identify the user. Set principalCredentialId to the credential that carries the subject.");
+            return List.of("credential '" + credentialId + "' does not request the claim '" + claimPath
+                    + "' that principalAttributes reads its subject from");
         }
 
         for (List<Integer> claimSetOption : credential.claimSetOptionIndexes()) {
             if (principalIndexes.stream().noneMatch(claimSetOption::contains)) {
                 return List.of(
-                        "the principal claim '" + principalAttribute + "' of credential '" + credentialId
+                        "the claim '" + claimPath + "' of credential '" + credentialId
                                 + "' is not part of every claim set option, so a wallet answering another option would present no subject");
             }
         }

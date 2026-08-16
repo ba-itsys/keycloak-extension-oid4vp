@@ -23,13 +23,13 @@ import org.keycloak.representations.idm.IdentityProviderMapperRepresentation;
 // both the generated DCQL query and the claim-to-attribute mapping.
 public enum CredentialProfile {
     SD_JWT_VC(
-            "given_name",
+            "sdjwt_urn_eudi_pid_1:given_name",
             false,
             List.of(
                     sdJwtAttributeMapper("sd-jwt-given_name", "urn:eudi:pid:1", "given_name", "firstName"),
                     sdJwtAttributeMapper("sd-jwt-family_name", "urn:eudi:pid:1", "family_name", "lastName"))),
     ISO_MDL(
-            "given_name",
+            "mdoc_org_iso_18013_5_1_mDL:org\\.iso\\.18013\\.5\\.1.given_name",
             true,
             List.of(
                     mdocAttributeMapper(
@@ -64,19 +64,20 @@ public enum CredentialProfile {
             -----END CERTIFICATE-----
             """;
 
-    private final String principalAttribute;
+    private final String principalAttributes;
     private final boolean includeMdlIssuer;
     private final List<IdentityProviderMapperRepresentation> mappers;
 
     CredentialProfile(
-            String principalAttribute, boolean includeMdlIssuer, List<IdentityProviderMapperRepresentation> mappers) {
-        this.principalAttribute = principalAttribute;
+            String principalAttributes, boolean includeMdlIssuer, List<IdentityProviderMapperRepresentation> mappers) {
+        this.principalAttributes = principalAttributes;
         this.includeMdlIssuer = includeMdlIssuer;
         this.mappers = mappers;
     }
 
-    public String principalAttribute() {
-        return principalAttribute;
+    /** The credential the subject is read from, and the claim of it that carries the subject. */
+    public String principalAttributes() {
+        return principalAttributes;
     }
 
     public boolean includeMdlIssuer() {

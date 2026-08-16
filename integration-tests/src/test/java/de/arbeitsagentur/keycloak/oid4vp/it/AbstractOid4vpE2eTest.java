@@ -149,8 +149,31 @@ abstract class AbstractOid4vpE2eTest {
         defaults.add(Oid4vpTestKeycloakSetup.defaultSessionNoteMapper());
         defaults.addAll(Oid4vpTestKeycloakSetup.defaultDcqlMappers());
         replaceIdpMappers(defaults);
-        setCredentialSets(Oid4vpTestKeycloakSetup.alternativeCredentialSets(
-                Oid4vpTestKeycloakSetup.SD_JWT_PID_CREDENTIAL_ID, Oid4vpTestKeycloakSetup.MDOC_PID_CREDENTIAL_ID));
+        resetSubjectCredentialSettings();
+    }
+
+    /**
+     * Restores the credential sets and the settings that are validated against them in one update.
+     * They have to travel together: a configuration that expects the subject credential to be
+     * missing has to name it, so clearing one without the other is refused when it is saved.
+     */
+    private void resetSubjectCredentialSettings() {
+        IdentityProviderResource idp = realm.admin().identityProviders().get(Oid4vpTestKeycloakSetup.IDP_ALIAS);
+        IdentityProviderRepresentation representation = idp.toRepresentation();
+        representation
+                .getConfig()
+                .put(
+                        Oid4vpIdentityProviderConfig.CREDENTIAL_SETS,
+                        Oid4vpTestKeycloakSetup.alternativeCredentialSets(
+                                Oid4vpTestKeycloakSetup.SD_JWT_PID_CREDENTIAL_ID,
+                                Oid4vpTestKeycloakSetup.MDOC_PID_CREDENTIAL_ID));
+        representation
+                .getConfig()
+                .put(
+                        Oid4vpIdentityProviderConfig.PRINCIPAL_ATTRIBUTES,
+                        Oid4vpTestKeycloakSetup.defaultPrincipalAttributeIds());
+        representation.getConfig().remove(Oid4vpIdentityProviderConfig.ALLOW_MISSING_SUBJECT_CREDENTIAL);
+        idp.update(representation);
     }
 
     /**
@@ -169,8 +192,22 @@ abstract class AbstractOid4vpE2eTest {
             }
         }
         addIdpMappers(idp, mappers);
-        setCredentialSets(Oid4vpTestKeycloakSetup.alternativeCredentialSets(
-                Oid4vpTestKeycloakSetup.credentialIdsOf(mappers).toArray(String[]::new)));
+        String[] credentialIds =
+                Oid4vpTestKeycloakSetup.credentialIdsOf(mappers).toArray(String[]::new);
+        // The credential sets and the credentials carrying the subject travel together: naming a
+        // credential no mapper produces is refused when it is saved.
+        IdentityProviderRepresentation representation = idp.toRepresentation();
+        representation
+                .getConfig()
+                .put(
+                        Oid4vpIdentityProviderConfig.CREDENTIAL_SETS,
+                        Oid4vpTestKeycloakSetup.alternativeCredentialSets(credentialIds));
+        representation
+                .getConfig()
+                .put(
+                        Oid4vpIdentityProviderConfig.PRINCIPAL_ATTRIBUTES,
+                        Oid4vpTestKeycloakSetup.principalAttributesFor(credentialIds));
+        idp.update(representation);
     }
 
     /**

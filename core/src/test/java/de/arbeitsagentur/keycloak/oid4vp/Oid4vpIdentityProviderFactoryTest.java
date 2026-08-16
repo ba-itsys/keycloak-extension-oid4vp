@@ -191,34 +191,4 @@ class Oid4vpIdentityProviderFactoryTest {
         assertThatCode(() -> Oid4vpIdentityProviderFactory.validateVerifierCertificate(config))
                 .doesNotThrowAnyException();
     }
-
-    @Test
-    void removedSettingsAreReportedInsteadOfApplied() {
-        Oid4vpIdentityProviderConfig config = new Oid4vpIdentityProviderConfig();
-        config.setAlias("oid4vp-upgraded");
-        config.getConfig().put(Oid4vpIdentityProviderConfig.REMOVED_ENFORCE_HAIP, "true");
-        config.getConfig().put(Oid4vpIdentityProviderConfig.REMOVED_USE_ID_TOKEN_SUBJECT, "true");
-
-        assertThatCode(() -> {
-                    Oid4vpIdentityProviderFactory.warnIfEnforceHaipIsConfigured(config);
-                    Oid4vpIdentityProviderFactory.warnIfUseIdTokenSubjectIsConfigured(config);
-                })
-                .doesNotThrowAnyException();
-
-        assertThat(config.getClientIdScheme())
-                .as("the removed flag no longer overrides the configured scheme")
-                .isEqualTo("x509_hash");
-    }
-
-    @Test
-    void absentRemovedSettingsAreNotReported() {
-        Oid4vpIdentityProviderConfig config = new Oid4vpIdentityProviderConfig();
-        config.setAlias("oid4vp-clean");
-
-        assertThatCode(() -> {
-                    Oid4vpIdentityProviderFactory.warnIfEnforceHaipIsConfigured(config);
-                    Oid4vpIdentityProviderFactory.warnIfUseIdTokenSubjectIsConfigured(config);
-                })
-                .doesNotThrowAnyException();
-    }
 }

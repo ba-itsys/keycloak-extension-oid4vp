@@ -179,13 +179,14 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
      * issuer cannot verify a credential claiming to come from another.
      */
     private List<SignatureVerifierContext> directTrustVerifiers(IssuerSignedJWT issuerSignedJWT) {
-        List<SignatureVerifierContext> verifiers = new ArrayList<>();
-        for (X509Certificate certificate : trust.directIssuerCertificates()) {
-            verifiers.add(toVerifierContext(certificate.getPublicKey()));
-        }
         JWSHeader header = issuerSignedJWT.getJwsHeader();
         String issuer = issuerSignedJWT.getPayload().path("iss").asText(null);
         String keyId = header != null ? header.getKeyId() : null;
+
+        List<SignatureVerifierContext> verifiers = new ArrayList<>();
+        for (X509Certificate certificate : trust.issuerCertificatesFor(issuer)) {
+            verifiers.add(toVerifierContext(certificate.getPublicKey()));
+        }
         for (TrustedIssuerKey trustedIssuerKey : trust.issuerKeysFor(issuer, keyId)) {
             JWK jwk = trustedIssuerKey.jwk();
             try {

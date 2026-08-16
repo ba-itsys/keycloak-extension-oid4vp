@@ -285,8 +285,8 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
         config.put(Oid4vpIdentityProviderConfig.TRUST_MATERIAL_IDPS, TRUST_IDP_ALIAS);
         config.put(Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM, material.combinedPem());
         config.put(
-                Oid4vpIdentityProviderConfig.PRINCIPAL_ATTRIBUTE,
-                scenario.profile().principalAttribute());
+                Oid4vpIdentityProviderConfig.PRINCIPAL_ATTRIBUTES,
+                scenario.profile().principalAttributes());
         idp.setConfig(config);
         return idp;
     }

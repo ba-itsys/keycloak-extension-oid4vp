@@ -108,7 +108,7 @@ class Oid4vpCredentialSetsValidatorTest {
 
     @Test
     void validate_credentialIdWithIllegalCharacters_isReported() {
-        assertThat(problems("[{\"options\":[[\"urn:eudi:pid:1\"]]}]", null))
+        assertThat(problems("[{\"options\":[[\"urn:eudi:pid:1\"]]}]", PID + ":sub"))
                 .singleElement()
                 .asString()
                 .contains("urn:eudi:pid:1");
@@ -116,7 +116,7 @@ class Oid4vpCredentialSetsValidatorTest {
 
     @Test
     void validate_blankCredentialSets_isValid() {
-        assertThat(problems("  ", null)).isEmpty();
+        assertThat(problems("  ", PID + ":sub")).isEmpty();
     }
 
     // --- principal coverage across credential set options ------------------
@@ -127,11 +127,36 @@ class Oid4vpCredentialSetsValidatorTest {
                 [{"options":[["%s","%s"],["%s"]]}]
                 """.formatted(PID, MDL, PID);
 
-        assertThat(problems(json, MDL))
+        assertThat(problems(json, MDL + ":sub"))
                 .singleElement()
                 .asString()
                 .as("the second option would be satisfiable without ever presenting the subject credential")
                 .contains(MDL);
+    }
+
+    @Test
+    void validate_missingSubjectCredentialAllowedWithoutNamingIt_isRejected() {
+        String credentialSets = "[{\"options\": [[\"" + PID + "\", \"" + MDL + "\"], [\"" + PID + "\"]]}]";
+        Map<String, CredentialTypeSpec> credentials = Map.of(PID, pidSpec(), MDL, pidSpec());
+        List<CredentialSet> parsed = CredentialSet.parse(objectMapper, credentialSets);
+
+        assertThat(Oid4vpCredentialSetsValidator.problems(parsed, credentials, List.of(), true, true))
+                .as("nothing says which claim of which credential the subject is read from")
+                .singleElement()
+                .asString()
+                .contains("principalAttributes is required");
+    }
+
+    @Test
+    void validate_principalCredentialMissingFromAnOption_isAllowedWhenItMayBeMissing() {
+        String credentialSets = "[{\"options\": [[\"" + PID + "\", \"" + MDL + "\"], [\"" + PID + "\"]]}]";
+        Map<String, CredentialTypeSpec> credentials = Map.of(PID, pidSpec(), MDL, pidSpec());
+        List<CredentialSet> parsed = CredentialSet.parse(objectMapper, credentialSets);
+
+        assertThat(Oid4vpCredentialSetsValidator.problems(
+                        parsed, credentials, PrincipalAttribute.parse(MDL + ":sub"), true, true))
+                .as("the subject credential is issued by this Keycloak, so it is absent from the first login")
+                .isEmpty();
     }
 
     @Test
@@ -140,7 +165,7 @@ class Oid4vpCredentialSetsValidatorTest {
                 [{"options":[["%s","%s"],["%s"]]}]
                 """.formatted(PID, MDL, PID);
 
-        assertThat(problems(json, PID)).isEmpty();
+        assertThat(problems(json, PID + ":sub")).isEmpty();
     }
 
     @Test
@@ -149,7 +174,7 @@ class Oid4vpCredentialSetsValidatorTest {
                 [{"options":[["%s"]]},{"options":[["%s"]],"required":false}]
                 """.formatted(PID, MDL);
 
-        assertThat(problems(json, PID))
+        assertThat(problems(json, PID + ":sub"))
                 .as("an optional extra credential is never the sole source of the subject")
                 .isEmpty();
     }
@@ -160,14 +185,14 @@ class Oid4vpCredentialSetsValidatorTest {
                 [{"options":[["%s"]],"required":false},{"options":[["%s"]],"required":false}]
                 """.formatted(PID, MDL);
 
-        assertThat(problems(json, PID)).singleElement().asString().contains("required");
+        assertThat(problems(json, PID + ":sub")).singleElement().asString().contains("required");
     }
 
     @Test
     void validate_principalCredentialNotReferencedAtAll_isReported() {
         String json = "[{\"options\":[[\"" + PID + "\"]]}]";
 
-        assertThat(problems(json, MDL)).singleElement().asString().contains(MDL);
+        assertThat(problems(json, MDL + ":sub")).singleElement().asString().contains(MDL);
     }
 
     // --- rules that need the aggregated credentials ------------------------
@@ -178,15 +203,15 @@ class Oid4vpCredentialSetsValidatorTest {
                 [{"options":[["%s","%s"],["%s"]]}]
                 """.formatted(PID, MDL, PID);
 
-        assertThat(problems(json, PID, "sub", Map.of(PID, pidSpec())))
+        assertThat(problems(json, PID + ":sub", Map.of(PID, pidSpec())))
                 .singleElement()
                 .asString()
                 .contains(MDL);
     }
 
     @Test
-    void validate_unknownPrincipalCredentialId_isReported() {
-        assertThat(problems("", "nope", "sub", Map.of(PID, pidSpec())))
+    void validate_unknownPrincipalAttributeId_isReported() {
+        assertThat(problems("", "nope:sub", Map.of(PID, pidSpec())))
                 .singleElement()
                 .asString()
                 .contains("nope");
@@ -199,7 +224,7 @@ class Oid4vpCredentialSetsValidatorTest {
                 "urn:eudi:pid:1",
                 List.of(ClaimSpec.sdJwt("given_name", List.of("1-full")), ClaimSpec.sdJwt("sub", List.of("2-min"))));
 
-        assertThat(problems("", PID, "sub", Map.of(PID, spec)))
+        assertThat(problems("", PID + ":sub", Map.of(PID, spec)))
                 .singleElement()
                 .asString()
                 .as("a wallet answering the 1-full claim set option would present no subject")
@@ -213,27 +238,38 @@ class Oid4vpCredentialSetsValidatorTest {
                 "urn:eudi:pid:1",
                 List.of(ClaimSpec.sdJwt("given_name", List.of("1-full")), ClaimSpec.sdJwt("sub")));
 
-        assertThat(problems("", PID, "sub", Map.of(PID, spec))).isEmpty();
+        assertThat(problems("", PID + ":sub", Map.of(PID, spec))).isEmpty();
     }
 
     @Test
-    void validate_blankPrincipalCredentialId_requiresPrincipalClaimOnEveryCredential() {
+    void validate_credentialThatDoesNotRequestItsNamedClaim_isReported() {
         CredentialTypeSpec withoutPrincipal = new CredentialTypeSpec(
                 Oid4vpConstants.FORMAT_MSO_MDOC,
                 "org.iso.18013.5.1.mDL",
                 List.of(ClaimSpec.mdoc("org.iso.18013.5.1", "family_name")));
-        Map<String, CredentialTypeSpec> credentials = new LinkedHashMap<>();
-        credentials.put(PID, pidSpec());
-        credentials.put(MDL, withoutPrincipal);
 
-        assertThat(problems("", "", "sub", credentials))
+        assertThat(problems("", MDL + ":org\\.iso\\.18013\\.5\\.1.sub", Map.of(MDL, withoutPrincipal)))
+                .as("a credential the subject is read from has to request the claim it is read from")
                 .singleElement()
                 .asString()
                 .contains(MDL);
     }
 
     @Test
-    void validate_blankPrincipalCredentialIdWithFormatAlternatives_isValid() {
+    void validate_noPrincipalAttributes_isRejected() {
+        Map<String, CredentialTypeSpec> credentials = new LinkedHashMap<>();
+        credentials.put(PID, pidSpec());
+        credentials.put(MDL, pidSpec());
+
+        assertThat(problems("", "", credentials))
+                .as("nothing else says which claim of which credential identifies the user")
+                .singleElement()
+                .asString()
+                .contains("principalAttributes is required");
+    }
+
+    @Test
+    void validate_bothFormatsOfThePidNamed_isValid() {
         CredentialTypeSpec mdocPid = new CredentialTypeSpec(
                 Oid4vpConstants.FORMAT_MSO_MDOC,
                 "eu.europa.ec.eudi.pid.1",
@@ -245,9 +281,25 @@ class Oid4vpCredentialSetsValidatorTest {
                 [{"options":[["%s"],["mdoc_eu_europa_ec_eudi_pid_1"]]}]
                 """.formatted(PID);
 
-        assertThat(problems(json, "", "sub", credentials))
-                .as("either format may supply the subject, so no explicit principal credential is needed")
+        assertThat(problems(
+                        json,
+                        PID + ":sub, mdoc_eu_europa_ec_eudi_pid_1:eu\\.europa\\.ec\\.eudi\\.pid\\.1.sub",
+                        credentials))
+                .as("the same PID in two formats is two credentials, and either may answer for the subject")
                 .isEmpty();
+    }
+
+    @Test
+    void validate_beforeAnyMapperExists_stillChecksTheCredentialSetsAgainstTheNamedCredentials() {
+        // On create the identity provider has no mappers yet, so the credential sets are the only
+        // thing the named subject credentials can be checked against.
+        String json = "[{\"options\": [[\"" + PID + "\"], [\"" + MDL + "\"]]}]";
+
+        assertThat(problems(json, PID + ":sub", Map.of()))
+                .as("the option of the mDL alone would be satisfied without presenting a subject")
+                .singleElement()
+                .asString()
+                .contains(MDL);
     }
 
     @Test
@@ -258,8 +310,8 @@ class Oid4vpCredentialSetsValidatorTest {
                 List.of(ClaimSpec.mdoc("org.iso.18013.5.1", "family_name")));
 
         assertThat(Oid4vpCredentialSetsValidator.problems(
-                        List.of(), Map.of(MDL, withoutPrincipal), "", "sub", false, false))
-                .as("useIdTokenSubject and transient users do not read a principal claim")
+                        List.of(), Map.of(MDL, withoutPrincipal), List.of(), false, false))
+                .as("transient users get a per-login subject, so no credential has to carry a principal claim")
                 .isEmpty();
     }
 
@@ -270,32 +322,15 @@ class Oid4vpCredentialSetsValidatorTest {
                 List.of(ClaimSpec.sdJwt("given_name"), ClaimSpec.sdJwt("sub")));
     }
 
-    @Test
-    void anAvoidableSubjectCredentialIsAllowedWhenItMayBeMissing() {
-        String credentialSets = "[{\"options\": [[\"" + PID + "\", \"" + MDL + "\"], [\"" + PID + "\"]]}]";
-        Map<String, CredentialTypeSpec> credentials = Map.of(PID, pidSpec(), MDL, pidSpec());
-        List<CredentialSet> parsed = CredentialSet.parse(objectMapper, credentialSets);
-
-        assertThat(Oid4vpCredentialSetsValidator.problems(parsed, credentials, MDL, "sub", true, false))
-                .as("the subject credential can be avoided, so the login could identify nobody")
-                .isNotEmpty();
-        assertThat(Oid4vpCredentialSetsValidator.problems(parsed, credentials, MDL, "sub", true, true))
-                .as("a presentation without the subject credential is expected here")
-                .isEmpty();
-    }
-
-    private List<String> problems(String credentialSetsJson, String principalCredentialId) {
-        return problems(credentialSetsJson, principalCredentialId, "sub", Map.of());
+    private List<String> problems(String credentialSetsJson, String principalAttributes) {
+        return problems(credentialSetsJson, principalAttributes, Map.of());
     }
 
     private List<String> problems(
-            String credentialSetsJson,
-            String principalCredentialId,
-            String principalAttribute,
-            Map<String, CredentialTypeSpec> credentials) {
+            String credentialSetsJson, String principalAttributes, Map<String, CredentialTypeSpec> credentials) {
         List<CredentialSet> credentialSets =
                 credentialSetsJson.isBlank() ? List.of() : CredentialSet.parse(objectMapper, credentialSetsJson);
         return Oid4vpCredentialSetsValidator.problems(
-                credentialSets, credentials, principalCredentialId, principalAttribute, true, false);
+                credentialSets, credentials, PrincipalAttribute.parse(principalAttributes), true, false);
     }
 }

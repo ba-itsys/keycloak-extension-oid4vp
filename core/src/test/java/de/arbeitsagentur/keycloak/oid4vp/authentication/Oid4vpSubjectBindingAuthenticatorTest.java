@@ -32,16 +32,18 @@ import org.keycloak.representations.idm.oid4vc.VerifiableCredentialOfferActionCo
 
 class Oid4vpSubjectBindingAuthenticatorTest {
 
-    private static final String USER_ID = "1f2b0c9e-1111-4a2b-9c3d-5e6f70819aaa";
+    /** What the authenticator derives from the user id and the credential carries afterwards. */
+    private static final String SUBJECT = "Zm9vYmFyLXN1YmplY3Qtb2YtdGhlLXVzZXI";
 
     @Test
     void bindsAGeneratedSubjectLoginToTheUserWhoSignedIn() {
         SerializedBrokeredIdentityContext brokeredContext = generatedSubjectContext("oid4vp-3f2c");
 
-        boolean bound = Oid4vpSubjectBindingAuthenticator.bind(brokeredContext, USER_ID, "alice");
+        assertThat(Oid4vpSubjectBindingAuthenticator.bindsSubjectOf(brokeredContext))
+                .isTrue();
+        Oid4vpSubjectBindingAuthenticator.bind(brokeredContext, SUBJECT, "alice");
 
-        assertThat(bound).isTrue();
-        assertThat(brokeredContext.getId()).isEqualTo(Oid4vpIdentityKey.caseInsensitive(USER_ID));
+        assertThat(brokeredContext.getId()).isEqualTo(Oid4vpIdentityKey.caseInsensitive(SUBJECT));
         assertThat(brokeredContext.getBrokerUsername()).isEqualTo("alice");
     }
 
@@ -51,28 +53,26 @@ class Oid4vpSubjectBindingAuthenticatorTest {
         brokeredContext.setId("identity-of-the-presented-subject");
         brokeredContext.setBrokerUsername("subject-from-the-credential");
 
-        boolean bound = Oid4vpSubjectBindingAuthenticator.bind(brokeredContext, USER_ID, "alice");
-
-        assertThat(bound).isFalse();
-        assertThat(brokeredContext.getId()).isEqualTo("identity-of-the-presented-subject");
-        assertThat(brokeredContext.getBrokerUsername()).isEqualTo("subject-from-the-credential");
+        assertThat(Oid4vpSubjectBindingAuthenticator.bindsSubjectOf(brokeredContext))
+                .as("a login that identifies its user needs no binding")
+                .isFalse();
     }
 
     @Test
     void theBoundIdentityIsTheOneTheIssuedCredentialWillReach() {
         SerializedBrokeredIdentityContext brokeredContext = generatedSubjectContext("oid4vp-3f2c");
-        Oid4vpSubjectBindingAuthenticator.bind(brokeredContext, USER_ID, "alice");
+        Oid4vpSubjectBindingAuthenticator.bind(brokeredContext, SUBJECT, "alice");
 
-        // The credential the user receives carries the user id as its subject, so the next
-        // presentation has to derive exactly the identity this login stored.
+        // The credential the user receives carries that subject, so the next presentation has to
+        // derive exactly the identity this login stored.
         VerifiedCredential issuedCredential = new VerifiedCredential(
                 "employee",
                 "https://kc.example/realms/company",
                 "https://kc.example/badge",
-                Map.of("sub", USER_ID),
+                Map.of("sub", SUBJECT),
                 PresentationType.SD_JWT);
 
-        assertThat(issuedCredential.generateCaseInsensitiveIdentityKey(USER_ID)).isEqualTo(brokeredContext.getId());
+        assertThat(issuedCredential.generateCaseInsensitiveIdentityKey(SUBJECT)).isEqualTo(brokeredContext.getId());
     }
 
     @Test
@@ -96,16 +96,6 @@ class Oid4vpSubjectBindingAuthenticatorTest {
     }
 
     @Test
-    void entitlesTheUserUnlessItIsConfiguredNotTo() {
-        assertThat(Oid4vpSubjectBindingAuthenticator.grantsEntitlement(Map.of()))
-                .as("an administrator does not have to grant the entitlement beforehand")
-                .isTrue();
-        assertThat(Oid4vpSubjectBindingAuthenticator.grantsEntitlement(
-                        Map.of(Oid4vpSubjectBindingAuthenticator.GRANT_ENTITLEMENT, "false")))
-                .isFalse();
-    }
-
-    @Test
     void isRegisteredUnderTheIdThatFlowsReferenceAndRunsOnlyAfterAuthentication() {
         Oid4vpSubjectBindingAuthenticator authenticator = new Oid4vpSubjectBindingAuthenticator();
 
@@ -125,13 +115,11 @@ class Oid4vpSubjectBindingAuthenticatorTest {
         List<ProviderConfigProperty> properties = new Oid4vpSubjectBindingAuthenticator().getConfigProperties();
 
         assertThat(properties)
+                .as("the entitlement is not configurable, it is what carries the subject to the issuance")
                 .extracting(ProviderConfigProperty::getName)
                 .containsExactly(
                         Oid4vpSubjectBindingAuthenticator.CREDENTIAL_CONFIGURATION_ID,
-                        Oid4vpSubjectBindingAuthenticator.OFFER_CLIENT_ID,
-                        Oid4vpSubjectBindingAuthenticator.GRANT_ENTITLEMENT);
-        assertThat(properties.get(2).getDefaultValue()).isEqualTo("true");
-        assertThat(properties.get(2).getType()).isEqualTo(ProviderConfigProperty.BOOLEAN_TYPE);
+                        Oid4vpSubjectBindingAuthenticator.OFFER_CLIENT_ID);
     }
 
     private static SerializedBrokeredIdentityContext generatedSubjectContext(String generatedSubject) {

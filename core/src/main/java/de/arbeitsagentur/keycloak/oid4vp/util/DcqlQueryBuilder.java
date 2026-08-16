@@ -23,6 +23,7 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialId;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
+import de.arbeitsagentur.keycloak.oid4vp.domain.PrincipalAttribute;
 import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthority;
 import de.arbeitsagentur.keycloak.oid4vp.mapper.AbstractOID4VPClaimMapper;
 import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPMdocUserAttributeMapper;
@@ -192,16 +193,18 @@ public class DcqlQueryBuilder {
             });
 
             if (!config.isTransientUsersEnabled()) {
-                // With a subject credential configured the principal claim is requested from that
-                // credential alone. Without one the subject comes from whichever credential the
-                // wallet presents, so every credential has to carry it.
-                String subjectCredentialId = config.getPrincipalCredentialId();
+                // The claim carrying the subject is requested from the credentials named as
+                // principal attributes, each the claim it was named with, so a credential that
+                // never answers for the subject is not asked for it.
+                Map<String, PrincipalAttribute> principalByCredentialId = new LinkedHashMap<>();
+                config.getPrincipalAttributes()
+                        .forEach(principal -> principalByCredentialId.put(principal.credentialId(), principal));
                 for (Map.Entry<String, List<ClaimSpec>> entry : claimsByCredentialId.entrySet()) {
-                    if (StringUtil.isNotBlank(subjectCredentialId) && !subjectCredentialId.equals(entry.getKey())) {
+                    if (!principalByCredentialId.containsKey(entry.getKey())) {
                         continue;
                     }
-                    ClaimSpec principal =
-                            principalClaim(config, typesByCredentialId.get(entry.getKey()), entry.getValue());
+                    ClaimSpec principal = principalClaim(
+                            principalByCredentialId.get(entry.getKey()), typesByCredentialId.get(entry.getKey()));
                     if (principal == null || principal.claimPath() == null) {
                         continue;
                     }
@@ -261,17 +264,24 @@ public class DcqlQueryBuilder {
      * The principal claim appended for a credential type so the subject is always requested. For
      * mDoc credentials the element is requested in the namespace the credential's own mappers use.
      */
-    private static ClaimSpec principalClaim(
-            Oid4vpConfigProvider config, CredentialTypeKey typeKey, List<ClaimSpec> claims) {
-        String path = config.getPrincipalAttribute();
-        if (StringUtil.isBlank(path)) {
+    /**
+     * The claim spec that requests the subject of one credential. The configured path starts at the
+     * root of the presentation, so for an mDoc its first step is the namespace DCQL asks for
+     * separately.
+     */
+    private static ClaimSpec principalClaim(PrincipalAttribute principal, CredentialTypeKey typeKey) {
+        if (principal == null) {
             return null;
         }
-        if (FORMAT_MSO_MDOC.equals(typeKey.format())) {
-            String namespace = claims.isEmpty() ? typeKey.type() : claims.get(0).namespace();
-            return ClaimSpec.mdoc(namespace, path);
+        if (!FORMAT_MSO_MDOC.equals(typeKey.format())) {
+            return ClaimSpec.sdJwt(principal.claimPath());
         }
-        return ClaimSpec.sdJwt(path);
+        String namespace = principal.mdocNamespace();
+        if (namespace == null) {
+            // The path names no namespace, so it cannot address a data element of this credential.
+            return null;
+        }
+        return ClaimSpec.mdoc(namespace, principal.mdocElementPath());
     }
 
     private Map<String, Object> buildCredentialEntry(CredentialTypeSpec typeSpec, String credId) {

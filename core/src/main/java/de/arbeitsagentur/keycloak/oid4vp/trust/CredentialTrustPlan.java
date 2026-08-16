@@ -107,7 +107,7 @@ public class CredentialTrustPlan {
         List<X509TrustMaterial> issuanceTrust = new ArrayList<>();
         List<TrustedIssuerKey> trustedIssuerKeys = new ArrayList<>();
         List<TrustedAuthority> trustedAuthorities = new ArrayList<>();
-        Set<X509Certificate> directIssuerCertificates = new LinkedHashSet<>();
+        Set<TrustedIssuerCertificate> directIssuerCertificates = new LinkedHashSet<>();
         Set<X509Certificate> revocationCertificates = new LinkedHashSet<>();
 
         for (Oid4vpTrustMaterialIdentityProvider<?> provider : providers) {
@@ -116,7 +116,7 @@ public class CredentialTrustPlan {
             }
             issuanceTrust.addAll(provider.resolveX509Trust(request).toList());
             trustedIssuerKeys.addAll(provider.trustedIssuerKeys());
-            directIssuerCertificates.addAll(provider.directIssuerCertificates());
+            directIssuerCertificates.addAll(provider.trustedIssuerCertificates());
             revocationCertificates.addAll(provider.revocationCertificates());
             trustedAuthorities.addAll(provider.trustedAuthorities());
         }

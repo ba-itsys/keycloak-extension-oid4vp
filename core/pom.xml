@@ -323,6 +323,10 @@
                 <exclude>**/service/Oid4vpRequestObjectService*.class</exclude>
                 <exclude>**/service/Oid4vpEndpointResponseFactory*.class</exclude>
                 <exclude>**/authentication/Oid4vpSubjectBindingAuthenticator*.class</exclude>
+                <exclude>**/binding/ReferenceCredentialBinding$SessionRealmSecrets.class</exclude>
+                <exclude>**/binding/ReferenceCredentialBindingSpi.class</exclude>
+                <exclude>**/binding/PidReferenceBindingProviderFactory.class</exclude>
+                <exclude>**/issuance/Oid4vpBoundSubjectMapper*.class</exclude>
                 <exclude>**/util/Oid4vpAuthSessionResolver*.class</exclude>
                 <exclude>**/util/Oid4vpRequestObjectStore*.class</exclude>
                 <exclude>**/verification/JwtVcIssuerMetadataResolver*.class</exclude>

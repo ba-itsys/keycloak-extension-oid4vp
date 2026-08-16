@@ -17,6 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp;
 
 import static org.assertj.core.api.Assertions.*;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.PrincipalAttribute;
 import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -57,14 +58,13 @@ class Oid4vpIdentityProviderConfigTest {
 
     @Test
     void defaultValues() {
-        assertThat(config.getPrincipalAttribute()).isEqualTo("sub");
         assertThat(config.getClientIdScheme()).isEqualTo("x509_hash");
         assertThat(config.getResponseMode()).isEqualTo("direct_post.jwt");
         assertThat(config.isTransientUsersEnabled()).isFalse();
         assertThat(config.isSameDeviceEnabled()).isTrue();
         assertThat(config.isCrossDeviceEnabled()).isTrue();
         assertThat(config.getCredentialSets()).isNull();
-        assertThat(config.getPrincipalCredentialId()).isNull();
+        assertThat(config.getPrincipalAttributesValue()).isNull();
     }
 
     @Test
@@ -106,9 +106,9 @@ class Oid4vpIdentityProviderConfigTest {
     }
 
     @Test
-    void getPrincipalAttribute_readsConfiguredValue() {
-        config.setPrincipalAttribute("email");
-        assertThat(config.getPrincipalAttribute()).isEqualTo("email");
+    void getPrincipalAttributes_readsTheConfiguredEntries() {
+        config.setPrincipalAttributes("employee:sub");
+        assertThat(config.getPrincipalAttributes()).containsExactly(new PrincipalAttribute("employee", "sub"));
     }
 
     @Test

@@ -29,7 +29,8 @@ import org.keycloak.common.VerificationException;
  * @param issuanceTrust             X.509 trust anchors and policy for credential issuer chains
  *                                  (SD-JWT x5c, mDoc x5chain)
  * @param directIssuerCertificates  end entity certificates listed as issuance services whose keys
- *                                  are trusted directly when a credential carries no chain
+ *                                  are trusted directly when a credential carries no chain, each
+ *                                  bound to the issuer it is trusted for
  * @param trustedIssuerKeys         trusted issuer keys from providers that expose keys instead of
  *                                  X.509 anchors, each bound to the issuer it is trusted for
  * @param revocationCertificates    certificates of status list (revocation) services
@@ -38,7 +39,7 @@ import org.keycloak.common.VerificationException;
  */
 public record ResolvedTrust(
         List<X509TrustMaterial> issuanceTrust,
-        List<X509Certificate> directIssuerCertificates,
+        List<TrustedIssuerCertificate> directIssuerCertificates,
         List<TrustedIssuerKey> trustedIssuerKeys,
         List<X509Certificate> revocationCertificates,
         List<TrustedAuthority> trustedAuthorities) {
@@ -96,6 +97,29 @@ public record ResolvedTrust(
     }
 
     /**
+     * The directly trusted certificates usable for a credential of the given issuer. Used where a
+     * credential names no certificate and its bare key is taken on trust, which is the case that
+     * needs the issuer to match.
+     */
+    public List<X509Certificate> issuerCertificatesFor(String issuer) {
+        return directIssuerCertificates.stream()
+                .filter(certificate -> certificate.trustedFor(issuer))
+                .map(TrustedIssuerCertificate::certificate)
+                .toList();
+    }
+
+    /**
+     * Every directly trusted certificate, whichever issuer it belongs to. Used where a credential
+     * presents the certificate itself, so matching it is already the stronger statement, and by the
+     * formats that have no issuer identifier to match against.
+     */
+    public List<X509Certificate> pinnedCertificates() {
+        return directIssuerCertificates.stream()
+                .map(TrustedIssuerCertificate::certificate)
+                .toList();
+    }
+
+    /**
      * Validates a credential issuer certificate chain and returns the leaf key. A chain whose leaf
      * is a directly trusted issuer certificate is accepted after a validity check; otherwise the
      * chain must build a PKIX path to the anchors of one of the issuance trust materials,
@@ -106,7 +130,7 @@ public record ResolvedTrust(
             throw new VerificationException("The x5c certificate chain is empty");
         }
         X509Certificate leaf = chain.get(0);
-        if (directIssuerCertificates.contains(leaf)) {
+        if (pinnedCertificates().contains(leaf)) {
             try {
                 leaf.checkValidity();
             } catch (CertificateExpiredException | CertificateNotYetValidException e) {

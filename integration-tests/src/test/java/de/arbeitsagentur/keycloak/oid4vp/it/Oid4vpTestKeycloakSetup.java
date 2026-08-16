@@ -83,7 +83,6 @@ public final class Oid4vpTestKeycloakSetup {
         Map<String, String> config = new LinkedHashMap<>();
         config.put("clientId", "not-used");
         config.put("clientSecret", "not-used");
-        config.put(Oid4vpIdentityProviderConfig.PRINCIPAL_ATTRIBUTE, "family_name");
         config.put(Oid4vpIdentityProviderConfig.TRUST_MATERIAL_IDPS, TRUST_IDP_ALIAS);
         config.put(Oid4vpIdentityProviderConfig.STATUS_LIST_MAX_CACHE_TTL_SECONDS, "0");
         config.put(Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM, x509CertPem);
@@ -91,8 +90,32 @@ public final class Oid4vpTestKeycloakSetup {
         config.put(
                 Oid4vpIdentityProviderConfig.CREDENTIAL_SETS,
                 alternativeCredentialSets(SD_JWT_PID_CREDENTIAL_ID, MDOC_PID_CREDENTIAL_ID));
+        // The PID answers in either format, so both are named and both read the same claim
+        config.put(Oid4vpIdentityProviderConfig.PRINCIPAL_ATTRIBUTES, defaultPrincipalAttributeIds());
         idp.setConfig(config);
         return idp;
+    }
+
+    /**
+     * The subject read from whichever format of the PID a wallet answers with. An mDoc path names
+     * the namespace before the element, so the dots of the doctype namespace are escaped.
+     */
+    public static String defaultPrincipalAttributeIds() {
+        return principalAttributesFor(SD_JWT_PID_CREDENTIAL_ID, MDOC_PID_CREDENTIAL_ID);
+    }
+
+    /** The principal credential entries for the given credential ids, reading 'family_name'. */
+    public static String principalAttributesFor(String... credentialIds) {
+        return Arrays.stream(credentialIds)
+                .map(credentialId -> credentialId + ":" + principalClaimPathOf(credentialId))
+                .collect(Collectors.joining(", "));
+    }
+
+    /** The path 'family_name' resolves under, from the root of what the credential presents. */
+    private static String principalClaimPathOf(String credentialId) {
+        return MDOC_PID_CREDENTIAL_ID.equals(credentialId)
+                ? MDOC_PID_DOCTYPE.replace(".", "\\.") + ".family_name"
+                : "family_name";
     }
 
     /** A credential set that accepts any one of the given credentials, each as its own option. */

@@ -21,6 +21,7 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpCredentialSetsValidator;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpResponseMode;
+import de.arbeitsagentur.keycloak.oid4vp.domain.PrincipalAttribute;
 import de.arbeitsagentur.keycloak.oid4vp.util.DcqlQueryBuilder;
 import de.arbeitsagentur.keycloak.oid4vp.util.DcqlQueryBuilder.AggregatedCredentials;
 import java.time.Duration;
@@ -42,7 +43,6 @@ import org.keycloak.utils.StringUtil;
  */
 public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implements Oid4vpConfigProvider {
 
-    public static final String PRINCIPAL_ATTRIBUTE = "principalAttribute";
     public static final String TRANSIENT_USERS = IdentityProviderModel.DO_NOT_STORE_USERS;
 
     public static final String SAME_DEVICE_ENABLED = "sameDeviceEnabled";
@@ -57,17 +57,10 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final String VERIFIER_INFO = "verifierInfo";
 
     public static final String CREDENTIAL_SETS = "credentialSets";
-    public static final String PRINCIPAL_CREDENTIAL_ID = "principalCredentialId";
+    public static final String PRINCIPAL_ATTRIBUTES = "principalAttributes";
 
     /** Comma separated aliases of trust material identity providers, same key as upstream. */
     public static final String TRUST_MATERIAL_IDPS = "trustMaterialIdps";
-
-    /**
-     * Removed setting. The DCQL {@code trusted_authorities} entries are inherited from the trust
-     * material identity providers serving a credential, which are the only place that knows whether
-     * a trust domain can be advertised at all. Kept to detect and report stale configurations.
-     */
-    public static final String REMOVED_TRUSTED_AUTHORITIES_MODE = "trustedAuthoritiesMode";
 
     /**
      * Whether a presentation without the subject credential is expected. The verifier then generates
@@ -99,37 +92,12 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final int DEFAULT_KB_JWT_MAX_AGE_SECONDS = 300;
     public static final int DEFAULT_REQUEST_OBJECT_LIFESPAN_SECONDS = 10;
 
-    /**
-     * Removed setting. It bundled the client id scheme, the response mode, the verifier certificate
-     * rules and the credential chain requirement into one flag. The first three are configured
-     * directly now, and the last is derived from the trust material identity providers serving a
-     * credential. Kept to detect and report stale configurations.
-     */
-    public static final String REMOVED_ENFORCE_HAIP = "enforceHaip";
-
-    /**
-     * Removed setting. Self-Issued OpenID Provider support is gone, so the subject always comes
-     * from a presented credential or from the transient user mode. Kept to detect and report stale
-     * configurations.
-     */
-    public static final String REMOVED_USE_ID_TOKEN_SUBJECT = "useIdTokenSubject";
-
     public Oid4vpIdentityProviderConfig() {
         super();
     }
 
     public Oid4vpIdentityProviderConfig(IdentityProviderModel model) {
         super(model);
-    }
-
-    @Override
-    public String getPrincipalAttribute() {
-        String claim = getConfig().get(PRINCIPAL_ATTRIBUTE);
-        return StringUtil.isNotBlank(claim) ? claim : "sub";
-    }
-
-    public void setPrincipalAttribute(String principalAttribute) {
-        getConfig().put(PRINCIPAL_ATTRIBUTE, principalAttribute);
     }
 
     public boolean isSameDeviceEnabled() {
@@ -222,8 +190,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         problems.addAll(Oid4vpCredentialSetsValidator.problems(
                 getParsedCredentialSets(),
                 aggregated.credentials(),
-                getPrincipalCredentialId(),
-                getPrincipalAttribute(),
+                getPrincipalAttributes(),
                 !isTransientUsersEnabled(),
                 isAllowMissingSubjectCredential()));
         if (!problems.isEmpty()) {
@@ -258,12 +225,22 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         getConfig().put(CREDENTIAL_SETS, credentialSetsJson);
     }
 
-    public String getPrincipalCredentialId() {
-        return getConfig().get(PRINCIPAL_CREDENTIAL_ID);
+    public String getPrincipalAttributesValue() {
+        return getConfig().get(PRINCIPAL_ATTRIBUTES);
     }
 
-    public void setPrincipalCredentialId(String principalCredentialId) {
-        getConfig().put(PRINCIPAL_CREDENTIAL_ID, principalCredentialId);
+    public void setPrincipalAttributes(String principalAttributes) {
+        getConfig().put(PRINCIPAL_ATTRIBUTES, principalAttributes);
+    }
+
+    /**
+     * The credentials the subject may be read from, in the configured order.
+     *
+     * @throws IllegalArgumentException when the configured value is not a valid entry list
+     */
+    @Override
+    public List<PrincipalAttribute> getPrincipalAttributes() {
+        return PrincipalAttribute.parse(getPrincipalAttributesValue());
     }
 
     public String getTrustMaterialIdps() {

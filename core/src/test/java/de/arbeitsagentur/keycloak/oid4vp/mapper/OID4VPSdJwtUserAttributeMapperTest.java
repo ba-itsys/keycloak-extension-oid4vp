@@ -97,7 +97,8 @@ class OID4VPSdJwtUserAttributeMapperTest {
         preprocess(context, "address", "addressJson");
 
         assertThat(context.getUserAttribute("addressJson"))
-                .isEqualTo("{\"street_address\":\"221B Baker Street\",\"locality\":\"London\"}");
+                .as("keys are ordered, so the attribute does not change when a wallet renders the claim differently")
+                .isEqualTo("{\"locality\":\"London\",\"street_address\":\"221B Baker Street\"}");
     }
 
     @Test

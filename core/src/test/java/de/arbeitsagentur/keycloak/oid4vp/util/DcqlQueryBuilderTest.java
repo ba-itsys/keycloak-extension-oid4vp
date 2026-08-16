@@ -22,6 +22,7 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.ClaimSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
+import de.arbeitsagentur.keycloak.oid4vp.domain.PrincipalAttribute;
 import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthority;
 import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthorityType;
 import de.arbeitsagentur.keycloak.oid4vp.mapper.AbstractOID4VPClaimMapper;
@@ -281,7 +282,8 @@ class DcqlQueryBuilderTest {
     void aggregateFromMappers_readsSdJwtMapperAndAddsPrincipalClaim() {
         IdentityProviderMapperModel mapper = sdJwtMapper("IdentityCredential", "given_name", " 1-full , 2-min ");
 
-        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", "sub"));
+        Map<String, CredentialTypeSpec> result =
+                aggregate(Stream.of(mapper), config("oid4vp", false, null, "sdjwt_IdentityCredential:sub"));
 
         assertThat(result).hasSize(1);
         CredentialTypeSpec type = result.values().iterator().next();
@@ -298,7 +300,9 @@ class DcqlQueryBuilderTest {
     void aggregateFromMappers_readsMdocMapperWithNamespaceAndPrincipal() {
         IdentityProviderMapperModel mapper = mdocMapper("org.iso.18013.5.1.mDL", "org.iso.18013.5.1", "family_name");
 
-        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", "given_name"));
+        Map<String, CredentialTypeSpec> result = aggregate(
+                Stream.of(mapper),
+                config("oid4vp", false, null, "mdoc_org_iso_18013_5_1_mDL:org\\.iso\\.18013\\.5\\.1.given_name"));
 
         CredentialTypeSpec type = result.values().iterator().next();
         assertThat(type.format()).isEqualTo("mso_mdoc");
@@ -536,7 +540,7 @@ class DcqlQueryBuilderTest {
         employee.getConfig().put(AbstractOID4VPClaimMapper.CREDENTIAL_ID, "employee");
 
         Map<String, CredentialTypeSpec> result =
-                aggregate(Stream.of(pid, employee), config("oid4vp", false, "sub", "employee"));
+                aggregate(Stream.of(pid, employee), config("oid4vp", false, "sub", "employee:sub"));
 
         assertThat(result.get("pid").claimSpecs())
                 .extracting(ClaimSpec::path)
@@ -562,7 +566,7 @@ class DcqlQueryBuilderTest {
     }
 
     private static Oid4vpConfigProvider config(
-            String alias, boolean transientUsersEnabled, String principal, String principalCredentialId) {
+            String alias, boolean transientUsersEnabled, String principal, String principalAttributes) {
         return new Oid4vpConfigProvider() {
             @Override
             public String getAlias() {
@@ -575,13 +579,8 @@ class DcqlQueryBuilderTest {
             }
 
             @Override
-            public String getPrincipalAttribute() {
-                return principal;
-            }
-
-            @Override
-            public String getPrincipalCredentialId() {
-                return principalCredentialId;
+            public List<PrincipalAttribute> getPrincipalAttributes() {
+                return PrincipalAttribute.parse(principalAttributes);
             }
 
             @Override
