@@ -15,6 +15,8 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
+import java.util.List;
+
 /**
  * Abstraction over OID4VP identity provider configuration settings.
  *
@@ -37,16 +39,11 @@ public interface Oid4vpConfigProvider {
     boolean isIssuerAllowed(String issuer);
 
     /**
-     * Dot notation claim path of the claim that becomes the brokered subject. For mDoc
-     * presentations the path addresses a data element, resolved against each presented namespace.
+     * The credentials the subject may be read from, each with the claim of it that carries the
+     * subject, in the order they are tried. Empty only when the subject comes from a transient
+     * user, because nothing else says which claim identifies the user.
      */
-    String getPrincipalAttribute();
-
-    /**
-     * The credential id the subject is read from, or blank to read it from the first requested
-     * credential the wallet presents.
-     */
-    String getPrincipalCredentialId();
+    List<PrincipalAttribute> getPrincipalAttributes();
 
     int getSsePollIntervalMs();
 

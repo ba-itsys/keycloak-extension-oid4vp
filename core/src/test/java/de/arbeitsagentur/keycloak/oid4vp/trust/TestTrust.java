@@ -38,7 +38,12 @@ public final class TestTrust {
         }
         List<X509TrustMaterial> issuanceTrust =
                 anchors.isEmpty() ? List.of() : List.of(new X509TrustMaterial(anchors, List.of()));
-        return new ResolvedTrust(issuanceTrust, certificates, List.of(), certificates, List.of());
+        return new ResolvedTrust(issuanceTrust, anyIssuer(certificates), List.of(), certificates, List.of());
+    }
+
+    /** Certificates the way a trust list contributes them: trusted, but not tied to an issuer. */
+    public static List<TrustedIssuerCertificate> anyIssuer(List<X509Certificate> certificates) {
+        return certificates.stream().map(TrustedIssuerCertificate::ofAnyIssuer).toList();
     }
 
     public static ResolvedTrust ofCertificates(X509Certificate... certificates) {

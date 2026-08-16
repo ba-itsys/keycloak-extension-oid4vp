@@ -21,8 +21,6 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredentials;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
-import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.AbstractIdentityProviderMapper;
@@ -30,7 +28,6 @@ import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.models.IdentityProviderMapperModel;
 import org.keycloak.models.IdentityProviderSyncMode;
 import org.keycloak.provider.ProviderConfigProperty;
-import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 
 /**
@@ -168,30 +165,11 @@ public abstract class AbstractOID4VPClaimMapper extends AbstractIdentityProvider
             logger.warnf("Invalid claim path '%s' in mapper %s", claimPath, mapperModel.getName());
             return null;
         }
-        List<JsonNode> matches = path.select(claimsRoot(mapperModel, credential));
-        if (matches.isEmpty()) {
-            return null;
-        }
-        Iterable<JsonNode> selected = matches.size() == 1 && matches.get(0).isArray() ? matches.get(0) : matches;
-        // The values end up in the brokered context, whose serialization restores lists by their
-        // concrete class, so they must stay plain ArrayLists.
-        List<String> values = new ArrayList<>();
-        for (JsonNode node : selected) {
-            if (!node.isNull()) {
-                values.add(value(node));
-            }
-        }
-        return values;
+        List<String> values = ClaimSelection.values(path, claimsRoot(mapperModel, credential));
+        return values.isEmpty() ? null : values;
     }
 
     protected String value(JsonNode node) {
-        if (node.isValueNode()) {
-            return node.asText();
-        }
-        try {
-            return JsonSerialization.writeValueAsString(node);
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to serialize the claim value", e);
-        }
+        return ClaimSelection.value(node);
     }
 }

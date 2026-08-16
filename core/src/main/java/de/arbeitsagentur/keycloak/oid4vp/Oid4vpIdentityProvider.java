@@ -18,6 +18,7 @@ package de.arbeitsagentur.keycloak.oid4vp;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import de.arbeitsagentur.keycloak.oid4vp.binding.ReferenceCredentialBinding;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpClientIdScheme;
@@ -98,7 +99,8 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                                 config.getStatusListMaxCacheTtl(),
                                 config.getIssuerMetadataMaxCacheTtl(),
                                 config.getClockSkewSeconds(),
-                                config.getKbJwtMaxAgeSeconds())));
+                                config.getKbJwtMaxAgeSeconds())),
+                ReferenceCredentialBinding.checkOf(session));
 
         RealmModel realm = session.getContext().getRealm();
         int loginTimeoutSeconds = realm != null ? realm.getAccessCodeLifespanLogin() : DEFAULT_LOGIN_TIMEOUT_SECONDS;
@@ -215,8 +217,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         List<String> problems = Oid4vpCredentialSetsValidator.problems(
                 credentialSets,
                 credentialTypes,
-                getConfig().getPrincipalCredentialId(),
-                getConfig().getPrincipalAttribute(),
+                getConfig().getPrincipalAttributes(),
                 !getConfig().isTransientUsersEnabled(),
                 getConfig().isAllowMissingSubjectCredential());
         if (!problems.isEmpty()) {

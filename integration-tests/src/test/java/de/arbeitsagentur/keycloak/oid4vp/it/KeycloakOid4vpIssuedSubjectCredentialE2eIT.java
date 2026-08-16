@@ -26,6 +26,8 @@ import de.arbeitsagentur.keycloak.oid4vp.it.framework.VciTestWalletConfig;
 import de.arbeitsagentur.keycloak.oid4vp.trust.EtsiTrustListIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.trust.KeycloakRealmIssuerIdentityProviderConfig;
 import io.github.dominikschlosser.eudi.Credential;
+import io.github.dominikschlosser.eudi.CredentialFormat;
+import io.github.dominikschlosser.eudi.IssueRequest;
 import jakarta.ws.rs.core.Response;
 import java.math.BigInteger;
 import java.security.KeyPair;
@@ -33,6 +35,7 @@ import java.security.KeyPairGenerator;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -64,8 +67,9 @@ import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
  * The subject credential is issued by this Keycloak, so the first presentation arrives without it.
  *
  * <p>The wallet holds the PID alone, which identifies nobody. The user signs in with a password, the
- * login is bound to that user, and the credential offer issues the employee credential carrying the
- * user id. The next presentation carries that credential and reaches the same account without a
+ * login is bound to that user, and the credential offer issues the employee credential carrying a
+ * subject derived for that account and the reference credential binding of the PID it was issued
+ * alongside. The next presentation carries that credential and reaches the same account without a
  * password.
  */
 @KeycloakIntegrationTest(config = Oid4vpServerConfig.class)
@@ -92,12 +96,7 @@ class KeycloakOid4vpIssuedSubjectCredentialE2eIT extends AbstractOid4vpE2eTest {
 
     @Test
     void aPidOnlyLoginIssuesTheSubjectCredentialAndTheNextLoginUsesIt() throws Exception {
-        testApp().reset();
-        flow.clearBrowserSession();
-        deleteAllOid4vpUsers();
-
-        configureIssuer();
-        configureVerifier();
+        startFromAWalletHoldingThePidAlone();
 
         // The wallet holds the PID alone, so the presentation carries no subject
         flow.navigateToLoginPage();
@@ -109,14 +108,14 @@ class KeycloakOid4vpIssuedSubjectCredentialE2eIT extends AbstractOid4vpE2eTest {
         acceptTheCredentialOffer();
         flow.assertLoginSucceeded();
 
-        Credential issued = wallet().client().getCredentials().stream()
-                .filter(credential -> EMPLOYEE_VCT.equals(credential.type()))
-                .findFirst()
-                .orElseThrow(
-                        () -> new AssertionError("the wallet did not receive the credential this Keycloak issued"));
+        Credential issued = issuedCredential();
+        assertThat(issued.claims().get("sub"))
+                .as("the issued credential carries a subject of its own, never the Keycloak user id")
+                .isNotNull()
+                .isNotEqualTo(userId());
         assertThat(issued.claims())
-                .as("the issued credential carries the user id as its subject, which binds it to the account")
-                .containsEntry("sub", userId());
+                .as("the credential says which presentation it was issued for")
+                .containsKey("oid4vp_reference_binding");
 
         // The next presentation carries the issued credential, which identifies the user
         testApp().reset();
@@ -131,6 +130,109 @@ class KeycloakOid4vpIssuedSubjectCredentialE2eIT extends AbstractOid4vpE2eTest {
                 .as("the issued credential identifies the user, so no password is asked for")
                 .isZero();
         flow.assertLoginSucceeded();
+    }
+
+    /**
+     * The user can always lose the credential this Keycloak issued, or decline to present it. The
+     * login then arrives without a subject a second time, for a user who is already linked to this
+     * identity provider.
+     */
+    @Test
+    void aUserWhoLostTheIssuedCredentialSignsInWithAPasswordAndReceivesANewOne() throws Exception {
+        startFromAWalletHoldingThePidAlone();
+
+        firstPidOnlyLogin();
+        String firstSubject = issuedCredential().claims().get("sub").toString();
+
+        // The user deletes it from the wallet, so the next presentation carries the PID alone again
+        wallet().client().deleteCredentialsByType(EMPLOYEE_VCT);
+        testApp().reset();
+        flow.clearBrowserSession();
+
+        firstPidOnlyLogin();
+
+        assertThat(issuedCredential().claims().get("sub"))
+                .as("the subject is derived from the account, so the replacement reaches the same identity")
+                .isEqualTo(firstSubject);
+
+        // And that replacement identifies the user again, without a password
+        testApp().reset();
+        flow.clearBrowserSession();
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        flow.waitForLoginCompletion(flow.submitToWallet(flow.getSameDeviceWalletUrl()));
+
+        assertThat(page.locator("input[name='password']").count())
+                .as("the replacement credential identifies the user like the first one did")
+                .isZero();
+        flow.assertLoginSucceeded();
+    }
+
+    /**
+     * The credential this Keycloak issues identifies an account on its own, so it may not sign in
+     * next to the PID of somebody else. Without the reference credential binding a wallet holding
+     * the credentials of two people would do exactly that.
+     */
+    @Test
+    void theIssuedCredentialDoesNotSignInNextToThePidOfSomebodyElse() throws Exception {
+        startFromAWalletHoldingThePidAlone();
+
+        firstPidOnlyLogin();
+        assertThat(issuedCredential().claims())
+                .as("the credential says which presentation it was issued for")
+                .containsKey("oid4vp_reference_binding");
+
+        // The wallet keeps the credential but now holds the PID of another person
+        wallet().client().deleteCredentialsByType(Oid4vpTestKeycloakSetup.SD_JWT_PID_VCT);
+        wallet().client()
+                .issueCredential(IssueRequest.pid(CredentialFormat.SD_JWT)
+                        .claim("given_name", "Max")
+                        .claim("family_name", "Andersson")
+                        .claim("birthdate", "1979-03-04"));
+        testApp().reset();
+        flow.clearBrowserSession();
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        flow.waitForLoginCompletion(flow.submitToWallet(flow.getSameDeviceWalletUrl()));
+
+        page.waitForSelector("input[name='password']");
+        assertThat(page.locator("input[name='password']").count())
+                .as("the credential was issued for another person's PID, so it identifies nobody here")
+                .isPositive();
+    }
+
+    /**
+     * The state this scenario starts in: no account yet, and a wallet that does not hold the
+     * credential this Keycloak issues. A credential issued by an earlier test would otherwise be
+     * presented and identify nobody, since the account behind it is gone.
+     */
+    private void startFromAWalletHoldingThePidAlone() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        deleteAllOid4vpUsers();
+        wallet().client().deleteCredentialsByType(EMPLOYEE_VCT);
+
+        configureIssuer();
+        configureVerifier();
+    }
+
+    /** A login the wallet answers with the PID alone, ending in the issued credential. */
+    private void firstPidOnlyLogin() {
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        flow.waitForLoginCompletion(flow.submitToWallet(flow.getSameDeviceWalletUrl()));
+        signInWithPassword();
+        acceptTheCredentialOffer();
+        flow.assertLoginSucceeded();
+    }
+
+    private Credential issuedCredential() {
+        return wallet().client().getCredentials().stream()
+                .filter(credential -> EMPLOYEE_VCT.equals(credential.type()))
+                .findFirst()
+                .orElseThrow(
+                        () -> new AssertionError("the wallet did not receive the credential this Keycloak issued"));
     }
 
     private String userId() {
@@ -224,9 +326,8 @@ class KeycloakOid4vpIssuedSubjectCredentialE2eIT extends AbstractOid4vpE2eTest {
         ProtocolMapperRepresentation subjectId = new ProtocolMapperRepresentation();
         subjectId.setName("employee-subject-id");
         subjectId.setProtocol("oid4vc");
-        subjectId.setProtocolMapper("oid4vc-subject-id-mapper");
-        // "id" is the user id, which is the subject the verifier bound the login to
-        subjectId.setConfig(Map.of("claim.name", "sub", "userAttribute", "id"));
+        subjectId.setProtocolMapper("oid4vp-bound-subject-mapper");
+        subjectId.setConfig(Map.of("claim.name", "sub"));
 
         ClientScopeRepresentation scope = new ClientScopeRepresentation();
         scope.setName(CREDENTIAL_SCOPE);
@@ -243,6 +344,11 @@ class KeycloakOid4vpIssuedSubjectCredentialE2eIT extends AbstractOid4vpE2eTest {
         attributes.put("vc.cryptographic_binding_methods_supported", "jwk");
         attributes.put("vc.binding_required", "true");
         attributes.put("vc.binding_required_proof_types", "jwt");
+        // The verifier reads the reference credential binding of every presented credential, so it may not be
+        // hidden behind selective disclosure
+        // The claims Keycloak keeps visible by default have to stay in the list, it replaces them
+        attributes.put(
+                "vc.credential_build_config.sd_jwt.visible_claims", "id,iat,nbf,exp,jti,oid4vp_reference_binding");
         attributes.put("vc.expiry_in_seconds", "31536000");
         attributes.put("include.in.token.scope", "true");
         scope.setAttributes(attributes);
@@ -299,8 +405,7 @@ class KeycloakOid4vpIssuedSubjectCredentialE2eIT extends AbstractOid4vpE2eTest {
         addFirstBrokerLoginFlow();
         addRealmIssuerTrustProvider();
 
-        List<IdentityProviderMapperRepresentation> mappers =
-                new java.util.ArrayList<>(Oid4vpTestKeycloakSetup.sdJwtPidMappers());
+        List<IdentityProviderMapperRepresentation> mappers = new ArrayList<>(Oid4vpTestKeycloakSetup.sdJwtPidMappers());
         IdentityProviderMapperRepresentation employeeSubject = Oid4vpTestKeycloakSetup.sdJwtSessionMapper(
                 "employee-subject", EMPLOYEE_VCT, "sub", "employeeSubject", null);
         employeeSubject.getConfig().put("credential.id", EMPLOYEE_CREDENTIAL_ID);
@@ -315,10 +420,8 @@ class KeycloakOid4vpIssuedSubjectCredentialE2eIT extends AbstractOid4vpE2eTest {
                 "[{\"options\": [[\"" + Oid4vpTestKeycloakSetup.SD_JWT_PID_CREDENTIAL_ID + "\", \""
                         + EMPLOYEE_CREDENTIAL_ID + "\"], [\""
                         + Oid4vpTestKeycloakSetup.SD_JWT_PID_CREDENTIAL_ID + "\"]]}]",
-                Oid4vpIdentityProviderConfig.PRINCIPAL_CREDENTIAL_ID,
-                EMPLOYEE_CREDENTIAL_ID,
-                Oid4vpIdentityProviderConfig.PRINCIPAL_ATTRIBUTE,
-                "sub",
+                Oid4vpIdentityProviderConfig.PRINCIPAL_ATTRIBUTES,
+                EMPLOYEE_CREDENTIAL_ID + ":sub",
                 Oid4vpIdentityProviderConfig.ALLOW_MISSING_SUBJECT_CREDENTIAL,
                 "true",
                 Oid4vpIdentityProviderConfig.TRUST_MATERIAL_IDPS,
@@ -357,9 +460,7 @@ class KeycloakOid4vpIssuedSubjectCredentialE2eIT extends AbstractOid4vpE2eTest {
                 Oid4vpSubjectBindingAuthenticator.CREDENTIAL_CONFIGURATION_ID,
                 CREDENTIAL_CONFIGURATION_ID,
                 Oid4vpSubjectBindingAuthenticator.OFFER_CLIENT_ID,
-                VCI_CLIENT_ID,
-                Oid4vpSubjectBindingAuthenticator.GRANT_ENTITLEMENT,
-                "true"));
+                VCI_CLIENT_ID));
         assertCreated("subject binding config", realm.admin().flows().newExecutionConfig(executionId, config));
     }
 

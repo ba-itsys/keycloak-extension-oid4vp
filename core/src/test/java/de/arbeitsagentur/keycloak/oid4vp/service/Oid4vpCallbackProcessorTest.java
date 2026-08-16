@@ -15,16 +15,13 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.service;
 
+import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.FORMAT_MSO_MDOC;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.FORMAT_SD_JWT_VC;
 import static org.assertj.core.api.Assertions.*;
 
-import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.JWSHeader;
-import com.nimbusds.jose.crypto.ECDSASigner;
-import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jwt.JWTClaimsSet;
-import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
+import de.arbeitsagentur.keycloak.oid4vp.binding.ReferenceBindingCheck;
+import de.arbeitsagentur.keycloak.oid4vp.binding.ReferenceCredentialBinding;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredential;
@@ -35,8 +32,7 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenVerifier;
-import java.time.Instant;
-import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeAll;
@@ -65,7 +61,7 @@ class Oid4vpCallbackProcessorTest {
         config = new Oid4vpIdentityProviderConfig();
         config.setAlias("oid4vp");
         config.setEnabled(true);
-        config.setPrincipalAttribute("sub");
+        config.setPrincipalAttributes("cred-1:sub");
     }
 
     @Test
@@ -153,7 +149,8 @@ class Oid4vpCallbackProcessorTest {
 
     @Test
     void process_claimMappedSubjectsMatchIgnoringCase() {
-        config.setPrincipalAttribute("family_name");
+        config.setPrincipalAttributes(
+                "sd-jwt-credential:family_name, mdoc-credential:eu\\.europa\\.ec\\.eudi\\.pid\\.1.family_name");
 
         VerifiedCredential sdJwtCredential = new VerifiedCredential(
                 "sd-jwt-credential",
@@ -174,6 +171,53 @@ class Oid4vpCallbackProcessorTest {
                 .process(requestContext("state-lower", "nonce-lower"), "vp-lower", null);
 
         assertThat(upperResult.getId()).isEqualTo(lowerResult.getId());
+    }
+
+    @Test
+    void process_mdocSubjectIsNotTakenFromANamespaceTheQueryDidNotAskFor() {
+        // The elements of an mDoc are issuer signed, but which namespace they live in is not the
+        // verifier's choice. Reading the subject out of any namespace that happens to carry it lets
+        // a credential answer with an identity out of a namespace this verifier never asked for.
+        config.setPrincipalAttributes("cred-1:sub");
+        VerifiedCredential mdoc = new VerifiedCredential(
+                "cred-1",
+                null,
+                "eu.europa.ec.eudi.pid.1",
+                Map.of(
+                        "eu.europa.ec.eudi.pid.1", Map.of("given_name", "Erika"),
+                        "com.example.vendor", Map.of("sub", "an-identity-of-another-namespace")),
+                PresentationType.MDOC);
+        RequestedCredential requested = new RequestedCredential(
+                "cred-1",
+                FORMAT_MSO_MDOC,
+                "eu.europa.ec.eudi.pid.1",
+                List.of(new RequestedClaim("eu.europa.ec.eudi.pid.1", "given_name")),
+                List.of());
+
+        assertThatThrownBy(() -> processor(resultOf(mdoc))
+                        .process(requestContext("state", "nonce", List.of(requested)), "vp-token", null))
+                .isInstanceOf(IdentityBrokerException.class)
+                .hasMessageContaining("Missing principal claim");
+    }
+
+    @Test
+    void process_namedMdocSubjectClaimAddressesItsNamespaceItself() {
+        // Named principal credentials carry the path from the root of the presentation, so the
+        // namespace is spelled out and nothing about it is inferred.
+        config.setPrincipalAttributes("cred-1:com\\.example\\.vendor.sub");
+        VerifiedCredential mdoc = new VerifiedCredential(
+                "cred-1",
+                null,
+                "org.iso.18013.5.1.mDL",
+                Map.of(
+                        "org.iso.18013.5.1", Map.of("sub", "the-other-namespace"),
+                        "com.example.vendor", Map.of("sub", "the-named-namespace")),
+                PresentationType.MDOC);
+
+        BrokeredIdentityContext result =
+                processor(resultOf(mdoc)).process(requestContext("state", "nonce"), "vp-token", null);
+
+        assertThat(result.getUsername()).isEqualTo("the-named-namespace");
     }
 
     @Test
@@ -294,7 +338,7 @@ class Oid4vpCallbackProcessorTest {
     void process_subjectCredentialMissing_generatesASubject() {
         // The subject credential is issued by this Keycloak, so a first presentation legitimately
         // arrives without it and the login that follows establishes which user it belongs to.
-        config.setPrincipalCredentialId("kc");
+        config.setPrincipalAttributes("kc:sub");
         config.setAllowMissingSubjectCredential(true);
         RequestedCredential pid = new RequestedCredential(
                 "cred-1", FORMAT_SD_JWT_VC, "IdentityCredential", List.of(new RequestedClaim(null, "sub")), List.of());
@@ -315,17 +359,71 @@ class Oid4vpCallbackProcessorTest {
 
     @Test
     void process_subjectCredentialMissingWithoutTheSetting_stillFails() {
-        config.setPrincipalCredentialId("kc");
+        config.setPrincipalAttributes("kc:sub");
 
         assertThatThrownBy(() -> processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))))
                         .process(requestContext("state", "nonce"), "vp-token", null))
                 .isInstanceOf(IdentityBrokerException.class)
-                .hasMessageContaining("carrying the subject was not presented");
+                .hasMessageContaining("None of the credentials carrying the subject");
+    }
+
+    @Test
+    void process_subjectCredentialOfAnotherPresentation_isNotAcceptedAsTheSubject() {
+        // The credential was issued alongside somebody else's credentials, so it identifies nobody
+        // here and the login continues on the PID alone, as if it had not been presented.
+        config.setPrincipalAttributes("cred-1:sub");
+        config.setAllowMissingSubjectCredential(true);
+
+        BrokeredIdentityContext result = processor(pidAndCredentialBoundElsewhere(), ISSUED_FOR_ANOTHER_PRESENTATION)
+                .process(requestContext("state", "nonce"), "vp-token", null);
+
+        assertThat(result.getUsername()).startsWith("oid4vp-");
+        assertThat(result.getContextData()).containsKey(Oid4vpMapperUtils.CONTEXT_GENERATED_SUBJECT_KEY);
+    }
+
+    @Test
+    void process_subjectCredentialOfAnotherPresentation_isNotMappedEither() {
+        // A credential this verifier refuses must not reach the mappers, otherwise the claims of
+        // somebody else's credential would be written onto the account that signs in afterwards.
+        config.setPrincipalAttributes("cred-1:sub");
+        config.setAllowMissingSubjectCredential(true);
+
+        BrokeredIdentityContext result = processor(pidAndCredentialBoundElsewhere(), ISSUED_FOR_ANOTHER_PRESENTATION)
+                .process(requestContext("state", "nonce"), "vp-token", null);
+
+        assertThat(Oid4vpMapperUtils.presentedCredentials(result).byCredentialId())
+                .containsOnlyKeys("pid");
+    }
+
+    @Test
+    void process_subjectCredentialOfAnotherPresentationWithoutTheSetting_fails() {
+        config.setPrincipalAttributes("cred-1:sub");
+
+        assertThatThrownBy(() -> processor(pidAndCredentialBoundElsewhere(), ISSUED_FOR_ANOTHER_PRESENTATION)
+                        .process(requestContext("state", "nonce"), "vp-token", null))
+                .isInstanceOf(IdentityBrokerException.class)
+                .hasMessageContaining("None of the credentials carrying the subject");
+    }
+
+    /** The presentation this scenario is built for: a PID, next to a credential bound elsewhere. */
+    private static VpTokenResult pidAndCredentialBoundElsewhere() {
+        VerifiedCredential pid = new VerifiedCredential(
+                "pid",
+                "https://pid.example",
+                "IdentityCredential",
+                Map.of("given_name", "Erika"),
+                PresentationType.SD_JWT);
+        VerifiedCredential boundElsewhere = sdJwtCredential(Map.of(
+                "sub", "subject-of-another-holder", ReferenceCredentialBinding.REFERENCE_BINDING_CLAIM, "other"));
+        Map<String, VerifiedCredential> credentials = new LinkedHashMap<>();
+        credentials.put(pid.credentialId(), pid);
+        credentials.put(boundElsewhere.credentialId(), boundElsewhere);
+        return new VpTokenResult(credentials, Map.of());
     }
 
     @Test
     void process_subjectCredentialPresented_usesItsSubjectInsteadOfGeneratingOne() {
-        config.setPrincipalCredentialId("cred-1");
+        config.setPrincipalAttributes("cred-1:sub");
         config.setAllowMissingSubjectCredential(true);
 
         BrokeredIdentityContext result = processor(resultOf(sdJwtCredential(Map.of("sub", "oid4vp-generated-earlier"))))
@@ -337,7 +435,7 @@ class Oid4vpCallbackProcessorTest {
 
     @Test
     void generatedSubjectAndCredentialCarriedSubjectResolveToTheSameIdentity() {
-        config.setPrincipalCredentialId("kc");
+        config.setPrincipalAttributes("kc:sub");
         config.setAllowMissingSubjectCredential(true);
         RequestedCredential kc = new RequestedCredential(
                 "kc",
@@ -354,7 +452,7 @@ class Oid4vpCallbackProcessorTest {
         String generatedSubject = (String) firstLogin.getContextData().get(Oid4vpMapperUtils.CONTEXT_SUBJECT_KEY);
 
         // The next login presents the issued credential, which carries the generated subject
-        config.setPrincipalCredentialId("cred-1");
+        config.setPrincipalAttributes("cred-1:sub");
         BrokeredIdentityContext secondLogin = processor(resultOf(sdJwtCredential(Map.of("sub", generatedSubject))))
                 .process(requestContext("state-2", "nonce-2"), "vp-token", null);
 
@@ -366,9 +464,22 @@ class Oid4vpCallbackProcessorTest {
     // ===== Helper Methods =====
 
     private Oid4vpCallbackProcessor processor(VpTokenResult verificationResult) {
-        VpTokenVerifier verifier = request -> verificationResult;
-        return new Oid4vpCallbackProcessor(config, config, null, verifier);
+        return processor(verificationResult, ISSUED_FOR_THIS_PRESENTATION);
     }
+
+    private Oid4vpCallbackProcessor processor(
+            VpTokenResult verificationResult, ReferenceBindingCheck referenceBindingCheck) {
+        VpTokenVerifier verifier = request -> verificationResult;
+        return new Oid4vpCallbackProcessor(config, config, null, verifier, referenceBindingCheck);
+    }
+
+    /** Accepts the presented credential, which was issued for a presentation like this one. */
+    private static final ReferenceBindingCheck ISSUED_FOR_THIS_PRESENTATION =
+            (credentials, subjectCredentialId, claimedBinding) -> true;
+
+    /** Refuses the presented credential, which was issued for another presentation. */
+    private static final ReferenceBindingCheck ISSUED_FOR_ANOTHER_PRESENTATION =
+            (credentials, subjectCredentialId, claimedBinding) -> false;
 
     private static VpTokenResult resultOf(VerifiedCredential credential) {
         return new VpTokenResult(Map.of(credential.credentialId(), credential), Map.of());
@@ -377,23 +488,6 @@ class Oid4vpCallbackProcessorTest {
     private static VerifiedCredential sdJwtCredential(Map<String, Object> claims) {
         return new VerifiedCredential(
                 "cred-1", "https://issuer.example", "IdentityCredential", claims, PresentationType.SD_JWT);
-    }
-
-    private String buildSelfIssuedIdToken(ECKey walletKey, String audience, String nonce) throws Exception {
-        String thumbprint = walletKey.computeThumbprint("SHA-256").toString();
-        Instant now = Instant.now();
-        JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .issuer(thumbprint)
-                .subject(thumbprint)
-                .audience(audience)
-                .claim("nonce", nonce)
-                .claim("sub_jwk", walletKey.toPublicJWK().toJSONObject())
-                .issueTime(Date.from(now))
-                .expirationTime(Date.from(now.plusSeconds(300)))
-                .build();
-        SignedJWT jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.ES256), claims);
-        jwt.sign(new ECDSASigner(walletKey));
-        return jwt.serialize();
     }
 
     private Oid4vpRequestObjectStore.RequestContextEntry requestContext(String state, String nonce) {

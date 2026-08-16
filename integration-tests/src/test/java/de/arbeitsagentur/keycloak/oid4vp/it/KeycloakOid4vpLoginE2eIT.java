@@ -20,7 +20,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.microsoft.playwright.Page;
 import com.nimbusds.jwt.SignedJWT;
-import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
 import io.github.dominikschlosser.eudi.CredentialFormat;
@@ -69,9 +68,9 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
         deleteAllOid4vpUsers();
 
         replaceDcqlMappers(Oid4vpTestKeycloakSetup.sdJwtPidMappers());
-        setIdpConfig(Map.of(
-                IdentityProviderModel.DO_NOT_STORE_USERS, "true",
-                Oid4vpIdentityProviderConfig.PRINCIPAL_ATTRIBUTE, "missing_identifier"));
+        // A transient login reads no claim of the presentation, so the credential carries no
+        // identifier the verifier could bind to
+        setIdpConfig(Map.of(IdentityProviderModel.DO_NOT_STORE_USERS, "true"));
 
         performSameDeviceLogin("transient-wallet-user");
         flow.assertLoginSucceeded();

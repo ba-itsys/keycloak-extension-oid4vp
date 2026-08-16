@@ -15,9 +15,12 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.authentication;
 
+import de.arbeitsagentur.keycloak.oid4vp.binding.ReferenceCredentialBinding;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpIdentityKey;
+import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredentials;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.jboss.logging.Logger;
@@ -47,14 +50,14 @@ import org.keycloak.utils.StringUtil;
  * Binds an OID4VP login that carried no subject credential to the user who signed in.
  *
  * <p>A presentation without the subject credential identifies nobody, so the verifier continues the
- * login with a generated subject and the user signs in another way. This authenticator then sets the
- * brokered identity to the identity key of that user, before Keycloak stores the link at the end of
- * the first broker login flow. The credential the user receives afterwards carries their user id as
- * its subject, so the next presentation derives the same identity key and reaches the same account.
+ * login with a generated subject and the user signs in another way. This authenticator derives a
+ * subject for that user and sets the brokered identity to its identity key, which the first broker
+ * login flow then stores as the link. The credential the user receives carries that same subject, so
+ * the next presentation reaches the same account. The subject is derived rather than being the user
+ * id, so every verifier the credential is shown to reads an opaque value.
  *
- * <p>It then ends the login in Keycloak's credential offer, so the user leaves with the credential
- * they were missing. The user is entitled to that credential here as well, because the entitlement
- * follows from the login rather than from an administrator granting it beforehand.
+ * <p>It then ends the login in Keycloak's credential offer, entitling the user first: the
+ * entitlement is what carries the subject and the reference credential binding to the issuance.
  *
  * <p>Place it in the first broker login flow after the step that authenticates the user. Logins that
  * carry a subject credential, and logins of other identity providers, pass through untouched.
@@ -68,9 +71,6 @@ public class Oid4vpSubjectBindingAuthenticator implements Authenticator, Authent
 
     /** Client the credential offer is addressed to, which the wallet asks for the credential as. */
     public static final String OFFER_CLIENT_ID = "offerClientId";
-
-    /** Whether the user is entitled to the credential when the offer is made. */
-    public static final String GRANT_ENTITLEMENT = "grantEntitlement";
 
     private static final Logger LOG = Logger.getLogger(Oid4vpSubjectBindingAuthenticator.class);
 
@@ -86,28 +86,54 @@ public class Oid4vpSubjectBindingAuthenticator implements Authenticator, Authent
                         authSession, AbstractIdpAuthenticator.BROKERED_CONTEXT_NOTE);
         UserModel user = context.getUser();
 
-        if (brokeredContext == null || user == null || !bind(brokeredContext, user.getId(), user.getUsername())) {
+        if (brokeredContext == null || user == null || !bindsSubjectOf(brokeredContext)) {
             context.success();
             return;
         }
 
+        ReferenceCredentialBinding binding = ReferenceCredentialBinding.of(context.getSession(), context.getRealm());
+        String subject = binding.subjectOf(user.getId());
+        bind(brokeredContext, subject, user.getUsername());
         brokeredContext.saveToAuthenticationSession(authSession, AbstractIdpAuthenticator.BROKERED_CONTEXT_NOTE);
+        clearExistingLink(context, user, brokeredContext.getIdentityProviderId());
         LOG.debugf(
                 "Bound the OID4VP login of identity provider '%s' to user '%s'",
                 brokeredContext.getIdentityProviderId(), user.getId());
-        offerSubjectCredential(context, user);
+        offerSubjectCredential(context, binding, brokeredContext, user, subject);
         context.success();
+    }
+
+    /**
+     * Removes the link this identity provider already has to the user, so the first broker login
+     * flow can store the one this login establishes.
+     *
+     * <p>A user who lost the issued credential arrives here a second time, and Keycloak fails the
+     * first broker login flow with "already linked" for a user it has linked. Removing the link
+     * loses nothing: the subject is derived from the user, so the link stored a moment later holds
+     * the same identity.
+     */
+    private static void clearExistingLink(AuthenticationFlowContext context, UserModel user, String identityProvider) {
+        if (StringUtil.isBlank(identityProvider)) {
+            return;
+        }
+        if (context.getSession().users().removeFederatedIdentity(context.getRealm(), user, identityProvider)) {
+            LOG.debugf(
+                    "OID4VP subject binding: replacing the existing link of user '%s' to identity provider '%s'",
+                    user.getId(), identityProvider);
+        }
     }
 
     /**
      * Ends the login in Keycloak's credential offer required action, so the user receives the
      * credential that identifies them next time. The action reads which credential to offer from the
-     * client note it is triggered with, and skips the offer when the user already holds it.
-     *
-     * <p>Nothing has to travel from this login to the issuance, because the credential carries the id
-     * of the user this login was just bound to.
+     * client note it is triggered with.
      */
-    private void offerSubjectCredential(AuthenticationFlowContext context, UserModel user) {
+    private void offerSubjectCredential(
+            AuthenticationFlowContext context,
+            ReferenceCredentialBinding binding,
+            SerializedBrokeredIdentityContext brokeredContext,
+            UserModel user,
+            String subject) {
         AuthenticatorConfigModel configModel = context.getAuthenticatorConfig();
         Map<String, String> config = configModel == null ? Map.of() : configModel.getConfig();
         String credentialConfigurationId = config.get(CREDENTIAL_CONFIGURATION_ID);
@@ -125,16 +151,15 @@ public class Oid4vpSubjectBindingAuthenticator implements Authenticator, Authent
                     realm.getName(), credentialConfigurationId);
             return;
         }
-        if (grantsEntitlement(config)) {
-            entitleUser(context.getSession(), user, credentialScope);
-        }
+        entitleUser(context, binding, brokeredContext, user, credentialScope, subject);
 
         VerifiableCredentialOfferActionConfig offerConfig =
                 offerFor(credentialConfigurationId, config.get(OFFER_CLIENT_ID));
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
         try {
             authSession.setClientNote(Constants.KC_ACTION_PARAMETER, offerConfig.asEncodedParameter());
-            authSession.setClientNote(Constants.KC_ACTION_PARAMETER_SKIP_IF_EXISTS, Boolean.TRUE.toString());
+            // Offered even when the user is entitled already: arriving here means the presentation
+            // carried no subject credential, so whatever the user holds does not identify them.
             authSession.addRequiredAction(OID4VCIConstants.VERIFIABLE_CREDENTIAL_OFFER_PROVIDER_ID);
         } catch (IOException e) {
             LOG.errorf(
@@ -159,43 +184,69 @@ public class Oid4vpSubjectBindingAuthenticator implements Authenticator, Authent
         return offerConfig;
     }
 
-    /** Whether this authenticator entitles the user, which it does unless it is configured not to. */
-    static boolean grantsEntitlement(Map<String, String> config) {
-        return Boolean.parseBoolean(config.getOrDefault(GRANT_ENTITLEMENT, Boolean.TRUE.toString()));
-    }
-
     /**
-     * Entitles the user to the credential, because Keycloak only offers a credential to a user who is
-     * entitled to it. The entitlement follows from this login, so it is granted here instead of by an
-     * administrator beforehand.
+     * Entitles the user to the credential, because Keycloak only offers a credential to a user who
+     * is entitled to it, and records on that entitlement what the credential says: the subject of
+     * this account and the reference credential binding of this presentation. The pre-authorized
+     * code is redeemed in a session of its own, so the entitlement is the only thing of this login
+     * the issuance sees.
+     *
+     * <p>An entitlement that exists already is replaced, so a login after a change of the bound
+     * claims issues a credential that matches the presentation of today.
      */
-    private static void entitleUser(KeycloakSession session, UserModel user, CredentialScopeModel credentialScope) {
-        if (OID4VCUtil.hasVerifiableCredential(session, user, credentialScope)) {
-            return;
+    private static void entitleUser(
+            AuthenticationFlowContext context,
+            ReferenceCredentialBinding binding,
+            SerializedBrokeredIdentityContext brokeredContext,
+            UserModel user,
+            CredentialScopeModel credentialScope,
+            String subject) {
+        KeycloakSession session = context.getSession();
+        Map<String, List<String>> credentialAttributes = new LinkedHashMap<>();
+        credentialAttributes.put(ReferenceCredentialBinding.SUBJECT_ATTRIBUTE, List.of(subject));
+        String referenceBinding = binding.referenceBindingOf(
+                presentedCredentials(context, brokeredContext),
+                // The subject credential is the one being issued, so the presentation cannot carry it
+                null);
+        if (referenceBinding != null) {
+            credentialAttributes.put(ReferenceCredentialBinding.REFERENCE_BINDING_ATTRIBUTE, List.of(referenceBinding));
         }
-        session.users()
-                .addVerifiableCredential(
-                        user.getId(), new UserVerifiableCredentialModel(null, credentialScope.getId()));
+
+        if (OID4VCUtil.hasVerifiableCredential(session, user, credentialScope)) {
+            session.users().removeVerifiableCredential(user.getId(), credentialScope.getId());
+        }
+        UserVerifiableCredentialModel entitlement = new UserVerifiableCredentialModel(null, credentialScope.getId());
+        entitlement.setUserAttributes(credentialAttributes);
+        session.users().addVerifiableCredential(user.getId(), entitlement);
         LOG.debugf(
                 "OID4VP subject binding: entitled user '%s' to the credential of scope '%s'",
                 user.getId(), credentialScope.getName());
     }
 
+    /** The credentials of the presentation this login carried, or null when it carried none. */
+    private static PresentedCredentials presentedCredentials(
+            AuthenticationFlowContext context, SerializedBrokeredIdentityContext brokeredContext) {
+        return Oid4vpMapperUtils.presentedCredentials(
+                brokeredContext.deserialize(context.getSession(), context.getAuthenticationSession()));
+    }
+
     /**
-     * Sets the brokered identity to the identity key of the given user, when the verifier generated
-     * the subject of this login because no credential carried one. The identity key is derived the
-     * way it is derived from a credential claim, so the credential the user receives afterwards
-     * reaches this identity.
-     *
-     * @return whether the brokered identity was changed
+     * Whether this login needs a subject at all. A login that carried its own subject identifies the
+     * user already, and a login of another identity provider is none of this authenticator's
+     * business.
      */
-    static boolean bind(SerializedBrokeredIdentityContext brokeredContext, String userId, String username) {
-        if (!brokeredContext.getContextData().containsKey(Oid4vpMapperUtils.CONTEXT_GENERATED_SUBJECT_KEY)) {
-            return false;
-        }
-        brokeredContext.setId(Oid4vpIdentityKey.caseInsensitive(userId));
+    static boolean bindsSubjectOf(SerializedBrokeredIdentityContext brokeredContext) {
+        return brokeredContext.getContextData().containsKey(Oid4vpMapperUtils.CONTEXT_GENERATED_SUBJECT_KEY);
+    }
+
+    /**
+     * Sets the brokered identity to the identity key of the given subject, which is the subject the
+     * credential of this user will carry. The identity key is derived the way it is derived from a
+     * credential claim, so the credential the user receives afterwards reaches this identity.
+     */
+    static void bind(SerializedBrokeredIdentityContext brokeredContext, String subject, String username) {
+        brokeredContext.setId(Oid4vpIdentityKey.caseInsensitive(subject));
         brokeredContext.setBrokerUsername(username);
-        return true;
     }
 
     @Override
@@ -288,14 +339,6 @@ public class Oid4vpSubjectBindingAuthenticator implements Authenticator, Authent
                 + "this client, so it needs OID4VCI enabled.");
         offerClientId.setType(ProviderConfigProperty.STRING_TYPE);
 
-        ProviderConfigProperty grantEntitlement = new ProviderConfigProperty();
-        grantEntitlement.setName(GRANT_ENTITLEMENT);
-        grantEntitlement.setLabel("Grant Entitlement");
-        grantEntitlement.setHelpText("Entitles the user to the offered credential. Keycloak only offers a credential "
-                + "to a user who is entitled to it. Turn this off when an administrator grants the entitlement.");
-        grantEntitlement.setType(ProviderConfigProperty.BOOLEAN_TYPE);
-        grantEntitlement.setDefaultValue(Boolean.TRUE.toString());
-
-        return List.of(credentialConfigurationId, offerClientId, grantEntitlement);
+        return List.of(credentialConfigurationId, offerClientId);
     }
 }

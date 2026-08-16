@@ -76,6 +76,29 @@ class KeycloakRealmIssuerIdentityProviderTest {
     }
 
     @Test
+    void realmKeyCertificatesAreTrustedForTheRealmIssuerAlone() throws Exception {
+        X509Certificate certificate = TestCertificates.selfSigned("CN=Realm Key");
+        KeycloakRealmIssuerIdentityProvider provider =
+                provider(new FixedRealmKeyMaterial(ISSUER, List.of(), List.of(certificate)));
+
+        assertThat(provider.trustedIssuerCertificates())
+                .containsExactly(new TrustedIssuerCertificate(ISSUER, certificate));
+        assertThat(provider.trustedIssuerCertificates().get(0).trustedFor("https://other.example/realms/company"))
+                .as("a realm certificate must not verify a credential of another issuer")
+                .isFalse();
+    }
+
+    @Test
+    void withoutIssuerNoCertificatesAreTrustedEither() throws Exception {
+        KeycloakRealmIssuerIdentityProvider provider = provider(
+                new FixedRealmKeyMaterial(null, List.of(), List.of(TestCertificates.selfSigned("CN=Realm Key"))));
+
+        assertThat(provider.trustedIssuerCertificates())
+                .as("certificates that cannot be bound to an issuer are not trust material")
+                .isEmpty();
+    }
+
+    @Test
     void servedCredentialTypesAreRequired() {
         KeycloakRealmIssuerIdentityProviderConfig config = new KeycloakRealmIssuerIdentityProviderConfig();
         assertThatThrownBy(() -> config.validate(null))

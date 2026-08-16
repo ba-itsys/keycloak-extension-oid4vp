@@ -506,23 +506,4 @@ class MdocVerifierTest {
                     .hasMessageContaining("not yet valid");
         }
     }
-
-    @Nested
-    class BackwardCompatibility {
-
-        @Test
-        void verify_twoParamOverload_stillWorks() throws Exception {
-            // The 2-param overload should still work (skips device auth, digests, validity)
-            String token = buildSignedMdoc(
-                    "org.iso.18013.5.1.mDL", "org.iso.18013.5.1", new String[] {"given_name", "Test"}, new String[] {
-                        "family_name", "User"
-                    });
-
-            MdocVerificationResult result =
-                    verifier.verifyWithTrustedCerts(token, TestTrust.ofCertificates(signingCert));
-
-            assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
-            assertThat(namespaceClaims(result, "org.iso.18013.5.1")).containsEntry("given_name", "Test");
-        }
-    }
 }

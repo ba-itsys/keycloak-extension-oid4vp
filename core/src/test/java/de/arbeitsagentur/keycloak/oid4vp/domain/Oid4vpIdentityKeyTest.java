@@ -34,9 +34,14 @@ class Oid4vpIdentityKeyTest {
     }
 
     @Test
-    void aMissingSubjectIsNotAnIdentityOfItsOwn() {
-        // A subject the presentation did not carry must not silently collide with an empty one.
+    void everySubjectlessLoginWouldReachTheSameIdentity() {
+        // Which is why no caller may derive a key from a blank subject: the verifier rejects a
+        // presentation without a principal claim, and generates one when it is allowed to be
+        // missing. Deriving here instead would put every such login on one shared account.
         assertThat(Oid4vpIdentityKey.of(null)).isEqualTo(Oid4vpIdentityKey.of(""));
-        assertThat(Oid4vpIdentityKey.of(null)).isNotEqualTo(Oid4vpIdentityKey.of("null"));
+        assertThat(Oid4vpIdentityKey.of("   ")).isEqualTo(Oid4vpIdentityKey.of(""));
+        assertThat(Oid4vpIdentityKey.of(null))
+                .as("a blank subject is still not the literal string a wallet could send")
+                .isNotEqualTo(Oid4vpIdentityKey.of("null"));
     }
 }

@@ -124,6 +124,21 @@ public class KeycloakRealmIssuerIdentityProvider
         return realmKeyMaterial.certificates();
     }
 
+    /**
+     * The realm key certificates, trusted for the realm issuer alone. This provider does know whose
+     * certificates these are, so a credential claiming another issuer cannot borrow them.
+     */
+    @Override
+    public List<TrustedIssuerCertificate> trustedIssuerCertificates() {
+        String issuer = realmKeyMaterial.issuer();
+        if (StringUtil.isBlank(issuer)) {
+            return List.of();
+        }
+        return realmKeyMaterial.certificates().stream()
+                .map(certificate -> new TrustedIssuerCertificate(issuer, certificate))
+                .toList();
+    }
+
     @Override
     public void close() {}
 

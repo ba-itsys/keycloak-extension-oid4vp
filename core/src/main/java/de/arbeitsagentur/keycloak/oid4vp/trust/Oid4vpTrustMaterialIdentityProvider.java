@@ -49,8 +49,7 @@ public interface Oid4vpTrustMaterialIdentityProvider<C extends IdentityProviderM
 
     /**
      * The credential types (SD-JWT VCT, mDoc doctype) this provider is trusted for. An empty list
-     * serves every credential type, which is what a provider that does not declare a scope means
-     * and what keeps existing configurations working unchanged.
+     * serves every credential type.
      */
     default List<String> servedCredentialTypes() {
         return List.of();
@@ -75,6 +74,19 @@ public interface Oid4vpTrustMaterialIdentityProvider<C extends IdentityProviderM
     default List<TrustedIssuerKey> trustedIssuerKeys() {
         return resolveKeys(TrustMaterialRequest.builder().build())
                 .map(TrustedIssuerKey::ofAnyIssuer)
+                .toList();
+    }
+
+    /**
+     * Directly trusted issuer certificates with the issuer they belong to, the counterpart of
+     * {@link #trustedIssuerKeys()}. The default adapts {@link #directIssuerCertificates()}, whose
+     * certificates carry no issuer because a trust list names services rather than credential
+     * issuers. A provider that does know the issuer of its certificates overrides this, so its
+     * certificates cannot verify a credential claiming to come from somewhere else.
+     */
+    default List<TrustedIssuerCertificate> trustedIssuerCertificates() {
+        return directIssuerCertificates().stream()
+                .map(TrustedIssuerCertificate::ofAnyIssuer)
                 .toList();
     }
 }

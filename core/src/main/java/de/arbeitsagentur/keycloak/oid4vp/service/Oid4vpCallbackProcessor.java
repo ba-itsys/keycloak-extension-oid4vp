@@ -18,10 +18,12 @@ package de.arbeitsagentur.keycloak.oid4vp.service;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import de.arbeitsagentur.keycloak.oid4vp.binding.ReferenceBindingCheck;
+import de.arbeitsagentur.keycloak.oid4vp.binding.ReferenceCredentialBinding;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
-import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredentials;
+import de.arbeitsagentur.keycloak.oid4vp.domain.PrincipalAttribute;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
@@ -30,10 +32,10 @@ import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenVerifier;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import org.jboss.logging.Logger;
@@ -63,13 +65,16 @@ public class Oid4vpCallbackProcessor {
     private final Oid4vpConfigProvider configProvider;
     private final UserAuthenticationIdentityProvider<?> provider;
     private final VpTokenVerifier vpTokenVerifier;
+    private final ReferenceBindingCheck referenceBindingCheck;
 
     public Oid4vpCallbackProcessor(
             IdentityProviderModel idpModel,
             Oid4vpConfigProvider configProvider,
             UserAuthenticationIdentityProvider<?> provider,
-            VpTokenVerifier vpTokenVerifier) {
+            VpTokenVerifier vpTokenVerifier,
+            ReferenceBindingCheck referenceBindingCheck) {
         this.idpModel = idpModel;
+        this.referenceBindingCheck = referenceBindingCheck;
         this.configProvider = configProvider;
         this.provider = provider;
         this.vpTokenVerifier = vpTokenVerifier;
@@ -89,7 +94,7 @@ public class Oid4vpCallbackProcessor {
 
         LOG.debugf("VP token received (length=%d)", vpToken.length());
 
-        VpTokenResult vpResult = vpTokenVerifier.process(new VpTokenProcessor.Request(
+        VpTokenResult verified = vpTokenVerifier.process(new VpTokenProcessor.Request(
                 vpToken,
                 requestContext.effectiveClientId(),
                 requestContext.nonce(),
@@ -97,6 +102,8 @@ public class Oid4vpCallbackProcessor {
                 mdocGeneratedNonce,
                 requestContext.encryptionJwkThumbprint(),
                 requestContext.requestedCredentials()));
+
+        VpTokenResult vpResult = credentialsOfThisPresentation(verified);
 
         VerifiedCredential primary = vpResult.getPrimaryCredential();
         if (primary == null) {
@@ -110,7 +117,6 @@ public class Oid4vpCallbackProcessor {
                 primary.claims().keySet());
 
         String issuer = primary.issuer();
-        String credentialType = primary.credentialType();
 
         // This allow-list only applies to formats that expose a canonical issuer string.
         // In practice that means SD-JWT, because mDoc does not define a standard issuer identifier
@@ -127,14 +133,14 @@ public class Oid4vpCallbackProcessor {
             subject = buildTransientSubject(requestContext);
             identityKey = primary.generateIdentityKey(subject);
         } else {
-            VerifiedCredential subjectCredential = subjectCredential(requestContext, vpResult, primary);
-            if (subjectCredential == null) {
+            SubjectSource subjectSource = subjectSource(vpResult);
+            if (subjectSource == null) {
                 subject = generateSubject();
                 identityKey = primary.generateCaseInsensitiveIdentityKey(subject);
                 generatedSubject = true;
             } else {
-                subject = extractSubjectFromCredential(subjectCredential.claimsNode(), subjectCredential);
-                identityKey = subjectCredential.generateCaseInsensitiveIdentityKey(subject);
+                subject = extractSubjectFromCredential(subjectSource);
+                identityKey = subjectSource.credential().generateCaseInsensitiveIdentityKey(subject);
             }
         }
 
@@ -154,55 +160,48 @@ public class Oid4vpCallbackProcessor {
     }
 
     /**
-     * The credential the subject is read from. With a configured principal credential id the
-     * subject always comes from that credential. Without one it comes from the first requested
-     * credential the wallet actually presented, so the identity does not depend on how the claims
-     * of several credentials merge.
+     * The credential the subject is read from, the claim of it that carries the subject, and the
+     * node that claim path resolves against.
      */
-    private VerifiedCredential subjectCredential(
-            Oid4vpRequestObjectStore.RequestContextEntry requestContext,
-            VpTokenResult vpResult,
-            VerifiedCredential primary) {
-        String configured = configProvider.getPrincipalCredentialId();
-        if (StringUtil.isNotBlank(configured)) {
-            VerifiedCredential credential = vpResult.credentials().get(configured);
-            if (credential == null && !configProvider.isAllowMissingSubjectCredential()) {
-                throw new IdentityBrokerException(
-                        "The credential '" + configured + "' carrying the subject was not presented");
-            }
-            return credential;
-        }
+    private record SubjectSource(VerifiedCredential credential, String claimPath, JsonNode claimsRoot) {}
 
-        List<RequestedCredential> requestedCredentials = requestContext.requestedCredentials();
-        if (requestedCredentials == null) {
-            return primary;
+    /**
+     * Where the subject comes from: the first configured principal attribute the wallet presented,
+     * so which credential answers is the verifier's decision rather than the wallet's.
+     */
+    private SubjectSource subjectSource(VpTokenResult vpResult) {
+        List<PrincipalAttribute> principalAttributes = configProvider.getPrincipalAttributes();
+        if (principalAttributes.isEmpty()) {
+            throw new IdentityBrokerException(
+                    "No principalAttributes are configured, so nothing says which claim of which credential identifies the user");
         }
-        return requestedCredentials.stream()
-                .map(requested -> vpResult.credentials().get(requested.id()))
-                .filter(Objects::nonNull)
-                .findFirst()
-                .orElse(primary);
+        for (PrincipalAttribute principalAttribute : principalAttributes) {
+            VerifiedCredential credential = vpResult.credentials().get(principalAttribute.credentialId());
+            if (credential != null) {
+                // The path starts at the root of the presentation, so an mDoc path names its own
+                // namespace and none has to be guessed at.
+                return new SubjectSource(credential, principalAttribute.claimPath(), credential.claimsNode());
+            }
+        }
+        if (!configProvider.isAllowMissingSubjectCredential()) {
+            throw new IdentityBrokerException("None of the credentials carrying the subject ["
+                    + String.join(", ", PrincipalAttribute.credentialIdsOf(principalAttributes))
+                    + "] was presented");
+        }
+        return null;
     }
 
     /**
-     * The principal claim becomes the brokered subject; for mDoc presentations the element is
-     * looked up in each presented namespace. Rejects presentations without a usable value.
+     * The claim named for this credential becomes the brokered subject. Rejects presentations
+     * without a usable value.
      */
-    private String extractSubjectFromCredential(JsonNode claims, VerifiedCredential primary) {
-        String principalPath = configProvider.getPrincipalAttribute();
+    private static String extractSubjectFromCredential(SubjectSource subjectSource) {
+        String principalPath = subjectSource.claimPath();
         ClaimPath path = StringUtil.isNotBlank(principalPath) ? ClaimPath.parse(principalPath.trim()) : null;
         if (path == null) {
             throw new IdentityBrokerException("Invalid principal attribute '" + principalPath + "'");
         }
-        String subject = firstValue(path, claims);
-        if (subject == null && primary.presentationType() == PresentationType.MDOC && claims != null) {
-            for (JsonNode namespaceNode : claims) {
-                subject = firstValue(path, namespaceNode);
-                if (subject != null) {
-                    break;
-                }
-            }
-        }
+        String subject = firstValue(path, subjectSource.claimsRoot());
         if (StringUtil.isBlank(subject)) {
             throw new IdentityBrokerException("Missing principal claim '" + principalPath + "' in credential");
         }
@@ -215,6 +214,52 @@ public class Oid4vpCallbackProcessor {
                 .map(JsonNode::asText)
                 .findFirst()
                 .orElse(null);
+    }
+
+    /**
+     * The presentation without the credentials that were issued for another one. A credential this
+     * Keycloak issued says which credentials it was issued alongside, and a wallet holding the
+     * credentials of two people could otherwise combine them into a login that belongs to neither.
+     *
+     * <p>A refused credential counts as not presented at all: it identifies nobody here, and its
+     * claims must not reach the mappers either. The login continues on whatever is left, which for
+     * the configuration this is built for means a presentation of the PID alone.
+     *
+     * <p>Credentials carrying no reference credential binding pass untouched, which is what a
+     * credential of another issuer and every credential issued without a binding is.
+     */
+    private VpTokenResult credentialsOfThisPresentation(VpTokenResult vpResult) {
+        Map<String, VerifiedCredential> kept = new LinkedHashMap<>();
+        vpResult.credentials().forEach((credentialId, credential) -> {
+            if (boundToThisPresentation(vpResult, credentialId, credential)) {
+                kept.put(credentialId, credential);
+            } else {
+                LOG.warnf(
+                        "OID4VP IdP '%s': the credential '%s' was issued for another presentation and is ignored",
+                        idpModel.getAlias(), credentialId);
+            }
+        });
+        if (kept.size() == vpResult.credentials().size()) {
+            return vpResult;
+        }
+        Map<String, Object> mergedClaims = new LinkedHashMap<>();
+        kept.values().forEach(credential -> mergedClaims.putAll(credential.claims()));
+        return new VpTokenResult(kept, mergedClaims);
+    }
+
+    /**
+     * Whether the credential was issued for a presentation like this one, judged over the other
+     * credentials of the presentation. The credential itself is never part of that material: it is
+     * what binds to the others, and at issuance it did not exist yet.
+     */
+    private boolean boundToThisPresentation(
+            VpTokenResult vpResult, String credentialId, VerifiedCredential credential) {
+        Object claimed = credential.claims().get(ReferenceCredentialBinding.REFERENCE_BINDING_CLAIM);
+        if (claimed == null) {
+            return true;
+        }
+        return referenceBindingCheck.boundToPresentation(
+                PresentedCredentials.of(vpResult.credentials()), credentialId, String.valueOf(claimed));
     }
 
     /**
