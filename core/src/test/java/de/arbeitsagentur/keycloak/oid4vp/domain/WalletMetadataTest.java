@@ -59,23 +59,57 @@ class WalletMetadataTest {
     }
 
     @Test
-    void encryptionRequestedBy_unsupportedAlgorithm_throws() {
-        Oid4vpJwk walletKey = Oid4vpJwk.generate("P-256", "ECDH-ES", "enc");
+    void encryptionRequestedBy_unsupportedAdvertisedAlgorithm_usesTheAlgorithmOfTheKey() {
+        Oid4vpJwk walletKey = withKid(Oid4vpJwk.generate("P-256", "ECDH-ES", "enc"), "k1");
         String json = buildWalletMetadataJson(walletKey.toPublicJwk(), "RSA-OAEP-256", "A128GCM");
 
-        assertThatThrownBy(() -> WalletMetadata.encryptionRequestedBy(json))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("No supported algorithm");
+        WalletMetadata result = WalletMetadata.encryptionRequestedBy(json).orElseThrow();
+
+        assertThat(result.algorithm()).isEqualTo("ECDH-ES");
     }
 
     @Test
-    void encryptionRequestedBy_unsupportedEncryptionMethod_throws() {
-        Oid4vpJwk walletKey = Oid4vpJwk.generate("P-256", "ECDH-ES", "enc");
+    void encryptionRequestedBy_unsupportedEncryptionMethod_fallsBackToA128gcm() {
+        Oid4vpJwk walletKey = withKid(Oid4vpJwk.generate("P-256", "ECDH-ES", "enc"), "k1");
         String json = buildWalletMetadataJson(walletKey.toPublicJwk(), "ECDH-ES", "A192GCM");
 
-        assertThatThrownBy(() -> WalletMetadata.encryptionRequestedBy(json))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("No supported encryption method");
+        WalletMetadata result = WalletMetadata.encryptionRequestedBy(json).orElseThrow();
+
+        assertThat(result.encryptionMethod()).isEqualTo("A128GCM");
+    }
+
+    @Test
+    void encryptionRequestedBy_signingKeyListedFirst_selectsTheEncryptionKey() {
+        Oid4vpJwk signingKey = withKid(Oid4vpJwk.generate("P-256", "ES256", "sig"), "wallet-sig-key");
+        Oid4vpJwk encryptionKey = withKid(Oid4vpJwk.generate("P-256", "ECDH-ES", "enc"), "wallet-enc-key");
+        String json = """
+                {"jwks":{"keys":[%s,%s]}}""".formatted(
+                signingKey.toPublicJwk().toJson(), encryptionKey.toPublicJwk().toJson());
+
+        WalletMetadata result = WalletMetadata.encryptionRequestedBy(json).orElseThrow();
+
+        assertThat(result.encryptionKey().keyId()).isEqualTo("wallet-enc-key");
+        assertThat(result.algorithm()).isEqualTo("ECDH-ES");
+    }
+
+    @Test
+    void encryptionRequestedBy_nonEcKeyListedFirst_selectsTheEncryptionKey() {
+        Oid4vpJwk encryptionKey = withKid(Oid4vpJwk.generate("P-256", "ECDH-ES", "enc"), "wallet-enc-key");
+        String json = """
+                {"jwks":{"keys":[{"kty":"RSA","kid":"rsa-key","use":"enc","alg":"RSA-OAEP-256","n":"sXchDaQ","e":"AQAB"},%s]}}""".formatted(encryptionKey.toPublicJwk().toJson());
+
+        WalletMetadata result = WalletMetadata.encryptionRequestedBy(json).orElseThrow();
+
+        assertThat(result.encryptionKey().keyId()).isEqualTo("wallet-enc-key");
+    }
+
+    @Test
+    void encryptionRequestedBy_onlyKeysForOtherPurposes_requestsNoEncryption() {
+        Oid4vpJwk signingKey = withKid(Oid4vpJwk.generate("P-256", "ES256", "sig"), "wallet-sig-key");
+        String json = """
+                {"jwks":{"keys":[%s]}}""".formatted(signingKey.toPublicJwk().toJson());
+
+        assertThat(WalletMetadata.encryptionRequestedBy(json)).isEmpty();
     }
 
     @Test
