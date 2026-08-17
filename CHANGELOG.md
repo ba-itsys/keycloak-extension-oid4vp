@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.9.0...v0.9.1) (2026-08-17)
+
+
+### Bug Fixes
+
+* allow no trusted_authorities in dcql, dont auto-use etsi_tl as default ([0063187](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/0063187b62e91ffc204ff9688266f2e1a74a2bc0))
+
 ## [0.9.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.8.0...v0.9.0) (2026-08-17)
 
 
