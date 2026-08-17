@@ -159,8 +159,8 @@ class Oid4vpResponseDecryptorTest {
                 encryptionKey.algorithm(),
                 encryptionKey.use());
         String payloadJson = JsonSerialization.writeValueAsString(Map.of("vp_token", "test"));
-        String jwe =
-                Oid4vpRequestObjectEncryptor.encrypt(payloadJson.getBytes(), noKidKey.toPublicJwk(), "A256GCM", null);
+        String jwe = Oid4vpRequestObjectEncryptor.encrypt(
+                payloadJson.getBytes(), noKidKey.toPublicJwk(), "ECDH-ES", "A256GCM", null);
 
         String kid = decryptor.extractKid(jwe);
 

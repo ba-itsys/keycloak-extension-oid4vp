@@ -18,6 +18,8 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.jboss.logging.Logger;
+import org.keycloak.crypto.KeyUse;
 import org.keycloak.util.JsonSerialization;
 
 /**
@@ -36,14 +38,19 @@ import org.keycloak.util.JsonSerialization;
  */
 public record WalletMetadata(Oid4vpJwk encryptionKey, String algorithm, String encryptionMethod) {
 
+    private static final Logger LOG = Logger.getLogger(WalletMetadata.class);
+
+    private static final String DEFAULT_ENCRYPTION_ALGORITHM = "ECDH-ES";
+    private static final String DEFAULT_ENCRYPTION_METHOD = "A128GCM";
+
     /**
-     * The encryption the given {@code wallet_metadata} asks for, empty when it names no key to
-     * encrypt to. The JWE algorithm and the content encryption method are negotiated by
-     * intersecting the wallet's advertised values with the supported set (ECDH-ES +
-     * A128GCM/A256GCM), defaulting to ECDH-ES and A128GCM when the wallet advertises neither.
+     * The encryption the given {@code wallet_metadata} asks for, empty when it names no key the
+     * request object can be encrypted to. The key decides the JWE algorithm, because a JWK carries
+     * the algorithm it is meant for; the content encryption method is the first advertised value
+     * that is supported, and A128GCM when the wallet advertises none of them.
      *
-     * @throws IllegalArgumentException if the JSON is invalid or the wallet advertises only
-     *     unsupported algorithms
+     * @throws IllegalArgumentException if the metadata is not valid JSON or its {@code jwks} member
+     *     is malformed
      */
     @SuppressWarnings("unchecked")
     public static Optional<WalletMetadata> encryptionRequestedBy(String walletMetadataJson) {
@@ -55,11 +62,17 @@ public record WalletMetadata(Oid4vpJwk encryptionKey, String algorithm, String e
         }
 
         return extractEncryptionKey(metadata)
-                .map(encryptionKey ->
-                        new WalletMetadata(encryptionKey, selectAlgorithm(metadata), selectEncryptionMethod(metadata)));
+                .map(encryptionKey -> new WalletMetadata(
+                        encryptionKey, algorithmOf(encryptionKey), selectEncryptionMethod(metadata)));
     }
 
-    /** The wallet key to encrypt the request object to, empty when the metadata names none. */
+    /**
+     * The first key of the metadata the request object can be encrypted to, empty when it names
+     * none. A key qualifies when it is an EC key on a supported curve that is not reserved for
+     * another purpose by its {@code use} and not bound to an unsupported algorithm by its
+     * {@code alg}, which is how a wallet publishing its signing key next to its encryption key is
+     * read correctly.
+     */
     @SuppressWarnings("unchecked")
     private static Optional<Oid4vpJwk> extractEncryptionKey(Map<String, Object> metadata) {
         Object jwksObj = metadata.get("jwks");
@@ -75,35 +88,55 @@ public record WalletMetadata(Oid4vpJwk encryptionKey, String algorithm, String e
             }
             for (Object key : keys) {
                 if (key instanceof Map<?, ?> map) {
-                    return Optional.of(Oid4vpJwk.parse((Map<String, Object>) map));
+                    Oid4vpJwk usableKey = usableEncryptionKey((Map<String, Object>) map);
+                    if (usableKey != null) {
+                        return Optional.of(usableKey);
+                    }
                 }
             }
             return Optional.empty();
         } catch (Exception e) {
-            if (e instanceof IllegalArgumentException) throw (IllegalArgumentException) e;
+            if (e instanceof IllegalArgumentException illegalArgument) throw illegalArgument;
             throw new IllegalArgumentException("Failed to process wallet_metadata jwks: " + e.getMessage(), e);
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private static String selectAlgorithm(Map<String, Object> metadata) {
-        Object algValues = metadata.get("authorization_encryption_alg_values_supported");
-        if (algValues instanceof List<?> algList) {
-            for (Object alg : algList) {
-                String candidate = alg.toString();
-                if (Oid4vpConstants.SUPPORTED_REQUEST_OBJECT_ENCRYPTION_ALGORITHMS.contains(candidate)) {
-                    return candidate;
-                }
-            }
-            throw new IllegalArgumentException(
-                    "No supported algorithm in authorization_encryption_alg_values_supported: " + algList
-                            + ". Supported: " + Oid4vpConstants.SUPPORTED_REQUEST_OBJECT_ENCRYPTION_ALGORITHMS);
+    /** The given JWK when the request object can be encrypted to it, null otherwise. */
+    private static Oid4vpJwk usableEncryptionKey(Map<String, Object> rawKey) {
+        Oid4vpJwk key;
+        try {
+            key = Oid4vpJwk.parse(rawKey);
+            // Reading the point out rejects an unsupported curve and malformed coordinates here,
+            // where another key can still answer, rather than while encrypting.
+            key.toPublicKey();
+        } catch (IllegalArgumentException e) {
+            LOG.debugf("Skipping unusable wallet_metadata key: %s", e.getMessage());
+            return null;
         }
-        // Default to ECDH-ES if not specified
-        return "ECDH-ES";
+        if (key.use() != null && !KeyUse.ENC.getSpecName().equals(key.use())) {
+            LOG.debugf("Skipping wallet_metadata key '%s' published for use '%s'", key.keyId(), key.use());
+            return null;
+        }
+        if (key.algorithm() != null
+                && !Oid4vpConstants.SUPPORTED_REQUEST_OBJECT_ENCRYPTION_ALGORITHMS.contains(key.algorithm())) {
+            LOG.debugf(
+                    "Skipping wallet_metadata key '%s' bound to the unsupported algorithm '%s'",
+                    key.keyId(), key.algorithm());
+            return null;
+        }
+        return key;
     }
 
-    @SuppressWarnings("unchecked")
+    private static String algorithmOf(Oid4vpJwk encryptionKey) {
+        return encryptionKey.algorithm() != null ? encryptionKey.algorithm() : DEFAULT_ENCRYPTION_ALGORITHM;
+    }
+
+    /**
+     * The content encryption method the request object is encrypted with. The advertised values
+     * describe the authorization response (OID4VP 1.0 §5.10), so they are read as the wallet's
+     * preference: a wallet listing only methods this verifier does not support still receives a
+     * request object it can attempt to decrypt, rather than an error that ends its login.
+     */
     private static String selectEncryptionMethod(Map<String, Object> metadata) {
         Object encValues = metadata.get("authorization_encryption_enc_values_supported");
         if (encValues instanceof List<?> encList) {
@@ -113,11 +146,10 @@ public record WalletMetadata(Oid4vpJwk encryptionKey, String algorithm, String e
                     return candidate;
                 }
             }
-            throw new IllegalArgumentException(
-                    "No supported encryption method in authorization_encryption_enc_values_supported: " + encList
-                            + ". Supported: " + Oid4vpConstants.SUPPORTED_REQUEST_OBJECT_ENCRYPTION_METHODS);
+            LOG.debugf(
+                    "wallet_metadata advertises no supported encryption method (%s), encrypting with %s",
+                    encList, DEFAULT_ENCRYPTION_METHOD);
         }
-        // Default to A128GCM if not specified
-        return "A128GCM";
+        return DEFAULT_ENCRYPTION_METHOD;
     }
 }

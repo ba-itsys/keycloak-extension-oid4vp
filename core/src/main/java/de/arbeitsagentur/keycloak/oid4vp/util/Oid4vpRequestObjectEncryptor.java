@@ -20,7 +20,6 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import de.arbeitsagentur.keycloak.oid4vp.domain.WalletMetadata;
 import java.nio.charset.StandardCharsets;
 import org.keycloak.jose.jwe.JWE;
-import org.keycloak.jose.jwe.JWEConstants;
 import org.keycloak.jose.jwe.JWEHeader;
 
 /**
@@ -51,6 +50,7 @@ public final class Oid4vpRequestObjectEncryptor {
             return encrypt(
                     signedJwt.getBytes(StandardCharsets.UTF_8),
                     walletMetadata.encryptionKey(),
+                    walletMetadata.algorithm(),
                     walletMetadata.encryptionMethod(),
                     Oid4vpConstants.REQUEST_OBJECT_TYP);
         } catch (Exception e) {
@@ -58,10 +58,11 @@ public final class Oid4vpRequestObjectEncryptor {
         }
     }
 
-    static String encrypt(byte[] plaintext, Oid4vpJwk recipientKey, String encryptionMethod, String contentType) {
+    static String encrypt(
+            byte[] plaintext, Oid4vpJwk recipientKey, String algorithm, String encryptionMethod, String contentType) {
         try {
             JWEHeader.JWEHeaderBuilder header = JWEHeader.builder()
-                    .algorithm(JWEConstants.ECDH_ES)
+                    .algorithm(algorithm)
                     .encryptionAlgorithm(encryptionMethod)
                     .contentType(contentType);
             if (recipientKey.keyId() != null) {
