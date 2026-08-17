@@ -146,21 +146,20 @@ public class EtsiTrustListIdentityProvider
     }
 
     /**
-     * A configured trust list URL is advertised as {@code etsi_tl}, the key identifiers of the
-     * issuance certificates as {@code aki}. Both are alternatives for the wallet, so a provider
-     * backed by a trust list and a pasted bundle contributes both.
+     * The advertised entry of this trust domain, when the configuration names one: the trust list
+     * URL as {@code etsi_tl} or the key identifiers of the issuance certificates as {@code aki}.
+     * At most one entry, because both describe the same anchors and a wallet matches any
+     * advertised entry. Nothing is advertised by default.
      */
     @Override
     public List<TrustedAuthority> trustedAuthorities() {
-        if (!config.isAdvertiseTrustedAuthorities()) {
-            return List.of();
-        }
-        List<TrustedAuthority> authorities = new ArrayList<>();
-        if (StringUtil.isNotBlank(config.getTrustListUrl())) {
-            authorities.addAll(TrustedAuthority.of(TrustedAuthorityType.ETSI_TL, List.of(config.getTrustListUrl())));
-        }
-        authorities.addAll(TrustedAuthority.of(TrustedAuthorityType.AKI, authorityKeyIdentifiers()));
-        return List.copyOf(authorities);
+        return config.getAdvertisedTrustedAuthorityType()
+                .map(type -> switch (type) {
+                    case ETSI_TL ->
+                        TrustedAuthority.of(TrustedAuthorityType.ETSI_TL, List.of(config.getTrustListUrl()));
+                    case AKI -> TrustedAuthority.of(TrustedAuthorityType.AKI, authorityKeyIdentifiers());
+                })
+                .orElse(List.of());
     }
 
     private List<String> authorityKeyIdentifiers() {

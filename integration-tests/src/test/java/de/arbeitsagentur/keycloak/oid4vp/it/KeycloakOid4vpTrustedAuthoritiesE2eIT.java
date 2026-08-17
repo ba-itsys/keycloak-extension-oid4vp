@@ -34,11 +34,11 @@ import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
  *
  * <p>The entries are inherited from the trust material identity providers serving a credential, so
  * every test drives the trust provider rather than the verifier: a provider backed by a trust list
- * advertises its URL as {@code etsi_tl} and the key identifiers of its issuance certificates as
- * {@code aki}, both as alternatives the wallet may match. Coverage is the advertised values, a
- * login where the wallet's credential issuer is covered by them, a login where it is not (the
- * provider then serves a trust list of a foreign authority, leaving the wallet without a credential
- * it may present), and a provider that advertises nothing.
+ * advertises its URL as {@code etsi_tl} or the key identifiers of its issuance certificates as
+ * {@code aki}, as configured, one entry per trust domain. Coverage is the advertised value per
+ * type, a login where the wallet's credential issuer is covered by it, a login where it is not
+ * (the provider then serves a trust list of a foreign authority, leaving the wallet without a
+ * credential it may present), and the default of advertising nothing.
  */
 @KeycloakIntegrationTest(config = Oid4vpServerConfig.class)
 class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
@@ -55,16 +55,25 @@ class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
-    void advertisesTheTrustListUrlAndItsAuthorityKeyIdentifiers() throws Exception {
+    void advertisesTheTrustListUrlWhenConfigured() throws Exception {
         testApp().reset();
         flow.clearBrowserSession();
 
-        advertiseTrustedAuthorities();
+        advertiseTrustList();
 
         assertThat(trustedAuthoritiesOf(fetchCurrentRequestObject()))
-                .containsExactly(
-                        trustedAuthority("etsi_tl", wallet().pidTrustListUrl()),
-                        trustedAuthority("aki", walletAuthorityKeyIdentifier()));
+                .containsExactly(trustedAuthority("etsi_tl", wallet().pidTrustListUrl()));
+    }
+
+    @Test
+    void advertisesTheAuthorityKeyIdentifiersWhenConfigured() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+
+        setTrustIdpConfig(Map.of(EtsiTrustListIdentityProviderConfig.ADVERTISE_TRUSTED_AUTHORITIES, "aki"));
+
+        assertThat(trustedAuthoritiesOf(fetchCurrentRequestObject()))
+                .containsExactly(trustedAuthority("aki", walletAuthorityKeyIdentifier()));
     }
 
     @Test
@@ -83,7 +92,7 @@ class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
 
-        advertiseTrustedAuthorities();
+        advertiseTrustList();
 
         performSameDeviceLogin("trusted-authority-user");
         flow.assertLoginSucceeded();
@@ -98,15 +107,13 @@ class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
         try (TestTrustListServer foreignTrustList = TestTrustListServer.serving(foreignAuthority)) {
             useTrustList(foreignTrustList.url());
 
-            assertPresentationIsRefused(
-                    trustedAuthority("etsi_tl", foreignTrustList.url()),
-                    trustedAuthority("aki", TestCertificates.subjectKeyIdentifierBase64Url(foreignAuthority)));
+            assertPresentationIsRefused(trustedAuthority("etsi_tl", foreignTrustList.url()));
         }
     }
 
-    /** Lets the trust material identity provider advertise the trust domain it is backed by. */
-    private void advertiseTrustedAuthorities() {
-        setTrustIdpConfig(Map.of(EtsiTrustListIdentityProviderConfig.ADVERTISE_TRUSTED_AUTHORITIES, "true"));
+    /** Lets the trust material identity provider advertise the trust list it is backed by. */
+    private void advertiseTrustList() {
+        setTrustIdpConfig(Map.of(EtsiTrustListIdentityProviderConfig.ADVERTISE_TRUSTED_AUTHORITIES, "etsi_tl"));
     }
 
     // Points the trust material identity provider at the given trust list and lets it advertise it
@@ -115,7 +122,7 @@ class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
                 EtsiTrustListIdentityProviderConfig.TRUST_LIST_URL,
                 trustListUrl,
                 EtsiTrustListIdentityProviderConfig.ADVERTISE_TRUSTED_AUTHORITIES,
-                "true"));
+                "etsi_tl"));
     }
 
     /**

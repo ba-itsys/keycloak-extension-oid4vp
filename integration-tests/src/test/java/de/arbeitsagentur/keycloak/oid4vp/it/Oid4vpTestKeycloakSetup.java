@@ -59,9 +59,8 @@ public final class Oid4vpTestKeycloakSetup {
 
         Map<String, String> config = new LinkedHashMap<>();
         config.put(EtsiTrustListIdentityProviderConfig.TRUST_LIST_URL, trustListUrl);
-        // Most tests drive the wallet without a trusted_authorities constraint. The tests that cover
-        // it enable the advertisement on this provider.
-        config.put(EtsiTrustListIdentityProviderConfig.ADVERTISE_TRUSTED_AUTHORITIES, "false");
+        // Nothing is advertised by default, so most tests drive the wallet without a
+        // trusted_authorities constraint. The tests that cover it configure the advertised type.
         idp.setConfig(config);
         return idp;
     }

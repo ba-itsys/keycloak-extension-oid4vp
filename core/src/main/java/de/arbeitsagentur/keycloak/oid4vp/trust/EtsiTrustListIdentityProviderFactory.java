@@ -93,13 +93,12 @@ public class EtsiTrustListIdentityProviderFactory
             .add()
             .property()
             .name(EtsiTrustListIdentityProviderConfig.ADVERTISE_TRUSTED_AUTHORITIES)
-            .label("Advertise Trusted Authorities")
-            .helpText("Whether the DCQL query tells wallets about this trust domain, as a 'trusted_authorities' "
-                    + "entry of type 'etsi_tl' for the trust list URL and 'aki' for the key identifiers of the "
-                    + "trusted certificates. Disable to keep an internal trust domain out of the authorization "
-                    + "request; the verifier enforces it either way.")
-            .type(ProviderConfigProperty.BOOLEAN_TYPE)
-            .defaultValue("true")
+            .label("Advertised Trusted Authority Type")
+            .helpText("The 'trusted_authorities' entry the DCQL query tells wallets about: 'etsi_tl' advertises "
+                    + "the trust list URL, 'aki' the key identifiers of the trusted certificates. Empty "
+                    + "advertises nothing. At most one entry per trust domain, because both types describe the "
+                    + "same anchors. The verifier enforces the trust either way.")
+            .type(ProviderConfigProperty.STRING_TYPE)
             .add()
             .property()
             .name(EtsiTrustListIdentityProviderConfig.REQUIRED_EXTENDED_KEY_USAGES)

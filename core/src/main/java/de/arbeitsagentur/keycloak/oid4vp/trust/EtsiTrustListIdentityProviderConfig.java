@@ -15,10 +15,12 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.trust;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthorityType;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import org.keycloak.common.util.PemUtils;
 import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.models.RealmModel;
@@ -69,6 +71,7 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
         if (hasTrustedCertificates && parseTrustedCertificates().isEmpty()) {
             throw new IllegalArgumentException("Trusted certificates must be a PEM bundle of X.509 certificates");
         }
+        getAdvertisedTrustedAuthorityType();
     }
 
     public String getTrustListUrl() {
@@ -156,17 +159,38 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
     }
 
     /**
-     * Whether the DCQL query may advertise this provider's trust anchors to wallets. Enabled by
-     * default. Disabling it keeps a trust list URL or the key identifiers of an internal CA out of
-     * the authorization request.
+     * The trust anchor type of this provider the DCQL query advertises to wallets, empty when the
+     * query carries no {@code trusted_authorities} for the served credentials, which is the
+     * default. A trust domain advertises at most one type, because every entry describes the same
+     * anchors and a wallet matches any of them. The configured value is {@code aki} or
+     * {@code etsi_tl}.
+     *
+     * @throws IllegalArgumentException when the configured value is neither, or {@code etsi_tl} is
+     *     configured without a trust list URL
      */
-    public boolean isAdvertiseTrustedAuthorities() {
+    public Optional<TrustedAuthorityType> getAdvertisedTrustedAuthorityType() {
         String configured = getConfig().get(ADVERTISE_TRUSTED_AUTHORITIES);
-        return StringUtil.isBlank(configured) || Boolean.parseBoolean(configured);
+        String normalized = configured == null ? "" : configured.trim();
+        if (normalized.isEmpty()) {
+            return Optional.empty();
+        }
+        if (TrustedAuthorityType.AKI.dcqlValue().equals(normalized)) {
+            return Optional.of(TrustedAuthorityType.AKI);
+        }
+        if (TrustedAuthorityType.ETSI_TL.dcqlValue().equals(normalized)) {
+            if (StringUtil.isBlank(getTrustListUrl())) {
+                throw new IllegalArgumentException(
+                        "advertiseTrustedAuthorities '" + normalized + "' needs a configured trust list URL");
+            }
+            return Optional.of(TrustedAuthorityType.ETSI_TL);
+        }
+        throw new IllegalArgumentException("advertiseTrustedAuthorities value '" + normalized
+                + "' is neither '" + TrustedAuthorityType.AKI.dcqlValue() + "' nor '"
+                + TrustedAuthorityType.ETSI_TL.dcqlValue() + "'");
     }
 
-    public void setAdvertiseTrustedAuthorities(boolean advertise) {
-        getConfig().put(ADVERTISE_TRUSTED_AUTHORITIES, String.valueOf(advertise));
+    public void setAdvertisedTrustedAuthorityType(String type) {
+        getConfig().put(ADVERTISE_TRUSTED_AUTHORITIES, type);
     }
 
     /** Parses the pasted PEM bundle. Returns an empty list when unset or unparsable. */

@@ -86,12 +86,12 @@ class KeycloakOid4vpCredentialTrustE2eIT extends AbstractOid4vpE2eTest {
                 EtsiTrustListIdentityProviderConfig.SERVED_CREDENTIAL_TYPES,
                 Oid4vpTestKeycloakSetup.SD_JWT_PID_VCT,
                 EtsiTrustListIdentityProviderConfig.ADVERTISE_TRUSTED_AUTHORITIES,
-                "true"));
+                "etsi_tl"));
 
         SignedJWT requestObject = fetchCurrentRequestObject();
 
         assertThat(trustedAuthorityTypesOf(requestObject, Oid4vpTestKeycloakSetup.SD_JWT_PID_CREDENTIAL_ID))
-                .containsExactly("etsi_tl", "aki");
+                .containsExactly("etsi_tl");
         assertThat(trustedAuthorityTypesOf(requestObject, Oid4vpTestKeycloakSetup.MDOC_PID_CREDENTIAL_ID))
                 .as("a credential no provider serves carries no trusted_authorities")
                 .isEmpty();
