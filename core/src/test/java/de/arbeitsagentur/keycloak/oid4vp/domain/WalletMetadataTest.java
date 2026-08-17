@@ -18,9 +18,16 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.keycloak.common.crypto.CryptoIntegration;
 
 class WalletMetadataTest {
+
+    @BeforeAll
+    static void initCrypto() {
+        CryptoIntegration.init(WalletMetadataTest.class.getClassLoader());
+    }
 
     @Test
     void encryptionRequestedBy_validMetadata_extractsKeyAndAlgorithms() {
