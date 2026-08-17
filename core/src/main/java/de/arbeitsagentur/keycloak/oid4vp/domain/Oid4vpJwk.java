@@ -188,10 +188,6 @@ public class Oid4vpJwk extends ECPublicJWK {
         }
     }
 
-    public String thumbprint() {
-        return computeThumbprint(toPublicJwk());
-    }
-
     private static KeyUse parseKeyUse(String use) {
         return KeyUse.ENC.getSpecName().equalsIgnoreCase(use) ? KeyUse.ENC : KeyUse.SIG;
     }

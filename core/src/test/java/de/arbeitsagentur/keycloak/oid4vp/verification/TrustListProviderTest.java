@@ -182,21 +182,21 @@ class TrustListProviderTest {
     }
 
     @Test
-    void staticKeys_returnedDirectly() {
+    void staticCertificates_returnedDirectly() {
         TrustListProvider provider = new TrustListProvider(List.of());
-        assertThat(provider.getTrustedKeys()).isEmpty();
+        assertThat(provider.getTrustedCertificates()).isEmpty();
     }
 
     @Test
-    void nullTrustListUrl_returnsEmptyKeys() {
+    void nullTrustListUrl_returnsNoCertificates() {
         TrustListProvider provider = new TrustListProvider(null, null);
-        assertThat(provider.getTrustedKeys()).isEmpty();
+        assertThat(provider.getTrustedCertificates()).isEmpty();
     }
 
     @Test
-    void blankTrustListUrl_returnsEmptyKeys() {
+    void blankTrustListUrl_returnsNoCertificates() {
         TrustListProvider provider = new TrustListProvider(null, "  ");
-        assertThat(provider.getTrustedKeys()).isEmpty();
+        assertThat(provider.getTrustedCertificates()).isEmpty();
     }
 
     @Test

@@ -833,7 +833,7 @@ class SdJwtVerifierTest {
         private final JwtVcIssuerMetadataResolver.ResolvedIssuerKey resolvedKey;
 
         private FakeIssuerMetadataResolver(JwtVcIssuerMetadataResolver.ResolvedIssuerKey resolvedKey) {
-            super(Duration.ofDays(1));
+            super(null, Duration.ofDays(1));
             this.resolvedKey = resolvedKey;
         }
 
@@ -850,7 +850,7 @@ class SdJwtVerifierTest {
     private static final class FailingIssuerMetadataResolver extends JwtVcIssuerMetadataResolver {
 
         private FailingIssuerMetadataResolver() {
-            super(Duration.ofDays(1));
+            super(null, Duration.ofDays(1));
         }
 
         @Override

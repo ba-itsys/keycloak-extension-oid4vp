@@ -66,7 +66,7 @@ public class StatusListVerifier {
     }
 
     /** Checks the revocation status without revocation trust material, leaving the status list JWT unverified. */
-    public void checkRevocationStatus(Map<String, Object> claims) {
+    void checkRevocationStatus(Map<String, Object> claims) {
         checkRevocationStatus(claims, List.of());
     }
 
