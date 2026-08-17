@@ -313,20 +313,31 @@ public class DcqlQueryBuilder {
      * entry with one option per distinct id, ordered lexicographically. The option order expresses
      * the verifier's preference; wallets use the first option they can satisfy. Claims without ids
      * are included in every option.
+     *
+     * <p>Claims are addressed by their claims path pointer, and a query points to the same claim at
+     * most once (OID4VP 1.0 §6.1). Mappers that read the same claim into different places therefore
+     * share one entry, as do mDoc mappers that read different parts of one data element, because a
+     * claims path pointer into an mDoc names the namespace and the data element and nothing below it.
      */
     private void addClaims(Map<String, Object> credential, CredentialTypeSpec typeSpec) {
         List<ClaimSpec> claimSpecs = typeSpec.claimSpecs();
         List<Map<String, Object>> claims = new ArrayList<>();
-        List<String> claimIds = new ArrayList<>();
+        List<String> claimIdsBySpec = new ArrayList<>();
+        Map<List<Object>, String> claimIdsByPointer = new LinkedHashMap<>();
         int claimIndex = 1;
 
         for (ClaimSpec claimSpec : claimSpecs) {
-            String claimId = CLAIM_ID_PREFIX + claimIndex++;
-            Map<String, Object> claim = new LinkedHashMap<>();
-            claim.put(DCQL_ID, claimId);
-            claim.put(DCQL_PATH, claimSpec.toDcqlPath());
-            claims.add(claim);
-            claimIds.add(claimId);
+            List<Object> pointer = claimSpec.toDcqlPath();
+            String claimId = claimIdsByPointer.get(pointer);
+            if (claimId == null) {
+                claimId = CLAIM_ID_PREFIX + claimIndex++;
+                claimIdsByPointer.put(pointer, claimId);
+                Map<String, Object> claim = new LinkedHashMap<>();
+                claim.put(DCQL_ID, claimId);
+                claim.put(DCQL_PATH, pointer);
+                claims.add(claim);
+            }
+            claimIdsBySpec.add(claimId);
         }
         credential.put(DCQL_CLAIMS, claims);
 
@@ -335,7 +346,8 @@ public class DcqlQueryBuilder {
             return;
         }
         List<List<String>> claimSets = options.stream()
-                .map(option -> option.stream().map(claimIds::get).toList())
+                .map(option ->
+                        option.stream().map(claimIdsBySpec::get).distinct().toList())
                 .toList();
         credential.put(DCQL_CLAIM_SETS, claimSets);
     }

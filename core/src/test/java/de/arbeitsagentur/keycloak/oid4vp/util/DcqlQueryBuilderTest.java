@@ -122,6 +122,53 @@ class DcqlQueryBuilderTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void build_claimsAddressingTheSameClaim_areRequestedOnce() throws Exception {
+        builder.addCredentialType(
+                "dc+sd-jwt",
+                "IdentityCredential",
+                List.of(ClaimSpec.sdJwt("family_name"), ClaimSpec.sdJwt("family_name"), ClaimSpec.sdJwt("given_name")));
+
+        Map<String, Object> credential = firstCredential(builder.build());
+
+        assertThat((List<Map<String, Object>>) credential.get("claims"))
+                .extracting(claim -> claim.get("path"))
+                .containsExactly(List.of("family_name"), List.of("given_name"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void build_mdocClaimsOfTheSameDataElement_areRequestedOnce() throws Exception {
+        builder.addCredentialType(
+                "mso_mdoc",
+                "org.iso.18013.5.1.mDL",
+                List.of(
+                        ClaimSpec.mdoc("org.iso.18013.5.1", "driving_privileges.vehicle_category_code"),
+                        ClaimSpec.mdoc("org.iso.18013.5.1", "driving_privileges.issue_date")));
+
+        Map<String, Object> credential = firstCredential(builder.build());
+
+        assertThat((List<Map<String, Object>>) credential.get("claims"))
+                .extracting(claim -> claim.get("path"))
+                .containsExactly(List.of("org.iso.18013.5.1", "driving_privileges"));
+    }
+
+    @Test
+    void build_claimSetsOfDeduplicatedClaims_referenceEachClaimOnce() throws Exception {
+        builder.addCredentialType(
+                "dc+sd-jwt",
+                "IdentityCredential",
+                List.of(
+                        ClaimSpec.sdJwt("family_name", List.of("full")),
+                        ClaimSpec.sdJwt("family_name", List.of("full")),
+                        ClaimSpec.sdJwt("given_name", List.of("full"))));
+
+        Map<String, Object> credential = firstCredential(builder.build());
+
+        assertThat(credential.get("claim_sets")).isEqualTo(List.of(List.of("claim1", "claim2")));
+    }
+
+    @Test
     void build_noClaimSetIds_omitsClaimSets() throws Exception {
         builder.addCredentialType(
                 "dc+sd-jwt", "IdentityCredential", List.of(ClaimSpec.sdJwt("given_name"), ClaimSpec.sdJwt("email")));
