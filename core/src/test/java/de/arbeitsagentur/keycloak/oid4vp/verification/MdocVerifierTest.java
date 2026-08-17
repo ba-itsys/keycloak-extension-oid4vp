@@ -32,6 +32,7 @@ import com.authlete.cose.COSESign1Builder;
 import com.authlete.cose.COSESigner;
 import com.authlete.cose.COSEUnprotectedHeaderBuilder;
 import com.authlete.cose.SigStructureBuilder;
+import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.domain.MdocVerificationResult;
 import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
 import de.arbeitsagentur.keycloak.oid4vp.trust.TestTrust;
@@ -67,7 +68,7 @@ class MdocVerifierTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        verifier = new MdocVerifier();
+        verifier = new MdocVerifier(Oid4vpIdentityProviderConfig.DEFAULT_CLOCK_SKEW_SECONDS);
         KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC");
         kpg.initialize(new ECGenParameterSpec("secp256r1"));
         signingKeyPair = kpg.generateKeyPair();
@@ -626,6 +627,39 @@ class MdocVerifierTest {
                             null))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("expired");
+        }
+
+        @Test
+        void verifyPresentation_msoWithoutValidityInfo_fails() throws Exception {
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper().withoutValidityInfo();
+            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            String token = helper.build(transcript);
+
+            assertThatThrownBy(() -> verifier.verifyPresentation(
+                            token,
+                            TestTrust.ofCertificates(helper.issuerCert),
+                            CLIENT_ID,
+                            NONCE,
+                            RESPONSE_URI,
+                            null,
+                            null))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("missing the validity information");
+        }
+
+        @Test
+        void verify_msoExpiredWithinTheClockSkew_passes() throws Exception {
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper()
+                    .validFrom(Instant.now().minus(2, ChronoUnit.DAYS))
+                    .validUntil(Instant.now().minusSeconds(10));
+
+            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            String token = helper.build(transcript);
+
+            MdocVerificationResult result = verifier.verifyPresentation(
+                    token, TestTrust.ofCertificates(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null);
+
+            assertThat(result.claims()).isNotEmpty();
         }
 
         @Test

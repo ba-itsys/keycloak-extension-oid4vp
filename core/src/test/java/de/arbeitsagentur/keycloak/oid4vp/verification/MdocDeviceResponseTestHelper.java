@@ -90,6 +90,7 @@ class MdocDeviceResponseTestHelper {
     Instant validUntil = Instant.now().plus(365, ChronoUnit.DAYS);
     String digestAlgorithm = "SHA-256";
     String declaredDigestAlgorithm;
+    boolean omitValidityInfo;
 
     MdocDeviceResponseTestHelper() throws Exception {
         this(MdocAlgorithmSpec.ES256);
@@ -164,6 +165,12 @@ class MdocDeviceResponseTestHelper {
 
     MdocDeviceResponseTestHelper validUntil(Instant validUntil) {
         this.validUntil = validUntil;
+        return this;
+    }
+
+    /** Builds a Mobile Security Object without validityInfo. */
+    MdocDeviceResponseTestHelper withoutValidityInfo() {
+        this.omitValidityInfo = true;
         return this;
     }
 
@@ -285,15 +292,18 @@ class MdocDeviceResponseTestHelper {
         // valueDigests
         CBORPairList valueDigests = new CBORPairList(List.of(new CBORPair(new CBORString(namespace), digestMap)));
 
-        return new CBORPairList(List.of(
+        List<CBORPair> msoPairs = new ArrayList<>(List.of(
                 new CBORPair(new CBORString("version"), new CBORString("1.0")),
                 new CBORPair(
                         new CBORString("digestAlgorithm"),
                         new CBORString(declaredDigestAlgorithm != null ? declaredDigestAlgorithm : digestAlgorithm)),
                 new CBORPair(new CBORString("docType"), new CBORString(msoDocType != null ? msoDocType : docType)),
                 new CBORPair(new CBORString("valueDigests"), valueDigests),
-                new CBORPair(new CBORString("validityInfo"), validityInfo),
                 new CBORPair(new CBORString("deviceKeyInfo"), deviceKeyInfo)));
+        if (!omitValidityInfo) {
+            msoPairs.add(new CBORPair(new CBORString("validityInfo"), validityInfo));
+        }
+        return new CBORPairList(msoPairs);
     }
 
     private CBORItem buildIssuerAuth(CBORPairList mso) throws Exception {
