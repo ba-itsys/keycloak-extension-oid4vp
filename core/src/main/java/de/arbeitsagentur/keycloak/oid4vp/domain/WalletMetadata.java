@@ -141,6 +141,13 @@ public record WalletMetadata(Oid4vpJwk encryptionKey, String algorithm, String e
      * they are not read here. The advertisement is a preference rather than a demand: a wallet
      * advertising only methods this verifier does not support still receives a request object it
      * can attempt to decrypt, rather than an error that ends its login.
+     *
+     * <p>A wallet that names a key without advertising a method still gets a JWE, so a method has
+     * to be chosen for it. No specification defines a default for this direction. A128GCM is the
+     * default OID4VP 1.0 §8.3 names for the encrypted response, the one direction where the
+     * protocol names a default at all, so the same value is applied here. The JWE header states
+     * the chosen method, so the wallet decrypts it without prior agreement as long as its crypto
+     * implements the method.
      */
     private static String selectEncryptionMethod(Map<String, Object> metadata) {
         if (metadata.get("request_object_encryption_enc_values_supported") instanceof List<?> encList) {
