@@ -60,11 +60,23 @@
     <dependency>
       <groupId>org.keycloak.testframework</groupId>
       <artifactId>keycloak-test-framework-builders</artifactId>
+      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.keycloak</groupId>
       <artifactId>keycloak-admin-client</artifactId>
+      <!-- Version pinned in the root pom: the quarkus-bom imported by keycloak-parent manages
+           this artifact several releases behind the newest client release. -->
+      <version>${keycloak-admin-client.version}</version>
       <scope>test</scope>
+      <exclusions>
+        <!-- Carries its own older copy of org.keycloak.common classes, which shadows the
+             keycloak-common of the Keycloak version under test -->
+        <exclusion>
+          <groupId>org.keycloak</groupId>
+          <artifactId>keycloak-client-common-synced</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.keycloak</groupId>

@@ -87,20 +87,31 @@ class Oid4vpRedirectFlowServiceRequestObjectTest {
     }
 
     @Test
-    void directPostJwt_encryptionKey_isGenerated() throws Exception {
-        SignedRequestObject result = buildRequestObject(Oid4vpResponseMode.DIRECT_POST_JWT);
+    void directPostJwt_advertisesTheStoredEncryptionKey() throws Exception {
+        String storedKeyJson = service.createResponseEncryptionKey("test-state").toJson();
+        SignedRequestObject result =
+                buildRequestObject(DEFAULT_DCQL, Oid4vpResponseMode.DIRECT_POST_JWT, storedKeyJson);
 
-        assertThat(result.encryptionKeyJson()).isNotNull();
-        ECKey encKey = ECKey.parse(result.encryptionKeyJson());
-        assertThat(encKey.getCurve()).isEqualTo(Curve.P_256);
-        assertThat(encKey.getAlgorithm().getName()).isEqualTo("ECDH-ES");
+        Map<String, Object> claims = parseClaims(result.jwt());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> meta = (Map<String, Object>) claims.get("client_metadata");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> jwks = (Map<String, Object>) meta.get("jwks");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> advertised = ((List<Map<String, Object>>) jwks.get("keys")).get(0);
+
+        ECKey storedKey = ECKey.parse(storedKeyJson);
+        assertThat(advertised.get("x")).isEqualTo(storedKey.getX().toString());
+        assertThat(advertised.get("y")).isEqualTo(storedKey.getY().toString());
+        assertThat(advertised.get("crv")).isEqualTo(Curve.P_256.getName());
+        assertThat(advertised).as("the private part must never be advertised").doesNotContainKey("d");
     }
 
     @Test
-    void directPost_encryptionKey_isNull() throws Exception {
-        SignedRequestObject result = buildRequestObject(Oid4vpResponseMode.DIRECT_POST);
-
-        assertThat(result.encryptionKeyJson()).isNull();
+    void directPostJwt_withoutStoredEncryptionKey_throws() {
+        assertThatThrownBy(() -> buildRequestObject(DEFAULT_DCQL, Oid4vpResponseMode.DIRECT_POST_JWT, null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("No stored response encryption key");
     }
 
     @Test
@@ -241,13 +252,22 @@ class Oid4vpRedirectFlowServiceRequestObjectTest {
         assertThat(meta.get("vct_values")).isEqualTo(List.of("custom-vct"));
     }
 
+    private static final String DEFAULT_DCQL =
+            "{\"credentials\":[{\"id\":\"test\",\"format\":\"dc+sd-jwt\",\"meta\":{\"vct_values\":[\"IdentityCredential\"]},\"claims\":[{\"path\":[\"sub\"]}]}]}";
+
     private SignedRequestObject buildRequestObject(Oid4vpResponseMode responseMode) {
-        return buildRequestObject(
-                "{\"credentials\":[{\"id\":\"test\",\"format\":\"dc+sd-jwt\",\"meta\":{\"vct_values\":[\"IdentityCredential\"]},\"claims\":[{\"path\":[\"sub\"]}]}]}",
-                responseMode);
+        return buildRequestObject(DEFAULT_DCQL, responseMode);
     }
 
     private SignedRequestObject buildRequestObject(String dcqlQuery, Oid4vpResponseMode responseMode) {
+        String storedEncryptionKeyJson = responseMode.requiresEncryption()
+                ? service.createResponseEncryptionKey("test-state").toJson()
+                : null;
+        return buildRequestObject(dcqlQuery, responseMode, storedEncryptionKeyJson);
+    }
+
+    private SignedRequestObject buildRequestObject(
+            String dcqlQuery, Oid4vpResponseMode responseMode, String storedEncryptionKeyJson) {
         return service.buildSignedRequestObject(new RequestObjectParams(
                 dcqlQuery,
                 null,
@@ -258,7 +278,7 @@ class Oid4vpRedirectFlowServiceRequestObjectTest {
                 "test-nonce",
                 null,
                 signingKeyJwk,
-                null,
+                storedEncryptionKeyJson,
                 null,
                 responseMode));
     }

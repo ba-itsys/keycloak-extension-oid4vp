@@ -47,10 +47,21 @@ public class CredentialTrustPlan {
     private static final String UNSCOPED = "";
 
     private final List<Oid4vpTrustMaterialIdentityProvider<?>> providers;
+    private final boolean trustDeclared;
     private final Map<String, ResolvedTrust> resolvedByCredentialType = new ConcurrentHashMap<>();
 
     public CredentialTrustPlan(List<Oid4vpTrustMaterialIdentityProvider<?>> providers) {
+        this(providers, !providers.isEmpty());
+    }
+
+    /**
+     * @param trustDeclared whether the configuration names any trust source. True even when none of
+     *     the named providers could be resolved, so configuration drift rejects credentials instead
+     *     of re-enabling the issuer-metadata fallback.
+     */
+    public CredentialTrustPlan(List<Oid4vpTrustMaterialIdentityProvider<?>> providers, boolean trustDeclared) {
         this.providers = List.copyOf(providers);
+        this.trustDeclared = trustDeclared;
     }
 
     public static CredentialTrustPlan empty() {
@@ -127,10 +138,11 @@ public class CredentialTrustPlan {
                 trustedIssuerKeys,
                 List.copyOf(revocationCertificates),
                 TrustedAuthority.merge(trustedAuthorities),
-                // Any configured provider means trust is declared: a credential type no provider
-                // serves resolves to nothing and fails closed instead of falling back to the
-                // issuer's self-published metadata.
-                hasProviders());
+                // Any configured trust source means trust is declared: a credential type no provider
+                // serves, and a configuration whose providers cannot be resolved at all, resolve to
+                // nothing and are rejected instead of falling back to the issuer's self-published
+                // metadata.
+                trustDeclared);
     }
 
     /** A provider without declared credential types serves all of them. */

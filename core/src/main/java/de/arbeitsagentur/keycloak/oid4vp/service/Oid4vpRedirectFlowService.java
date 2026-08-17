@@ -127,22 +127,26 @@ public class Oid4vpRedirectFlowService {
         Oid4vpJwk responseEncryptionKey = resolveResponseEncryptionKey(params);
         LinkedHashMap<String, Object> claims = buildRequestObjectClaims(params, responseEncryptionKey);
         String jwt = signRequestObject(signingKey, params.clientIdScheme(), params.x509CertPem(), claims);
-        String encryptionKeyJson = responseEncryptionKey != null ? responseEncryptionKey.toJson() : null;
-        return new SignedRequestObject(jwt, encryptionKeyJson);
+        return new SignedRequestObject(jwt);
     }
 
     private Oid4vpJwk resolveResponseEncryptionKey(RequestObjectParams params) {
         if (!params.responseMode().requiresEncryption()) {
             return null;
         }
-        if (StringUtil.isNotBlank(params.responseEncryptionKeyJson())) {
-            try {
-                return Oid4vpJwk.parse(params.responseEncryptionKeyJson());
-            } catch (Exception e) {
-                throw new IllegalStateException("Failed to parse request handle encryption key", e);
-            }
+        if (StringUtil.isBlank(params.responseEncryptionKeyJson())) {
+            // Advertising a freshly generated key here would invite the wallet to encrypt to a key
+            // this verifier never stored, guaranteeing an undecryptable callback. The key is
+            // generated and stored with the request context when the login page is rendered.
+            throw new IllegalStateException(
+                    "No stored response encryption key for this request context; refusing to advertise one the"
+                            + " callback could not decrypt");
         }
-        return createResponseEncryptionKey(params.state());
+        try {
+            return Oid4vpJwk.parse(params.responseEncryptionKeyJson());
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to parse request handle encryption key", e);
+        }
     }
 
     private LinkedHashMap<String, Object> buildRequestObjectClaims(

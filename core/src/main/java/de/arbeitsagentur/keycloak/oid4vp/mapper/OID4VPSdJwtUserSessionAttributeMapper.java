@@ -125,8 +125,8 @@ public class OID4VPSdJwtUserSessionAttributeMapper extends AbstractOID4VPClaimMa
             logger.warnf("No user session attribute configured for mapper %s", mapperModel.getName());
             return;
         }
-        List<String> values = claimValues(mapperModel, context);
-        if (values == null || values.isEmpty()) {
+        List<String> values = resolveClaim(mapperModel, context).values();
+        if (values.isEmpty()) {
             return;
         }
         context.setSessionNote(attribute.trim(), String.join(",", values));

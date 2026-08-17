@@ -13,12 +13,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package de.arbeitsagentur.keycloak.oid4vp.domain;
+package de.arbeitsagentur.keycloak.oid4vp.mapper;
 
-/**
- * The result of signing an OID4VP Authorization Request Object.
- *
- * @param jwt the compact-serialized signed JWT (JWS) containing the authorization request claims
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.10.1">OID4VP 1.0 §5.10.1 — Request URI Response</a>
- */
-public record SignedRequestObject(String jwt) {}
+import org.keycloak.models.SubjectCredentialManager;
+import org.keycloak.models.UserModel;
+import org.keycloak.storage.adapter.AbstractInMemoryUserAdapter;
+
+/** Typed in-memory {@link UserModel} test double for asserting brokered user updates. */
+final class InMemoryUser extends AbstractInMemoryUserAdapter {
+
+    InMemoryUser() {
+        super(null, null, "test-user");
+    }
+
+    @Override
+    public SubjectCredentialManager credentialManager() {
+        throw new UnsupportedOperationException("Credentials are not part of the mapper tests");
+    }
+}

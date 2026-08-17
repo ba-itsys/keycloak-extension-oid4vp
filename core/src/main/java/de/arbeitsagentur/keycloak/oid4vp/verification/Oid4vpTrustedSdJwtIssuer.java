@@ -90,8 +90,8 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
 
         // Web-of-trust discovery from the credential's own issuer metadata is only a route when the
         // verifier declares no trust source for this credential type. A declared source that resolves
-        // to nothing (for example a trust list that is momentarily unreachable) fails closed here
-        // rather than silently trusting whatever keys the issuer publishes about itself.
+        // to nothing (for example a trust list that is momentarily unreachable) makes verification
+        // fail here rather than silently trusting whatever keys the issuer publishes about itself.
         if (issuerMetadataResolver != null && !trust.hasIssuerKeyTrust() && !trust.hasDeclaredTrustSource()) {
             try {
                 ResolvedIssuerKey issuerKey = resolveIssuerKeyFromMetadata(issuerSignedJWT);

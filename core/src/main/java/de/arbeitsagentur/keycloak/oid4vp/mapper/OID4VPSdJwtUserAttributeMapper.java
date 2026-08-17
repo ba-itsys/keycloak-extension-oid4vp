@@ -103,8 +103,8 @@ public class OID4VPSdJwtUserAttributeMapper extends AbstractOID4VPClaimMapper {
         if (attribute == null) {
             return;
         }
-        List<String> values = claimValues(mapperModel, context);
-        if (values == null || values.isEmpty()) {
+        List<String> values = resolveClaim(mapperModel, context).values();
+        if (values.isEmpty()) {
             return;
         }
         switch (attribute) {
@@ -130,14 +130,19 @@ public class OID4VPSdJwtUserAttributeMapper extends AbstractOID4VPClaimMapper {
         if (attribute == null) {
             return;
         }
-        List<String> values = claimValues(mapperModel, context);
+        ClaimResolution resolution = resolveClaim(mapperModel, context);
+        if (resolution.misconfigured()) {
+            // A configuration mistake must not destroy user state, so nothing is updated or removed.
+            return;
+        }
+        List<String> values = resolution.values();
         switch (attribute) {
             case USERNAME -> setIfPresent(values, user::setUsername);
             case EMAIL -> setIfPresent(values, user::setEmail);
             case FIRST_NAME -> setIfPresent(values, user::setFirstName);
             case LAST_NAME -> setIfPresent(values, user::setLastName);
             default -> {
-                if (values == null || values.isEmpty()) {
+                if (values.isEmpty()) {
                     user.removeAttribute(attribute);
                 } else if (!CollectionUtil.collectionEquals(
                         values, user.getAttributeStream(attribute).toList())) {
@@ -148,7 +153,7 @@ public class OID4VPSdJwtUserAttributeMapper extends AbstractOID4VPClaimMapper {
     }
 
     protected void setIfPresent(List<String> values, Consumer<String> setter) {
-        if (values != null && !values.isEmpty() && StringUtil.isNotBlank(values.get(0))) {
+        if (!values.isEmpty() && StringUtil.isNotBlank(values.get(0))) {
             setter.accept(values.get(0));
         }
     }

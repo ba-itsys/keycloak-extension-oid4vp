@@ -122,7 +122,8 @@ while [ "$i" -lt 120 ]; do
 done
 
 if [ -z "$public_url" ] || [ "$public_url" = "null" ]; then
-  echo "Failed to obtain ngrok public URL. See: $tmp_log" >&2
+  echo "Failed to obtain ngrok public URL. Last ngrok log lines:" >&2
+  tail -n 20 "$tmp_log" >&2 || true
   exit 1
 fi
 
@@ -143,23 +144,6 @@ Env vars:
   KC_PROXY_HEADERS=xforwarded
 EOF
 
-if [ "$NGROK_ONLY" = "true" ]; then
-  cat <<EOF
-
-To start Keycloak with this hostname, run in another terminal:
-  KC_HOSTNAME=$public_url KC_PROXY_HEADERS=xforwarded docker compose up keycloak
-  (Run scripts/setup-local-realm.sh first if you have local credentials)
-
-Press Ctrl+C to stop ngrok.
-EOF
-  wait "$NGROK_PID"
-  exit 0
-fi
-
-echo ""
-echo "Starting Keycloak via docker compose..."
-
-cd "$ROOT_DIR"
 NGROK_OVERRIDE="$ROOT_DIR/docker-compose.ngrok.yml"
 cat > "$NGROK_OVERRIDE" <<YAML
 services:
@@ -175,4 +159,22 @@ cleanup_override() {
 # Add to existing trap
 trap 'cleanup; cleanup_override' INT TERM EXIT
 
+if [ "$NGROK_ONLY" = "true" ]; then
+  cat <<EOF
+
+To start Keycloak with this hostname, run in another terminal:
+  docker compose -f docker-compose.yml -f docker-compose.ngrok.yml up keycloak
+  (Run scripts/setup-local-realm.sh first if you have local credentials.
+   The override file docker-compose.ngrok.yml is removed when ngrok stops.)
+
+Press Ctrl+C to stop ngrok.
+EOF
+  wait "$NGROK_PID"
+  exit 0
+fi
+
+echo ""
+echo "Starting Keycloak via docker compose..."
+
+cd "$ROOT_DIR"
 ${KC_WRAPPER:-} docker compose -f docker-compose.yml -f "$NGROK_OVERRIDE" up keycloak

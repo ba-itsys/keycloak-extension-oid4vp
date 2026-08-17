@@ -146,24 +146,47 @@ public abstract class AbstractOID4VPClaimMapper extends AbstractIdentityProvider
         return credential.claimsNode();
     }
 
-    // Null when the claim is absent or the mapper is misconfigured.
-    protected List<String> claimValues(IdentityProviderMapperModel mapperModel, BrokeredIdentityContext context) {
-        PresentedCredential credential = presentedCredential(mapperModel, context);
-        if (credential == null) {
-            return null;
+    /** Whether the mapper's claim source configuration is usable; mDoc mappers require a namespace. */
+    protected boolean claimSourceConfigured(IdentityProviderMapperModel mapperModel) {
+        return true;
+    }
+
+    /**
+     * How the configured claim resolved against the presentation. The two empty outcomes carry
+     * different obligations: a misconfigured mapper must leave the brokered user untouched, while a
+     * well configured mapper whose claim the presentation does not carry keeps the remove-on-absent
+     * update semantics.
+     */
+    protected record ClaimResolution(boolean misconfigured, List<String> values) {
+
+        private static final ClaimResolution MISCONFIGURED = new ClaimResolution(true, List.of());
+        private static final ClaimResolution ABSENT = new ClaimResolution(false, List.of());
+
+        static ClaimResolution of(List<String> values) {
+            return values.isEmpty() ? ABSENT : new ClaimResolution(false, values);
         }
+    }
+
+    /** Resolves the configured claim, keeping misconfiguration apart from an absent claim. */
+    protected ClaimResolution resolveClaim(IdentityProviderMapperModel mapperModel, BrokeredIdentityContext context) {
         String claimPath = mapperModel.getConfig().get(CLAIM);
         if (StringUtil.isBlank(claimPath)) {
             logger.warnf("No claim configured for mapper %s", mapperModel.getName());
-            return null;
+            return ClaimResolution.MISCONFIGURED;
         }
         ClaimPath path = ClaimPath.parse(claimPath.trim());
         if (path == null) {
             logger.warnf("Invalid claim path '%s' in mapper %s", claimPath, mapperModel.getName());
-            return null;
+            return ClaimResolution.MISCONFIGURED;
         }
-        List<String> values = ClaimSelection.values(path, claimsRoot(mapperModel, credential));
-        return values.isEmpty() ? null : values;
+        if (!claimSourceConfigured(mapperModel)) {
+            return ClaimResolution.MISCONFIGURED;
+        }
+        PresentedCredential credential = presentedCredential(mapperModel, context);
+        if (credential == null) {
+            return ClaimResolution.ABSENT;
+        }
+        return ClaimResolution.of(ClaimSelection.values(path, claimsRoot(mapperModel, credential)));
     }
 
     protected String value(JsonNode node) {

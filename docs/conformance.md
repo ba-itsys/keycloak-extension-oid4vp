@@ -68,7 +68,7 @@ The conformance tests are skipped by default because they start the full suite a
 Run them with:
 
 ```bash
-mvn verify -pl conformance-tests -am -Dconformance.tests.skip=false
+mvn verify -pl conformance-tests -am -Pconformance-tests
 ```
 
 A single module can be selected with `-Dtest='HappyFlowConformanceTest'`. The suite version is

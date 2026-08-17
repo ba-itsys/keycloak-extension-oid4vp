@@ -388,6 +388,20 @@
             <phase>package</phase>
             <configuration>
               <createDependencyReducedPom>false</createDependencyReducedPom>
+              <artifactSet>
+                <excludes>
+                  <!-- Annotation-only dependency of gson, not needed at runtime -->
+                  <exclude>com.google.errorprone:error_prone_annotations</exclude>
+                </excludes>
+              </artifactSet>
+              <relocations>
+                <!-- gson comes in transitively via com.authlete:cbor; relocate it so the
+                     provider jar cannot clash with another gson on the server classpath -->
+                <relocation>
+                  <pattern>com.google.gson</pattern>
+                  <shadedPattern>de.arbeitsagentur.keycloak.oid4vp.shaded.gson</shadedPattern>
+                </relocation>
+              </relocations>
               <filters>
                 <filter>
                   <artifact>*:*</artifact>

@@ -647,6 +647,44 @@ class MdocVerifierTest {
                     .hasMessageContaining("missing the validity information");
         }
 
+        // ISO/IEC 18013-5 makes validUntil mandatory in ValidityInfo: without it the credential
+        // would never expire, so the presentation must be rejected instead of accepted forever.
+        @Test
+        void verifyPresentation_msoWithoutValidUntil_fails() throws Exception {
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper().withoutValidUntil();
+            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            String token = helper.build(transcript);
+
+            assertThatThrownBy(() -> verifier.verifyPresentation(
+                            token,
+                            TestTrust.ofCertificates(helper.issuerCert),
+                            CLIENT_ID,
+                            NONCE,
+                            RESPONSE_URI,
+                            null,
+                            null))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("missing its validUntil timestamp");
+        }
+
+        @Test
+        void verifyPresentation_msoWithMalformedValidFrom_fails() throws Exception {
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper().rawValidFrom("not-a-timestamp");
+            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            String token = helper.build(transcript);
+
+            assertThatThrownBy(() -> verifier.verifyPresentation(
+                            token,
+                            TestTrust.ofCertificates(helper.issuerCert),
+                            CLIENT_ID,
+                            NONCE,
+                            RESPONSE_URI,
+                            null,
+                            null))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("unreadable validFrom timestamp");
+        }
+
         @Test
         void verify_msoExpiredWithinTheClockSkew_passes() throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper()

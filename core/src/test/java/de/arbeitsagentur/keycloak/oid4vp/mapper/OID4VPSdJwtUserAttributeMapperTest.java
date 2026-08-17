@@ -171,6 +171,55 @@ class OID4VPSdJwtUserAttributeMapperTest {
     }
 
     @Test
+    void updateSetsAttributeFromPresentClaim() throws Exception {
+        BrokeredIdentityContext context = contextWithClaims("""
+                {"email": "alice@email.cz"}""");
+        InMemoryUser user = new InMemoryUser();
+
+        update(user, context, "email", "emailAttribute");
+
+        assertThat(user.getAttributeStream("emailAttribute")).containsExactly("alice@email.cz");
+    }
+
+    @Test
+    void updateRemovesAttributeWhenClaimIsAbsent() throws Exception {
+        BrokeredIdentityContext context = contextWithClaims("""
+                {"email": "alice@email.cz"}""");
+        InMemoryUser user = new InMemoryUser();
+        user.setAttribute("phone", List.of("123456"));
+
+        update(user, context, "phone", "phone");
+
+        assertThat(user.getAttributeStream("phone")).isEmpty();
+    }
+
+    // A configuration mistake must not wipe user state: unlike an absent claim, a blank or
+    // unparseable claim path leaves the existing attribute untouched.
+    @Test
+    void updateKeepsAttributeWhenClaimPathIsBlank() throws Exception {
+        BrokeredIdentityContext context = contextWithClaims("""
+                {"email": "alice@email.cz"}""");
+        InMemoryUser user = new InMemoryUser();
+        user.setAttribute("emailAttribute", List.of("keep@email.cz"));
+
+        update(user, context, "", "emailAttribute");
+
+        assertThat(user.getAttributeStream("emailAttribute")).containsExactly("keep@email.cz");
+    }
+
+    @Test
+    void updateKeepsAttributeWhenClaimPathIsInvalid() throws Exception {
+        BrokeredIdentityContext context = contextWithClaims("""
+                {"email": "alice@email.cz"}""");
+        InMemoryUser user = new InMemoryUser();
+        user.setAttribute("emailAttribute", List.of("keep@email.cz"));
+
+        update(user, context, "email[x]", "emailAttribute");
+
+        assertThat(user.getAttributeStream("emailAttribute")).containsExactly("keep@email.cz");
+    }
+
+    @Test
     void supportsAllSyncModes() {
         for (IdentityProviderSyncMode syncMode : IdentityProviderSyncMode.values()) {
             assertThat(mapper.supportsSyncMode(syncMode)).isTrue();
@@ -184,6 +233,10 @@ class OID4VPSdJwtUserAttributeMapperTest {
 
     private void preprocess(BrokeredIdentityContext context, String claim, String attribute) {
         mapper.preprocessFederatedIdentity(null, null, model(claim, attribute, "urn:eudi:pid:1"), context);
+    }
+
+    private void update(InMemoryUser user, BrokeredIdentityContext context, String claim, String attribute) {
+        mapper.updateBrokeredUser(null, null, user, model(claim, attribute, "urn:eudi:pid:1"), context);
     }
 
     private static IdentityProviderMapperModel model(String claim, String attribute, String credentialType) {

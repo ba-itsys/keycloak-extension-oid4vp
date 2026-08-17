@@ -482,8 +482,10 @@ public class MdocVerifier {
     /**
      * Enforces the validity window the issuer signed. A presentation carries it: the MSO of an mDoc
      * holds {@code validityInfo}, so a presentation without it states no validity at all and is
-     * rejected rather than accepted as valid forever. The individual timestamps stay optional, and
-     * the ones that are present are judged within the configured clock skew.
+     * rejected rather than accepted as valid forever. ISO/IEC 18013-5 makes {@code validFrom} and
+     * {@code validUntil} mandatory in {@code ValidityInfo}, so a validity information that omits a
+     * timestamp or carries an unreadable one is rejected as well; the readable window is judged
+     * within the configured clock skew.
      */
     private void validateValidity(CBORPairList mso, boolean mandatory) {
         CBORPairList validityInfo = map(mso, "validityInfo");
@@ -495,15 +497,28 @@ public class MdocVerifier {
         }
         Instant now = Instant.now();
 
-        Instant validFrom = parseInstant(val(validityInfo, "validFrom"));
-        if (validFrom != null && validFrom.isAfter(now.plusSeconds(clockSkewSeconds))) {
+        Instant validFrom = requireInstant(validityInfo, "validFrom");
+        if (validFrom.isAfter(now.plusSeconds(clockSkewSeconds))) {
             throw new IllegalStateException("Credential not yet valid");
         }
 
-        Instant validUntil = parseInstant(val(validityInfo, "validUntil"));
-        if (validUntil != null && validUntil.isBefore(now.minusSeconds(clockSkewSeconds))) {
+        Instant validUntil = requireInstant(validityInfo, "validUntil");
+        if (validUntil.isBefore(now.minusSeconds(clockSkewSeconds))) {
             throw new IllegalStateException("Credential expired");
         }
+    }
+
+    /** The named mandatory ValidityInfo timestamp; missing or unreadable ones fail verification. */
+    private Instant requireInstant(CBORPairList validityInfo, String field) {
+        CBORItem value = val(validityInfo, field);
+        if (value == null) {
+            throw new IllegalStateException("mDoc validity information is missing its " + field + " timestamp");
+        }
+        Instant instant = parseInstant(value);
+        if (instant == null) {
+            throw new IllegalStateException("mDoc validity information carries an unreadable " + field + " timestamp");
+        }
+        return instant;
     }
 
     private Instant parseInstant(CBORItem value) {

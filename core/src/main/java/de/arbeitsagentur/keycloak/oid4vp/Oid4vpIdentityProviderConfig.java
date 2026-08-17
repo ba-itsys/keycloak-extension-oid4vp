@@ -202,6 +202,15 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public void validate(RealmModel realm) {
         super.validate(realm);
 
+        if (getResolvedClientIdScheme().isCertificateBound()
+                && StringUtil.isNotBlank(getX509CertificatePem())
+                && StringUtil.isBlank(getX509SigningKeyJwk())
+                && !getX509CertificatePem().contains("-----BEGIN PRIVATE KEY-----")) {
+            throw new IllegalArgumentException("The verifier certificate PEM contains no private key. A"
+                    + " certificate-bound client_id_scheme signs the request object with the certificate's key, so the"
+                    + " PEM must include the PRIVATE KEY block.");
+        }
+
         AggregatedCredentials aggregated = configuredCredentials(realm);
         List<String> problems = new ArrayList<>(aggregated.problems());
         problems.addAll(Oid4vpCredentialSetsValidator.problems(

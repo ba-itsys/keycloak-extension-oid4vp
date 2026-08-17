@@ -31,7 +31,6 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.keycloak.common.crypto.CryptoIntegration;
-import org.keycloak.jose.jwk.JSONWebKeySet;
 
 class JwtVcIssuerMetadataResolverTest {
 
@@ -126,7 +125,7 @@ class JwtVcIssuerMetadataResolverTest {
     }
 
     @Test
-    void resolveSigningKey_followsJwksUriUsingKeycloakJwksPath() throws Exception {
+    void resolveSigningKey_followsJwksUriWithSingleFetch() throws Exception {
         ECKey key = new ECKeyGenerator(Curve.P_256).keyID("remote-kid").generate();
         FakeResolver resolver = new FakeResolver(Duration.ofDays(1));
         String jwksUri = "https://issuer.example/tenant/123/keys";
@@ -144,8 +143,44 @@ class JwtVcIssuerMetadataResolverTest {
 
         assertThat(resolved.publicKey().getEncoded())
                 .isEqualTo(key.toECPublicKey().getEncoded());
-        assertThat(resolver.remoteJwksFetchUsed()).isTrue();
+        assertThat(resolver.lastFetchedUrl()).isEqualTo(jwksUri);
         assertThat(resolver.fetchCount()).isEqualTo(2);
+    }
+
+    @Test
+    void resolveSigningKey_doesNotCacheWhenResponseForbidsCaching() throws Exception {
+        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("no-store").generate();
+        FakeResolver resolver = new FakeResolver(Duration.ofMinutes(7));
+        resolver.stubMetadata(
+                ISSUER,
+                buildMetadata(
+                        ISSUER, buildJwks(key, Instant.now().plusSeconds(3600).getEpochSecond())),
+                Duration.ZERO);
+
+        JwtVcIssuerMetadataResolver.ResolvedIssuerKey first = resolver.resolveSigningKey(ISSUER, "no-store");
+        JwtVcIssuerMetadataResolver.ResolvedIssuerKey second = resolver.resolveSigningKey(ISSUER, "no-store");
+
+        assertThat(first.publicKey().getEncoded()).isEqualTo(key.toECPublicKey().getEncoded());
+        assertThat(second.publicKey().getEncoded())
+                .isEqualTo(key.toECPublicKey().getEncoded());
+        assertThat(resolver.fetchCount()).isEqualTo(2);
+    }
+
+    @Test
+    void resolveSigningKey_capsKeyExpiryByConfiguredTtlWhenResponseForbidsCaching() throws Exception {
+        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("far-future").generate();
+        Duration maxCacheTtl = Duration.ofSeconds(5);
+        FakeResolver resolver = new FakeResolver(maxCacheTtl);
+        resolver.stubMetadata(
+                ISSUER,
+                buildMetadata(
+                        ISSUER,
+                        buildJwks(key, Instant.now().plus(Duration.ofDays(3650)).getEpochSecond())),
+                Duration.ZERO);
+
+        JwtVcIssuerMetadataResolver.ResolvedIssuerKey resolved = resolver.resolveSigningKey(ISSUER, "far-future");
+
+        assertThat(resolved.expiresAt()).isBeforeOrEqualTo(Instant.now().plus(maxCacheTtl));
     }
 
     private static String buildMetadata(String issuer, Map<String, Object> jwks) throws Exception {
@@ -163,7 +198,6 @@ class JwtVcIssuerMetadataResolverTest {
         private final Map<String, FetchResult> documents = new HashMap<>();
         private int fetchCount;
         private String lastFetchedUrl;
-        private boolean remoteJwksFetchUsed;
 
         private FakeResolver(Duration maxCacheTtl) {
             super(null, maxCacheTtl);
@@ -187,10 +221,6 @@ class JwtVcIssuerMetadataResolverTest {
             return lastFetchedUrl;
         }
 
-        boolean remoteJwksFetchUsed() {
-            return remoteJwksFetchUsed;
-        }
-
         @Override
         protected FetchResult fetchJson(String url) {
             fetchCount++;
@@ -200,12 +230,6 @@ class JwtVcIssuerMetadataResolverTest {
                 throw new IllegalStateException("No stub for " + url);
             }
             return result;
-        }
-
-        @Override
-        protected JSONWebKeySet fetchRemoteJwks(String url, JsonNode fallbackJwksDocument) throws Exception {
-            remoteJwksFetchUsed = true;
-            return parseJsonWebKeySet(fallbackJwksDocument);
         }
 
         private static String toWellKnown(String issuer) {

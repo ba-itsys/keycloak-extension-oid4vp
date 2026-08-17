@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
@@ -82,6 +83,35 @@ class OID4VPMdocUserAttributeMapperTest {
                 null, null, model("given_name", "firstName", "org.iso.other", MDL_DOCTYPE), context);
 
         assertThat(context.getFirstName()).isNull();
+    }
+
+    // Without a namespace or doctype the mapper is misconfigured, so an update must leave the
+    // existing attribute untouched instead of removing it.
+    @Test
+    void updateKeepsAttributeWhenNamespaceIsUnconfigured() throws Exception {
+        BrokeredIdentityContext context = mdlContext("""
+                {"org.iso.18013.5.1": {"given_name": "Erika"}}""");
+        InMemoryUser user = new InMemoryUser();
+        user.setAttribute("givenName", List.of("Keep"));
+
+        mapper.updateBrokeredUser(null, null, user, model("given_name", "givenName", null, null), context);
+
+        assertThat(user.getAttributeStream("givenName")).containsExactly("Keep");
+    }
+
+    // A well-configured mapper whose namespace the credential does not carry keeps the
+    // remove-on-absent update semantics.
+    @Test
+    void updateRemovesAttributeWhenNamespaceIsAbsentFromTheCredential() throws Exception {
+        BrokeredIdentityContext context = mdlContext("""
+                {"org.iso.18013.5.1": {"given_name": "Erika"}}""");
+        InMemoryUser user = new InMemoryUser();
+        user.setAttribute("givenName", List.of("Stale"));
+
+        mapper.updateBrokeredUser(
+                null, null, user, model("given_name", "givenName", "org.iso.other", MDL_DOCTYPE), context);
+
+        assertThat(user.getAttributeStream("givenName")).isEmpty();
     }
 
     @Test

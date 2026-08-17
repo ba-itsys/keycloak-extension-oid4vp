@@ -16,6 +16,7 @@
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import de.arbeitsagentur.keycloak.oid4vp.util.BoundedLruMap;
 import java.io.ByteArrayInputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -31,14 +32,12 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.util.SimpleHttp;
 import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.jose.jwk.JSONWebKeySet;
 import org.keycloak.jose.jwk.JWK;
 import org.keycloak.models.KeycloakSession;
-import org.keycloak.protocol.oidc.utils.JWKSHttpUtils;
 import org.keycloak.util.JWKSUtils;
 import org.keycloak.util.JsonSerialization;
 
@@ -55,7 +54,8 @@ public class JwtVcIssuerMetadataResolver {
     private static final String WELL_KNOWN_PATH = "/.well-known/jwt-vc-issuer";
     private static final HttpClient HTTP_CLIENT =
             HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build();
-    private static final ConcurrentHashMap<CacheKey, CachedIssuerKeys> CACHE = new ConcurrentHashMap<>();
+    private static final int MAX_CACHE_ENTRIES = 256;
+    private static final Map<CacheKey, CachedIssuerKeys> CACHE = BoundedLruMap.withMaxEntries(MAX_CACHE_ENTRIES);
 
     private final KeycloakSession session;
     private final Duration maxCacheTtl;
@@ -138,14 +138,15 @@ public class JwtVcIssuerMetadataResolver {
                 jwks = parseJsonWebKeySet(jwksNode);
             } else if (jwksUri != null) {
                 jwksResult = fetchJson(jwksUri);
-                jwks = fetchRemoteJwks(jwksUri, jwksResult.json());
+                jwks = parseJsonWebKeySet(jwksResult.json());
             } else {
                 throw new IllegalStateException("Issuer metadata does not contain jwks or jwks_uri");
             }
 
+            Instant maxExpiry = latestFetchedAt(metadataResult, jwksResult).plus(maxCacheTtl);
             Instant baseExpiry = computeBaseExpiry(metadataResult, jwksResult);
-            List<ResolvedIssuerKey> keys = parseJwks(jwks, baseExpiry);
-            Instant expiresAt = computeCacheExpiry(keys, baseExpiry);
+            List<ResolvedIssuerKey> keys = parseJwks(jwks, baseExpiry != null ? baseExpiry : maxExpiry);
+            Instant expiresAt = baseExpiry != null ? computeCacheExpiry(keys) : null;
             return new CachedIssuerKeys(keys, expiresAt);
         } catch (IllegalStateException e) {
             throw e;
@@ -155,14 +156,7 @@ public class JwtVcIssuerMetadataResolver {
         }
     }
 
-    protected JSONWebKeySet fetchRemoteJwks(String url, JsonNode fallbackJwksDocument) throws Exception {
-        if (session != null) {
-            return JWKSHttpUtils.sendJwksRequest(session, url);
-        }
-        return parseJsonWebKeySet(fallbackJwksDocument);
-    }
-
-    protected JSONWebKeySet parseJsonWebKeySet(JsonNode rawJwks) {
+    private JSONWebKeySet parseJsonWebKeySet(JsonNode rawJwks) {
         try {
             JSONWebKeySet jwks = JsonSerialization.mapper.treeToValue(rawJwks, JSONWebKeySet.class);
             if (jwks == null) {
@@ -176,7 +170,7 @@ public class JwtVcIssuerMetadataResolver {
         }
     }
 
-    private List<ResolvedIssuerKey> parseJwks(JSONWebKeySet jwks, Instant baseExpiry) {
+    private List<ResolvedIssuerKey> parseJwks(JSONWebKeySet jwks, Instant expiryCeiling) {
         JWK[] rawKeys = jwks.getKeys();
         if (rawKeys == null || rawKeys.length == 0) {
             throw new IllegalStateException("JWKS does not contain any keys");
@@ -184,7 +178,7 @@ public class JwtVcIssuerMetadataResolver {
 
         List<ResolvedIssuerKey> keys = new ArrayList<>();
         for (JWK jwk : rawKeys) {
-            ResolvedIssuerKey resolvedKey = toResolvedIssuerKey(jwk, baseExpiry);
+            ResolvedIssuerKey resolvedKey = toResolvedIssuerKey(jwk, expiryCeiling);
             if (resolvedKey != null) {
                 keys.add(resolvedKey);
             }
@@ -196,7 +190,7 @@ public class JwtVcIssuerMetadataResolver {
         return List.copyOf(keys);
     }
 
-    private ResolvedIssuerKey toResolvedIssuerKey(JWK jwk, Instant baseExpiry) {
+    private ResolvedIssuerKey toResolvedIssuerKey(JWK jwk, Instant expiryCeiling) {
         if (jwk == null) {
             return null;
         }
@@ -208,7 +202,7 @@ public class JwtVcIssuerMetadataResolver {
             return null;
         }
         return new ResolvedIssuerKey(
-                kid, toPublicKey(jwk), extractCertificateChain(jwk), resolveKeyExpiry(jwk, baseExpiry));
+                kid, toPublicKey(jwk), extractCertificateChain(jwk), resolveKeyExpiry(jwk, expiryCeiling));
     }
 
     private PublicKey toPublicKey(JWK jwk) {
@@ -278,20 +272,36 @@ public class JwtVcIssuerMetadataResolver {
         }
     }
 
-    private Instant computeBaseExpiry(FetchResult metadataResult, FetchResult jwksResult) {
-        Duration metadataTtl = effectiveTtl(metadataResult.cacheTtl());
-        Duration jwksTtl = effectiveTtl(jwksResult.cacheTtl());
-        Duration ttl = metadataTtl.compareTo(jwksTtl) <= 0 ? metadataTtl : jwksTtl;
-        if (ttl.isZero() || ttl.isNegative()) {
-            return null;
-        }
-        Instant base = metadataResult.fetchedAt().isAfter(jwksResult.fetchedAt())
+    private static Instant latestFetchedAt(FetchResult metadataResult, FetchResult jwksResult) {
+        return metadataResult.fetchedAt().isAfter(jwksResult.fetchedAt())
                 ? metadataResult.fetchedAt()
                 : jwksResult.fetchedAt();
-        return base.plus(ttl);
     }
 
-    private Instant resolveKeyExpiry(JWK jwk, Instant baseExpiry) {
+    /**
+     * Computes the expiry the HTTP responses allow for the cache entry, capped by the configured
+     * maximum cache TTL. Returns {@code null} if either response forbids caching via a non-positive
+     * {@code max-age}, in which case the result must not be cached at all.
+     */
+    private Instant computeBaseExpiry(FetchResult metadataResult, FetchResult jwksResult) {
+        Instant metadataExpiry = responseExpiry(metadataResult);
+        Instant jwksExpiry = responseExpiry(jwksResult);
+        if (metadataExpiry == null || jwksExpiry == null) {
+            return null;
+        }
+        return metadataExpiry.isBefore(jwksExpiry) ? metadataExpiry : jwksExpiry;
+    }
+
+    private Instant responseExpiry(FetchResult result) {
+        Duration ttl = result.cacheTtl();
+        if (ttl != null && (ttl.isZero() || ttl.isNegative())) {
+            return null;
+        }
+        Duration effective = ttl == null || ttl.compareTo(maxCacheTtl) > 0 ? maxCacheTtl : ttl;
+        return result.fetchedAt().plus(effective);
+    }
+
+    private Instant resolveKeyExpiry(JWK jwk, Instant expiryCeiling) {
         Map<String, Object> otherClaims = jwk.getOtherClaims();
         Object expValue = otherClaims != null ? otherClaims.get("exp") : null;
         Instant jwkExpiry = null;
@@ -303,37 +313,20 @@ public class JwtVcIssuerMetadataResolver {
             } catch (NumberFormatException ignored) {
             }
         }
-        if (baseExpiry == null) {
-            return jwkExpiry;
-        }
         if (jwkExpiry == null) {
-            return baseExpiry;
+            return expiryCeiling;
         }
-        return jwkExpiry.isBefore(baseExpiry) ? jwkExpiry : baseExpiry;
+        return jwkExpiry.isBefore(expiryCeiling) ? jwkExpiry : expiryCeiling;
     }
 
-    private Instant computeCacheExpiry(List<ResolvedIssuerKey> keys, Instant baseExpiry) {
+    private Instant computeCacheExpiry(List<ResolvedIssuerKey> keys) {
         Instant latestKeyExpiry = null;
         for (ResolvedIssuerKey key : keys) {
-            if (key.expiresAt() != null
-                    && (latestKeyExpiry == null || key.expiresAt().isAfter(latestKeyExpiry))) {
+            if (latestKeyExpiry == null || key.expiresAt().isAfter(latestKeyExpiry)) {
                 latestKeyExpiry = key.expiresAt();
             }
         }
-        if (baseExpiry == null) {
-            return latestKeyExpiry;
-        }
-        if (latestKeyExpiry == null) {
-            return baseExpiry;
-        }
-        return latestKeyExpiry.isBefore(baseExpiry) ? latestKeyExpiry : baseExpiry;
-    }
-
-    private Duration effectiveTtl(Duration responseTtl) {
-        if (responseTtl == null) {
-            return maxCacheTtl;
-        }
-        return responseTtl.compareTo(maxCacheTtl) <= 0 ? responseTtl : maxCacheTtl;
+        return latestKeyExpiry;
     }
 
     private Duration parseCacheControlMaxAge(HttpResponse<?> response) {
