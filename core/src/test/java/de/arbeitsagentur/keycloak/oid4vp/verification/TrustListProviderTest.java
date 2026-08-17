@@ -38,7 +38,9 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import javax.security.auth.x500.X500Principal;
+import org.bouncycastle.asn1.x509.BasicConstraints;
 import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.KeyUsage;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
@@ -215,6 +217,13 @@ class TrustListProviderTest {
     @Test
     void trustedAuthorityKeyIdentifiers_withoutCertificateExtensions_returnsEmpty() throws Exception {
         TrustListProvider provider = new TrustListProvider(List.of(generateTestCert(false)));
+
+        assertThat(provider.getTrustedAuthorityKeyIdentifiers()).isEmpty();
+    }
+
+    @Test
+    void trustedAuthorityKeyIdentifiers_ofEndEntityCertificates_areNotAdvertised() throws Exception {
+        TrustListProvider provider = new TrustListProvider(List.of(generateTestCert(true, false)));
 
         assertThat(provider.getTrustedAuthorityKeyIdentifiers()).isEmpty();
     }
@@ -530,7 +539,13 @@ class TrustListProviderTest {
         return new JcaX509CertificateConverter().getCertificate(certBuilder.build(contentSigner));
     }
 
+    /** A certificate authority of a trust list, which is what its issuance services list. */
     private static X509Certificate generateTestCert(boolean includeSubjectKeyIdentifier) throws Exception {
+        return generateTestCert(includeSubjectKeyIdentifier, true);
+    }
+
+    private static X509Certificate generateTestCert(boolean includeSubjectKeyIdentifier, boolean certificateAuthority)
+            throws Exception {
         ECKey key = new ECKeyGenerator(Curve.P_256).generate();
         KeyPair kp = new KeyPair(key.toECPublicKey(), key.toECPrivateKey());
         X500Principal subject = new X500Principal("CN=Test Issuer");
@@ -547,6 +562,10 @@ class TrustListProviderTest {
             JcaX509ExtensionUtils extensionUtils = new JcaX509ExtensionUtils();
             certBuilder.addExtension(
                     Extension.subjectKeyIdentifier, false, extensionUtils.createSubjectKeyIdentifier(kp.getPublic()));
+        }
+        if (certificateAuthority) {
+            certBuilder.addExtension(Extension.basicConstraints, true, new BasicConstraints(true));
+            certBuilder.addExtension(Extension.keyUsage, true, new KeyUsage(KeyUsage.keyCertSign | KeyUsage.cRLSign));
         }
         return new JcaX509CertificateConverter().getCertificate(certBuilder.build(contentSigner));
     }

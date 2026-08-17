@@ -219,13 +219,22 @@ public class TrustListProvider {
     /**
      * Returns trusted authority key identifiers for DCQL {@code trusted_authorities} entries.
      *
-     * <p>The preferred identifier is the authority certificate's Subject Key Identifier because
-     * credential-chain AKI values normally point to that identifier. If SKI is absent, fall back
-     * to an explicit AKI extension. No synthetic identifier is derived because OID4VP/HAIP
-     * `aki` values are meant to represent certificate extension values.
+     * <p>An advertised {@code aki} value has to equal the AuthorityKeyIdentifier of a certificate in
+     * the chain of a matching credential (OID4VP 1.0 §6.1.1.1). That identifier names the authority
+     * that issued the certificate, so only the certificate authorities of the trust list are
+     * advertised: the Subject Key Identifier of a certificate authority is what the certificates it
+     * issued point to. End entity certificates are left out because a credential chain points at
+     * their issuer rather than at them, so their identifier would match nothing.
+     *
+     * <p>The preferred identifier is the Subject Key Identifier. If it is absent, an explicit AKI
+     * extension is used, which is what a subordinate certificate authority points at its own issuer
+     * with. No synthetic identifier is derived because {@code aki} values represent certificate
+     * extension values.
      */
     public List<String> getTrustedAuthorityKeyIdentifiers() {
-        return authorityKeyIdentifiersOf(getIssuanceCertificates());
+        return authorityKeyIdentifiersOf(getIssuanceCertificates().stream()
+                .filter(X5cChainValidator::isCaCertificate)
+                .toList());
     }
 
     private List<String> authorityKeyIdentifiersOf(List<X509Certificate> certificates) {
