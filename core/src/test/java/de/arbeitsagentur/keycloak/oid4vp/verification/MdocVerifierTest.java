@@ -57,6 +57,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class MdocVerifierTest {
 
@@ -549,6 +550,57 @@ class MdocVerifierTest {
                     token, TestTrust.ofCertificates(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null);
 
             assertThat(result.claims()).isNotEmpty();
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"SHA-256", "SHA-384", "SHA-512"})
+        void verifyWithDigests_digestAlgorithmOfTheMso_passes(String digestAlgorithm) throws Exception {
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper().digestAlgorithm(digestAlgorithm);
+            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            String token = helper.build(transcript);
+
+            MdocVerificationResult result = verifier.verifyPresentation(
+                    token, TestTrust.ofCertificates(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null);
+
+            assertThat(result.claims()).isNotEmpty();
+        }
+
+        @Test
+        void verifyWithDigests_unsupportedDigestAlgorithm_fails() throws Exception {
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper().declaredDigestAlgorithm("MD5");
+            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            String token = helper.build(transcript);
+
+            assertThatThrownBy(() -> verifier.verifyPresentation(
+                            token,
+                            TestTrust.ofCertificates(helper.issuerCert),
+                            CLIENT_ID,
+                            NONCE,
+                            RESPONSE_URI,
+                            null,
+                            null))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("Unsupported mDoc digest algorithm: MD5");
+        }
+
+        @Test
+        void verifyWithDigests_digestAlgorithmDifferingFromTheDigests_fails() throws Exception {
+            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper()
+                    .digestAlgorithm("SHA-256")
+                    .declaredDigestAlgorithm("SHA-512");
+            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            String token = helper.build(transcript);
+
+            assertThatThrownBy(() -> verifier.verifyPresentation(
+                            token,
+                            TestTrust.ofCertificates(helper.issuerCert),
+                            CLIENT_ID,
+                            NONCE,
+                            RESPONSE_URI,
+                            null,
+                            null))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("Digest mismatch");
         }
     }
 
