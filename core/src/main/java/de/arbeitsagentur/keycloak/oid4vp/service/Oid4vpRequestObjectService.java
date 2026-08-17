@@ -28,6 +28,7 @@ import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectEncryptor;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import jakarta.ws.rs.core.Response;
+import java.util.Optional;
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.sessions.AuthenticationSessionModel;
@@ -107,13 +108,29 @@ public class Oid4vpRequestObjectService {
         }
     }
 
+    /**
+     * The request object as the wallet is served it: encrypted to the key its {@code wallet_metadata}
+     * names, or the signed request object itself. A wallet posts its metadata to advertise what it
+     * supports and names encryption keys only when it requires the request object encrypted
+     * (OID4VP 1.0 §5.10), so metadata without them is answered with the signed request object.
+     */
     private String maybeEncryptRequestObject(String responseJwt, String walletMetadataJson) {
         if (StringUtil.isBlank(walletMetadataJson)) {
             return responseJwt;
         }
+        Optional<WalletMetadata> requestedEncryption;
         try {
-            WalletMetadata walletMeta = WalletMetadata.parse(walletMetadataJson);
-            return Oid4vpRequestObjectEncryptor.encrypt(responseJwt, walletMeta);
+            requestedEncryption = WalletMetadata.encryptionRequestedBy(walletMetadataJson);
+        } catch (Exception e) {
+            LOG.warnf("Failed to read wallet_metadata: %s", e.getMessage());
+            throw new IllegalArgumentException("Failed to encrypt request object with provided wallet_metadata");
+        }
+        if (requestedEncryption.isEmpty()) {
+            LOG.debug("wallet_metadata names no encryption key, serving the signed request object");
+            return responseJwt;
+        }
+        try {
+            return Oid4vpRequestObjectEncryptor.encrypt(responseJwt, requestedEncryption.get());
         } catch (Exception e) {
             LOG.warnf("Failed to encrypt request object per wallet_metadata: %s", e.getMessage());
             throw new IllegalArgumentException("Failed to encrypt request object with provided wallet_metadata");

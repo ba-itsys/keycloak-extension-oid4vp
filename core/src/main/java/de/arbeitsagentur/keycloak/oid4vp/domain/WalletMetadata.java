@@ -17,38 +17,36 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.keycloak.util.JsonSerialization;
 
 /**
  * Parsed {@code wallet_metadata} from a wallet's POST to the request-object endpoint.
  *
  * <p>In the OID4VP redirect flow, a wallet may optionally include a {@code wallet_metadata} form
- * parameter when fetching the request object (POST to {@code /request-object/{handle}}). This
- * metadata advertises the wallet's encryption capabilities — specifically, which JWE algorithms
- * and content encryption methods it supports, along with a public key the verifier must use to
- * encrypt the request object before returning it.
+ * parameter when fetching the request object (POST to {@code /request-object/{handle}}). The
+ * metadata advertises what the wallet supports. A wallet that requires the verifier to encrypt the
+ * request object passes its public encryption keys in the {@code jwks} member (OID4VP 1.0 §5.10),
+ * so metadata carrying no such key describes a wallet that takes the signed request object as it is.
  *
- * <p>When present, the verifier is required to encrypt the signed request object JWT into a JWE
- * (sign-then-encrypt). This record holds the negotiated algorithm, encryption method, and the
- * wallet's EC public key extracted from the metadata JSON.
+ * <p>This record holds the wallet key the request object is encrypted to and the algorithms that
+ * encryption uses. It exists only for a wallet that asks for encryption.
  *
  * @see de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectEncryptor
  */
 public record WalletMetadata(Oid4vpJwk encryptionKey, String algorithm, String encryptionMethod) {
 
     /**
-     * Parses the raw {@code wallet_metadata} JSON string from the form parameter.
+     * The encryption the given {@code wallet_metadata} asks for, empty when it names no key to
+     * encrypt to. The JWE algorithm and the content encryption method are negotiated by
+     * intersecting the wallet's advertised values with the supported set (ECDH-ES +
+     * A128GCM/A256GCM), defaulting to ECDH-ES and A128GCM when the wallet advertises neither.
      *
-     * <p>Extracts the first EC key from {@code jwks.keys}, and negotiates the JWE algorithm and
-     * content encryption method by intersecting the wallet's advertised values with our supported
-     * set (ECDH-ES + A128GCM/A256GCM). Defaults to ECDH-ES and A128GCM when the wallet omits
-     * the algorithm/encryption fields.
-     *
-     * @throws IllegalArgumentException if the JSON is invalid, contains no EC key, or advertises
-     *     only unsupported algorithms
+     * @throws IllegalArgumentException if the JSON is invalid or the wallet advertises only
+     *     unsupported algorithms
      */
     @SuppressWarnings("unchecked")
-    public static WalletMetadata parse(String walletMetadataJson) {
+    public static Optional<WalletMetadata> encryptionRequestedBy(String walletMetadataJson) {
         Map<String, Object> metadata;
         try {
             metadata = JsonSerialization.readValue(walletMetadataJson, Map.class);
@@ -56,18 +54,17 @@ public record WalletMetadata(Oid4vpJwk encryptionKey, String algorithm, String e
             throw new IllegalArgumentException("Invalid wallet_metadata JSON: " + e.getMessage(), e);
         }
 
-        Oid4vpJwk encryptionKey = extractEncryptionKey(metadata);
-        String algorithm = selectAlgorithm(metadata);
-        String encryptionMethod = selectEncryptionMethod(metadata);
-
-        return new WalletMetadata(encryptionKey, algorithm, encryptionMethod);
+        return extractEncryptionKey(metadata)
+                .map(encryptionKey ->
+                        new WalletMetadata(encryptionKey, selectAlgorithm(metadata), selectEncryptionMethod(metadata)));
     }
 
+    /** The wallet key to encrypt the request object to, empty when the metadata names none. */
     @SuppressWarnings("unchecked")
-    private static Oid4vpJwk extractEncryptionKey(Map<String, Object> metadata) {
+    private static Optional<Oid4vpJwk> extractEncryptionKey(Map<String, Object> metadata) {
         Object jwksObj = metadata.get("jwks");
         if (jwksObj == null) {
-            throw new IllegalArgumentException("wallet_metadata missing 'jwks'");
+            return Optional.empty();
         }
 
         try {
@@ -78,10 +75,10 @@ public record WalletMetadata(Oid4vpJwk encryptionKey, String algorithm, String e
             }
             for (Object key : keys) {
                 if (key instanceof Map<?, ?> map) {
-                    return Oid4vpJwk.parse((Map<String, Object>) map);
+                    return Optional.of(Oid4vpJwk.parse((Map<String, Object>) map));
                 }
             }
-            throw new IllegalArgumentException("No EC key found in wallet_metadata jwks");
+            return Optional.empty();
         } catch (Exception e) {
             if (e instanceof IllegalArgumentException) throw (IllegalArgumentException) e;
             throw new IllegalArgumentException("Failed to process wallet_metadata jwks: " + e.getMessage(), e);
