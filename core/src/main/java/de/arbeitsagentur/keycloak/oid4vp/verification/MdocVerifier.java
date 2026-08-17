@@ -411,11 +411,12 @@ public class MdocVerifier {
             return;
         }
 
+        String digestAlgorithm = digestAlgorithm(mso);
         try {
             for (var nsPair : nameSpaces.getPairs()) {
                 String namespace = stringValue(nsPair.getKey());
                 if (namespace != null && nsPair.getValue() instanceof CBORItemList elements) {
-                    verifyNamespaceDigests(valueDigests, namespace, elements);
+                    verifyNamespaceDigests(valueDigests, namespace, elements, digestAlgorithm);
                 }
             }
         } catch (Exception e) {
@@ -423,18 +424,36 @@ public class MdocVerifier {
         }
     }
 
-    private void verifyNamespaceDigests(CBORPairList valueDigests, String namespace, CBORItemList elements) {
+    /**
+     * The algorithm the value digests are computed with, which the Mobile Security Object declares
+     * and the issuer signature covers. ISO/IEC 18013-5 defines SHA-256, SHA-384 and SHA-512 for it;
+     * a document that declares none is read as SHA-256, and one that declares anything else is
+     * rejected rather than judged by an algorithm its issuer did not use.
+     */
+    private String digestAlgorithm(CBORPairList mso) {
+        String declared = str(mso, "digestAlgorithm");
+        if (declared == null) {
+            return JavaAlgorithm.SHA256;
+        }
+        return switch (declared) {
+            case JavaAlgorithm.SHA256, JavaAlgorithm.SHA384, JavaAlgorithm.SHA512 -> declared;
+            default -> throw new IllegalStateException("Unsupported mDoc digest algorithm: " + declared);
+        };
+    }
+
+    private void verifyNamespaceDigests(
+            CBORPairList valueDigests, String namespace, CBORItemList elements, String digestAlgorithm) {
         CBORPairList nsDigests = map(valueDigests, namespace);
         if (nsDigests == null) {
             throw new IllegalStateException("mDoc namespace " + namespace + " has no value digests in the MSO");
         }
 
         for (CBORItem element : elements.getItems()) {
-            verifyElementDigest(element, nsDigests);
+            verifyElementDigest(element, nsDigests, digestAlgorithm);
         }
     }
 
-    private void verifyElementDigest(CBORItem element, CBORPairList nsDigests) {
+    private void verifyElementDigest(CBORItem element, CBORPairList nsDigests, String digestAlgorithm) {
         CBORPairList item = unwrapTag24(element);
         CBORItem digestIdValue = item != null ? val(item, "digestID") : null;
         if (digestIdValue == null) {
@@ -445,7 +464,7 @@ public class MdocVerifier {
         if (!(intKeyVal(nsDigests, digestId) instanceof CBORByteArray expected)) {
             throw new IllegalStateException("Missing digest for element " + digestId);
         }
-        if (!Arrays.equals(HashUtils.hash(JavaAlgorithm.SHA256, element.encode()), expected.getValue())) {
+        if (!Arrays.equals(HashUtils.hash(digestAlgorithm, element.encode()), expected.getValue())) {
             throw new IllegalStateException("Digest mismatch for element " + digestId);
         }
     }

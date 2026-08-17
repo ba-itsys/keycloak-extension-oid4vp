@@ -88,6 +88,8 @@ class MdocDeviceResponseTestHelper {
     String[][] claimPairs = {{"given_name", "John"}, {"family_name", "Doe"}};
     Instant validFrom = Instant.now().minus(1, ChronoUnit.HOURS);
     Instant validUntil = Instant.now().plus(365, ChronoUnit.DAYS);
+    String digestAlgorithm = "SHA-256";
+    String declaredDigestAlgorithm;
 
     MdocDeviceResponseTestHelper() throws Exception {
         this(MdocAlgorithmSpec.ES256);
@@ -165,6 +167,18 @@ class MdocDeviceResponseTestHelper {
         return this;
     }
 
+    /** Computes and declares the value digests with the given algorithm instead of SHA-256. */
+    MdocDeviceResponseTestHelper digestAlgorithm(String digestAlgorithm) {
+        this.digestAlgorithm = digestAlgorithm;
+        return this;
+    }
+
+    /** Declares a digest algorithm the value digests are not computed with. */
+    MdocDeviceResponseTestHelper declaredDigestAlgorithm(String declaredDigestAlgorithm) {
+        this.declaredDigestAlgorithm = declaredDigestAlgorithm;
+        return this;
+    }
+
     /**
      * Builds a complete DeviceResponse with issuerAuth, deviceAuth, and MSO.
      *
@@ -186,7 +200,7 @@ class MdocDeviceResponseTestHelper {
         // Build IssuerSignedItems and compute digests
         List<CBORItem> elements = new ArrayList<>();
         List<CBORPair> digestPairs = new ArrayList<>();
-        MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
+        MessageDigest digest = MessageDigest.getInstance(digestAlgorithm);
 
         for (int i = 0; i < claimPairs.length; i++) {
             CBORPairList item = new CBORPairList(List.of(
@@ -199,9 +213,9 @@ class MdocDeviceResponseTestHelper {
             byte[] itemBytes = item.encode();
             CBORTaggedItem taggedItem = new CBORTaggedItem(24, new CBORByteArray(itemBytes));
 
-            // Digest is SHA-256 of the tag-24 wrapped bytes of the genuine item.
-            byte[] digest = sha256.digest(taggedItem.encode());
-            digestPairs.add(new CBORPair(new CBORInteger(i), new CBORByteArray(digest)));
+            // Digest is taken over the tag-24 wrapped bytes of the genuine item.
+            byte[] itemDigest = digest.digest(taggedItem.encode());
+            digestPairs.add(new CBORPair(new CBORInteger(i), new CBORByteArray(itemDigest)));
 
             if (tamperFirstElementValue && i == 0) {
                 CBORPairList altered = new CBORPairList(List.of(
@@ -273,7 +287,9 @@ class MdocDeviceResponseTestHelper {
 
         return new CBORPairList(List.of(
                 new CBORPair(new CBORString("version"), new CBORString("1.0")),
-                new CBORPair(new CBORString("digestAlgorithm"), new CBORString("SHA-256")),
+                new CBORPair(
+                        new CBORString("digestAlgorithm"),
+                        new CBORString(declaredDigestAlgorithm != null ? declaredDigestAlgorithm : digestAlgorithm)),
                 new CBORPair(new CBORString("docType"), new CBORString(msoDocType != null ? msoDocType : docType)),
                 new CBORPair(new CBORString("valueDigests"), valueDigests),
                 new CBORPair(new CBORString("validityInfo"), validityInfo),
