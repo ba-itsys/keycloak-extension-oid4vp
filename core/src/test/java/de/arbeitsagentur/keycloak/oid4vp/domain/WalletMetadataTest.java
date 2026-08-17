@@ -128,18 +128,17 @@ class WalletMetadataTest {
     }
 
     @Test
-    void encryptionRequestedBy_requestObjectEncValues_takePrecedence() {
+    void encryptionRequestedBy_responseEncryptionValues_doNotSelectTheRequestObjectMethod() {
         Oid4vpJwk walletKey = withKid(Oid4vpJwk.generate("P-256", "ECDH-ES", "enc"), "k1");
         String json = """
                 {
-                  "request_object_encryption_enc_values_supported":["A256GCM"],
-                  "authorization_encryption_enc_values_supported":["A128GCM"],
+                  "authorization_encryption_enc_values_supported":["A256GCM"],
                   "jwks":{"keys":[%s]}
                 }""".formatted(walletKey.toPublicJwk().toJson());
 
         WalletMetadata result = WalletMetadata.encryptionRequestedBy(json).orElseThrow();
 
-        assertThat(result.encryptionMethod()).isEqualTo("A256GCM");
+        assertThat(result.encryptionMethod()).isEqualTo("A128GCM");
     }
 
     @Test
@@ -153,8 +152,8 @@ class WalletMetadataTest {
     private static String buildWalletMetadataJson(Oid4vpJwk publicKey, String alg, String enc) {
         return """
                 {
-                  "authorization_encryption_alg_values_supported":["%s"],
-                  "authorization_encryption_enc_values_supported":["%s"],
+                  "request_object_encryption_alg_values_supported":["%s"],
+                  "request_object_encryption_enc_values_supported":["%s"],
                   "jwks":{"keys":[%s]}
                 }""".formatted(alg, enc, publicKey.toJson());
     }

@@ -133,25 +133,24 @@ public record WalletMetadata(Oid4vpJwk encryptionKey, String algorithm, String e
 
     /**
      * The content encryption method the request object is encrypted with. The wallet is the
-     * authorization server of the flow, so {@code request_object_encryption_enc_values_supported}
-     * is where it speaks about request objects. Wallets in the field advertise
-     * {@code authorization_encryption_enc_values_supported} instead, which OID4VP 1.0 §5.10 assigns
-     * to the authorization response, so that value is read as a second hint. Both are preferences
-     * rather than demands: a wallet advertising only methods this verifier does not support still
-     * receives a request object it can attempt to decrypt, rather than an error that ends its login.
+     * authorization server of the flow, and {@code request_object_encryption_enc_values_supported}
+     * is the authorization server metadata for request object encryption (RFC 9101, which OID4VP
+     * 1.0 §5.10.1 delegates the request object to). It is what the EUDI reference wallet library
+     * sends next to its {@code jwks}. The {@code authorization_encryption_*} parameters describe
+     * the authorization response (OID4VP 1.0 §5.10) and say nothing about the request object, so
+     * they are not read here. The advertisement is a preference rather than a demand: a wallet
+     * advertising only methods this verifier does not support still receives a request object it
+     * can attempt to decrypt, rather than an error that ends its login.
      */
     private static String selectEncryptionMethod(Map<String, Object> metadata) {
-        for (String parameter : List.of(
-                "request_object_encryption_enc_values_supported", "authorization_encryption_enc_values_supported")) {
-            if (metadata.get(parameter) instanceof List<?> encList) {
-                for (Object enc : encList) {
-                    String candidate = enc.toString();
-                    if (Oid4vpConstants.SUPPORTED_REQUEST_OBJECT_ENCRYPTION_METHODS.contains(candidate)) {
-                        return candidate;
-                    }
+        if (metadata.get("request_object_encryption_enc_values_supported") instanceof List<?> encList) {
+            for (Object enc : encList) {
+                String candidate = enc.toString();
+                if (Oid4vpConstants.SUPPORTED_REQUEST_OBJECT_ENCRYPTION_METHODS.contains(candidate)) {
+                    return candidate;
                 }
-                LOG.debugf("wallet_metadata %s advertises no supported encryption method (%s)", parameter, encList);
             }
+            LOG.debugf("wallet_metadata advertises no supported request object encryption method (%s)", encList);
         }
         return DEFAULT_ENCRYPTION_METHOD;
     }
