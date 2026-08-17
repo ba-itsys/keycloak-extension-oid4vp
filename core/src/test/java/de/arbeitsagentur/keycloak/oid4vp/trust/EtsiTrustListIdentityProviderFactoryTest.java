@@ -39,6 +39,7 @@ class EtsiTrustListIdentityProviderFactoryTest {
     void createsProviderFromModel() {
         IdentityProviderModel model = new IdentityProviderModel();
         model.getConfig().put(EtsiTrustListIdentityProviderConfig.TRUST_LIST_URL, "https://tl.example/list.jwt");
+        model.getConfig().put(EtsiTrustListIdentityProviderConfig.ADVERTISE_TRUSTED_AUTHORITIES, "etsi_tl");
 
         EtsiTrustListIdentityProvider provider = factory.create(null, model);
 

@@ -258,8 +258,8 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
         Map<String, String> config = new LinkedHashMap<>();
         config.put(EtsiTrustListIdentityProviderConfig.TRUST_LIST_URL, trustListUrl);
         config.put(EtsiTrustListIdentityProviderConfig.TRUST_LIST_LOTE_TYPE, TrustListServer.PID_LOTE_TYPE);
-        // The conformance suite's wallet is driven without a trusted_authorities constraint.
-        config.put(EtsiTrustListIdentityProviderConfig.ADVERTISE_TRUSTED_AUTHORITIES, "false");
+        // Nothing is advertised by default, so the conformance suite's wallet is driven without a
+        // trusted_authorities constraint.
         idp.setConfig(config);
         return idp;
     }

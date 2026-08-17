@@ -287,8 +287,8 @@ Selection uses the credential type that was **requested** under the DCQL credent
 
 | Case | Credential carries | Key resolution | Advertised `trusted_authorities` | Configuration |
 |------|--------------------|----------------|----------------------------------|---------------|
-| ETSI trust list | `x5c` chain | PKIX path to the anchors of the Issuance services on the list | `etsi_tl` with the list URL, `aki` with the key identifiers | `etsi-trust-list` with `trustListUrl` |
-| Pinned certificate bundle | `x5c` chain, or nothing | PKIX path to the CA certificates, and end entity certificates are trusted directly | `aki` with the key identifiers | `etsi-trust-list` with `trustedCertificates` |
+| ETSI trust list | `x5c` chain | PKIX path to the anchors of the Issuance services on the list | `etsi_tl` with the list URL or `aki` with the key identifiers, when configured | `etsi-trust-list` with `trustListUrl` |
+| Pinned certificate bundle | `x5c` chain, or nothing | PKIX path to the CA certificates, and end entity certificates are trusted directly | `aki` with the key identifiers, when configured | `etsi-trust-list` with `trustedCertificates` |
 | Keycloak-issued, CA-chained realm key | `x5c` chain to the CA that issued the realm key certificate | the realm key certificate as a directly trusted leaf | none | `keycloak-realm-issuer` |
 | Keycloak-issued, chainless | JOSE `kid` only | the realm's published signature keys and the realm key certificates, both trusted for the realm issuer alone | none | `keycloak-realm-issuer` |
 | mDoc | `x5chain` in COSE | PKIX path or a pinned leaf certificate; a chain whose leaf is itself a configured trust anchor is trusted directly, which accepts a self-signed document signer certificate placed on a trust list | `etsi_tl` or `aki` | an X.509 provider, because there is no COSE `kid` route for a key-only provider to serve a doctype |
@@ -314,7 +314,7 @@ A dedicated identity provider type carries the trust material. It never authenti
 | `trustListMaxStaleAgeSeconds` | Maximum age of an expired trust-list cache entry that may be reused when refresh fails. Set `0` to disable stale fallback. | `86400` |
 | `trustedCertificates` | PEM-encoded X.509 certificate bundle of trusted issuers, used instead of or in addition to the trust list URL. | *(none)* |
 | `servedCredentialTypes` | Comma-separated credential types (SD-JWT VCT or mDoc doctype) this trust domain is responsible for. Empty serves every credential type. | *(none)* |
-| `advertiseTrustedAuthorities` | Whether the DCQL entries of the served credentials advertise this trust domain, as `etsi_tl` for the trust list URL and `aki` for the key identifiers of the trusted certificates. The verifier enforces the trust either way. | `true` |
+| `advertiseTrustedAuthorities` | The `trusted_authorities` entry the DCQL entries of the served credentials advertise: `etsi_tl` advertises the trust list URL, `aki` the key identifiers of the trusted certificates. Empty advertises nothing. At most one entry per trust domain, because both types describe the same anchors. The verifier enforces the trust either way. | *(empty, advertise nothing)* |
 | `requiredExtendedKeyUsages` | Comma-separated extended key usage OIDs. When set, credential signing certificates must contain at least one of them (e.g. `1.0.18013.5.1.2` for mDL document signers). | *(none)* |
 
 ### Keycloak Realm Issuer Identity Provider (`keycloak-realm-issuer`)

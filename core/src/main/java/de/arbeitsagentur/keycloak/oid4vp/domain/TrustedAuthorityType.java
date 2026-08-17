@@ -26,10 +26,7 @@ public enum TrustedAuthorityType {
     AKI(Oid4vpConstants.DCQL_TRUSTED_AUTHORITY_AKI),
 
     /** Identifier of an ETSI TS 119 612 trusted list, OID4VP 1.0 §6.1.1.2. */
-    ETSI_TL(Oid4vpConstants.DCQL_TRUSTED_AUTHORITY_ETSI_TL),
-
-    /** Entity identifier of an OpenID Federation trust anchor, OID4VP 1.0 §6.1.1.3. */
-    OPENID_FEDERATION(Oid4vpConstants.DCQL_TRUSTED_AUTHORITY_OPENID_FEDERATION);
+    ETSI_TL(Oid4vpConstants.DCQL_TRUSTED_AUTHORITY_ETSI_TL);
 
     private final String dcqlValue;
 

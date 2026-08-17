@@ -66,6 +66,7 @@ class EtsiTrustListIdentityProviderTest {
         EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
         config.setTrustedCertificates(toPem(ca) + toPem(endEntity));
         config.setRequiredExtendedKeyUsages("1.0.18013.5.1.2");
+        config.setAdvertisedTrustedAuthorityType("aki");
         EtsiTrustListIdentityProvider provider = new EtsiTrustListIdentityProvider(null, config);
 
         List<X509TrustMaterial> materials =
@@ -123,6 +124,7 @@ class EtsiTrustListIdentityProviderTest {
         EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
         config.setTrustListUrl("https://tl.example/list.jwt");
         config.setTrustListLoTEType(expected);
+        config.setAdvertisedTrustedAuthorityType("etsi_tl");
         EtsiTrustListIdentityProvider provider =
                 new EtsiTrustListIdentityProvider(config, new FixedTrustListProvider(List.of(ca), expected), null);
 
@@ -182,6 +184,7 @@ class EtsiTrustListIdentityProviderTest {
 
         EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
         config.setTrustedCertificates(toPem(ca));
+        config.setAdvertisedTrustedAuthorityType("aki");
         EtsiTrustListIdentityProvider provider = new EtsiTrustListIdentityProvider(null, config);
 
         assertThat(provider.trustedAuthorities()).hasSize(1);
@@ -196,6 +199,7 @@ class EtsiTrustListIdentityProviderTest {
 
         EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
         config.setTrustListUrl("https://tl.example/list.jwt");
+        config.setAdvertisedTrustedAuthorityType("aki");
         EtsiTrustListIdentityProvider provider =
                 new EtsiTrustListIdentityProvider(config, new FixedTrustListProvider(List.of(ca), null), null);
 
@@ -206,17 +210,74 @@ class EtsiTrustListIdentityProviderTest {
     }
 
     @Test
-    void advertisesNothingWhenTrustedAuthoritiesAreDisabled() throws Exception {
+    void advertisesOneEntryOfTheConfiguredType() throws Exception {
         KeyPair caKp = generateKeyPair();
         X509Certificate ca = generateCertWithSki(caKp, "CN=SKI CA");
 
         EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
         config.setTrustListUrl("https://tl.example/list.jwt");
-        config.setTrustedCertificates(toPem(ca));
-        config.setAdvertiseTrustedAuthorities(false);
-        EtsiTrustListIdentityProvider provider = new EtsiTrustListIdentityProvider(config, null, null);
+        config.setAdvertisedTrustedAuthorityType("aki");
+        EtsiTrustListIdentityProvider provider =
+                new EtsiTrustListIdentityProvider(config, new FixedTrustListProvider(List.of(ca), null), null);
 
-        assertThat(provider.trustedAuthorities()).isEmpty();
+        assertThat(provider.trustedAuthorities())
+                .as("the trust list url stays out of the request when aki is advertised")
+                .allMatch(authority -> authority.type() == TrustedAuthorityType.AKI)
+                .isNotEmpty();
+
+        config.setAdvertisedTrustedAuthorityType("etsi_tl");
+        assertThat(provider.trustedAuthorities())
+                .allMatch(authority -> authority.type() == TrustedAuthorityType.ETSI_TL)
+                .isNotEmpty();
+    }
+
+    @Test
+    void advertisesNothingByDefault() throws Exception {
+        KeyPair caKp = generateKeyPair();
+        X509Certificate ca = generateCertWithSki(caKp, "CN=SKI CA");
+
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
+        config.setTrustListUrl("https://tl.example/list.jwt");
+        EtsiTrustListIdentityProvider provider =
+                new EtsiTrustListIdentityProvider(config, new FixedTrustListProvider(List.of(ca), null), null);
+
+        assertThat(provider.trustedAuthorities())
+                .as("without a configured type the DCQL query carries no trusted_authorities")
+                .isEmpty();
+    }
+
+    @Test
+    void rejectsAnythingButOneAdvertisedTrustedAuthorityType() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
+        config.setTrustListUrl("https://tl.example/list.jwt");
+
+        config.setAdvertisedTrustedAuthorityType("openid_federation");
+        assertThatThrownBy(config::getAdvertisedTrustedAuthorityType)
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("openid_federation");
+
+        config.setAdvertisedTrustedAuthorityType("aki,etsi_tl");
+        assertThatThrownBy(config::getAdvertisedTrustedAuthorityType)
+                .as("both types describe the same anchors, so advertising both makes no sense")
+                .isInstanceOf(IllegalArgumentException.class);
+
+        config.setAdvertisedTrustedAuthorityType("true");
+        assertThatThrownBy(config::getAdvertisedTrustedAuthorityType)
+                .as("the boolean values of earlier releases are gone, blank means the default")
+                .isInstanceOf(IllegalArgumentException.class);
+
+        config.setAdvertisedTrustedAuthorityType("false");
+        assertThatThrownBy(config::getAdvertisedTrustedAuthorityType).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsAdvertisingTheTrustListWithoutATrustListUrl() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
+        config.setAdvertisedTrustedAuthorityType("etsi_tl");
+
+        assertThatThrownBy(config::getAdvertisedTrustedAuthorityType)
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("trust list URL");
     }
 
     @Test

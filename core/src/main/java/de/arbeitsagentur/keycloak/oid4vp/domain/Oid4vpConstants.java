@@ -93,7 +93,6 @@ public final class Oid4vpConstants {
     public static final String DCQL_TRUSTED_AUTHORITY_VALUES = "values";
     public static final String DCQL_TRUSTED_AUTHORITY_ETSI_TL = "etsi_tl";
     public static final String DCQL_TRUSTED_AUTHORITY_AKI = "aki";
-    public static final String DCQL_TRUSTED_AUTHORITY_OPENID_FEDERATION = "openid_federation";
     public static final String DCQL_VCT_VALUES = "vct_values";
     public static final String DCQL_DOCTYPE_VALUE = "doctype_value";
 
