@@ -110,13 +110,13 @@ Oid4vpIdentityProviderEndpoint.handlePost(state, vpToken, encryptedResponse, err
 7. **Calls `processVpToken`** →
 
 ```
-processVpToken(authSession, requestContext, state, vpToken, idToken, mdocGeneratedNonce, isCrossDeviceFlow)
+processVpToken(authSession, requestContext, state, vpToken, mdocGeneratedNonce, isCrossDeviceFlow)
 ```
 
-8. **Verifies the credential** via `Oid4vpCallbackProcessor.process(requestContext, vpToken, idToken, mdocGeneratedNonce)`:
+8. **Verifies the credential** via `Oid4vpCallbackProcessor.process(requestContext, vpToken, mdocGeneratedNonce)`:
 
 ```
-Oid4vpCallbackProcessor.process(requestContext, vpToken, idToken, mdocGeneratedNonce)
+Oid4vpCallbackProcessor.process(requestContext, vpToken, mdocGeneratedNonce)
 ```
 
 This:
@@ -124,7 +124,7 @@ This:
 - Reads `clientId`, `nonce`, `responseUri`, and `encryptionJwkThumbprint` from that request context
 - Reads the request-scoped configured credential types captured when the request object was created
 - Passes `mdocGeneratedNonce` from the decrypted callback payload when present
-- Calls `VpTokenProcessor.process(vpToken, clientId, nonce, responseUri, mdocGeneratedNonce, encryptionJwkThumbprint)`:
+- Calls `VpTokenProcessor.process` with the `vp_token`, the `clientId`, `nonce`, `responseUri` and `encryptionJwkThumbprint` of the request context, the `mdocGeneratedNonce` of the callback, and the requested credentials:
   - SD-JWT: `SdJwtVerifier.verify()` — delegates to Keycloak's `SdJwtVP.verify()` which performs:
     1. **Issuer signature verification** — validates the SD-JWT's JWS signature using the issuer's public key, resolved in this order:
        - `x5c` certificate-chain validation against the resolved trust material: a pinned trusted leaf certificate bound to the credential's `iss`, or a PKIX path to the trust anchors with `iss` matching a subject alternative name of the leaf (`ResolvedTrust.validateIssuerChain`)
@@ -135,7 +135,7 @@ This:
     4. **KB-JWT signature verification** — verifies the Key Binding JWT signature against the holder's public key from the credential's `cnf.jwk` claim
     5. **KB-JWT claim validation** — `aud` must match `clientId` (falls back to `response_uri` if primary check fails), `nonce` must match the expected nonce from the request object, `iat` must be fresh (default max age 300s + 60s clock skew), `exp`/`nbf` if present
     6. **KB-JWT `sd_hash` validation** — must equal SHA-256 of the unbound SD-JWT presentation (issuer JWT + disclosures, without the KB-JWT itself)
-  - mDoc: `MdocVerifier.verifyWithTrustedCerts()` — validates MSO COSE_Sign1 issuer signature, MSO validity period (`validFrom`/`validUntil`), value digest integrity (SHA-256 of IssuerSignedItems vs MSO digests), device authentication signature via SessionTranscript binding, and extracts namespace-prefixed claims. The device authentication supports two SessionTranscript formats:
+  - mDoc: `MdocVerifier.verifyPresentation()` validates the MSO COSE_Sign1 issuer signature, the value digest integrity (the digest algorithm the MSO declares, over the IssuerSignedItems), the MSO validity period (`validFrom`/`validUntil` within the configured clock skew, and a presentation whose MSO carries no `validityInfo` is rejected), and the device authentication signature via SessionTranscript binding, then extracts namespace-prefixed claims. The device authentication supports two SessionTranscript formats:
     - **OID4VP 1.0** (Appendix B.3.2.2): `[null, null, ["OpenID4VPHandover", SHA-256(CBOR([client_id, nonce, jwk_thumbprint, response_uri]))]]` — the `jwk_thumbprint` is the RFC 7638 SHA-256 thumbprint of the response encryption key from `client_metadata.jwks`, stored in the request context when the request object is created
     - **ISO 18013-7** (Annex B.4.4): `[null, null, [SHA-256(CBOR([client_id, mdoc_generated_nonce])), SHA-256(CBOR([response_uri, mdoc_generated_nonce])), nonce]]` — used as a fallback when `mdocGeneratedNonce` is present (extracted from JWE `apu` header) and the OID4VP 1.0 transcript does not verify
   - Checks revocation via `StatusListVerifier`
@@ -149,6 +149,16 @@ This:
 ```
 directPostService.storeAndSignal(authSession, state, context, isCrossDeviceFlow)
 ```
+
+### What the Verifier Accepts Beyond the Specification
+
+The verifier accepts three shapes OID4VP 1.0 does not require, so that wallets in the field interoperate. Each one widens what a presentation may look like, and each one is listed here because nothing in the configuration reveals it.
+
+**Key Binding JWT audience.** The `aud` of a Key Binding JWT is the Client Identifier (OID4VP 1.0, Appendix B.3.6). Wallets disagree on this: some bind to the `client_id`, others to the `response_uri`. `VpTokenProcessor` verifies against the configured `client_id` and then retries once against the `response_uri` of the same request. Both values belong to this verifier and travel inside the signed request object, so a presentation still binds to one transaction of one verifier.
+
+**VP token shape.** The `vp_token` is a JSON object mapping each DCQL credential id to an array of presentations, and the array holds exactly one presentation because the generated queries carry no `multiple` (OID4VP 1.0 §8.1). `VpTokenProcessor` also accepts a bare presentation string in place of that object and attributes it to the requested credential when the query requests exactly one. Several presentations under one credential id are each verified and the first one is used, so an invalid one among them still fails the login.
+
+**mDoc DeviceResponse.** Every presented mDoc arrives in a `DeviceResponse` of its own, one per credential query (high assurance profile 1.0, section 5.3.1). `MdocVerifier` reads the first document of a response and ignores further documents as well as the `status` and `documentErrors` members of the response.
 
 ### Same-Device vs Cross-Device Differences
 
