@@ -102,6 +102,15 @@ class Oid4vpCallbackProcessorTest {
     }
 
     @Test
+    void process_missingNonceInRequestContext_throws() {
+        Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))));
+
+        assertThatThrownBy(() -> processor.process(requestContext("state", null), "vp-token", null))
+                .isInstanceOf(IdentityBrokerException.class)
+                .hasMessageContaining("missing the client_id or nonce");
+    }
+
+    @Test
     void process_issuerNotAllowed_throws() {
         config.setAllowedIssuers("https://trusted-issuer.example");
         Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))));

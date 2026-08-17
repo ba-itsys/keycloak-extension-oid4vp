@@ -59,15 +59,26 @@ public class Oid4vpTrustMaterialResolver {
     /**
      * Resolves the trust material identity providers referenced by the comma separated alias list
      * into a plan that answers per credential type. Unknown or disabled aliases are skipped with a
-     * warning.
+     * warning, but a non-blank alias list always declares a trust source: when none of the aliases
+     * resolve, the plan rejects every credential instead of falling back to issuer-published
+     * metadata.
      */
     public CredentialTrustPlan resolvePlan(KeycloakSession session, String aliases) {
-        return new CredentialTrustPlan(resolveProviders(session, aliases));
+        List<String> configuredAliases = splitAliases(aliases);
+        List<Oid4vpTrustMaterialIdentityProvider<?>> providers = resolveProviders(session, configuredAliases);
+        if (!configuredAliases.isEmpty() && providers.isEmpty()) {
+            LOG.errorf(
+                    "None of the configured trust material identity providers %s could be resolved;"
+                            + " every credential verification is rejected",
+                    configuredAliases);
+        }
+        return new CredentialTrustPlan(providers, !configuredAliases.isEmpty());
     }
 
-    private List<Oid4vpTrustMaterialIdentityProvider<?>> resolveProviders(KeycloakSession session, String aliases) {
+    private List<Oid4vpTrustMaterialIdentityProvider<?>> resolveProviders(
+            KeycloakSession session, List<String> aliases) {
         List<Oid4vpTrustMaterialIdentityProvider<?>> providers = new ArrayList<>();
-        for (String alias : splitAliases(aliases)) {
+        for (String alias : aliases) {
             Oid4vpTrustMaterialIdentityProvider<?> provider = providerLookup.byAlias(session, alias);
             if (provider == null) {
                 LOG.warnf(

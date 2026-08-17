@@ -183,6 +183,35 @@ class Oid4vpIdentityProviderFactoryTest {
     }
 
     @Test
+    void validateVerifierCertificate_certificateWithoutPrivateKey_isReported() throws Exception {
+        Oid4vpIdentityProviderConfig config = new Oid4vpIdentityProviderConfig();
+        config.setAlias("oid4vp-cert-only");
+        config.setClientIdScheme("x509_hash");
+        config.setX509CertificatePem(toPem(createCertificate("CN=Leaf", generateEcKeyPair(), null, null, false, null)));
+
+        Oid4vpIdentityProviderFactory.resolveX509SigningKey(config);
+
+        assertThatThrownBy(() -> Oid4vpIdentityProviderFactory.validateVerifierCertificate(config))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no matching private key");
+    }
+
+    @Test
+    void validateVerifierCertificate_combinedPemWithPrivateKey_passes() throws Exception {
+        KeyPair leafKeyPair = generateEcKeyPair();
+        X509Certificate leafCert = createCertificate("CN=Leaf", leafKeyPair, null, null, false, null);
+        Oid4vpIdentityProviderConfig config = new Oid4vpIdentityProviderConfig();
+        config.setAlias("oid4vp-with-key");
+        config.setClientIdScheme("x509_hash");
+        config.setX509CertificatePem(toPem(leafCert) + toPem(leafKeyPair.getPrivate()));
+
+        Oid4vpIdentityProviderFactory.resolveX509SigningKey(config);
+
+        assertThatCode(() -> Oid4vpIdentityProviderFactory.validateVerifierCertificate(config))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
     void validateVerifierCertificate_plainSchemeNeedsNoCertificate() {
         Oid4vpIdentityProviderConfig config = new Oid4vpIdentityProviderConfig();
         config.setAlias("oid4vp-plain");

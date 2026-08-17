@@ -91,6 +91,12 @@ public class Oid4vpCallbackProcessor {
             throw new IdentityBrokerException("Missing vp_token");
         }
 
+        // Without the expected audience and nonce the verifier would silently skip key binding
+        // verification, so an incomplete request context must fail instead of downgrading.
+        if (StringUtil.isBlank(requestContext.effectiveClientId()) || StringUtil.isBlank(requestContext.nonce())) {
+            throw new IdentityBrokerException("Request context is missing the client_id or nonce");
+        }
+
         LOG.debugf("VP token received (length=%d)", vpToken.length());
 
         VpTokenResult verified = vpTokenVerifier.process(new VpTokenProcessor.Request(

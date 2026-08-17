@@ -71,6 +71,15 @@ public class OID4VPMdocUserAttributeMapper extends OID4VPSdJwtUserAttributeMappe
         return StringUtil.isNotBlank(doctype) ? doctype.trim() : null;
     }
 
+    /** Whether an effective namespace is configured, shared by both mDoc mappers. */
+    static boolean namespaceConfigured(IdentityProviderMapperModel mapperModel) {
+        if (namespace(mapperModel) == null) {
+            logger.warnf("No namespace or credential type configured for mapper %s", mapperModel.getName());
+            return false;
+        }
+        return true;
+    }
+
     @Override
     public String getId() {
         return PROVIDER_ID;
@@ -99,12 +108,12 @@ public class OID4VPMdocUserAttributeMapper extends OID4VPSdJwtUserAttributeMappe
     }
 
     @Override
+    protected boolean claimSourceConfigured(IdentityProviderMapperModel mapperModel) {
+        return namespaceConfigured(mapperModel);
+    }
+
+    @Override
     protected JsonNode claimsRoot(IdentityProviderMapperModel mapperModel, PresentedCredential credential) {
-        String namespace = namespace(mapperModel);
-        if (namespace == null) {
-            logger.warnf("No namespace or credential type configured for mapper %s", mapperModel.getName());
-            return null;
-        }
-        return credential.claimsNode().get(namespace);
+        return credential.claimsNode().get(namespace(mapperModel));
     }
 }

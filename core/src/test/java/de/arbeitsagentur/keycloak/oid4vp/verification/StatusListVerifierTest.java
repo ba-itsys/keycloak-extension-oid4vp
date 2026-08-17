@@ -177,6 +177,27 @@ class StatusListVerifierTest {
     }
 
     @Test
+    void inflateBoundsDecompressedSize() {
+        byte[] bomb = deflateZlib(new byte[17 * 1024 * 1024]);
+
+        assertThatThrownBy(() -> StatusListVerifier.inflate(bomb))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("after decompression");
+    }
+
+    private static byte[] deflateZlib(byte[] original) {
+        Deflater deflater = new Deflater(Deflater.DEFAULT_COMPRESSION, false);
+        deflater.setInput(original);
+        deflater.finish();
+        byte[] compressed = new byte[original.length / 100 + 256];
+        int compressedLen = deflater.deflate(compressed);
+        deflater.end();
+        byte[] trimmed = new byte[compressedLen];
+        System.arraycopy(compressed, 0, trimmed, 0, compressedLen);
+        return trimmed;
+    }
+
+    @Test
     void inflateRoundTripRawDeflate() throws Exception {
         byte[] original = new byte[] {0x00, 0x01, 0x02, (byte) 0xFF, 0x00, 0x55};
 

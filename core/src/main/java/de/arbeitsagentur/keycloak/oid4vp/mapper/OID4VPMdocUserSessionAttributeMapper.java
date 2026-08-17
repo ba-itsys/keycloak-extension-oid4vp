@@ -74,12 +74,12 @@ public class OID4VPMdocUserSessionAttributeMapper extends OID4VPSdJwtUserSession
     }
 
     @Override
+    protected boolean claimSourceConfigured(IdentityProviderMapperModel mapperModel) {
+        return OID4VPMdocUserAttributeMapper.namespaceConfigured(mapperModel);
+    }
+
+    @Override
     protected JsonNode claimsRoot(IdentityProviderMapperModel mapperModel, PresentedCredential credential) {
-        String namespace = OID4VPMdocUserAttributeMapper.namespace(mapperModel);
-        if (namespace == null) {
-            logger.warnf("No namespace or credential type configured for mapper %s", mapperModel.getName());
-            return null;
-        }
-        return credential.claimsNode().get(namespace);
+        return credential.claimsNode().get(OID4VPMdocUserAttributeMapper.namespace(mapperModel));
     }
 }

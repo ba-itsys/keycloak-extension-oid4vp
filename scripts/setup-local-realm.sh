@@ -53,7 +53,7 @@ fi
 
 # Read and escape for JSON embedding
 PEM_CONTENT=$(cat "$PEM_FILE" | sed 's/$/\\n/' | tr -d '\n' | sed 's/\\n$//')
-VERIFIER_INFO_CONTENT=$(cat "$VERIFIER_INFO_FILE" | tr -d '\n' | sed 's/"/\\"/g')
+VERIFIER_INFO_CONTENT=$(cat "$VERIFIER_INFO_FILE" | tr -d '\n' | sed 's/\\/\\\\/g; s/"/\\"/g')
 
 cat > "$REALM_OUT" <<REALMEOF
 {
@@ -194,8 +194,7 @@ cat > "$REALM_OUT" <<REALMEOF
           "value": "admin",
           "temporary": false
         }
-      ],
-      "realmRoles": ["admin"]
+      ]
     }
   ],
   "identityProviders": [
@@ -223,11 +222,10 @@ cat > "$REALM_OUT" <<REALMEOF
       "config": {
         "clientId": "not-used",
         "clientSecret": "not-used",
-        "enforceHaip": "true",
         "trustMaterialIdps": "etsi-trust-list",
         "clientIdScheme": "x509_san_dns",
         "walletScheme": "openid4vp://",
-        "principalAttribute": "family_name",
+        "principalAttributes": "sdjwt_urn_eudi_pid_1:family_name, mdoc_eu_europa_ec_eudi_pid_1:eu\\\\.europa\\\\.ec\\\\.eudi\\\\.pid\\\\.1.family_name",
         "x509CertificatePem": "${PEM_CONTENT}",
         "verifierInfo": "${VERIFIER_INFO_CONTENT}"
       }
@@ -428,7 +426,7 @@ cat > "$REALM_OUT" <<REALMEOF
       "config": {
         "syncMode": "INHERIT",
         "credential.type": "eu.europa.ec.eudi.pid.1",
-        "claim": "birth_place/locality",
+        "claim": "birth_place.locality",
         "user.attribute": "place_of_birth"
       }
     },
@@ -439,7 +437,7 @@ cat > "$REALM_OUT" <<REALMEOF
       "config": {
         "syncMode": "INHERIT",
         "credential.type": "urn:eudi:pid:1",
-        "claim": "nationalities/null",
+        "claim": "nationalities[]",
         "multivalued": "true",
         "user.attribute": "nationality"
       }

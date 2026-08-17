@@ -71,6 +71,7 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
         if (hasTrustedCertificates && parseTrustedCertificates().isEmpty()) {
             throw new IllegalArgumentException("Trusted certificates must be a PEM bundle of X.509 certificates");
         }
+        parseTrustListSigningCerts();
         getAdvertisedTrustedAuthorityType();
     }
 
@@ -207,18 +208,27 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
         }
     }
 
-    /** Parses the trust list signing certificate PEM bundle. Returns null when unset. */
+    /**
+     * Parses the trust list signing certificate PEM bundle. Returns null when unset. A configured
+     * but unparsable value throws instead of silently disabling trust list signature verification.
+     */
     public List<X509Certificate> parseTrustListSigningCerts() {
         String pem = getTrustListSigningCertPem();
         if (StringUtil.isBlank(pem)) {
             return null;
         }
+        X509Certificate[] certificates;
         try {
-            X509Certificate[] certificates = PemUtils.decodeCertificates(pem);
-            return certificates != null && certificates.length > 0 ? List.of(certificates) : null;
+            certificates = PemUtils.decodeCertificates(pem);
         } catch (Exception e) {
-            return null;
+            throw new IllegalArgumentException(
+                    "The trust list signing certificate must be a PEM bundle of X.509 certificates", e);
         }
+        if (certificates == null || certificates.length == 0) {
+            throw new IllegalArgumentException(
+                    "The trust list signing certificate must be a PEM bundle of X.509 certificates");
+        }
+        return List.of(certificates);
     }
 
     private static Duration parseDurationSeconds(String value) {

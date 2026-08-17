@@ -85,6 +85,16 @@ class Oid4vpIdentityProviderConfigTest {
     }
 
     @Test
+    void validate_rejectsCertificateBoundSchemeWithCertOnlyPem() {
+        config.setClientIdScheme("x509_hash");
+        config.setX509CertificatePem("-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----");
+
+        assertThatThrownBy(() -> config.validate(null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("no private key");
+    }
+
+    @Test
     void responseMode_respectsConfiguredValue() {
         config.setResponseMode("direct_post");
         assertThat(config.getResponseMode()).isEqualTo("direct_post");

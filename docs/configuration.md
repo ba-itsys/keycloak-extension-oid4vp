@@ -333,7 +333,7 @@ For SD-JWT VC verification, the verifier tries issuer-key resolution in this ord
 
 1. `x5c` certificate-chain validation: a pinned trusted leaf certificate bound to the credential's `iss`, or a PKIX path to the trust anchors with the `iss` matching a subject alternative name of the leaf certificate
 2. The issuer keys the credential's trust domain publishes, matched on the credential's `iss` and JOSE `kid`
-3. When the identity provider references no trust material providers at all, JWT VC issuer metadata lookup via `iss` + `kid` from `/.well-known/jwt-vc-issuer`, including `jwks_uri`. With trust material providers configured, a credential type none of them serves fails closed, as does a declared trust domain that currently resolves to nothing.
+3. When the identity provider references no trust material providers at all, JWT VC issuer metadata lookup via `iss` + `kid` from `/.well-known/jwt-vc-issuer`, including `jwks_uri`. With trust material providers configured, a credential type none of them serves is rejected, as is a credential whose declared trust domain currently resolves to nothing.
 
 A certificate chain is mandatory when the credential's trust domain consists of CA anchors alone. Pinned issuer certificates and published issuer keys make a chainless credential a configured case rather than a missing chain.
 

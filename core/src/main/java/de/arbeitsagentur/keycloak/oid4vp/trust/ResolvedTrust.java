@@ -44,8 +44,8 @@ import org.keycloak.common.VerificationException;
  *                                  configuration, so it is the same whether or not the trust material
  *                                  is currently reachable: a credential type no provider serves and a
  *                                  declared source that resolves to no anchors (empty lists here) both
- *                                  fail closed instead of falling back to trusting the issuer's own
- *                                  self-published metadata.
+ *                                  make verification fail instead of falling back to trusting the
+ *                                  issuer's own self-published metadata.
  */
 public record ResolvedTrust(
         List<X509TrustMaterial> issuanceTrust,

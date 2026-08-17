@@ -100,10 +100,25 @@ class EtsiTrustListIdentityProviderConfigTest {
     }
 
     @Test
-    void parseTrustListSigningCerts_returnsNullForBlankOrGarbage() {
-        assertThat(config.parseTrustListSigningCerts()).isNull();
-
+    void validate_rejectsUnparsableTrustListSigningCert() {
+        config.setTrustListUrl("https://tl.example/list.jwt");
         config.setTrustListSigningCertPem("garbage");
+
+        assertThatThrownBy(() -> config.validate(null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("trust list signing certificate");
+    }
+
+    @Test
+    void parseTrustListSigningCerts_returnsNullWhenUnset() {
         assertThat(config.parseTrustListSigningCerts()).isNull();
+    }
+
+    @Test
+    void parseTrustListSigningCerts_throwsForGarbage() {
+        config.setTrustListSigningCertPem("garbage");
+        assertThatThrownBy(config::parseTrustListSigningCerts)
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("trust list signing certificate");
     }
 }

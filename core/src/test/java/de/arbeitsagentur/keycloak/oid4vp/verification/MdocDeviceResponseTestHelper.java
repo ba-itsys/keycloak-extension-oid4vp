@@ -91,6 +91,8 @@ class MdocDeviceResponseTestHelper {
     String digestAlgorithm = "SHA-256";
     String declaredDigestAlgorithm;
     boolean omitValidityInfo;
+    boolean omitValidUntil;
+    String rawValidFrom;
 
     MdocDeviceResponseTestHelper() throws Exception {
         this(MdocAlgorithmSpec.ES256);
@@ -156,6 +158,18 @@ class MdocDeviceResponseTestHelper {
     /** Builds a Mobile Security Object without validityInfo. */
     MdocDeviceResponseTestHelper withoutValidityInfo() {
         this.omitValidityInfo = true;
+        return this;
+    }
+
+    /** Builds validityInfo without its mandatory validUntil timestamp. */
+    MdocDeviceResponseTestHelper withoutValidUntil() {
+        this.omitValidUntil = true;
+        return this;
+    }
+
+    /** Renders validFrom as the given raw string instead of a well-formed timestamp. */
+    MdocDeviceResponseTestHelper rawValidFrom(String rawValidFrom) {
+        this.rawValidFrom = rawValidFrom;
         return this;
     }
 
@@ -263,11 +277,15 @@ class MdocDeviceResponseTestHelper {
 
     private CBORPairList buildMso(CBORPairList digestMap) {
         // validityInfo
-        CBORPairList validityInfo = new CBORPairList(List.of(
+        String validFromValue = rawValidFrom != null ? rawValidFrom : validFrom.toString();
+        List<CBORPair> validityPairs = new ArrayList<>(List.of(
                 new CBORPair(new CBORString("signed"), new CBORTaggedItem(0, new CBORString(validFrom.toString()))),
-                new CBORPair(new CBORString("validFrom"), new CBORTaggedItem(0, new CBORString(validFrom.toString()))),
-                new CBORPair(
-                        new CBORString("validUntil"), new CBORTaggedItem(0, new CBORString(validUntil.toString())))));
+                new CBORPair(new CBORString("validFrom"), new CBORTaggedItem(0, new CBORString(validFromValue)))));
+        if (!omitValidUntil) {
+            validityPairs.add(new CBORPair(
+                    new CBORString("validUntil"), new CBORTaggedItem(0, new CBORString(validUntil.toString()))));
+        }
+        CBORPairList validityInfo = new CBORPairList(validityPairs);
 
         // deviceKeyInfo with COSE key
         CBORPairList deviceKey = buildDeviceKey();

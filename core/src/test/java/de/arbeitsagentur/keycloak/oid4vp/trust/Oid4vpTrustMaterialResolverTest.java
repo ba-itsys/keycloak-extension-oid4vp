@@ -84,6 +84,27 @@ class Oid4vpTrustMaterialResolverTest {
     }
 
     @Test
+    void configuredButUnresolvableAliasesStillDeclareATrustSource() {
+        Oid4vpTrustMaterialResolver resolver = new Oid4vpTrustMaterialResolver((session, alias) -> null);
+
+        CredentialTrustPlan plan = resolver.resolvePlan(null, "renamed-alias");
+        ResolvedTrust trust = plan.forCredentialType(PID);
+
+        assertThat(plan.hasProviders()).isFalse();
+        assertThat(trust.hasDeclaredTrustSource())
+                .as("configuration drift must reject verification instead of re-enabling the issuer metadata fallback")
+                .isTrue();
+    }
+
+    @Test
+    void blankAliasesDeclareNoTrustSource() {
+        Oid4vpTrustMaterialResolver resolver = new Oid4vpTrustMaterialResolver((session, alias) -> null);
+
+        assertThat(resolver.resolvePlan(null, " ").forCredentialType(PID).hasDeclaredTrustSource())
+                .isFalse();
+    }
+
+    @Test
     void aProviderOfTheUpstreamContractIsScopedByItsConfiguration() {
         // Keycloak's default-trust publishes the JWKs of an issuer that has no trust list. It knows
         // nothing of this extension, so its scope has to come from its configuration.
@@ -156,7 +177,7 @@ class Oid4vpTrustMaterialResolverTest {
         assertThat(plan.serves(BADGE)).isFalse();
         assertThat(plan.forCredentialType(BADGE).hasIssuerTrust()).isFalse();
         assertThat(plan.forCredentialType(BADGE).hasDeclaredTrustSource())
-                .as("a configured trust plan covers every type, so an unserved one fails closed instead of"
+                .as("a configured trust plan covers every type, so an unserved one is rejected instead of"
                         + " falling back to the issuer's self-published metadata")
                 .isTrue();
     }

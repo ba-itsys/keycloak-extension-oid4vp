@@ -547,7 +547,7 @@ class SdJwtVerifierTest {
 
     // When a trust source is declared for the credential type but resolves to nothing (for example a
     // trust list that is momentarily unreachable), the issuer's self-published metadata must not be
-    // trusted as a fallback: the credential fails closed instead of accepting attacker-chosen keys.
+    // trusted as a fallback: the credential is rejected instead of accepting attacker-chosen keys.
     @Test
     void verify_declaredButEmptyTrustSource_doesNotFallBackToIssuerMetadata() throws Exception {
         ECKey metadataKey = new ECKeyGenerator(Curve.P_256).keyID("issuer-key").generate();

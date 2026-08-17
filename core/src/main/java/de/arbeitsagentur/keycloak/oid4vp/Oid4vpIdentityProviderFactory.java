@@ -257,6 +257,11 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
         }
 
         config.getResolvedClientIdScheme().validateCertificateBinding(config.getX509CertificatePem());
+        if (StringUtil.isBlank(config.getX509SigningKeyJwk())) {
+            throw new IllegalStateException("The verifier certificate has no matching private key. Include the private"
+                    + " key in the certificate PEM: a request object signed with the realm key cannot match the"
+                    + " certificate-bound client_id, so every wallet rejects the authorization request.");
+        }
     }
 
     private static void warnIfTrustMaterialIdpsAreMissing(Oid4vpIdentityProviderConfig config) {

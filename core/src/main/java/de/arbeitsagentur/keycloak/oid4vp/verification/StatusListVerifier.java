@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import de.arbeitsagentur.keycloak.oid4vp.util.BoundedLruMap;
 import de.arbeitsagentur.keycloak.oid4vp.util.CertificateFingerprints;
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.time.Instant;
@@ -44,6 +45,7 @@ public class StatusListVerifier {
     private static final Logger LOG = Logger.getLogger(StatusListVerifier.class);
     private static final int DEFAULT_BITS_PER_STATUS = 1;
     private static final int MAX_CACHE_ENTRIES = 256;
+    private static final int MAX_INFLATED_BYTES = 16 * 1024 * 1024;
 
     /**
      * Decoded status lists, keyed by the trust material they were verified against as well as their
@@ -260,16 +262,26 @@ public class StatusListVerifier {
 
     static byte[] inflate(byte[] compressed) throws Exception {
         try (var is = new InflaterInputStream(new ByteArrayInputStream(compressed))) {
-            return is.readAllBytes();
-        } catch (Exception e) {
-            // Fallback: try raw DEFLATE (without zlib header)
+            return readBounded(is);
+        } catch (IOException e) {
+            // Fallback: try raw DEFLATE (without zlib header). Only format errors retry; an
+            // over-the-bound list fails outright instead of being inflated a second time.
             Inflater rawInflater = new Inflater(true);
             try (var is = new InflaterInputStream(new ByteArrayInputStream(compressed), rawInflater)) {
-                return is.readAllBytes();
+                return readBounded(is);
             } finally {
                 rawInflater.end();
             }
         }
+    }
+
+    /** Bounds decompression so a DEFLATE bomb served as a status list cannot exhaust the heap. */
+    private static byte[] readBounded(InflaterInputStream is) throws IOException {
+        byte[] data = is.readNBytes(MAX_INFLATED_BYTES);
+        if (is.read() != -1) {
+            throw new IllegalStateException("Status list exceeds " + MAX_INFLATED_BYTES + " bytes after decompression");
+        }
+        return data;
     }
 
     static int getStatusAtIndex(byte[] statusBits, int idx, int bitsPerStatus) {
