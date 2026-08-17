@@ -58,6 +58,16 @@ public class MdocVerifier {
     private static final Logger LOG = Logger.getLogger(MdocVerifier.class);
     private static final int CBOR_TAG_DATE = 1004;
 
+    private final int clockSkewSeconds;
+
+    /**
+     * @param clockSkewSeconds tolerance applied to the validity window of the MSO, so a credential
+     *     is not rejected over a clock difference between issuer and verifier
+     */
+    public MdocVerifier(int clockSkewSeconds) {
+        this.clockSkewSeconds = clockSkewSeconds;
+    }
+
     public boolean isMdoc(String token) {
         if (StringUtil.isBlank(token)) return false;
         try {
@@ -131,10 +141,10 @@ public class MdocVerifier {
             String docType = resolveDocType(document, mso);
 
             verifyIssuerSignature(document, trust);
-            validateValidity(mso);
             // Claims and digests are both read from the issuer-signed namespaces, so a document can never
             // present one set of values while a different set is digest-checked.
             verifyDigests(mso, issuerSigned, deviceAuth != null);
+            validateValidity(mso, deviceAuth != null);
             Map<String, Object> claims = extractClaims(issuerSigned, mso);
 
             if (deviceAuth != null) {
@@ -469,16 +479,31 @@ public class MdocVerifier {
         }
     }
 
-    private void validateValidity(CBORPairList mso) {
+    /**
+     * Enforces the validity window the issuer signed. A presentation carries it: the MSO of an mDoc
+     * holds {@code validityInfo}, so a presentation without it states no validity at all and is
+     * rejected rather than accepted as valid forever. The individual timestamps stay optional, and
+     * the ones that are present are judged within the configured clock skew.
+     */
+    private void validateValidity(CBORPairList mso, boolean mandatory) {
         CBORPairList validityInfo = map(mso, "validityInfo");
-        if (validityInfo == null) return;
+        if (validityInfo == null) {
+            if (mandatory) {
+                throw new IllegalStateException("mDoc presentation is missing the validity information of its MSO");
+            }
+            return;
+        }
         Instant now = Instant.now();
 
         Instant validFrom = parseInstant(val(validityInfo, "validFrom"));
-        if (validFrom != null && validFrom.isAfter(now)) throw new IllegalStateException("Credential not yet valid");
+        if (validFrom != null && validFrom.isAfter(now.plusSeconds(clockSkewSeconds))) {
+            throw new IllegalStateException("Credential not yet valid");
+        }
 
         Instant validUntil = parseInstant(val(validityInfo, "validUntil"));
-        if (validUntil != null && validUntil.isBefore(now)) throw new IllegalStateException("Credential expired");
+        if (validUntil != null && validUntil.isBefore(now.minusSeconds(clockSkewSeconds))) {
+            throw new IllegalStateException("Credential expired");
+        }
     }
 
     private Instant parseInstant(CBORItem value) {
