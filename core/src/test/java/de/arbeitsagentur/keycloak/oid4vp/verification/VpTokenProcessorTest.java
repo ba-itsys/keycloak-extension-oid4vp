@@ -98,7 +98,7 @@ class VpTokenProcessorTest {
         assertThat(primary.presentationType()).isEqualTo(PresentationType.SD_JWT);
         assertThat(primary.issuer()).isEqualTo("https://issuer.example");
         assertThat(primary.credentialType()).isEqualTo("IdentityCredential");
-        assertThat(result.mergedClaims()).containsEntry("sub", "user1");
+        assertThat(primary.claims()).containsEntry("sub", "user1");
     }
 
     @Test
@@ -203,7 +203,7 @@ class VpTokenProcessorTest {
         assertThat(result.credentials()).hasSize(1);
         assertThat(result.getPrimaryCredential().credentialId()).isEqualTo("cred1");
         assertThat(result.getPrimaryCredential().credentialType()).isEqualTo("IdentityCredential");
-        assertThat(result.mergedClaims()).containsEntry("name", "Alice");
+        assertThat(result.getPrimaryCredential().claims()).containsEntry("name", "Alice");
     }
 
     @Test
@@ -216,7 +216,8 @@ class VpTokenProcessorTest {
     @Test
     void process_nullVpToken_throws() {
         assertThatThrownBy(() -> processor.process(request(null, "client-id", "nonce", null)))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(IdentityBrokerException.class)
+                .hasMessageContaining("VP token processing failed");
     }
 
     @Test
@@ -233,7 +234,9 @@ class VpTokenProcessorTest {
 
         VpTokenResult result = processor.process(request(sdJwt, "client-id", "nonce", "https://alternate.example"));
 
-        assertThat(result.getPrimaryCredential()).isNotNull();
+        VerifiedCredential primary = result.getPrimaryCredential();
+        assertThat(primary.issuer()).isEqualTo("https://issuer.example");
+        assertThat(primary.claims()).containsEntry("sub", "user1");
     }
 
     // ===== Helper Methods =====

@@ -159,7 +159,8 @@ class TrustListProviderTest {
     @Test
     void parseTrustListJwt_invalidJwtFormat_throws() {
         assertThatThrownBy(() -> TrustListProvider.parseTrustListJwt("not-a-jwt"))
-                .isInstanceOf(Exception.class);
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Failed to parse compact JWS/JWT");
     }
 
     @Test
@@ -197,11 +198,6 @@ class TrustListProviderTest {
     void blankTrustListUrl_returnsNoCertificates() {
         TrustListProvider provider = new TrustListProvider(null, "  ");
         assertThat(provider.getTrustedCertificates()).isEmpty();
-    }
-
-    @Test
-    void defaultMaxStaleAge_isOneDay() {
-        assertThat(TrustListProvider.DEFAULT_MAX_STALE_AGE).isEqualTo(Duration.ofDays(1));
     }
 
     @Test

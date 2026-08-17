@@ -47,7 +47,7 @@ public class Oid4vpAuthSessionResolver {
     }
 
     /** Resolves an authentication session using the OAuth {@code state} parameter from the store. */
-    public AuthenticationSessionModel resolveFromStore(String state, String tabIdHint) {
+    public AuthenticationSessionModel resolveFromStore(String state) {
         if (state == null) return null;
 
         Oid4vpRequestObjectStore.RequestContextEntry requestContext = requestObjectStore.resolveByState(session, state);
@@ -55,10 +55,7 @@ public class Oid4vpAuthSessionResolver {
             return null;
         }
 
-        String tabId = tabIdHint;
-        if (tabId == null) {
-            tabId = requestContext.tabId();
-        }
+        String tabId = requestContext.tabId();
         if (tabId == null && state.contains(".")) {
             tabId = state.substring(0, state.indexOf('.'));
         }

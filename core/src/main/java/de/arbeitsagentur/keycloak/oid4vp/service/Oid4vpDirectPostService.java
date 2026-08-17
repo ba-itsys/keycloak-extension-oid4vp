@@ -77,6 +77,7 @@ public class Oid4vpDirectPostService {
     private final Oid4vpConfigProvider config;
     private final Oid4vpRequestObjectStore requestObjectStore;
     private final Oid4vpAuthSessionResolver authSessionResolver;
+    private final Oid4vpEndpointResponseFactory responseFactory;
 
     public Oid4vpDirectPostService(
             KeycloakSession session,
@@ -88,6 +89,7 @@ public class Oid4vpDirectPostService {
         this.config = config;
         this.requestObjectStore = requestObjectStore;
         this.authSessionResolver = new Oid4vpAuthSessionResolver(session, realm, requestObjectStore);
+        this.responseFactory = new Oid4vpEndpointResponseFactory();
         this.deferredAuthTtlSeconds =
                 realm != null ? realm.getAccessCodeLifespanLogin() : config.getCrossDeviceCompleteTtlSeconds();
         this.crossDeviceCompleteTtlSeconds = config.getCrossDeviceCompleteTtlSeconds();
@@ -167,7 +169,7 @@ public class Oid4vpDirectPostService {
         if (isCrossDevice) {
             return Response.ok("{}").type(MediaType.APPLICATION_JSON).build();
         }
-        return Oid4vpEndpointResponseFactory.jsonRedirectResponse(completeAuthUrl);
+        return responseFactory.jsonRedirectResponse(completeAuthUrl);
     }
 
     /**

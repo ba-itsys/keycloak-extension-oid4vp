@@ -9,11 +9,6 @@
         <appender-ref ref="STDOUT"/>
     </root>
 
-    <!-- Testcontainers: keep useful output, suppress internals -->
-    <logger name="org.testcontainers" level="INFO"/>
-    <logger name="com.github.dockerjava" level="WARN"/>
-    <logger name="com.github.dockerjava.zerodep.shaded" level="WARN"/>
-
     <!-- HTTP/network noise -->
     <logger name="org.apache.http" level="WARN"/>
     <logger name="org.apache.hc" level="WARN"/>

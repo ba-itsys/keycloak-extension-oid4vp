@@ -27,7 +27,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.keycloak.common.util.SecretGenerator;
 import org.keycloak.protocol.oidc.utils.PkceUtils;
 
@@ -40,7 +39,6 @@ public final class TestApp implements AutoCloseable {
 
     private final HttpServer server;
     private final int port;
-    private final AtomicInteger callbackCount = new AtomicInteger();
     private volatile URI lastCallbackUri;
     private volatile String lastCodeVerifier;
 
@@ -100,18 +98,12 @@ public final class TestApp implements AutoCloseable {
                         HttpResponse.BodyHandlers.ofString());
     }
 
-    // Number of authorization callbacks received since the last reset
-    public int callbackCount() {
-        return callbackCount.get();
-    }
-
     // The URI of the last received authorization callback, including the code
     public URI lastCallbackUri() {
         return lastCallbackUri;
     }
 
     public void reset() {
-        callbackCount.set(0);
         lastCallbackUri = null;
         lastCodeVerifier = null;
     }
@@ -122,7 +114,6 @@ public final class TestApp implements AutoCloseable {
     }
 
     private void handleCallback(HttpExchange exchange) throws IOException {
-        callbackCount.incrementAndGet();
         lastCallbackUri = exchange.getRequestURI();
 
         String response = "<!doctype html><html><body><pre>OK</pre></body></html>";

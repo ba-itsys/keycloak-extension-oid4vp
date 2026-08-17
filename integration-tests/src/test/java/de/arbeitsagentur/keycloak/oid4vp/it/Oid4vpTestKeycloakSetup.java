@@ -254,16 +254,12 @@ public final class Oid4vpTestKeycloakSetup {
             if ("admin".equals(user.getUsername()) || "test".equals(user.getUsername())) {
                 continue;
             }
-            try {
-                List<FederatedIdentityRepresentation> identities =
-                        realm.users().get(user.getId()).getFederatedIdentity();
-                boolean hasOid4vp =
-                        identities.stream().anyMatch(identity -> IDP_ALIAS.equals(identity.getIdentityProvider()));
-                if (hasOid4vp) {
-                    result.add(user);
-                }
-            } catch (Exception ignored) {
-                // Users without federated identities are not OID4VP users.
+            List<FederatedIdentityRepresentation> identities =
+                    realm.users().get(user.getId()).getFederatedIdentity();
+            boolean hasOid4vp =
+                    identities.stream().anyMatch(identity -> IDP_ALIAS.equals(identity.getIdentityProvider()));
+            if (hasOid4vp) {
+                result.add(user);
             }
         }
         return result;

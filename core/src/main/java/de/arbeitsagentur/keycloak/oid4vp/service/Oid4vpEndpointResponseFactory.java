@@ -24,7 +24,7 @@ import org.keycloak.util.JsonSerialization;
 /** Builds the small JSON and redirect responses returned by the OID4VP endpoint. */
 public class Oid4vpEndpointResponseFactory {
 
-    public static Response jsonRedirectResponse(String redirectUri) {
+    public Response jsonRedirectResponse(String redirectUri) {
         try {
             String json = JsonSerialization.writeValueAsString(Map.of(OAuth2Constants.REDIRECT_URI, redirectUri));
             return Response.ok(json).type(MediaType.APPLICATION_JSON).build();

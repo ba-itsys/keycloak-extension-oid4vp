@@ -50,8 +50,8 @@ public class EtsiTrustListIdentityProvider
     // One provider instance serves one trust resolution of one session, during which several methods
     // ask for the same certificates, once for every credential type. Trust lists without freshness
     // metadata are not cacheable across requests, so without memoising here every one of those asks
-    // would be another fetch. Failures are not memoised, so a failed resolution stays failed for
-    // this instance only.
+    // would be another fetch. A failed fetch resolves to an empty certificate list and is memoised
+    // like any other result, so it stays empty for this instance only.
     private List<X509Certificate> issuanceCertificates;
     private List<X509Certificate> revocationCertificates;
     private List<String> authorityKeyIdentifiers;

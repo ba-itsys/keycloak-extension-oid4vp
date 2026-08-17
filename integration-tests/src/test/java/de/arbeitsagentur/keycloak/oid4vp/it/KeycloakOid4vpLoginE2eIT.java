@@ -59,6 +59,7 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
 
         performSameDeviceLogin("wallet-user");
         flow.assertLoginSucceeded();
+        assertThat(countOid4vpUsers()).isEqualTo(1);
     }
 
     @Test

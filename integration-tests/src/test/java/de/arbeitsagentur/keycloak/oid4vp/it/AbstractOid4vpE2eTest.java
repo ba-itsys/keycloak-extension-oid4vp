@@ -70,18 +70,6 @@ abstract class AbstractOid4vpE2eTest {
     static final String CLIENT_ID = Oid4vpRealmConfig.CLIENT_ID;
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-    private static final String SSE_INIT_SCRIPT = """
-            const OrigES = window.EventSource;
-            window.EventSource = function(url) {
-                window.__oid4vpStatusUrl = url;
-                const es = new OrigES(url);
-                es.addEventListener('ping', () => { window.__oid4vpSseReady = true; });
-                return es;
-            };
-            window.EventSource.prototype = OrigES.prototype;
-            window.__oid4vpSseReady = false;
-            window.__oid4vpStatusUrl = null;
-            """;
 
     @InjectRealm(config = Oid4vpRealmConfig.class)
     protected ManagedRealm realm;
@@ -254,9 +242,7 @@ abstract class AbstractOid4vpE2eTest {
     }
 
     protected BrowserContext newBrowserContext() {
-        BrowserContext browserContext = browser.newContext();
-        browserContext.addInitScript(SSE_INIT_SCRIPT);
-        return browserContext;
+        return browser.newContext();
     }
 
     protected Oid4vpLoginFlowHelper flowFor(TestWallet testWallet) {

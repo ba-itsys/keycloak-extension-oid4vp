@@ -20,13 +20,12 @@ import java.util.Map;
 /**
  * The fully verified result of processing a {@code vp_token} from the wallet.
  *
- * <p>Contains all verified credentials (keyed by credential ID from the DCQL query) and a merged
- * claims map that combines claims from all credentials for convenient attribute mapping.
- * Produced by {@link de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor}.
+ * <p>Contains all verified credentials, keyed by credential ID from the DCQL query. Produced by
+ * {@link de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor}.
  *
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1">OID4VP 1.0 §8.1 — VP Token</a>
  */
-public record VpTokenResult(Map<String, VerifiedCredential> credentials, Map<String, Object> mergedClaims) {
+public record VpTokenResult(Map<String, VerifiedCredential> credentials) {
     public VerifiedCredential getPrimaryCredential() {
         return credentials.values().stream().findFirst().orElse(null);
     }

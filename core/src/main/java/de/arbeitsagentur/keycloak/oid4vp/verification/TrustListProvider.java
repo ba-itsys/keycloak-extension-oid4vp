@@ -516,19 +516,10 @@ public class TrustListProvider {
     /** Seeds the cache with an already-expired entry. Intended for testing stale cache fallback. */
     static void seedExpiredCache(
             TrustListProvider provider, List<X509Certificate> certificates, Instant expiredAt, Instant fetchedAt) {
-        seedExpiredCache(provider, certificates, expiredAt, fetchedAt, provider.currentLoTEType);
-    }
-
-    /** Seeds the cache with an already-expired entry including LoTE metadata. Intended for testing only. */
-    static void seedExpiredCache(
-            TrustListProvider provider,
-            List<X509Certificate> certificates,
-            Instant expiredAt,
-            Instant fetchedAt,
-            String loTEType) {
         CACHE.put(
                 provider.cacheKey(),
-                new CachedTrustList(certificates, certificates, certificates, expiredAt, fetchedAt, loTEType));
+                new CachedTrustList(
+                        certificates, certificates, certificates, expiredAt, fetchedAt, provider.currentLoTEType));
     }
 
     record TrustListParseResult(

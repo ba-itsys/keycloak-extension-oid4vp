@@ -504,7 +504,7 @@ class Oid4vpCallbackProcessorTest {
         Map<String, VerifiedCredential> credentials = new LinkedHashMap<>();
         credentials.put(pid.credentialId(), pid);
         credentials.put(boundElsewhere.credentialId(), boundElsewhere);
-        return new VpTokenResult(credentials, Map.of());
+        return new VpTokenResult(credentials);
     }
 
     @Test
@@ -582,17 +582,15 @@ class Oid4vpCallbackProcessorTest {
             new FixedReferenceBindingCheck(false, false);
 
     private static VpTokenResult resultOf(VerifiedCredential credential) {
-        return new VpTokenResult(Map.of(credential.credentialId(), credential), Map.of());
+        return new VpTokenResult(Map.of(credential.credentialId(), credential));
     }
 
     private static VpTokenResult resultOf(VerifiedCredential... credentials) {
         Map<String, VerifiedCredential> byId = new LinkedHashMap<>();
-        Map<String, Object> mergedClaims = new LinkedHashMap<>();
         for (VerifiedCredential credential : credentials) {
             byId.put(credential.credentialId(), credential);
-            mergedClaims.putAll(credential.claims());
         }
-        return new VpTokenResult(byId, mergedClaims);
+        return new VpTokenResult(byId);
     }
 
     private static VerifiedCredential sdJwtCredential(Map<String, Object> claims) {

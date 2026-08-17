@@ -140,7 +140,7 @@ public class Oid4vpIdentityProviderEndpoint {
         // callback.error() requires an active auth session in the KeycloakContext.
         if (StringUtil.isNotBlank(state)) {
             try {
-                AuthenticationSessionModel authSession = authSessionResolver.resolveFromStore(state, null);
+                AuthenticationSessionModel authSession = authSessionResolver.resolveFromStore(state);
                 if (authSession != null) {
                     session.getContext().setAuthenticationSession(authSession);
                 }

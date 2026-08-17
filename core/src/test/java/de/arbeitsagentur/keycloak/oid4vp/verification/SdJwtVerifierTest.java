@@ -655,7 +655,7 @@ class SdJwtVerifierTest {
     // ===== Helper Methods =====
 
     private String computeDigest(String disclosureB64) throws Exception {
-        MessageDigest md = MessageDigest.getInstance("SHA256");
+        MessageDigest md = MessageDigest.getInstance("SHA-256");
         byte[] hash = md.digest(disclosureB64.getBytes(StandardCharsets.US_ASCII));
         return Base64URL.encode(hash).toString();
     }

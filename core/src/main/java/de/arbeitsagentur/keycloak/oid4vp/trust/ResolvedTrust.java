@@ -175,7 +175,7 @@ public record ResolvedTrust(
         if (issuanceTrust.isEmpty()) {
             throw new VerificationException("No X.509 trust anchors available for certificate chain validation");
         }
-        VerificationException lastFailure = null;
+        VerificationException firstFailure = null;
         for (X509TrustMaterial material : issuanceTrust) {
             try {
                 X509CertificateChainValidator.validateCertificateChain(
@@ -185,12 +185,12 @@ public record ResolvedTrust(
                 }
                 return leaf.getPublicKey();
             } catch (VerificationException e) {
-                if (lastFailure == null) {
-                    lastFailure = e;
+                if (firstFailure == null) {
+                    firstFailure = e;
                 }
             }
         }
-        throw lastFailure;
+        throw firstFailure;
     }
 
     /** Whether the certificate is itself one of the configured PKIX trust anchors. */

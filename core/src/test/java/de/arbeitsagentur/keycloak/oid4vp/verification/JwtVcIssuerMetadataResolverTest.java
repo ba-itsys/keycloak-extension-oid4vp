@@ -26,10 +26,12 @@ import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.keycloak.common.crypto.CryptoIntegration;
+import org.keycloak.jose.jwk.JSONWebKeySet;
 
 class JwtVcIssuerMetadataResolverTest {
 
@@ -153,7 +155,7 @@ class JwtVcIssuerMetadataResolverTest {
     private static Map<String, Object> buildJwks(ECKey key, long exp) {
         Map<String, Object> jwk = new HashMap<>(key.toPublicJWK().toJSONObject());
         jwk.put("exp", exp);
-        return Map.of("keys", java.util.List.of(jwk));
+        return Map.of("keys", List.of(jwk));
     }
 
     private static final class FakeResolver extends JwtVcIssuerMetadataResolver {
@@ -201,8 +203,7 @@ class JwtVcIssuerMetadataResolverTest {
         }
 
         @Override
-        protected org.keycloak.jose.jwk.JSONWebKeySet fetchRemoteJwks(String url, JsonNode fallbackJwksDocument)
-                throws Exception {
+        protected JSONWebKeySet fetchRemoteJwks(String url, JsonNode fallbackJwksDocument) throws Exception {
             remoteJwksFetchUsed = true;
             return parseJsonWebKeySet(fallbackJwksDocument);
         }

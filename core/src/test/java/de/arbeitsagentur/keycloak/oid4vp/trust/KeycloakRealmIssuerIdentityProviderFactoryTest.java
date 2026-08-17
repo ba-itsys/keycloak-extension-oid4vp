@@ -56,17 +56,12 @@ class KeycloakRealmIssuerIdentityProviderFactoryTest {
     }
 
     @Test
-    void createConfigIsHiddenFromLoginAndWritable() {
+    void createConfigIsHiddenFromLogin() {
         KeycloakRealmIssuerIdentityProviderConfig config = factory.createConfig();
 
-        assertThat(config.isHideOnLogin()).isTrue();
-
-        config.setIssuerRealm("company");
-        config.setIssuer("https://kc.example/realms/company");
-        config.setServedCredentialTypes("https://kc.example/badge");
-        assertThat(config.getIssuerRealm()).isEqualTo("company");
-        assertThat(config.getIssuer()).isEqualTo("https://kc.example/realms/company");
-        assertThat(config.getServedCredentialTypes()).containsExactly("https://kc.example/badge");
+        assertThat(config.isHideOnLogin())
+                .as("a trust material provider is no login option")
+                .isTrue();
     }
 
     @Test

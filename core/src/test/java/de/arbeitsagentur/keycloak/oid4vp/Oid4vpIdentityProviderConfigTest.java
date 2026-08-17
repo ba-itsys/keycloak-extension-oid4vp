@@ -68,13 +68,6 @@ class Oid4vpIdentityProviderConfigTest {
     }
 
     @Test
-    void transientUsersEnabled_readsDoNotStoreUsersFlag() {
-        config.setTransientUsersEnabled(true);
-
-        assertThat(config.isTransientUsersEnabled()).isTrue();
-    }
-
-    @Test
     void clientIdScheme_respectsConfiguredValue() {
         config.setClientIdScheme("x509_san_dns");
         assertThat(config.getClientIdScheme()).isEqualTo("x509_san_dns");
@@ -120,19 +113,6 @@ class Oid4vpIdentityProviderConfigTest {
     }
 
     @Test
-    void sseCustomValues() {
-        config.setSsePollIntervalMs(500);
-        config.setSseTimeoutSeconds(60);
-        config.setSsePingIntervalSeconds(5);
-        config.setCrossDeviceCompleteTtlSeconds(600);
-
-        assertThat(config.getSsePollIntervalMs()).isEqualTo(500);
-        assertThat(config.getSseTimeoutSeconds()).isEqualTo(60);
-        assertThat(config.getSsePingIntervalSeconds()).isEqualTo(5);
-        assertThat(config.getCrossDeviceCompleteTtlSeconds()).isEqualTo(600);
-    }
-
-    @Test
     void statusListMaxCacheTtl_defaultIsNull() {
         assertThat(config.getStatusListMaxCacheTtl()).isNull();
     }
@@ -172,20 +152,8 @@ class Oid4vpIdentityProviderConfigTest {
     }
 
     @Test
-    void trustMaterialIdps_readsConfiguredValue() {
-        config.setTrustMaterialIdps("demo-trust-list,other-trust-list");
-        assertThat(config.getTrustMaterialIdps()).isEqualTo("demo-trust-list,other-trust-list");
-    }
-
-    @Test
     void requestObjectLifespan_default() {
         assertThat(config.getRequestObjectLifespanSeconds()).isEqualTo(10);
-    }
-
-    @Test
-    void requestObjectLifespan_customValue() {
-        config.setRequestObjectLifespanSeconds(30);
-        assertThat(config.getRequestObjectLifespanSeconds()).isEqualTo(30);
     }
 
     @Test

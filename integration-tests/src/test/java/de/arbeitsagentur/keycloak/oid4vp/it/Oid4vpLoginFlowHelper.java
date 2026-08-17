@@ -29,7 +29,6 @@ import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestApp;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
 import java.net.URI;
 import java.net.URLDecoder;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -138,10 +137,6 @@ class Oid4vpLoginFlowHelper {
         } catch (Exception e) {
             return false;
         }
-    }
-
-    void waitForSseConnection() {
-        LOG.info("[Test] Cross-device flow uses durable completion state; skipping pre-wallet SSE readiness wait");
     }
 
     String getState() {
@@ -310,9 +305,5 @@ class Oid4vpLoginFlowHelper {
         } catch (Exception ignored) {
             return "";
         }
-    }
-
-    private static String urlEncode(String value) {
-        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 }
