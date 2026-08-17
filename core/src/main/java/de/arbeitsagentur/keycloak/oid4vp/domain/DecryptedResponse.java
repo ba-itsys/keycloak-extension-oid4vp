@@ -27,7 +27,7 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
  * @param mdocGeneratedNonce the mDoc session transcript nonce from the JWE APU header, or {@code null}
  * @param error the OAuth error code if the wallet reported an error, or {@code null}
  * @param errorDescription human-readable error description, or {@code null}
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.2">OID4VP 1.0 §6.2 — Response Mode direct_post.jwt</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3.1">OID4VP 1.0 §8.3.1 — Response Mode direct_post.jwt</a>
  */
 public record DecryptedResponse(
         String vpToken, String state, String mdocGeneratedNonce, String error, String errorDescription) {}

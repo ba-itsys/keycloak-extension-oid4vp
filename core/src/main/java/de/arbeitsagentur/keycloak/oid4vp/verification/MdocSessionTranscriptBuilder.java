@@ -27,7 +27,7 @@ import org.keycloak.jose.jws.crypto.HashUtils;
  *
  * <p>Supports two competing handover formats that wallets may use:
  *
- * <h3>OpenID4VP 1.0 (Appendix B.3.2.2)</h3>
+ * <h3>OpenID4VP 1.0 (Appendix B.2.6.1)</h3>
  * <pre>
  * SessionTranscript = [
  *   null,                     // DeviceEngagementBytes (not used in OID4VP)
@@ -54,7 +54,7 @@ import org.keycloak.jose.jws.crypto.HashUtils;
  * ]
  * </pre>
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.3.2.2">OID4VP 1.0 Appendix B.3.2.2</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.2.6.1">OID4VP 1.0 Appendix B.2.6.1</a>
  * @see <a href="https://www.iso.org/standard/82772.html">ISO/IEC 18013-7 Annex B.4.4</a>
  */
 final class MdocSessionTranscriptBuilder {
@@ -65,7 +65,7 @@ final class MdocSessionTranscriptBuilder {
     private MdocSessionTranscriptBuilder() {}
 
     /**
-     * Builds the OID4VP 1.0 SessionTranscript (Appendix B.3.2.2).
+     * Builds the OID4VP 1.0 SessionTranscript (Appendix B.2.6.1).
      *
      * @param clientId the verifier's client_id
      * @param nonce the authorization request nonce

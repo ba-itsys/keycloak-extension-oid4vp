@@ -28,8 +28,8 @@ import org.keycloak.utils.JsonUtils;
  *
  * <p>Field and all element steps correspond to the object key (string) and all elements (null)
  * kinds of a DCQL claims path pointer as defined by
- * <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.3">
- * OID4VP 1.0, Section 6.3</a>. The pointer's array index kind is not supported beyond {@code [0]}:
+ * <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-7">
+ * OID4VP 1.0, Section 7</a>. The pointer's array index kind is not supported beyond {@code [0]}:
  * the verifier removes undisclosed array elements from the presented payload, so positions from
  * the issued credential do not survive selective disclosure, and an index read against the
  * compacted array would silently select a different element than the one the position named at

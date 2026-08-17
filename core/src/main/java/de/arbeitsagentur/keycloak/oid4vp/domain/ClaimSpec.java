@@ -32,7 +32,7 @@ import org.keycloak.utils.StringUtil;
  * <p>{@code claimSetIds} lists the DCQL claim sets this claim belongs to. A claim without ids is
  * part of every generated claim set and therefore always requested.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.4">OID4VP 1.0 §6.4 — Claims Query</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.3">OID4VP 1.0 §6.3 — Claims Query</a>
  */
 public record ClaimSpec(String namespace, String path, List<String> claimSetIds) {
 

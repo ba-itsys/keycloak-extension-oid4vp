@@ -54,7 +54,7 @@ import org.keycloak.utils.StringUtil;
  * allow-lists, resolves the user identity from the configured mapping claim, and populates the
  * brokered identity context with credential claims for downstream mappers.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-7">OID4VP 1.0 §7 — VP Token Validation</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.6">OID4VP 1.0 §8.6 — VP Token Validation</a>
  */
 public class Oid4vpCallbackProcessor {
 

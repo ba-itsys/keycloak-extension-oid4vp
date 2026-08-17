@@ -54,7 +54,7 @@ import org.keycloak.utils.StringUtil;
  * and computes client IDs for {@code x509_san_dns} and {@code x509_hash} schemes.
  *
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5">OID4VP 1.0 §5 — Authorization Request</a>
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1">OID4VP 1.0 §5.1 — Signed Authorization Request</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.8">OID4VP 1.0 §5.8 — aud of a Request Object</a>
  */
 public class Oid4vpRedirectFlowService {
 

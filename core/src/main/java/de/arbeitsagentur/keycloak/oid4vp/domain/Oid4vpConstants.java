@@ -100,7 +100,7 @@ public final class Oid4vpConstants {
     public static final String RESPONSE_MODE_DIRECT_POST = "direct_post";
     public static final String RESPONSE_MODE_DIRECT_POST_JWT = "direct_post.jwt";
 
-    // Audience of a request object addressed to any wallet, per OID4VP 1.0 §5.1
+    // Audience of a request object addressed to any wallet, per OID4VP 1.0 §5.8
     // https://openid.net/specs/openid-connect-self-issued-v2-1_0-ID1.html#name-static-self-issued-openid-p
     public static final String SELF_ISSUED_V2 = "https://self-issued.me/v2";
 
