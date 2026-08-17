@@ -18,7 +18,7 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
 /**
  * Credential presentation format detected in a {@code vp_token}.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-7">OID4VP 1.0 §7 — VP Token</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1">OID4VP 1.0 §8.1 — VP Token</a>
  */
 public enum PresentationType {
     SD_JWT(Oid4vpConstants.FORMAT_SD_JWT_VC),

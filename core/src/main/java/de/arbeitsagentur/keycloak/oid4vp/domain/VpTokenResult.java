@@ -24,7 +24,7 @@ import java.util.Map;
  * claims map that combines claims from all credentials for convenient attribute mapping.
  * Produced by {@link de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor}.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-7">OID4VP 1.0 §7 — VP Token</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1">OID4VP 1.0 §8.1 — VP Token</a>
  */
 public record VpTokenResult(Map<String, VerifiedCredential> credentials, Map<String, Object> mergedClaims) {
     public VerifiedCredential getPrimaryCredential() {

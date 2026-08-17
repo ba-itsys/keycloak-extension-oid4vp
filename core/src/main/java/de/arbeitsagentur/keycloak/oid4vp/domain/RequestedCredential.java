@@ -29,7 +29,7 @@ import org.keycloak.sdjwt.consumer.PresentationRequirements;
  * {@code claim_sets} options as index lists into {@code claims} in preference order; an empty
  * list means every claim is required.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.4">OID4VP 1.0 §6.4 — Claims Query</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.3">OID4VP 1.0 §6.3 — Claims Query</a>
  */
 public record RequestedCredential(
         String id, String format, String type, List<RequestedClaim> claims, List<List<Integer>> claimSets)

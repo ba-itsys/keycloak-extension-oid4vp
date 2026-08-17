@@ -51,7 +51,7 @@ import org.keycloak.utils.StringUtil;
  * and signals completion via a single-use object that the browser polls for (cross-device) or
  * redirects to (same-device).
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.2">OID4VP 1.0 §6.2 — Response Mode direct_post</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.2">OID4VP 1.0 §8.2 — Response Mode direct_post</a>
  */
 public class Oid4vpDirectPostService {
 

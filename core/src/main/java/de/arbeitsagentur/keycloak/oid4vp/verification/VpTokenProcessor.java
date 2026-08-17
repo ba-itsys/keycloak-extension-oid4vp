@@ -48,7 +48,7 @@ import org.keycloak.utils.StringUtil;
  * answered with. The requested id to credential type binding comes from the request context, never
  * from the presentation, so a wallet cannot choose the trust domain its credential is judged by.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-7">OID4VP 1.0 §7 — VP Token</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1">OID4VP 1.0 §8.1 — VP Token</a>
  */
 public class VpTokenProcessor implements VpTokenVerifier {
 

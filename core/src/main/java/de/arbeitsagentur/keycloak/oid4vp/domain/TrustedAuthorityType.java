@@ -25,7 +25,13 @@ public enum TrustedAuthorityType {
     /** Base64url {@code KeyIdentifier} of an {@code AuthorityKeyIdentifier}, OID4VP 1.0 §6.1.1.1. */
     AKI(Oid4vpConstants.DCQL_TRUSTED_AUTHORITY_AKI),
 
-    /** Identifier of an ETSI TS 119 612 trusted list, OID4VP 1.0 §6.1.1.2. */
+    /**
+     * Identifier of an ETSI trusted list, OID4VP 1.0 §6.1.1.2. The specification defines the value
+     * in terms of ETSI TS 119 612 (XML trusted lists); this extension advertises the URL of the
+     * ETSI TS 119 602 JSON trust list it verifies against, which is the trust list format of the
+     * EUDI ecosystem. The wallet resolves the advertised URL either way, so the entry stays a hint
+     * for credential selection rather than a format contract.
+     */
     ETSI_TL(Oid4vpConstants.DCQL_TRUSTED_AUTHORITY_ETSI_TL);
 
     private final String dcqlValue;

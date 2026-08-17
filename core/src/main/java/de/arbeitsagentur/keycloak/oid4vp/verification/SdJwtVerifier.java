@@ -31,7 +31,8 @@ import org.keycloak.sdjwt.vp.SdJwtVP;
  * issuer-trust policy and post-verification orchestration, but relies on Keycloak for the actual
  * presentation verification flow.
  *
- * @see <a href="https://www.ietf.org/archive/id/draft-ietf-oauth-selective-disclosure-jwt-13.html">SD-JWT VC</a>
+ * @see <a href="https://www.rfc-editor.org/rfc/rfc9901.html">RFC 9901 — Selective Disclosure for JSON Web Tokens</a>
+ * @see <a href="https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-13">draft-ietf-oauth-sd-jwt-vc-13 — SD-JWT VC</a>
  */
 public class SdJwtVerifier {
 

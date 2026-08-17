@@ -145,10 +145,10 @@ public record ResolvedTrust(
      * the leaf key. When {@code issuer} is non-null (formats that name their issuer, such as SD-JWT),
      * only directly trusted certificates bound to that issuer satisfy the pinned fast path, and a chain
      * built to the PKIX anchors is additionally bound to the issuer through the leaf certificate's
-     * subject alternative names (SD-JWT VC section 3.5), so a certificate trusted for one issuer cannot
-     * validate a credential claiming another. When {@code issuer} is null (formats without an issuer
-     * identifier, such as mDoc), every pinned certificate is eligible and the trust material's
-     * credential-type scope keeps trust domains apart.
+     * subject alternative names, so a certificate trusted for one issuer cannot validate a credential
+     * claiming another. When {@code issuer} is null (formats without an issuer identifier, such as
+     * mDoc), every pinned certificate is eligible and the trust material's credential-type scope keeps
+     * trust domains apart.
      *
      * <p>A chain whose leaf is itself one of the configured trust anchors is complete without path
      * building: the trust source pins that exact certificate, so only its validity window is
@@ -200,9 +200,11 @@ public record ResolvedTrust(
     }
 
     /**
-     * SD-JWT VC section 3.5: with an {@code x5c} chain, the {@code iss} value must appear as a
-     * uniformResourceIdentifier subject alternative name of the leaf certificate, or its host as a
-     * dNSName entry for an HTTPS issuer.
+     * Binds the credential's {@code iss} to the validated leaf certificate: the value must appear as
+     * a uniformResourceIdentifier subject alternative name of the leaf, or its host as a dNSName
+     * entry for an HTTPS issuer. SD-JWT VC (draft-ietf-oauth-sd-jwt-vc-13, section 3.5) identifies
+     * the issuer of an x5c credential by the end-entity certificate; this check is how that
+     * certificate and the {@code iss} claim are held together.
      */
     private static void requireIssuerMatchesLeafSan(X509Certificate leaf, String issuer) throws VerificationException {
         Collection<List<?>> subjectAlternativeNames;

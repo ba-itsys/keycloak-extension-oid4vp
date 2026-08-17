@@ -39,7 +39,7 @@ import org.keycloak.util.JsonSerialization;
  * <p>Also extracts the {@code apu} (Agreement PartyUInfo) header for mDoc-specific nonce handling.
  *
  * @see Oid4vpRequestObjectEncryptor the inverse operation (encrypting request objects for wallets)
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.2">OID4VP 1.0 §6.2 — Response Mode direct_post.jwt</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3.1">OID4VP 1.0 §8.3.1 — Response Mode direct_post.jwt</a>
  */
 public class Oid4vpResponseDecryptor {
 
