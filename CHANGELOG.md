@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.9.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.8.0...v0.9.0) (2026-08-17)
+
+
+### Features
+
+* bind a subject-less OID4VP login to the user and issue the subject credential ([89be497](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/89be497c2cbc42ce79078f3adcbf17920e2acd02))
+* replace enforceHaip and SIOP support with explicit protocol settings ([b24cd8f](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/b24cd8f91b8a829a289fc38fc940fd4cbef09ef9))
+* resolve the login subject from multiple credentials and add a reference-credential binding SPI ([1b6fa7a](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/1b6fa7a9b8e67b5d65d71bf7d7b54e2af1e071bd))
+* resolve trust material per credential and inherit trusted_authorities from trust providers ([24ed4dd](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/24ed4ddca3159b18829b72ea7e24551d2791c9cf))
+
+
+### Bug Fixes
+
+* enforce mdoc holder binding and fix subject-binding verification gaps ([bdbc2b7](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/bdbc2b708b7ff801d732f2fd327f51385e5a0efa))
+
 ## [0.8.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.7.0...v0.8.0) (2026-08-14)
 
 
