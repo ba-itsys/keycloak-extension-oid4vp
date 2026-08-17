@@ -286,6 +286,22 @@ class StatusListVerifierTest {
                 .hasMessageContaining("no trusted key matched");
     }
 
+    @Test
+    void cachedStatusListIsNotReusedForOtherRevocationCertificates() throws Exception {
+        KeyPair signer = generateEcKeyPair();
+        X509Certificate signerCert = MdocDeviceResponseTestHelper.generateSelfSignedCert(signer);
+        X509Certificate unrelatedCert = MdocDeviceResponseTestHelper.generateSelfSignedCert(generateEcKeyPair());
+        String uri = "https://issuer.example/status/signed";
+        StatusListVerifier verifierWithJwt = verifierServing(signedStatusListJwt(signer, uri));
+        Map<String, Object> claims = Map.of("status", Map.of("status_list", Map.of("uri", uri, "idx", 0)));
+
+        verifierWithJwt.checkRevocationStatus(claims, List.of(signerCert));
+
+        assertThatThrownBy(() -> verifierWithJwt.checkRevocationStatus(claims, List.of(unrelatedCert)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no trusted key matched");
+    }
+
     private StatusListVerifier verifierServing(String statusListJwt) {
         return new StatusListVerifier() {
             @Override
