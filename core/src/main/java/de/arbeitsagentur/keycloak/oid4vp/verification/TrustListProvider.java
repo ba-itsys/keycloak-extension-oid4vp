@@ -15,6 +15,7 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
+import de.arbeitsagentur.keycloak.oid4vp.util.CertificateFingerprints;
 import de.arbeitsagentur.keycloak.oid4vp.verification.trustlist.ServiceDigitalIdentity;
 import de.arbeitsagentur.keycloak.oid4vp.verification.trustlist.TrustListJwt;
 import de.arbeitsagentur.keycloak.oid4vp.verification.trustlist.TrustedEntity;
@@ -39,10 +40,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.util.SimpleHttp;
-import org.keycloak.common.util.Base64Url;
-import org.keycloak.crypto.JavaAlgorithm;
 import org.keycloak.jose.jws.JWSInput;
-import org.keycloak.jose.jws.crypto.HashUtils;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.util.JsonSerialization;
 
@@ -281,25 +279,7 @@ public class TrustListProvider {
     }
 
     CacheKey cacheKey() {
-        return new CacheKey(trustListUrl, fingerprintCertificates(signingCertificates), maxCacheTtl, maxStaleAge);
-    }
-
-    private static List<String> fingerprintCertificates(List<X509Certificate> certificates) {
-        if (certificates == null || certificates.isEmpty()) {
-            return List.of();
-        }
-        return certificates.stream()
-                .map(TrustListProvider::fingerprintCertificate)
-                .sorted()
-                .toList();
-    }
-
-    private static String fingerprintCertificate(X509Certificate certificate) {
-        try {
-            return Base64Url.encode(HashUtils.hash(JavaAlgorithm.SHA256, certificate.getEncoded()));
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to fingerprint trust list signing certificate", e);
-        }
+        return new CacheKey(trustListUrl, CertificateFingerprints.of(signingCertificates), maxCacheTtl, maxStaleAge);
     }
 
     static String extractAuthorityKeyIdentifier(X509Certificate certificate) {

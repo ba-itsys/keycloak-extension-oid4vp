@@ -17,6 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpClientIdScheme;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
+import de.arbeitsagentur.keycloak.oid4vp.util.BoundedLruMap;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpSigningKeyParser;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -26,7 +27,6 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -57,18 +57,9 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
     // Bounded and keyed by a fingerprint of the PEM, not the PEM itself: config edits change the PEM
     // and would otherwise grow this without limit, and the raw PEM carries the private key, so it must
     // not be retained as a cache key.
-    private static final Map<String, String> RESOLVED_KEY_CACHE = boundedLru(MAX_CACHE_ENTRIES);
+    private static final Map<String, String> RESOLVED_KEY_CACHE = BoundedLruMap.withMaxEntries(MAX_CACHE_ENTRIES);
     private static final Set<String> WARNED_MISSING_TRUST_MATERIAL_IDPS =
-            Collections.newSetFromMap(boundedLru(MAX_CACHE_ENTRIES));
-
-    private static <V> Map<String, V> boundedLru(int maxEntries) {
-        return Collections.synchronizedMap(new LinkedHashMap<String, V>(16, 0.75f, true) {
-            @Override
-            protected boolean removeEldestEntry(Map.Entry<String, V> eldest) {
-                return size() > maxEntries;
-            }
-        });
-    }
+            Collections.newSetFromMap(BoundedLruMap.withMaxEntries(MAX_CACHE_ENTRIES));
 
     private static String fingerprint(String value) {
         try {

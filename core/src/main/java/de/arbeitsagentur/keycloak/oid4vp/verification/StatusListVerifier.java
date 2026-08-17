@@ -16,6 +16,8 @@
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import de.arbeitsagentur.keycloak.oid4vp.util.BoundedLruMap;
+import de.arbeitsagentur.keycloak.oid4vp.util.CertificateFingerprints;
 import java.io.ByteArrayInputStream;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
@@ -23,7 +25,6 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
 import org.jboss.logging.Logger;
@@ -42,7 +43,14 @@ public class StatusListVerifier {
 
     private static final Logger LOG = Logger.getLogger(StatusListVerifier.class);
     private static final int DEFAULT_BITS_PER_STATUS = 1;
-    private static final ConcurrentHashMap<String, CachedStatusList> CACHE = new ConcurrentHashMap<>();
+    private static final int MAX_CACHE_ENTRIES = 256;
+
+    /**
+     * Decoded status lists, keyed by the trust material they were verified against as well as their
+     * URI, so a list that one credential's trust domain accepted is never reused for a credential
+     * whose trust domain judges status list signatures by other certificates.
+     */
+    private static final Map<CacheKey, CachedStatusList> CACHE = BoundedLruMap.withMaxEntries(MAX_CACHE_ENTRIES);
 
     private final KeycloakSession session;
     private final Duration maxCacheTtl;
@@ -136,7 +144,8 @@ public class StatusListVerifier {
 
     DecodedStatusList fetchAndDecodeStatusList(String uri, List<X509Certificate> revocationCertificates)
             throws Exception {
-        CachedStatusList cached = CACHE.get(uri);
+        CacheKey cacheKey = cacheKey(uri, revocationCertificates);
+        CachedStatusList cached = CACHE.get(cacheKey);
         if (cached != null && cached.isValid()) {
             LOG.debugf("Using cached status list for %s (expires %s)", uri, cached.expiresAt);
             return cached.decoded;
@@ -172,8 +181,12 @@ public class StatusListVerifier {
         Instant expiresAt = resolveExpiry(instantClaim(claims, "exp"), claims.get("ttl"));
 
         var decoded = new DecodedStatusList(statusBits, bitsPerStatus);
-        CACHE.put(uri, new CachedStatusList(decoded, expiresAt));
+        CACHE.put(cacheKey, new CachedStatusList(decoded, expiresAt));
         return decoded;
+    }
+
+    private CacheKey cacheKey(String uri, List<X509Certificate> revocationCertificates) {
+        return new CacheKey(uri, CertificateFingerprints.of(revocationCertificates), maxCacheTtl);
     }
 
     private void verifyStatusListJwtSignature(
@@ -288,6 +301,8 @@ public class StatusListVerifier {
     static void clearCache() {
         CACHE.clear();
     }
+
+    record CacheKey(String uri, List<String> revocationCertificateFingerprints, Duration maxCacheTtl) {}
 
     record StatusReference(String uri, int idx) {}
 
