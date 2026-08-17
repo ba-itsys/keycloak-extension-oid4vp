@@ -164,7 +164,7 @@ class JwtVcIssuerMetadataResolverTest {
         private boolean remoteJwksFetchUsed;
 
         private FakeResolver(Duration maxCacheTtl) {
-            super(maxCacheTtl);
+            super(null, maxCacheTtl);
         }
 
         void stubMetadata(String issuer, String body, Duration cacheTtl) throws Exception {

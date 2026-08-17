@@ -150,10 +150,6 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         return new Oid4vpIdentityProviderEndpoint(session, realm, this, callback, event, requestObjectStore);
     }
 
-    public String buildDcqlQueryFromConfig() {
-        return prepareDcqlQueryFromConfig().dcqlQuery();
-    }
-
     public PreparedDcqlQuery prepareDcqlQueryFromConfig() {
         RealmModel realm = session.getContext().getRealm();
         DcqlQueryBuilder.AggregatedCredentials aggregated = realm == null

@@ -22,7 +22,6 @@ import de.arbeitsagentur.keycloak.oid4vp.verification.trustlist.TrustedEntity;
 import de.arbeitsagentur.keycloak.oid4vp.verification.trustlist.TrustedEntityService;
 import de.arbeitsagentur.keycloak.oid4vp.verification.trustlist.X509CertificateEntry;
 import java.io.ByteArrayInputStream;
-import java.security.PublicKey;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
@@ -69,11 +68,11 @@ public class TrustListProvider {
     private final List<X509Certificate> signingCertificates;
     private volatile String currentLoTEType;
 
-    public TrustListProvider(KeycloakSession session, String trustListUrl) {
+    TrustListProvider(KeycloakSession session, String trustListUrl) {
         this(session, trustListUrl, null, null, null);
     }
 
-    public TrustListProvider(KeycloakSession session, String trustListUrl, Duration maxCacheTtl) {
+    TrustListProvider(KeycloakSession session, String trustListUrl, Duration maxCacheTtl) {
         this(session, trustListUrl, maxCacheTtl, null, null);
     }
 
@@ -85,7 +84,7 @@ public class TrustListProvider {
      *     The JWT's x5c chain is validated against these certificates, or the JWT signature is
      *     verified directly against each certificate's public key.
      */
-    public TrustListProvider(
+    TrustListProvider(
             KeycloakSession session,
             String trustListUrl,
             Duration maxCacheTtl,
@@ -114,7 +113,7 @@ public class TrustListProvider {
         this.signingCertificates = signingCertificates;
     }
 
-    /** Creates a provider with static trusted certificates. Useful for testing. */
+    /** Creates a provider serving the certificates of a configuration, which is what a pasted PEM bundle is. */
     public TrustListProvider(List<X509Certificate> staticCertificates) {
         this.session = null;
         this.trustListUrl = null;
@@ -122,16 +121,6 @@ public class TrustListProvider {
         this.maxCacheTtl = null;
         this.maxStaleAge = DEFAULT_MAX_STALE_AGE;
         this.signingCertificates = null;
-    }
-
-    /**
-     * Returns trusted public keys from the configured trust list.
-     * Results are cached based on trust-list freshness metadata.
-     */
-    public List<PublicKey> getTrustedKeys() {
-        return getTrustedCertificates().stream()
-                .map(X509Certificate::getPublicKey)
-                .toList();
     }
 
     /** Returns X.509 certificates from issuance services in the configured trust list. */
@@ -154,7 +143,7 @@ public class TrustListProvider {
      * Returns trusted X.509 certificates from the configured trust list.
      * Results are cached based on trust-list freshness metadata.
      */
-    public List<X509Certificate> getTrustedCertificates() {
+    List<X509Certificate> getTrustedCertificates() {
         if (staticCertificates != null) return staticCertificates;
         return getTrustedTrustList().certificates();
     }

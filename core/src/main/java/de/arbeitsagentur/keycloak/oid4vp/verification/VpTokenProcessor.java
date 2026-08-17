@@ -95,11 +95,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
         this.objectMapper = objectMapper;
     }
 
-    public VpTokenProcessor(ObjectMapper objectMapper, StatusListVerifier statusListVerifier) {
-        this(objectMapper, statusListVerifier, null);
-    }
-
-    public VpTokenProcessor(
+    VpTokenProcessor(
             ObjectMapper objectMapper,
             StatusListVerifier statusListVerifier,
             Supplier<CredentialTrustPlan> trustPlanSupplier) {

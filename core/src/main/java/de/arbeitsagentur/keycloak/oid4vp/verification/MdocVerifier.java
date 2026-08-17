@@ -86,7 +86,7 @@ public class MdocVerifier {
      * the credential to a session, so it must not be used to accept a presented credential. Use
      * {@link #verifyPresentation} for that.
      */
-    public MdocVerificationResult verifyIssuerSigned(String deviceResponseToken, ResolvedTrust trust) {
+    MdocVerificationResult verifyIssuerSigned(String deviceResponseToken, ResolvedTrust trust) {
         return verify(deviceResponseToken, trust, null);
     }
 

@@ -60,10 +60,6 @@ public class JwtVcIssuerMetadataResolver {
     private final KeycloakSession session;
     private final Duration maxCacheTtl;
 
-    public JwtVcIssuerMetadataResolver(Duration maxCacheTtl) {
-        this(null, maxCacheTtl);
-    }
-
     public JwtVcIssuerMetadataResolver(KeycloakSession session, Duration maxCacheTtl) {
         this.session = session;
         this.maxCacheTtl = maxCacheTtl != null ? maxCacheTtl : Duration.ofDays(1);
