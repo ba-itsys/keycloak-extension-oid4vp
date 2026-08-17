@@ -247,7 +247,7 @@ Errors can occur at multiple points:
 | `Oid4vpRequestObjectStore` | Transient storage for the per-flow request context keyed by `oid4vp_state:{state}`. The response-encryption key's `kid` equals the `state`, so encrypted callbacks resolve through the same entry. The `state` entry is the liveness anchor: removing it invalidates the flow and blocks replay after the first successful callback |
 | `Oid4vpAuthSessionResolver` | Auth session lookup from request object store (state→session, rootSessionId→tabId) |
 | `Oid4vpResponseDecryptor` | JWE decryption for direct_post.jwt responses |
-| `Oid4vpRequestObjectEncryptor` | JWE encryption for request objects when wallet sends wallet_metadata |
+| `Oid4vpRequestObjectEncryptor` | JWE encryption for request objects when the wallet_metadata names an encryption key |
 | `DcqlQueryBuilder` | Builds DCQL queries from IdP mapper configurations |
 
 ## Configuration Notes
