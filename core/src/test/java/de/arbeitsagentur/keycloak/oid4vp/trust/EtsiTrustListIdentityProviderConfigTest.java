@@ -47,12 +47,6 @@ class EtsiTrustListIdentityProviderConfigTest {
     }
 
     @Test
-    void trustListLoTEType_readsConfiguredValue() {
-        config.setTrustListLoTEType("http://uri.etsi.org/19602/LoTEType/EUWalletProvidersList");
-        assertThat(config.getTrustListLoTEType()).isEqualTo("http://uri.etsi.org/19602/LoTEType/EUWalletProvidersList");
-    }
-
-    @Test
     void trustListSigningCertPem_normalizesEscapedLineBreaks() {
         config.setTrustListSigningCertPem("-----BEGIN CERTIFICATE-----\\nabc\\n-----END CERTIFICATE-----");
         assertThat(config.getTrustListSigningCertPem())

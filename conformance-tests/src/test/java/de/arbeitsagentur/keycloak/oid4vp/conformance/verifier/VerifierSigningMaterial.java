@@ -18,7 +18,7 @@ package de.arbeitsagentur.keycloak.oid4vp.conformance.verifier;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jose.util.Base64;
+import com.nimbusds.jose.util.X509CertChainUtils;
 import java.math.BigInteger;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -28,6 +28,7 @@ import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
@@ -113,7 +114,8 @@ public final class VerifierSigningMaterial {
                     .privateKey((ECPrivateKey) leafKeyPair.getPrivate())
                     .keyID(UUID.randomUUID().toString())
                     .algorithm(JWSAlgorithm.ES256)
-                    .x509CertChain(List.of(Base64.encode(leafCert.getEncoded())))
+                    .x509CertChain(X509CertChainUtils.toBase64List(
+                            List.of(Base64.getEncoder().encodeToString(leafCert.getEncoded()))))
                     .build()
                     .toJSONString();
             String x509Hash = Base64Url.encode(HashUtils.hash(JavaAlgorithm.SHA256, leafCert.getEncoded()));
@@ -172,7 +174,7 @@ public final class VerifierSigningMaterial {
     }
 
     private static String toPem(String type, byte[] der) {
-        String base64 = java.util.Base64.getMimeEncoder(64, "\n".getBytes()).encodeToString(der);
+        String base64 = Base64.getMimeEncoder(64, "\n".getBytes()).encodeToString(der);
         return "-----BEGIN " + type + "-----\n" + base64 + "\n-----END " + type + "-----";
     }
 }

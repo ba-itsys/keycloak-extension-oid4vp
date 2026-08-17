@@ -67,10 +67,7 @@ public record RequestedCredential(
 
     /** Whether this requested credential entry matches a verified credential's format and type. */
     public boolean matches(VerifiedCredential credential) {
-        String credentialFormat = credential.presentationType() == PresentationType.MDOC
-                ? Oid4vpConstants.FORMAT_MSO_MDOC
-                : Oid4vpConstants.FORMAT_SD_JWT_VC;
-        return format.equals(credentialFormat) && type.equals(credential.credentialType());
+        return format.equals(credential.presentationType().dcqlFormat()) && type.equals(credential.credentialType());
     }
 
     /** Rejects presentations that do not contain the requested claims. */

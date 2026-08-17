@@ -17,6 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.nimbusds.jose.util.Base64;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpClientIdScheme;
 import java.math.BigInteger;
@@ -62,7 +63,7 @@ class Oid4vpRequestObjectSignerTest {
         SignedJWT requestObject = signRequestObject(leafKeyPair, List.of(leafCert, caCert));
 
         // HAIP requires that the trust anchor not appear in x5c, so only the leaf remains here
-        assertThat(requestObject.getHeader().getX509CertChain()).hasSize(1);
+        assertThat(requestObject.getHeader().getX509CertChain()).containsExactly(Base64.encode(leafCert.getEncoded()));
     }
 
     @Test
@@ -78,7 +79,8 @@ class Oid4vpRequestObjectSignerTest {
 
         SignedJWT requestObject = signRequestObject(leafKeyPair, List.of(leafCert, intermediateCert, caCert));
 
-        assertThat(requestObject.getHeader().getX509CertChain()).hasSize(2);
+        assertThat(requestObject.getHeader().getX509CertChain())
+                .containsExactly(Base64.encode(leafCert.getEncoded()), Base64.encode(intermediateCert.getEncoded()));
     }
 
     @Test
@@ -89,7 +91,7 @@ class Oid4vpRequestObjectSignerTest {
 
         SignedJWT requestObject = signRequestObject(leafKeyPair, List.of(leafCert));
 
-        assertThat(requestObject.getHeader().getX509CertChain()).hasSize(1);
+        assertThat(requestObject.getHeader().getX509CertChain()).containsExactly(Base64.encode(leafCert.getEncoded()));
     }
 
     private SignedJWT signRequestObject(KeyPair leafKeyPair, List<X509Certificate> chain) {

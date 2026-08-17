@@ -17,60 +17,25 @@ package de.arbeitsagentur.keycloak.oid4vp.verification;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SdJwtVerificationResult;
-import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.keycloak.common.VerificationException;
 import org.keycloak.sdjwt.consumer.PresentationRequirements;
 import org.keycloak.util.JsonSerialization;
 
 /**
- * OID4VP-specific presentation requirements for SD-JWT verification.
- *
- * <p>This class serves two purposes:
- * <ul>
- *   <li>optionally enforce a minimal verifier policy (VCT + required claims)</li>
- *   <li>capture the fully disclosed payload produced by Keycloak's SD-JWT verifier</li>
- * </ul>
+ * Captures the fully disclosed payload produced by Keycloak's SD-JWT verifier so the verified
+ * claims, issuer and VCT can be read after verification.
  */
 public class Oid4vpPresentationRequirements implements PresentationRequirements {
 
-    private final Set<String> expectedCredentialTypes;
-    private final Set<String> requiredClaims;
     private JsonNode disclosedPayload;
 
-    public Oid4vpPresentationRequirements() {
-        this(List.of(), List.of());
-    }
-
-    public Oid4vpPresentationRequirements(List<String> expectedCredentialTypes, List<String> requiredClaims) {
-        this.expectedCredentialTypes =
-                new LinkedHashSet<>(expectedCredentialTypes != null ? expectedCredentialTypes : List.of());
-        this.requiredClaims = new LinkedHashSet<>(requiredClaims != null ? requiredClaims : List.of());
-    }
-
     @Override
-    @SuppressWarnings("unchecked")
     public void checkIfSatisfiedBy(JsonNode disclosedPayload) throws VerificationException {
         this.disclosedPayload = disclosedPayload != null ? disclosedPayload.deepCopy() : null;
 
         if (disclosedPayload == null || disclosedPayload.isNull()) {
             throw new VerificationException("No disclosed SD-JWT payload available");
-        }
-
-        if (!expectedCredentialTypes.isEmpty()) {
-            String vct = readStringClaim(disclosedPayload, "vct");
-            if (vct == null || !expectedCredentialTypes.contains(vct)) {
-                throw new VerificationException("Unexpected `vct` claim value: " + vct);
-            }
-        }
-
-        for (String requiredClaim : requiredClaims) {
-            JsonNode claim = disclosedPayload.get(requiredClaim);
-            if (claim == null || claim.isNull()) {
-                throw new VerificationException("A required field was not presented: `" + requiredClaim + "`");
-            }
         }
     }
 

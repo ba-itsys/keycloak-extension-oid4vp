@@ -125,11 +125,6 @@ class MdocDeviceResponseTestHelper {
         return this;
     }
 
-    MdocDeviceResponseTestHelper docType(String docType) {
-        this.docType = docType;
-        return this;
-    }
-
     /** A Mobile Security Object docType differing from the document-level one. */
     MdocDeviceResponseTestHelper msoDocType(String msoDocType) {
         this.msoDocType = msoDocType;
@@ -145,16 +140,6 @@ class MdocDeviceResponseTestHelper {
     /** Flips a byte of the device signature after signing. */
     MdocDeviceResponseTestHelper tamperDeviceSignature() {
         this.tamperDeviceSignature = true;
-        return this;
-    }
-
-    MdocDeviceResponseTestHelper namespace(String namespace) {
-        this.namespace = namespace;
-        return this;
-    }
-
-    MdocDeviceResponseTestHelper claims(String[]... claimPairs) {
-        this.claimPairs = claimPairs;
         return this;
     }
 

@@ -30,6 +30,10 @@ import java.util.TreeSet;
  */
 public record CredentialTypeSpec(String format, String type, List<ClaimSpec> claimSpecs) {
 
+    public CredentialTypeSpec {
+        claimSpecs = List.copyOf(claimSpecs);
+    }
+
     /**
      * Computes the DCQL {@code claim_sets} options as indexes into {@link #claimSpecs()}. One
      * option is generated per distinct claim set id, ordered lexicographically by id; claims

@@ -140,7 +140,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
             throw new IdentityBrokerException("Unsupported VP token format");
         }
 
-        return new VpTokenResult(Map.of(credentialId, cred), cred.claims());
+        return new VpTokenResult(Map.of(credentialId, cred));
     }
 
     @SuppressWarnings("unchecked")
@@ -165,9 +165,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
                 throw new IdentityBrokerException("No valid credentials found in multi-credential VP token");
             }
 
-            Map<String, Object> mergedClaims = new LinkedHashMap<>();
-            credentials.values().forEach(credential -> mergedClaims.putAll(credential.claims()));
-            return new VpTokenResult(credentials, mergedClaims);
+            return new VpTokenResult(credentials);
         } catch (IdentityBrokerException e) {
             throw e;
         } catch (Exception e) {

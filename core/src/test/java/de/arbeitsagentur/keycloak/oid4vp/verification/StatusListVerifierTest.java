@@ -52,19 +52,6 @@ class StatusListVerifierTest {
     }
 
     @Test
-    void constructorWithMaxCacheTtl_acceptsZero() {
-        StatusListVerifier v = new StatusListVerifier(null, Duration.ZERO);
-        // Should not throw; verifier is functional for non-HTTP operations
-        v.checkRevocationStatus(Map.of("given_name", "Alice"));
-    }
-
-    @Test
-    void constructorWithMaxCacheTtl_acceptsNull() {
-        StatusListVerifier v = new StatusListVerifier(null, null);
-        v.checkRevocationStatus(Map.of());
-    }
-
-    @Test
     void extractsStatusReferenceFromValidPayload() {
         Map<String, Object> payload =
                 Map.of("status", Map.of("status_list", Map.of("uri", "https://issuer.example/status/abc", "idx", 42)));

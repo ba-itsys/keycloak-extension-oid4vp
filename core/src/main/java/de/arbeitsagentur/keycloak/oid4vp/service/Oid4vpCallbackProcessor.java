@@ -258,9 +258,7 @@ public class Oid4vpCallbackProcessor {
         if (kept.size() == vpResult.credentials().size()) {
             return vpResult;
         }
-        Map<String, Object> mergedClaims = new LinkedHashMap<>();
-        kept.values().forEach(credential -> mergedClaims.putAll(credential.claims()));
-        return new VpTokenResult(kept, mergedClaims);
+        return new VpTokenResult(kept);
     }
 
     /**

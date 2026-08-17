@@ -58,7 +58,6 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
         String walletUrl = flow.getCrossDeviceWalletUrl();
         LOG.info("[Test] Cross-device wallet URL: {}", walletUrl);
 
-        flow.waitForSseConnection();
         Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
         LOG.info("[Test] Cross-device wallet response: {}", walletResponse.rawBody());
 
@@ -78,7 +77,6 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
         flow.clickOid4vpIdpButton();
         String walletUrl = flow.getCrossDeviceWalletUrl();
 
-        flow.waitForSseConnection();
         Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
         assertThat(walletResponse.redirectUri()).isNull();
 
@@ -101,7 +99,6 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
         String walletUrl = flow.getCrossDeviceWalletUrl();
         LOG.info("[Test] Cross-device mDoc wallet URL: {}", walletUrl);
 
-        flow.waitForSseConnection();
         Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
         assertThat(walletResponse.redirectUri()).isNull();
 
@@ -141,7 +138,6 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
         assertThat(prefetch1.statusCode()).isEqualTo(200);
         assertThat(prefetch2.statusCode()).isEqualTo(200);
 
-        flow.waitForSseConnection();
         Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(crossDeviceWalletUrl);
         assertThat(walletResponse.redirectUri()).isNull();
 
@@ -163,7 +159,6 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
         String walletUrl = flow.getCrossDeviceWalletUrl();
         String state = flow.getState();
 
-        flow.waitForSseConnection();
         page.navigate("about:blank");
 
         Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
@@ -204,7 +199,6 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
         String walletUrl = flow.getCrossDeviceWalletUrl();
         String state = flow.getState();
 
-        flow.waitForSseConnection();
         page.navigate("about:blank");
 
         Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
@@ -237,7 +231,6 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
         String walletUrl = flow.getCrossDeviceWalletUrl();
         String state = flow.getState();
 
-        flow.waitForSseConnection();
         Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
         assertThat(walletResponse.redirectUri()).isNull();
 
