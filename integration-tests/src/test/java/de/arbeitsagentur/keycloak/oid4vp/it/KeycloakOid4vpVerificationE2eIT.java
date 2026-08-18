@@ -76,7 +76,10 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
         String walletUrl = flow.getSameDeviceWalletUrl();
         var walletResponse = flow.submitToWallet(walletUrl);
 
-        assertLoginFailed(walletResponse, "trust list", "signature", "failed", "authentication");
+        // With the trust list unverifiable, the credential has no trust anchors left: verification
+        // fails with "No trusted keys available for ... signature verification" (or "no trusted
+        // key matched"), which the endpoint returns as the error_description.
+        assertLoginFailed(walletResponse, "no trusted key");
     }
 
     @Test
@@ -93,7 +96,10 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
         String walletUrl = flow.getSameDeviceWalletUrl();
         var walletResponse = flow.submitToWallet(walletUrl);
 
-        assertLoginFailed(walletResponse, "trust list", "lote", "mismatch", "authentication");
+        // The trust material provider rejects the list with "Trust list LoTE type mismatch:
+        // expected ... but got ..." (EtsiTrustListIdentityProvider), which the endpoint returns
+        // as the error_description.
+        assertLoginFailed(walletResponse, "lote type mismatch");
     }
 
     @Test

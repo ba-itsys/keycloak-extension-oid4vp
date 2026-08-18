@@ -94,7 +94,11 @@ public enum Oid4vpClientIdScheme {
         };
     }
 
-    /** The configured scheme, defaulting to the certificate-bound scheme wallets expect. */
+    /**
+     * The configured scheme, defaulting to the certificate-bound scheme wallets expect. An
+     * unrecognized value, which only scripted or imported configuration can produce, is warned about
+     * because it silently changes the emitted client_id to the default scheme's.
+     */
     public static Oid4vpClientIdScheme resolve(String rawValue) {
         if (StringUtil.isBlank(rawValue)) {
             return X509_HASH;
@@ -104,6 +108,7 @@ public enum Oid4vpClientIdScheme {
                 return scheme;
             }
         }
+        LOG.warnf("Unknown client_id_scheme '%s' configured; using %s", rawValue, X509_HASH.configValue);
         return X509_HASH;
     }
 

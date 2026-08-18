@@ -34,12 +34,14 @@ public record ConformanceModuleResult(
 
     /**
      * Whether the module finished with the result expected for it. A suite-initiated SKIPPED is
-     * always accepted: the suite skips a module when it is not applicable to the configuration
-     * under test (for example a feature the verifier does not advertise), which is never a verifier
-     * conformance failure. A REVIEW result is accepted in place of PASSED when the runner uploaded
-     * verification evidence, since such modules always finish as REVIEW.
+     * accepted only for a module that opted in via {@code allowSkipped}: the suite skips such a
+     * module when it is not applicable to the configuration under test (for example a feature the
+     * verifier does not advertise). Every other module has to finish with its expected result, so
+     * an unexpected skip fails instead of passing silently. A REVIEW result is accepted in place
+     * of PASSED when the runner uploaded verification evidence, since such modules always finish
+     * as REVIEW.
      */
-    public boolean finishedWith(ConformanceResult expectedResult) {
+    public boolean finishedWith(ConformanceResult expectedResult, boolean allowSkipped) {
         if (!"FINISHED".equals(status)) {
             return false;
         }
@@ -49,8 +51,10 @@ public record ConformanceModuleResult(
                 && !hasFailureLogs()) {
             return true;
         }
-        return expectedResult.name().equals(result)
-                || ConformanceResult.SKIPPED.name().equals(result);
+        if (allowSkipped && ConformanceResult.SKIPPED.name().equals(result)) {
+            return true;
+        }
+        return expectedResult.name().equals(result);
     }
 
     private boolean hasFailureLogs() {

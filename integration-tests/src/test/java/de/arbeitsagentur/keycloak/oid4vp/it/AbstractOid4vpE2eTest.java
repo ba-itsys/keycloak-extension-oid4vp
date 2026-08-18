@@ -48,6 +48,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -70,6 +71,12 @@ abstract class AbstractOid4vpE2eTest {
     static final String CLIENT_ID = Oid4vpRealmConfig.CLIENT_ID;
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    // A revoked credential is rejected with "Credential has been revoked (status=...)"
+    // (StatusListVerifier), which the endpoint returns to the wallet as the error_description and
+    // hands to the error page. Matching on "revoked" ties the rejection to the revocation check
+    // instead of accepting any failure.
+    private static final String[] REVOCATION_ERROR_SNIPPETS = {"revoked"};
 
     @InjectRealm(config = Oid4vpRealmConfig.class)
     protected ManagedRealm realm;
@@ -335,23 +342,32 @@ abstract class AbstractOid4vpE2eTest {
         page.waitForLoadState();
     }
 
+    /**
+     * Asserts the login was rejected for the expected cause. The snippets must name that cause
+     * specifically (the endpoint returns the verification error message as the
+     * {@code error_description} of its JSON error response), so a login that fails for an
+     * unrelated reason does not satisfy this assertion.
+     */
     protected void assertLoginFailed(Oid4vpLoginFlowHelper.WalletResponse walletResponse, String... expectedSnippets) {
+        String walletResponseText = normalizedWalletResponseText(walletResponse.rawBody());
         String redirectUri = walletResponse.redirectUri();
         if (redirectUri != null) {
             page.navigate(redirectUri);
             page.waitForLoadState();
-            String bodyText = normalizedBodyText();
             assertThat(flow.isCallbackUrl(page.url()))
                     .as("Login should not succeed")
                     .isFalse();
-            assertThat(bodyText).as("Expected an error page").containsAnyOf(expectedSnippets);
+            // The failure cause surfaces on the rendered error page or in the JSON error response
+            // the wallet received, so both texts answer for the expected snippets.
+            assertThat(normalizedBodyText() + "\n" + walletResponseText)
+                    .as("Expected the error page or the wallet response to name the failure cause")
+                    .containsAnyOf(expectedSnippets);
             return;
         }
 
         assertThat(flow.isCallbackUrl(page.url()))
                 .as("Login should not succeed")
                 .isFalse();
-        String walletResponseText = normalizedWalletResponseText(walletResponse.rawBody());
         assertThat(walletResponseText)
                 .as("Expected wallet-visible error response when no redirect_uri is returned")
                 .containsAnyOf(expectedSnippets);
@@ -388,20 +404,23 @@ abstract class AbstractOid4vpE2eTest {
             String walletUrl = flow.getSameDeviceWalletUrl();
             Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
 
+            String walletResponseText = normalizedWalletResponseText(walletResponse.rawBody());
             String redirectUri = walletResponse.redirectUri();
             String renderedFailureText;
             if (redirectUri != null) {
                 page.navigate(redirectUri);
                 page.waitForLoadState();
-                renderedFailureText = waitForErrorPageContent(Duration.ofSeconds(10));
+                renderedFailureText = waitForErrorPageContent(Duration.ofSeconds(10), REVOCATION_ERROR_SNIPPETS) + "\n"
+                        + walletResponseText;
             } else {
-                renderedFailureText = normalizedWalletResponseText(walletResponse.rawBody());
+                renderedFailureText = walletResponseText;
             }
 
-            boolean hasError = containsErrorSnippet(renderedFailureText);
-            assertThat(hasError)
+            boolean revocationRejected = containsAnyOf(renderedFailureText, REVOCATION_ERROR_SNIPPETS);
+            assertThat(revocationRejected)
                     .as(
-                            "Revoked %s credential should be rejected. URL: %s, Wallet response: %s, Failure text: %s",
+                            "Revoked %s credential should be rejected with a revocation error."
+                                    + " URL: %s, Wallet response: %s, Failure text: %s",
                             formatLabel,
                             page.url(),
                             walletResponse.rawBody(),
@@ -412,12 +431,12 @@ abstract class AbstractOid4vpE2eTest {
         }
     }
 
-    private String waitForErrorPageContent(Duration timeout) throws InterruptedException {
+    private String waitForErrorPageContent(Duration timeout, String... expectedSnippets) throws InterruptedException {
         long deadline = System.nanoTime() + timeout.toNanos();
         String lastBodyText = "";
         while (System.nanoTime() < deadline) {
             lastBodyText = normalizedBodyText();
-            if (containsErrorSnippet(lastBodyText)) {
+            if (containsAnyOf(lastBodyText, expectedSnippets)) {
                 return lastBodyText;
             }
             Thread.sleep(200);
@@ -473,11 +492,8 @@ abstract class AbstractOid4vpE2eTest {
         }
     }
 
-    private static boolean containsErrorSnippet(String bodyText) {
-        return bodyText.contains("error")
-                || bodyText.contains("revoked")
-                || bodyText.contains("failed")
-                || bodyText.contains("denied");
+    private static boolean containsAnyOf(String text, String... snippets) {
+        return Arrays.stream(snippets).anyMatch(text::contains);
     }
 
     protected String extractRedirectUriFromSseResponse(String sseBody) throws IOException {

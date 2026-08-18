@@ -74,7 +74,10 @@ class KeycloakOid4vpCredentialTrustE2eIT extends AbstractOid4vpE2eTest {
         flow.clickOid4vpIdpButton();
         Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(flow.getSameDeviceWalletUrl());
 
-        assertLoginFailed(walletResponse, "trusted keys", "signature", "failed", "authentication");
+        // A credential type no provider serves resolves to empty trust material: verification
+        // fails with "No trusted keys available for mDoc signature verification" (or "no trusted
+        // key matched"), which the endpoint returns as the error_description.
+        assertLoginFailed(walletResponse, "no trusted key");
     }
 
     @Test

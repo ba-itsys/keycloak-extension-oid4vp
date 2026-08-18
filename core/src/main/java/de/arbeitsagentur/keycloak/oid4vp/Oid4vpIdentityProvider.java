@@ -333,7 +333,8 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 encryptionKeyJson,
                 encryptionJwkThumbprint,
                 preparedDcqlQuery.requestedCredentials(),
-                preparedDcqlQuery.credentialSets());
+                preparedDcqlQuery.credentialSets(),
+                preparedDcqlQuery.dcqlQuery());
         requestObjectStore.storeRequestContext(session, requestContext);
 
         URI requestUri = request.getUriInfo()
