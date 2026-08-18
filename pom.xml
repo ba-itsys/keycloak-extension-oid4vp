@@ -53,7 +53,7 @@
     <keycloak-admin-client.version>26.0.12</keycloak-admin-client.version>
     <junit.version>6.1.1</junit.version>
     <assertj.version>3.27.7</assertj.version>
-    <logback.version>1.5.37</logback.version>
+    <logback.version>1.6.3</logback.version>
 
     <!-- Root and tests modules are never deployed -->
     <maven.deploy.skip>true</maven.deploy.skip>
