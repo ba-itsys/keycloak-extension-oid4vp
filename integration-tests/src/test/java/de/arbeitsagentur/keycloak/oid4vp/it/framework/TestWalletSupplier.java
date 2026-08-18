@@ -37,7 +37,7 @@ public class TestWalletSupplier
         implements Supplier<TestWallet, InjectTestWallet>,
                 KeycloakServerConfigInterceptor<TestWallet, InjectTestWallet> {
 
-    @ConfigProperty(name = "image", defaultValue = "ghcr.io/dominikschlosser/eudi-dev:v1.24.0")
+    @ConfigProperty(name = "image", defaultValue = "ghcr.io/dominikschlosser/eudi-dev:v1.24.2")
     String image;
 
     @ConfigProperty(name = "port", defaultValue = "18085")
@@ -54,7 +54,14 @@ public class TestWalletSupplier
                 WalletCertificateAuthority.instance().createSeededWalletStateDir(),
                 port);
         container.start();
-        return new TestWallet(container, "http://localhost:" + port);
+        try {
+            return new TestWallet(container, "http://localhost:" + port);
+        } catch (RuntimeException e) {
+            // The wallet constructor talks to the container; a failure here must not leak the
+            // started container and its fixed host ports
+            container.stop();
+            throw e;
+        }
     }
 
     @Override

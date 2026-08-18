@@ -52,7 +52,8 @@ class Oid4vpRequestContextEntrySerializationTest {
                         List.of(List.of(0, 1), List.of(0)))),
                 List.of(
                         new CredentialSet(List.of(List.of("pid", "mdl"), List.of("pid")), true, "Login"),
-                        new CredentialSet(List.of(List.of("diploma")), false, null)));
+                        new CredentialSet(List.of(List.of("diploma")), false, null)),
+                "{\"credentials\":[]}");
 
         String json = JsonSerialization.writeValueAsString(entry);
         Oid4vpRequestObjectStore.RequestContextEntry restored =

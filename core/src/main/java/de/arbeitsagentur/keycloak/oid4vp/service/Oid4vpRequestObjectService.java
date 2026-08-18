@@ -20,7 +20,6 @@ import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.REQUEST_O
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProvider;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpResponseMode;
-import de.arbeitsagentur.keycloak.oid4vp.domain.PreparedDcqlQuery;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestObjectParams;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SignedRequestObject;
 import de.arbeitsagentur.keycloak.oid4vp.domain.WalletMetadata;
@@ -81,11 +80,11 @@ public class Oid4vpRequestObjectService {
         try {
             Oid4vpIdentityProviderConfig config = provider.getConfig();
             Oid4vpResponseMode responseMode = config.getResolvedResponseMode();
-            PreparedDcqlQuery preparedDcqlQuery = provider.prepareDcqlQueryFromConfig();
-
             SignedRequestObject signedRequest = provider.getRedirectFlowService()
                     .buildSignedRequestObject(new RequestObjectParams(
-                            preparedDcqlQuery.dcqlQuery(),
+                            // The stored snapshot keeps the served DCQL query and the callback
+                            // enforcement derived from the same mapper configuration.
+                            requestContext.dcqlQuery(),
                             config.getVerifierInfo(),
                             requestContext.effectiveClientId(),
                             config.getClientIdScheme(),

@@ -180,11 +180,14 @@ public class Oid4vpIdentityProviderEndpoint {
             }
 
             ResolvedSubmission submission = resolveSubmission(incomingPost, resolvedRequest);
+            // Under direct_post.jwt the wallet's error responses arrive in the response JWE too
+            // (OID4VP 1.0 §8.3). Checking the encryption requirement before the error branch keeps
+            // an unencrypted post from recording attacker-chosen error details as a wallet error
+            // and being answered with 200.
+            ensureEncryptedWhenRequired(submission.wasEncrypted());
             if (StringUtil.isNotBlank(submission.error())) {
                 return handleWalletError(submission.error(), submission.errorDescription());
             }
-
-            ensureEncryptedWhenRequired(submission.wasEncrypted());
 
             return processVpToken(
                     authSession,

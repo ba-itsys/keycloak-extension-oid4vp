@@ -247,8 +247,14 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
         if (scenario.profile().includeMdlIssuer()) {
             trustedCertificates.add(CredentialProfile.MDL_ISSUER_CERTIFICATE_PEM);
         }
-        String trustListUrl =
-                TrustListServer.instance().publish("trustlist-" + getClass().getSimpleName(), trustedCertificates);
+        // One list per credential profile: the profiles of a class differ in their certificate set,
+        // and a republish under a shared URL would race the in-flight verification of the previous
+        // module, which refetches the list on every use.
+        String trustListUrl = TrustListServer.instance()
+                .publish(
+                        "trustlist-" + getClass().getSimpleName() + "-"
+                                + scenario.profile().name(),
+                        trustedCertificates);
 
         IdentityProviderRepresentation idp = new IdentityProviderRepresentation();
         idp.setAlias(TRUST_IDP_ALIAS);

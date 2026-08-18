@@ -65,7 +65,7 @@ public abstract class AbstractConformanceTest {
         prepareModule(moduleVariant);
         ConformanceModuleResult result = suite.client()
                 .run(moduleVariant, suiteConfig(moduleVariant), moduleRun -> interact(moduleVariant, moduleRun));
-        boolean passed = result.finishedWith(moduleVariant.expectedResult());
+        boolean passed = result.finishedWith(moduleVariant.expectedResult(), moduleVariant.allowSkipped());
         if (!passed) {
             LOGGER.errorf(
                     "Full logs of failed conformance module %s:%n%s",

@@ -15,12 +15,15 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
+import org.jboss.logging.Logger;
 import org.keycloak.utils.StringUtil;
 
 /** Models the OID4VP direct-post response modes used by the verifier. */
 public enum Oid4vpResponseMode {
     DIRECT_POST("direct_post"),
     DIRECT_POST_JWT("direct_post.jwt");
+
+    private static final Logger LOG = Logger.getLogger(Oid4vpResponseMode.class);
 
     private final String parameterValue;
 
@@ -36,7 +39,11 @@ public enum Oid4vpResponseMode {
         return this == DIRECT_POST_JWT;
     }
 
-    /** The configured response mode, defaulting to the encrypted one. */
+    /**
+     * The configured response mode, defaulting to the encrypted one. An unrecognized value, which
+     * only scripted or imported configuration can produce, is warned about because it silently
+     * changes the wire behavior to the default.
+     */
     public static Oid4vpResponseMode resolve(String rawValue) {
         if (StringUtil.isBlank(rawValue)) {
             return DIRECT_POST_JWT;
@@ -46,6 +53,7 @@ public enum Oid4vpResponseMode {
                 return mode;
             }
         }
+        LOG.warnf("Unknown response mode '%s' configured; using %s", rawValue, DIRECT_POST_JWT.parameterValue);
         return DIRECT_POST_JWT;
     }
 }

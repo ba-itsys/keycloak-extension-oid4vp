@@ -83,7 +83,17 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
     void subsequentWalletLoginResolvesExistingUser() throws Exception {
         testApp().reset();
         flow.clearBrowserSession();
+        deleteAllOid4vpUsers();
 
+        // The first login creates the brokered user through first-broker-login
+        performSameDeviceLogin("subsequent-login-user");
+        flow.assertLoginSucceeded();
+        assertThat(countOid4vpUsers()).isEqualTo(1);
+
+        testApp().reset();
+        flow.clearBrowserSession();
+
+        // The second login resolves the existing brokered user instead of creating another one
         flow.navigateToLoginPage();
         flow.clickOid4vpIdpButton();
         String walletUrl = flow.getSameDeviceWalletUrl();
@@ -91,6 +101,7 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
         flow.waitForLoginCompletion(response);
 
         flow.assertLoginSucceeded();
+        assertThat(countOid4vpUsers()).isEqualTo(1);
     }
 
     @Test

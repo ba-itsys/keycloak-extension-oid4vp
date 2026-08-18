@@ -59,6 +59,8 @@ public final class TrustListServer implements AutoCloseable {
             } catch (IOException e) {
                 throw new IllegalStateException("Failed to start trust list server", e);
             }
+            // No test framework supplier owns this server, so the JVM teardown closes it
+            Runtime.getRuntime().addShutdownHook(new Thread(instance::close, "trust-list-server-shutdown"));
         }
         return instance;
     }
@@ -73,6 +75,12 @@ public final class TrustListServer implements AutoCloseable {
     @Override
     public void close() {
         server.stop(0);
+        // A closed server must never be handed out again, so the next instance() starts a new one
+        synchronized (TrustListServer.class) {
+            if (instance == this) {
+                instance = null;
+            }
+        }
     }
 
     private void handle(HttpExchange exchange) throws IOException {
@@ -84,6 +92,9 @@ public final class TrustListServer implements AutoCloseable {
         }
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/jwt");
+        // The certificate set behind a per-class URL changes between publishes, so Keycloak must
+        // never serve a later module from a cached copy of this list
+        exchange.getResponseHeaders().add("Cache-Control", "no-store");
         exchange.sendResponseHeaders(200, bytes.length);
         try (OutputStream os = exchange.getResponseBody()) {
             os.write(bytes);

@@ -27,11 +27,30 @@ public record ConformanceModuleVariant(
         Map<String, String> planVariant,
         String name,
         Map<String, String> moduleVariant,
-        ConformanceResult expectedResult) {
+        ConformanceResult expectedResult,
+        boolean allowSkipped) {
 
     public ConformanceModuleVariant(
             String plan, Map<String, String> planVariant, String name, Map<String, String> moduleVariant) {
         this(plan, planVariant, name, moduleVariant, ConformanceResult.PASSED);
+    }
+
+    public ConformanceModuleVariant(
+            String plan,
+            Map<String, String> planVariant,
+            String name,
+            Map<String, String> moduleVariant,
+            ConformanceResult expectedResult) {
+        this(plan, planVariant, name, moduleVariant, expectedResult, false);
+    }
+
+    /**
+     * A copy of this variant that also accepts a suite-initiated SKIPPED result. Only a module
+     * covering a feature the verifier legitimately does not advertise opts in; every other module
+     * fails on an unexpected skip.
+     */
+    public ConformanceModuleVariant allowingSkipped() {
+        return new ConformanceModuleVariant(plan, planVariant, name, moduleVariant, expectedResult, true);
     }
 
     // Used as the display name when running multiple variants as a parameterized test

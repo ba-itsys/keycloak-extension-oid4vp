@@ -305,6 +305,8 @@ An issuer that publishes plain JWKs instead of a trust list is trusted through K
 
 A dedicated identity provider type carries the trust material. It never authenticates users and is hidden from login pages; OID4VP identity providers reference it through `trustMaterialIdps`. Trust anchors come from an ETSI TS 119 602 trust list URL (fetched, cached, and refreshed automatically), from a pasted PEM certificate bundle, or both. CA certificates become X.509 trust anchors for credential certificate chains, end entity certificates are trusted directly (pinned leaf or chainless credentials).
 
+A directly trusted end entity certificate verifies the credentials of the types its provider serves, regardless of the credential's `iss`. A certificate chain validated against the CA anchors additionally requires the `iss` to match a subject alternative name of the leaf certificate.
+
 | Key | Description | Default |
 |-----|-------------|---------|
 | `trustListUrl` | URL of an ETSI TS 119 602 trust list JWT. | *(none)* |

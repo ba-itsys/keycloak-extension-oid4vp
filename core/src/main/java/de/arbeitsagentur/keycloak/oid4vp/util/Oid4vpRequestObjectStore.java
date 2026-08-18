@@ -54,6 +54,12 @@ public class Oid4vpRequestObjectStore {
         this.ttl = ttl;
     }
 
+    /**
+     * @param dcqlQuery the DCQL query serialized when the login page was rendered. The wallet is
+     *     served this snapshot, so the query it answers is the one the callback enforcement
+     *     ({@code requestedCredentials}, {@code credentialSets}) was derived from, even when the
+     *     mapper configuration changes mid-flow.
+     */
     public record RequestContextEntry(
             String state,
             String rootSessionId,
@@ -65,7 +71,8 @@ public class Oid4vpRequestObjectStore {
             String encryptionKeyJson,
             String encryptionJwkThumbprint,
             List<RequestedCredential> requestedCredentials,
-            List<CredentialSet> credentialSets) {}
+            List<CredentialSet> credentialSets,
+            String dcqlQuery) {}
 
     // Stores a state → request context mapping. Called when the login page is rendered.
     public void storeRequestContext(KeycloakSession session, RequestContextEntry entry) {

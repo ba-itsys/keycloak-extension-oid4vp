@@ -19,6 +19,7 @@ import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.SUPPORTED
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.SUPPORTED_MDOC_ISSUERAUTH_ALG_VALUES;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.SUPPORTED_SD_JWT_ALG_VALUES;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
@@ -26,6 +27,7 @@ import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestCertificates;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
 import io.github.dominikschlosser.eudi.CredentialFormat;
+import jakarta.ws.rs.BadRequestException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -91,26 +93,20 @@ class KeycloakOid4vpProtocolConfigE2eIT extends AbstractOid4vpE2eTest {
         assertThat(requestJwt.getHeader().getX509CertChain()).hasSize(1);
     }
 
+    // A certificate without its private key cannot sign the request object it advertises, so the
+    // configuration is rejected at save instead of producing logins every wallet rejects.
     @Test
-    void loginWithCertOnlyPemAndRealmKey() throws Exception {
-        testApp().reset();
-        flow.clearBrowserSession();
-
+    void certOnlyPemUnderCertificateBoundSchemeIsRejected() throws Exception {
         KeyPair leafKeyPair = TestCertificates.generateEcKeyPair();
         X509Certificate leafCert =
                 TestCertificates.generateLeafCertWithSan(leafKeyPair, leafKeyPair, "test.example.com");
-
         String certOnlyPem = TestCertificates.toPem("CERTIFICATE", leafCert.getEncoded());
-        setIdpConfig(Map.of(
-                Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM, certOnlyPem,
-                Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME, "x509_san_dns",
-                Oid4vpIdentityProviderConfig.X509_SIGNING_KEY_JWK, ""));
 
-        flow.navigateToLoginPage();
-        flow.clickOid4vpIdpButton();
-
-        String walletUrl = flow.getSameDeviceWalletUrl();
-        assertThat(walletUrl).contains("request_uri=");
+        assertThatThrownBy(() -> setIdpConfig(Map.of(
+                        Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM, certOnlyPem,
+                        Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME, "x509_san_dns",
+                        Oid4vpIdentityProviderConfig.X509_SIGNING_KEY_JWK, "")))
+                .isInstanceOf(BadRequestException.class);
     }
 
     @Test
