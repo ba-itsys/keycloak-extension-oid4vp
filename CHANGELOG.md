@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.9.2](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.9.1...v0.9.2) (2026-08-19)
+
+
+### Bug Fixes
+
+* advertise only certificate authority key identifiers as trusted authorities ([c2091b1](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/c2091b15f8e6daa1892783b0c92ddf4a7684f6b1))
+* choose the wallet request object encryption key by its key type, use and algorithm ([8fc9dc2](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/8fc9dc291e13439473901f39e5bdd740d8183d25))
+* key the status list cache by its trust material and bound its size ([6c837fd](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/6c837fd2ce3f2551acbcb90c1710e56cf904d546))
+* negotiate request object encryption only from request_object_encryption_enc_values_supported ([f276930](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/f2769309e7a7b67acf10f0f7e97b8fdfe2d28e87))
+* read the request object encryption method from the request object metadata parameter ([629d8a7](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/629d8a74944183358af471c16cc96e94027a7da5))
+* reject an mdoc presentation whose MSO states no validity and honor the clock skew ([b01431b](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/b01431b3ffdc54e922e225f8d49e6915479cb0e1))
+* reject credentials on trust configuration drift and harden verifier configuration ([dfd0ef8](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/dfd0ef889ea3aef441a07d84a285975520b0dfdd))
+* request each claim of a DCQL credential query once ([e3a2aa5](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/e3a2aa51446edbb6eb504f006548aa921644d54c))
+* serve the signed request object when wallet_metadata names no encryption key ([1b3a1cf](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/1b3a1cfaccba0f6d698877c55d1cc111e414bdf5))
+* serve the stored DCQL snapshot and require encrypted wallet error responses ([71bf500](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/71bf5005a004b1af7f46bebed4ac6c837a73af10))
+* verify mdoc value digests with the digest algorithm the MSO declares ([87c415a](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/87c415a30ef8b54fd378c432652bd9dc666e8582))
+
+
+### Dependencies
+
+* **deps:** bump ch.qos.logback:logback-classic from 1.5.37 to 1.6.3 ([e3ec1e4](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/e3ec1e41648d5f026a5f2f52d5b619a4e439cc12))
+
+
+### Documentation
+
+* align specification citations with OID4VP 1.0 final and RFC 9901 ([7579f83](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/7579f835d2e40b07ae4a689ccfb8c0fa0ee5b2c7))
+* describe request object encryption as keyed by the wallet_metadata encryption key ([edfa390](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/edfa390bfc5f8a09cdf6e03a09e06da467efaa1d))
+* ground the request object encryption default in the response default of OID4VP ([eeb90fc](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/eeb90fcf108056aad4fb3bf40ccc6adb2fbf78c1))
+* state what the verifier accepts beyond OID4VP 1.0 ([419d756](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/419d756d8248fd32f8495bfa663725ddc223a154))
+
 ## [0.9.1](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.9.0...v0.9.1) (2026-08-17)
 
 
