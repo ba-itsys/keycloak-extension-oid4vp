@@ -26,6 +26,7 @@ import jakarta.ws.rs.core.Response;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.HashMap;
 import java.util.Map;
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.authenticators.broker.util.SerializedBrokeredIdentityContext;
@@ -58,14 +59,19 @@ public class Oid4vpDirectPostService {
     private static final Logger LOG = Logger.getLogger(Oid4vpDirectPostService.class);
 
     public static final String CROSS_DEVICE_COMPLETE_PREFIX = "oid4vp_complete:";
+    public static final String CROSS_DEVICE_FAILED_PREFIX = "oid4vp_failed:";
     public static final String DEFERRED_AUTH_PREFIX = "oid4vp_deferred:";
+    public static final String WALLET_ERROR_PREFIX = "oid4vp_wallet_error:";
     public static final String DEFERRED_IDENTITY_NOTE = "OID4VP_DEFERRED_IDENTITY";
     public static final String DEFERRED_CLAIMS_NOTE = "OID4VP_DEFERRED_CLAIMS";
 
     static final String KEY_ROOT_SESSION_ID = "root_session_id";
     static final String KEY_TAB_ID = "tab_id";
     static final String KEY_COMPLETE_AUTH_URL = "complete_auth_url";
+    static final String KEY_WALLET_ERROR_URL = "wallet_error_url";
     static final String KEY_RESPONSE_CODE = "response_code";
+    static final String KEY_ERROR = "error";
+    static final String KEY_ERROR_DESCRIPTION = "error_description";
 
     private static final int RESPONSE_CODE_BYTES = 32;
 
@@ -287,6 +293,65 @@ public class Oid4vpDirectPostService {
             return null;
         }
         return authSessionResolver.resolveFromTokenEntry(requestContext.rootSessionId(), requestContext.tabId());
+    }
+
+    /**
+     * Records a wallet-reported error response (OID4VP 1.0 §8.5) and returns the URL that hands the
+     * End-User back to the front channel, where {@code /wallet-error} returns them to the login
+     * page.
+     *
+     * <p>OID4VP 1.0 §8.2 lets the Response URI return a {@code redirect_uri} "in response to
+     * successful Authorization Responses or for Error Responses", and requires the URL to carry a
+     * fresh, cryptographically random value, which is the {@code response_code} minted here. The
+     * error itself is kept server-side so the wallet cannot choose what the client is told.
+     *
+     * <p>For cross-device flows the wallet runs on another device, so the same URL is additionally
+     * published under {@link #CROSS_DEVICE_FAILED_PREFIX} for the browser's SSE stream to pick up.
+     */
+    public String signalWalletError(String state, String error, String errorDescription, boolean isCrossDevice) {
+        String responseCode = Base64Url.encode(SecretGenerator.getInstance().randomBytes(RESPONSE_CODE_BYTES));
+        String walletErrorUrl = buildWalletErrorUrl(state, responseCode);
+
+        Map<String, String> entry = new HashMap<>();
+        entry.put(KEY_RESPONSE_CODE, responseCode);
+        entry.put(KEY_ERROR, error != null ? error : "");
+        entry.put(KEY_ERROR_DESCRIPTION, errorDescription != null ? errorDescription : "");
+        session.singleUseObjects().put(WALLET_ERROR_PREFIX + state, deferredAuthTtlSeconds, entry);
+
+        if (isCrossDevice) {
+            session.singleUseObjects()
+                    .put(
+                            CROSS_DEVICE_FAILED_PREFIX + state,
+                            crossDeviceCompleteTtlSeconds,
+                            Map.of(KEY_WALLET_ERROR_URL, walletErrorUrl));
+        }
+        return walletErrorUrl;
+    }
+
+    /**
+     * Consumes the recorded wallet error for the given state, or returns {@code null} when the
+     * state is unknown or the response code does not match the one minted for it.
+     */
+    public WalletError consumeWalletError(String state, String responseCode) {
+        Map<String, String> entry = session.singleUseObjects().get(WALLET_ERROR_PREFIX + state);
+        if (entry == null || !responseCodeMatches(entry.get(KEY_RESPONSE_CODE), responseCode)) {
+            return null;
+        }
+        session.singleUseObjects().remove(WALLET_ERROR_PREFIX + state);
+        session.singleUseObjects().remove(CROSS_DEVICE_FAILED_PREFIX + state);
+        return new WalletError(entry.get(KEY_ERROR), entry.get(KEY_ERROR_DESCRIPTION));
+    }
+
+    /** A wallet-reported error response, as recorded when it arrived at the response URI. */
+    public record WalletError(String error, String errorDescription) {}
+
+    public String buildWalletErrorUrl(String state, String responseCode) {
+        return Oid4vpConstants.buildEndpointBaseUrl(
+                        session.getContext().getUri().getBaseUri(), realm.getName(), config.getAlias())
+                + "/wallet-error?"
+                + Oid4vpConstants.PARAM_STATE + "=" + URLEncoder.encode(state, StandardCharsets.UTF_8)
+                + "&"
+                + Oid4vpConstants.PARAM_RESPONSE_CODE + "=" + URLEncoder.encode(responseCode, StandardCharsets.UTF_8);
     }
 
     public String buildCompleteAuthUrl(String state, String responseCode) {

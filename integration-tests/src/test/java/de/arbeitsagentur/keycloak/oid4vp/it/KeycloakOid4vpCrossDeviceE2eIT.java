@@ -17,6 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp.it;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.microsoft.playwright.Page;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
@@ -257,5 +258,89 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
             otherPage.close();
             otherContext.close();
         }
+    }
+
+    /**
+     * A declined presentation must move the browser in the cross-device flow too. The wallet runs on
+     * another device, so the {@code redirect_uri} the response URI returns reaches only the wallet's
+     * own user agent; the browser learns of the decline through the SSE stream instead. Without that
+     * signal it keeps polling for a completion that never comes and shows a generic timeout only
+     * after the stream's full lifetime.
+     */
+    @Test
+    void crossDeviceWalletErrorReturnsBrowserToLoginPage() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.CROSS_DEVICE_ENABLED, "true"));
+        wallet().client().setNextError("access_denied", "User denied consent");
+
+        try {
+            flow.navigateToLoginPage();
+            flow.clickOid4vpIdpButton();
+            String walletUrl = flow.getCrossDeviceWalletUrl();
+
+            Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
+            assertThat(walletResponse.rawBody()).contains("access_denied");
+
+            // Arriving well inside the stream's lifetime is the point: a timeout would also move the
+            // browser eventually, but only after the End-User has waited the stream out.
+            page.waitForURL(
+                    url -> url.contains("/wallet-error")
+                            || page.locator("a#social-oid4vp").count() > 0,
+                    new Page.WaitForURLOptions().setTimeout(30000));
+            page.waitForLoadState();
+        } finally {
+            wallet().client().clearNextError();
+        }
+
+        assertThat(flow.isCallbackUrl(page.url()))
+                .as("A declined presentation must not complete the login")
+                .isFalse();
+        page.waitForSelector("a#social-oid4vp", new Page.WaitForSelectorOptions().setTimeout(30000));
+    }
+
+    /**
+     * The stream itself must carry the decline. Reading it directly pins the contract the browser
+     * script depends on: a {@code failed} event whose payload holds the wallet-error URL, rather
+     * than the stream falling silent until it times out.
+     */
+    @Test
+    void crossDeviceSseEmitsFailedEventWithWalletErrorUrl() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.CROSS_DEVICE_ENABLED, "true"));
+        deleteAllOid4vpUsers();
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        String walletUrl = flow.getCrossDeviceWalletUrl();
+        String state = flow.getState();
+
+        page.navigate("about:blank");
+
+        wallet().client().setNextError("access_denied", "User denied consent");
+        try {
+            Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
+            assertThat(walletResponse.rawBody()).contains("access_denied");
+        } finally {
+            wallet().client().clearNextError();
+        }
+
+        String sseStatusUrl = keycloakUrls.getBase() + "/realms/" + REALM
+                + "/broker/oid4vp/endpoint/cross-device/status?state="
+                + URLEncoder.encode(state, StandardCharsets.UTF_8);
+        HttpResponse<String> sseResponse = HttpClient.newHttpClient()
+                .send(
+                        HttpRequest.newBuilder()
+                                .uri(URI.create(sseStatusUrl))
+                                .header("Cookie", browserCookieHeader(sseStatusUrl))
+                                .GET()
+                                .build(),
+                        HttpResponse.BodyHandlers.ofString());
+
+        assertThat(sseResponse.statusCode()).isEqualTo(200);
+        assertThat(sseResponse.body()).contains("event:failed");
+        assertThat(sseResponse.body()).doesNotContain("event:complete");
+        assertThat(extractRedirectUriFromSseResponse(sseResponse.body())).contains("/wallet-error");
     }
 }

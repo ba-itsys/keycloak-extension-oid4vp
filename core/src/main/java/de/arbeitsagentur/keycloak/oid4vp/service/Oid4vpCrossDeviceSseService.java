@@ -16,7 +16,9 @@
 package de.arbeitsagentur.keycloak.oid4vp.service;
 
 import static de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService.CROSS_DEVICE_COMPLETE_PREFIX;
+import static de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService.CROSS_DEVICE_FAILED_PREFIX;
 import static de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService.KEY_COMPLETE_AUTH_URL;
+import static de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService.KEY_WALLET_ERROR_URL;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import jakarta.ws.rs.core.MediaType;
@@ -164,6 +166,15 @@ public class Oid4vpCrossDeviceSseService {
                         toJson(Map.of(OAuth2Constants.REDIRECT_URI, pollResult.completeAuthUrl())));
                 return true;
             }
+            case FAILED -> {
+                // Carries a URL like "complete", because the browser must be moved either way: the
+                // wallet-error endpoint returns the End-User to the login page.
+                sendAndClose(
+                        connection,
+                        "failed",
+                        toJson(Map.of(OAuth2Constants.REDIRECT_URI, pollResult.completeAuthUrl())));
+                return true;
+            }
             case AUTHENTICATION_SESSION_EXPIRED -> {
                 sendAndCloseError(connection, "expired", "authentication_session_expired");
                 return true;
@@ -223,6 +234,16 @@ public class Oid4vpCrossDeviceSseService {
                 if (completeAuthUrl != null) {
                     pollingSession.getTransactionManager().commit();
                     return PollResult.complete(completeAuthUrl);
+                }
+
+                // The wallet reported an error on the back channel. Cross-device has no response to
+                // the wallet that could carry the End-User back, so the browser is sent to the
+                // wallet-error URL from here instead of waiting for the stream to time out.
+                Map<String, String> failure = store.get(CROSS_DEVICE_FAILED_PREFIX + connection.state());
+                String walletErrorUrl = failure != null ? failure.get(KEY_WALLET_ERROR_URL) : null;
+                if (walletErrorUrl != null) {
+                    pollingSession.getTransactionManager().commit();
+                    return PollResult.failed(walletErrorUrl);
                 }
 
                 if (isAuthenticationSessionExpired(pollingSession, realm, connection)) {
@@ -323,6 +344,10 @@ public class Oid4vpCrossDeviceSseService {
             return new PollResult(PollStatus.COMPLETE, completeAuthUrl);
         }
 
+        private static PollResult failed(String walletErrorUrl) {
+            return new PollResult(PollStatus.FAILED, walletErrorUrl);
+        }
+
         private static PollResult realmNotFound() {
             return new PollResult(PollStatus.REALM_NOT_FOUND, null);
         }
@@ -335,6 +360,7 @@ public class Oid4vpCrossDeviceSseService {
     private enum PollStatus {
         PENDING,
         COMPLETE,
+        FAILED,
         REALM_NOT_FOUND,
         AUTHENTICATION_SESSION_EXPIRED
     }

@@ -227,9 +227,13 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
         HttpResponse<String> directPostResponse = postDirectPostWithRetry(httpClient, endpointUri, formBody);
 
         assertThat(directPostResponse.statusCode()).isEqualTo(200);
+        // An error response is answered with 200 and a redirect_uri, which OID4VP 1.0 §8.2 permits
+        // for Error Responses and the wallet MUST follow, but it leads to the wallet-error endpoint
+        // rather than to the completion the successful path returns.
         assertThat(directPostResponse.body())
                 .contains("access_denied")
-                .doesNotContain("redirect_uri")
+                .contains("/wallet-error")
+                .doesNotContain("complete-auth")
                 .doesNotContain("Encrypted response expected");
     }
 

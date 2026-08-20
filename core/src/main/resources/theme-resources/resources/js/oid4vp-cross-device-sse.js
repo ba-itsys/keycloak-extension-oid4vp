@@ -57,6 +57,19 @@
                 }
             });
 
+            currentSource.addEventListener("failed", function(event) {
+                window.__oid4vpSseReady = true;
+                stop();
+                try {
+                    var data = JSON.parse(event.data);
+                    if (data.redirect_uri) {
+                        window.location.href = data.redirect_uri;
+                    }
+                } catch (error) {
+                    console.error("OID4VP: Failed to parse failure event", error);
+                }
+            });
+
             currentSource.addEventListener("ping", function() {
                 window.__oid4vpSseReady = true;
             });
