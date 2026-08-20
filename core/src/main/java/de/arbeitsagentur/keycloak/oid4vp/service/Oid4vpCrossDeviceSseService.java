@@ -86,10 +86,20 @@ public class Oid4vpCrossDeviceSseService {
             return;
         }
 
+        // Disabling inheritable thread locals also resets the context class loader to the system
+        // loader ('app'), which cannot see classes from deployed provider jars. Providers that
+        // resolve classes through the context class loader then fail on the polling session: the
+        // Cassandra store builds a JDK proxy for its repository interface and throws
+        // IllegalArgumentException ("not visible from class loader: 'app'"). Carry the request
+        // thread's loader over so the worker resolves providers the same way a request thread does.
+        ClassLoader requestClassLoader = Thread.currentThread().getContextClassLoader();
         Thread worker = Thread.ofVirtual()
                 .name(WORKER_NAME_PREFIX + state, 0)
                 .inheritInheritableThreadLocals(false)
-                .unstarted(() -> run(connection));
+                .unstarted(() -> {
+                    Thread.currentThread().setContextClassLoader(requestClassLoader);
+                    run(connection);
+                });
         ACTIVE_WORKERS.add(worker);
         worker.start();
     }
