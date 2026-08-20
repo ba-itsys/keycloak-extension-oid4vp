@@ -26,7 +26,6 @@ import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpRequestObjectService;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpResponseDecryptor;
-import jakarta.enterprise.inject.Vetoed;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.FormParam;
@@ -71,8 +70,6 @@ import org.keycloak.utils.StringUtil;
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5">OID4VP 1.0 §5 — Authorization Request</a>
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.2">OID4VP 1.0 §8.2 — Response Mode direct_post</a>
  */
-@Vetoed
-@Path("")
 public class Oid4vpIdentityProviderEndpoint {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProviderEndpoint.class);
