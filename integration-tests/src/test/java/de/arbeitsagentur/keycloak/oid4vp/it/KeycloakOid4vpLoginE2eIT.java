@@ -20,6 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.microsoft.playwright.Page;
 import com.nimbusds.jwt.SignedJWT;
+import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
 import io.github.dominikschlosser.eudi.CredentialFormat;
@@ -74,6 +75,31 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
         setIdpConfig(Map.of(IdentityProviderModel.DO_NOT_STORE_USERS, "true"));
 
         performSameDeviceLogin("transient-wallet-user");
+        flow.assertLoginSucceeded();
+
+        assertThat(countOid4vpUsers()).isZero();
+    }
+
+    /**
+     * With transient users the subject never comes from the presentation, so the configuration that
+     * names where to read it from is not needed. Leaving {@code principalAttributes} empty must
+     * both save and log in: requiring it would force operators to configure a claim that is then
+     * ignored, and would reject a valid transient-only verifier at save time.
+     */
+    @Test
+    void transientLoginNeedsNoPrincipalAttributes() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        deleteAllOid4vpUsers();
+
+        replaceDcqlMappers(Oid4vpTestKeycloakSetup.sdJwtPidMappers());
+        setIdpConfig(Map.of(
+                IdentityProviderModel.DO_NOT_STORE_USERS,
+                "true",
+                Oid4vpIdentityProviderConfig.PRINCIPAL_ATTRIBUTES,
+                ""));
+
+        performSameDeviceLogin("transient-without-principal-attributes");
         flow.assertLoginSucceeded();
 
         assertThat(countOid4vpUsers()).isZero();
@@ -158,10 +184,26 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
             String walletUrl = flow.getSameDeviceWalletUrl();
             Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
 
+            // OID4VP 1.0 §8.2 lets the response URI answer an Authorization Error Response with a
+            // redirect_uri, and the wallet MUST follow it. Without one the wallet has nowhere to
+            // send the End-User and the login stalls with the browser still on the wallet page.
             assertThat(walletResponse.rawBody()).contains("access_denied");
-            if (walletResponse.redirectUri() != null) {
-                assertThat(walletResponse.redirectUri()).contains("access_denied");
-            }
+            assertThat(walletResponse.redirectUri())
+                    .as("A declined presentation must hand the End-User back to the front channel")
+                    .isNotNull()
+                    .contains("/wallet-error")
+                    .contains("response_code=");
+
+            // The wallet's own error text stays server-side, so a wallet cannot choose what the
+            // browser is shown.
+            assertThat(walletResponse.redirectUri()).doesNotContain("User denied consent");
+
+            page.navigate(walletResponse.redirectUri());
+            page.waitForLoadState();
+            assertThat(flow.isCallbackUrl(page.url()))
+                    .as("A declined presentation must not complete the login")
+                    .isFalse();
+            page.waitForSelector("a#social-oid4vp", new Page.WaitForSelectorOptions().setTimeout(30000));
         } finally {
             wallet().client().clearNextError();
         }

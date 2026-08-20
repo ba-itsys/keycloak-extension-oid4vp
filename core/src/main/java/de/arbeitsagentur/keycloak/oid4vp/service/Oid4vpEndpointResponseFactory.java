@@ -17,6 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp.service;
 
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.util.JsonSerialization;
@@ -32,6 +33,26 @@ public class Oid4vpEndpointResponseFactory {
             return Response.ok("{\"redirect_uri\":\"\"}")
                     .type(MediaType.APPLICATION_JSON)
                     .build();
+        }
+    }
+
+    /**
+     * Answers a wallet-reported error response with 200 and the error alongside the
+     * {@code redirect_uri} the wallet must follow, as OID4VP 1.0 §8.2 permits for Error Responses.
+     */
+    public Response jsonErrorRedirectResponse(String error, String description, String redirectUri) {
+        try {
+            Map<String, String> body = new LinkedHashMap<>();
+            body.put(OAuth2Constants.ERROR, error);
+            if (description != null) {
+                body.put(OAuth2Constants.ERROR_DESCRIPTION, description);
+            }
+            body.put(OAuth2Constants.REDIRECT_URI, redirectUri);
+            return Response.ok(JsonSerialization.writeValueAsString(body))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        } catch (Exception e) {
+            return jsonRedirectResponse(redirectUri);
         }
     }
 
