@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.4](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.9.3...v0.9.4) (2026-08-21)
+
+
+### Bug Fixes
+
+* classloader problem if using with cassandra extension ([28e5811](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/28e5811ce1d771d388a876beb7d06a2a66151b8e))
+* redirect to wallet on errors to go to frontchannel ([e3f926b](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/e3f926babbb78bce28ac58f90608fdd2537f5377))
+* remove vetoed, add beans.xml ([c44572b](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/c44572b227d9d762a5f9d63b5442ac214364943d))
+* return the user to the login page when a presentation is rejected ([96d3be4](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/96d3be4575534110094dfa3f0c97160f70f42494))
+* stop an abandoned login attempt from deciding the live one ([44acbfa](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/44acbfa088d5e8672ea02389a1feaf9466bdc00c))
+* stop answering GET on the response URI ([e66a559](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/e66a5594e5e90ee56f18e10a836361d690877915))
+
 ## [0.9.3](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.9.2...v0.9.3) (2026-08-20)
 
 
