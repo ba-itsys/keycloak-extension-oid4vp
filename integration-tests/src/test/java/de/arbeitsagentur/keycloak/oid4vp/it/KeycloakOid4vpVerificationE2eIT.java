@@ -15,6 +15,9 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.it;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.microsoft.playwright.Page;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestCertificates;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
@@ -110,5 +113,55 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
 
         performSameDeviceLogin("statuslist-active-user");
         flow.assertLoginSucceeded();
+    }
+
+    /**
+     * A presentation the verifier rejects travelled the back channel, so nothing brings the
+     * End-User back unless the response URI hands them a {@code redirect_uri} to follow. They have
+     * to arrive on the login page knowing the presentation was rejected, and the attempt they were
+     * in the middle of has to be over.
+     */
+    @Test
+    void aRejectedPresentationReturnsTheEndUserToTheLoginPage() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        deleteAllOid4vpUsers();
+
+        String credentialId = wallet().client().getCredentials().get(0).id();
+        wallet().client().revokeCredential(credentialId);
+
+        String walletUrl;
+        try {
+            flow.navigateToLoginPage();
+            flow.clickOid4vpIdpButton();
+            walletUrl = flow.getSameDeviceWalletUrl();
+            Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
+
+            assertThat(walletResponse.redirectUri())
+                    .as("A rejected presentation must hand the End-User back to the front channel")
+                    .isNotNull()
+                    .contains("/failed")
+                    .contains("response_code=");
+            // What was wrong with the presentation stays server-side, so nobody posting to a known
+            // state can choose what the browser is shown.
+            assertThat(walletResponse.redirectUri()).doesNotContain("revoked");
+
+            page.navigate(walletResponse.redirectUri());
+            page.waitForLoadState();
+        } finally {
+            wallet().client().unrevokeCredential(credentialId);
+        }
+
+        assertThat(flow.isCallbackUrl(page.url()))
+                .as("A rejected presentation must not complete the login")
+                .isFalse();
+        page.waitForSelector("a#social-oid4vp", new Page.WaitForSelectorOptions().setTimeout(30000));
+        assertThat(page.locator("body").textContent())
+                .as("The login page has to name that the presentation was rejected")
+                .contains("could not be verified");
+
+        assertThat(requestObjectResponse(walletUrl).statusCode())
+                .as("The rejected attempt is over, so its request object is gone")
+                .isEqualTo(404);
     }
 }

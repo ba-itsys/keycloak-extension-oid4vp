@@ -18,7 +18,7 @@ package de.arbeitsagentur.keycloak.oid4vp.service;
 import static de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService.CROSS_DEVICE_COMPLETE_PREFIX;
 import static de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService.CROSS_DEVICE_FAILED_PREFIX;
 import static de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService.KEY_COMPLETE_AUTH_URL;
-import static de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService.KEY_WALLET_ERROR_URL;
+import static de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService.KEY_FAILURE_URL;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import jakarta.ws.rs.core.MediaType;
@@ -168,7 +168,7 @@ public class Oid4vpCrossDeviceSseService {
             }
             case FAILED -> {
                 // Carries a URL like "complete", because the browser must be moved either way: the
-                // wallet-error endpoint returns the End-User to the login page.
+                // failure endpoint returns the End-User to the login page.
                 sendAndClose(
                         connection,
                         "failed",
@@ -236,14 +236,15 @@ public class Oid4vpCrossDeviceSseService {
                     return PollResult.complete(completeAuthUrl);
                 }
 
-                // The wallet reported an error on the back channel. Cross-device has no response to
+                // The presentation ended on the back channel, either because the wallet reported
+                // an error or because the verifier rejected it. Cross-device has no response to
                 // the wallet that could carry the End-User back, so the browser is sent to the
-                // wallet-error URL from here instead of waiting for the stream to time out.
+                // failure URL from here instead of waiting for the stream to time out.
                 Map<String, String> failure = store.get(CROSS_DEVICE_FAILED_PREFIX + connection.state());
-                String walletErrorUrl = failure != null ? failure.get(KEY_WALLET_ERROR_URL) : null;
-                if (walletErrorUrl != null) {
+                String failureUrl = failure != null ? failure.get(KEY_FAILURE_URL) : null;
+                if (failureUrl != null) {
                     pollingSession.getTransactionManager().commit();
-                    return PollResult.failed(walletErrorUrl);
+                    return PollResult.failed(failureUrl);
                 }
 
                 if (isAuthenticationSessionExpired(pollingSession, realm, connection)) {
@@ -344,8 +345,8 @@ public class Oid4vpCrossDeviceSseService {
             return new PollResult(PollStatus.COMPLETE, completeAuthUrl);
         }
 
-        private static PollResult failed(String walletErrorUrl) {
-            return new PollResult(PollStatus.FAILED, walletErrorUrl);
+        private static PollResult failed(String failureUrl) {
+            return new PollResult(PollStatus.FAILED, failureUrl);
         }
 
         private static PollResult realmNotFound() {

@@ -80,6 +80,15 @@ class ThemeResourcesTest {
         assertThat(messages).contains("oid4vpAlternativeMethods=Or sign in with another method:");
     }
 
+    @Test
+    void messageBundleNamesARejectedPresentation() throws Exception {
+        String messages = loadResource("/theme-resources/messages/messages_en.properties");
+
+        assertThat(messages)
+                .as("the login page shows this key when the verifier rejected the presentation")
+                .contains(Oid4vpIdentityProviderEndpoint.PRESENTATION_REJECTED_MESSAGE + "=");
+    }
+
     private String loadResource(String resourcePath) throws IOException {
         try (InputStream input = getClass().getResourceAsStream(resourcePath)) {
             assertThat(input).as("resource %s", resourcePath).isNotNull();
