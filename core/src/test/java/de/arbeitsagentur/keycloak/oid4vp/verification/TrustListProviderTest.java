@@ -32,6 +32,7 @@ import java.security.cert.X509Certificate;
 import java.security.spec.ECGenParameterSpec;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayDeque;
 import java.util.Base64;
 import java.util.Date;
@@ -95,6 +96,34 @@ class TrustListProviderTest {
 
         assertThat(result.expiresAt().getEpochSecond()).isEqualTo(nextUpdate.getEpochSecond());
         assertThat(result.loTEType()).isEqualTo("http://uri.etsi.org/19602/LoTEType/EUPIDProvidersList");
+    }
+
+    @Test
+    void parseTrustListJwt_withNextUpdateAsEtsiWritesIt_usesNextUpdateAsExpiry() throws Exception {
+        // The date-time ETSI TS 119 602 V1.1.1 clause 6.1.3 prescribes: UTC, four-digit year down
+        // to the second, no decimal fraction, "Z"
+        String jwt = buildSignedJwt(new JWTClaimsSet.Builder()
+                .claim("ListAndSchemeInformation", Map.of("NextUpdate", "2035-01-02T03:04:05Z"))
+                .claim("TrustedEntitiesList", List.of())
+                .build());
+
+        TrustListProvider.TrustListParseResult result = TrustListProvider.parseTrustListJwt(jwt);
+
+        assertThat(result.expiresAt()).isEqualTo(Instant.parse("2035-01-02T03:04:05Z"));
+    }
+
+    @Test
+    void parseTrustListJwt_withNextUpdateMissingSeconds_isRejected() throws Exception {
+        // Not a date-time clause 6.1.3 allows, and how long the list stays fresh is not something
+        // to guess at, so the list is refused rather than read as one without an expiry
+        String jwt = buildSignedJwt(new JWTClaimsSet.Builder()
+                .claim("ListAndSchemeInformation", Map.of("NextUpdate", "2035-01-02T03:04Z"))
+                .claim("TrustedEntitiesList", List.of())
+                .build());
+
+        assertThatThrownBy(() -> TrustListProvider.parseTrustListJwt(jwt))
+                .isInstanceOf(DateTimeParseException.class)
+                .hasMessageContaining("2035-01-02T03:04Z");
     }
 
     @Test

@@ -462,6 +462,19 @@ public class TrustListProvider {
         }
     }
 
+    /**
+     * Reads a LoTE date-time such as {@code NextUpdate}. ETSI TS 119 602 V1.1.1 clause 6.1.3
+     * requires such a value to be an ISO 8601 character string expressed as UTC, carrying "year
+     * with four digits, month, day, hour, minute, second (without decimal fraction) and the UTC
+     * designator 'Z'". {@link Instant#parse} reads every value written that way, and additionally
+     * tolerates the fractional seconds and numeric offsets ISO 8601 allows but the clause does
+     * not. A value that leaves the seconds field out is none of these, and rather than guess what
+     * a list means by it the whole list is rejected: {@code NextUpdate} is the freshness this
+     * trust list promises, and reading an unparseable one as absent would turn a list that may be
+     * long expired into one with no expiry at all.
+     *
+     * @see <a href="https://www.etsi.org/deliver/etsi_ts/119600_119699/119602/01.01.01_60/ts_119602v010101p.pdf">ETSI TS 119 602 V1.1.1 clause 6.1.3 — Date-time indication</a>
+     */
     private static Instant parseLoTEInstant(String value) {
         if (value == null || value.isBlank() || "null".equalsIgnoreCase(value)) {
             return null;
