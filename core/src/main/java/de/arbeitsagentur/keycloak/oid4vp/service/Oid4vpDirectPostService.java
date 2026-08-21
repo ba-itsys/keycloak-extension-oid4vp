@@ -132,13 +132,13 @@ public class Oid4vpDirectPostService {
 
         context.setAuthenticationSession(authSession);
         SerializedBrokeredIdentityContext serialized = SerializedBrokeredIdentityContext.serialize(context);
-        serialized.saveToAuthenticationSession(authSession, DEFERRED_IDENTITY_NOTE);
+        serialized.saveToAuthenticationSession(authSession, deferredIdentityNote(state));
 
         PresentedCredentials credentials = Oid4vpMapperUtils.presentedCredentials(context);
         if (credentials != null) {
             try {
                 String credentialsJson = JsonSerialization.writeValueAsString(credentials);
-                authSession.setAuthNote(DEFERRED_CLAIMS_NOTE, credentialsJson);
+                authSession.setAuthNote(deferredClaimsNote(state), credentialsJson);
             } catch (Exception e) {
                 LOG.warnf("Failed to serialize the presented credentials: %s", e.getMessage());
             }
@@ -234,7 +234,7 @@ public class Oid4vpDirectPostService {
 
         SerializedBrokeredIdentityContext serializedCtx =
                 SerializedBrokeredIdentityContext.readFromAuthenticationSession(
-                        storedAuthSession, DEFERRED_IDENTITY_NOTE);
+                        storedAuthSession, deferredIdentityNote(state));
         if (serializedCtx == null) {
             return ErrorPage.error(
                     session,
@@ -250,7 +250,7 @@ public class Oid4vpDirectPostService {
         context.setAuthenticationSession(activeAuthSession);
         context.getContextData().keySet().removeIf(key -> key.startsWith("user.attributes."));
 
-        String credentialsJson = storedAuthSession.getAuthNote(DEFERRED_CLAIMS_NOTE);
+        String credentialsJson = storedAuthSession.getAuthNote(deferredClaimsNote(state));
         if (credentialsJson != null) {
             try {
                 PresentedCredentials credentials =
@@ -259,15 +259,37 @@ public class Oid4vpDirectPostService {
             } catch (Exception e) {
                 LOG.warnf("Failed to deserialize the presented credentials: %s", e.getMessage());
             }
-            storedAuthSession.removeAuthNote(DEFERRED_CLAIMS_NOTE);
+            storedAuthSession.removeAuthNote(deferredClaimsNote(state));
         }
 
-        storedAuthSession.removeAuthNote(DEFERRED_IDENTITY_NOTE);
+        storedAuthSession.removeAuthNote(deferredIdentityNote(state));
 
         event.event(EventType.LOGIN);
         Response response = callback.authenticated(context);
         requestObjectStore.removeRequestContext(session, state);
         return response;
+    }
+
+    /**
+     * The auth note holding the identity a presentation established, named after the state that
+     * presentation answered.
+     *
+     * <p>One authentication session carries several live states at a time: each render of the
+     * wallet page allocates one for the same-device button and one for the cross-device QR code,
+     * and returning to the login page to start over adds more while the earlier ones stay live
+     * until they expire. Under a single note name the presentation that arrives last would decide
+     * the login another presentation had already been verified for, since the single-completion
+     * guard in {@link #storeAndSignal} only covers repeated posts for the same state. Naming the
+     * notes after their state means {@code /complete-auth} reads back exactly the identity the
+     * {@code response_code} it was given was minted for.
+     */
+    private static String deferredIdentityNote(String state) {
+        return DEFERRED_IDENTITY_NOTE + ":" + state;
+    }
+
+    /** The auth note holding the presented credentials, named after the state as above. */
+    private static String deferredClaimsNote(String state) {
+        return DEFERRED_CLAIMS_NOTE + ":" + state;
     }
 
     private static boolean responseCodeMatches(String expected, String provided) {
@@ -329,8 +351,10 @@ public class Oid4vpDirectPostService {
     }
 
     /**
-     * Consumes the recorded wallet error for the given state, or returns {@code null} when the
-     * state is unknown or the response code does not match the one minted for it.
+     * Consumes the recorded wallet error for the given state and ends the attempt it belongs to,
+     * or returns {@code null} when the state is unknown or the response code does not match the
+     * one minted for it. Callers that need the attempt's authentication session must resolve it
+     * before calling this, because the request context it resolves through is dropped here.
      */
     public WalletError consumeWalletError(String state, String responseCode) {
         Map<String, String> entry = session.singleUseObjects().get(WALLET_ERROR_PREFIX + state);
@@ -339,6 +363,11 @@ public class Oid4vpDirectPostService {
         }
         session.singleUseObjects().remove(WALLET_ERROR_PREFIX + state);
         session.singleUseObjects().remove(CROSS_DEVICE_FAILED_PREFIX + state);
+        // The End-User is being handed back to the login page, so this attempt is over. Dropping
+        // its request context stops the abandoned state from serving its request object and
+        // accepting a presentation for the rest of the login timeout, which is what let a late
+        // response reach an authentication session that has long moved on to another attempt.
+        requestObjectStore.removeRequestContext(session, state);
         return new WalletError(entry.get(KEY_ERROR), entry.get(KEY_ERROR_DESCRIPTION));
     }
 
