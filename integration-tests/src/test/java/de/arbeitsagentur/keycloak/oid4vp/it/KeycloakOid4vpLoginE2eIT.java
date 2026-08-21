@@ -24,6 +24,8 @@ import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
 import io.github.dominikschlosser.eudi.CredentialFormat;
+import io.github.dominikschlosser.eudi.IssueRequest;
+import java.net.http.HttpResponse;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.IdentityProviderModel;
@@ -314,5 +316,94 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
         }
 
         assertThat(countOid4vpUsers()).isEqualTo(1);
+    }
+
+    /**
+     * One rendered wallet page hands out two states a wallet can answer, one behind the button and
+     * one behind the QR code, and both stay live until they expire. The login belongs to the
+     * presentation the browser completes, so a presentation answering the other state of the same
+     * authentication session must not become the identity that signs in.
+     */
+    @Test
+    void aPresentationForAnotherStateDoesNotDecideThisAttemptsLogin() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        deleteAllOid4vpUsers();
+        replaceDcqlMappers(Oid4vpTestKeycloakSetup.sdJwtPidMappers());
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        String buttonWalletUrl = flow.getSameDeviceWalletUrl();
+        String qrCodeWalletUrl = flow.getCrossDeviceWalletUrl();
+        assertThat(buttonWalletUrl)
+                .as("Button and QR code are attempts of their own")
+                .isNotEqualTo(qrCodeWalletUrl);
+
+        // Opening the wallet app takes the browser off the page, which is what ends the QR code's
+        // event stream: from here on only the button's own redirect brings the End-User back.
+        page.navigate("about:blank");
+
+        issueSdJwtPidOf("Holder-Of-Record");
+        Oid4vpLoginFlowHelper.WalletResponse decidingResponse = flow.submitToWallet(buttonWalletUrl);
+        assertThat(decidingResponse.redirectUri()).contains("complete-auth");
+
+        // Only now is the QR code of the same page answered, by a wallet that meanwhile holds
+        // another PID.
+        issueSdJwtPidOf("Somebody-Else");
+        flow.submitToWallet(qrCodeWalletUrl);
+
+        page.navigate(decidingResponse.redirectUri());
+        page.waitForLoadState();
+        flow.completeFirstBrokerLoginIfNeeded("other-state-user");
+        flow.assertLoginSucceeded();
+
+        SignedJWT idToken =
+                SignedJWT.parse(exchangeAuthorizationCode().path("id_token").asText());
+        assertThat(idToken.getJWTClaimsSet().getStringClaim("sd_jwt_family_name"))
+                .as("The login carries the identity of the presentation it was completed for")
+                .isEqualTo("Holder-Of-Record");
+    }
+
+    /**
+     * A wallet-reported error ends the attempt it belongs to once the End-User has been handed
+     * back to the login page. The abandoned state must stop serving its request object rather than
+     * stay answerable for the rest of the login timeout.
+     */
+    @Test
+    void aDeclinedPresentationEndsTheAttemptItBelongsTo() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        wallet().client().setNextError("access_denied", "User denied consent");
+
+        String walletUrl;
+        try {
+            flow.navigateToLoginPage();
+            flow.clickOid4vpIdpButton();
+            walletUrl = flow.getSameDeviceWalletUrl();
+            assertThat(requestObjectResponse(walletUrl).statusCode())
+                    .as("The request object is served while the attempt is live")
+                    .isEqualTo(200);
+
+            Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
+            page.navigate(walletResponse.redirectUri());
+            page.waitForLoadState();
+        } finally {
+            wallet().client().clearNextError();
+        }
+
+        HttpResponse<String> afterDecline = requestObjectResponse(walletUrl);
+        assertThat(afterDecline.statusCode())
+                .as("The declined attempt is over, so its request object is gone: %s", afterDecline.body())
+                .isEqualTo(404);
+    }
+
+    /** Puts a single SD-JWT PID carrying the given family name into the wallet. */
+    private void issueSdJwtPidOf(String familyName) {
+        wallet().client().deleteCredentialsByType(Oid4vpTestKeycloakSetup.SD_JWT_PID_VCT);
+        wallet().client()
+                .issueCredential(IssueRequest.pid(CredentialFormat.SD_JWT)
+                        .claim("family_name", familyName)
+                        .claim("given_name", "Erika")
+                        .claim("birthdate", "1984-01-26"));
     }
 }

@@ -312,16 +312,21 @@ abstract class AbstractOid4vpE2eTest {
      * consume the request context, so the wallet can still be driven through the same wallet URL.
      */
     protected SignedJWT fetchRequestObject(String walletUrl) throws Exception {
+        HttpResponse<String> response = requestObjectResponse(walletUrl);
+        assertThat(response.statusCode()).isEqualTo(200);
+        return SignedJWT.parse(response.body());
+    }
+
+    /** The answer a wallet gets when it fetches the request object a wallet URL points at. */
+    protected HttpResponse<String> requestObjectResponse(String walletUrl) throws Exception {
         String requestUri = Oid4vpLoginFlowHelper.extractRequestUri(walletUrl);
-        HttpResponse<String> response = HttpClient.newHttpClient()
+        return HttpClient.newHttpClient()
                 .send(
                         HttpRequest.newBuilder()
                                 .uri(URI.create(requestUri))
                                 .GET()
                                 .build(),
                         HttpResponse.BodyHandlers.ofString());
-        assertThat(response.statusCode()).isEqualTo(200);
-        return SignedJWT.parse(response.body());
     }
 
     protected void waitForCrossDeviceNavigation() {
