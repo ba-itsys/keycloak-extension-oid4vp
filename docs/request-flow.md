@@ -221,7 +221,8 @@ Both ways a presentation can end travel the back channel, so neither moves the b
 - **Wallet-reported errors** (user denied consent, credential not available): answered with HTTP 200, because the Response URI processed the Authorization Error Response successfully. `/failed` ends the login with `callback.cancelled()`, so the login page shows the standard "access denied" message and the user can retry or pick another method.
 - **Presentations the verifier rejects** (revoked credential, invalid signature, unsatisfied DCQL): answered with HTTP 400, because the response itself was not acceptable; a rejected presentation answered with a success status is what the conformance suite's negative verifier modules read as a verifier that did not reject. `/failed` ends the login with `callback.error()` naming `oid4vpPresentationRejected`, so the End-User learns the presentation was rejected while the verification message itself stays on the login event.
 - **Posts that never got as far as being verified** (unknown state, undecryptable response, an unencrypted response where encryption is required): answered with a plain HTTP 400 error and no `redirect_uri`. Nothing about such a post proves it came from the wallet whose login it names, so it must not be able to end that login.
-- **Wallets that redirect an error by themselves** rather than posting it reach the `GET` handler (`handleGet`), which renders the Keycloak error page via `callback.error()`.
+
+There is no `GET` handler on the response URI itself. A wallet that redirected an error there by itself rather than posting it would arrive with nothing that proves it is the End-User's browser or that the error it names is the one that happened, so such a request cannot be allowed to end a login.
 
 ## Class Responsibilities
 

@@ -25,6 +25,9 @@ import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
 import io.github.dominikschlosser.eudi.CredentialFormat;
 import io.github.dominikschlosser.eudi.IssueRequest;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -405,5 +408,49 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
                         .claim("family_name", familyName)
                         .claim("given_name", "Erika")
                         .claim("birthdate", "1984-01-26"));
+    }
+
+    /**
+     * The response URI answers posts. A wallet that redirected an error to it by itself would
+     * arrive with nothing proving it is the End-User's browser, and with an error nobody
+     * authenticated, so the request must not be answered and the login it names has to survive it.
+     */
+    @Test
+    void aGetOnTheResponseUriDoesNotEndTheLogin() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        deleteAllOid4vpUsers();
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        String walletUrl = flow.getSameDeviceWalletUrl();
+        String state =
+                Oid4vpLoginFlowHelper.extractStateFromRequestUri(Oid4vpLoginFlowHelper.extractRequestUri(walletUrl));
+
+        String chosenText = "chosen-by-whoever-knows-the-state";
+        String responseUri = keycloakUrls.getBase() + "/realms/" + REALM + "/broker/"
+                + Oid4vpTestKeycloakSetup.IDP_ALIAS + "/endpoint?state=" + urlEncode(state)
+                + "&error=access_denied&error_description=" + urlEncode(chosenText);
+        HttpResponse<String> response = HttpClient.newHttpClient()
+                .send(
+                        HttpRequest.newBuilder()
+                                .uri(URI.create(responseUri))
+                                .GET()
+                                .build(),
+                        HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode())
+                .as("A GET on the response URI is not a login signal: %s", response.body())
+                .isGreaterThanOrEqualTo(400);
+        assertThat(response.body())
+                .as("Nothing a caller wrote may come back rendered")
+                .doesNotContain(chosenText);
+
+        // The login it named is untouched and still completes.
+        Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
+        page.navigate(walletResponse.redirectUri());
+        page.waitForLoadState();
+        flow.completeFirstBrokerLoginIfNeeded("response-uri-get-user");
+        flow.assertLoginSucceeded();
     }
 }

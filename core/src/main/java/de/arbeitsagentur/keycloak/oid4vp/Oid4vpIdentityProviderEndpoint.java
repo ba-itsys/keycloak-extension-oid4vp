@@ -65,7 +65,17 @@ import org.keycloak.utils.StringUtil;
  *       authorization request object to the wallet
  *   <li>{@code GET /cross-device/status} — SSE stream for cross-device login polling
  *   <li>{@code GET /complete-auth} — finalizes authentication after the wallet's response is processed
+ *   <li>{@code GET /failed} — returns the End-User to the login page after a presentation that
+ *       ended without completing it
  * </ul>
+ *
+ * <p>There is no handler for {@code GET /}. Under {@code direct_post} and {@code direct_post.jwt}
+ * a wallet posts its response, error responses included (OID4VP 1.0 §8.5), and the only way back
+ * to the browser is the {@code redirect_uri} the response URI answers with. A wallet that instead
+ * redirected an error to the response URI by itself would arrive with nothing that proves it is
+ * the End-User's browser or that the error is the one that happened, so such a request cannot be
+ * allowed to end a login.
+ * </p>
  *
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5">OID4VP 1.0 §5 — Authorization Request</a>
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.2">OID4VP 1.0 §8.2 — Response Mode direct_post</a>
@@ -112,58 +122,6 @@ public class Oid4vpIdentityProviderEndpoint {
         this.sseService = new Oid4vpCrossDeviceSseService(session, realm, provider.getConfig());
         this.requestObjectService = new Oid4vpRequestObjectService(
                 session, provider, requestObjectStore, authSessionResolver, responseFactory);
-    }
-
-    /**
-     * Handles GET requests to the endpoint. This is the landing page for wallets that redirect an
-     * error to the response URI by themselves rather than posting it and following the {@code
-     * redirect_uri} to {@link #handleFailureRedirect}. The state parameter is used to resolve the
-     * authentication session so that Keycloak's standard error page template can be rendered via
-     * {@code callback.error()}.
-     *
-     * <p>Nothing authenticates this request, so the error it names is whatever its caller wrote.
-     * It ends the login it names without touching the request context, and the text it carries
-     * reaches the error page, so it is a landing page for wallets that need it rather than a
-     * trusted signal.
-     */
-    @GET
-    public Response handleGet(
-            @QueryParam(OAuth2Constants.STATE) String state,
-            @QueryParam(OAuth2Constants.ERROR) String error,
-            @QueryParam(OAuth2Constants.ERROR_DESCRIPTION) String errorDescription) {
-
-        String message;
-        if (StringUtil.isNotBlank(error)) {
-            event.event(EventType.LOGIN_ERROR)
-                    .detail(OAuth2Constants.ERROR, error)
-                    .detail(OAuth2Constants.ERROR_DESCRIPTION, errorDescription)
-                    .error(Errors.IDENTITY_PROVIDER_ERROR);
-            message = error + (errorDescription != null ? ": " + errorDescription : "");
-        } else {
-            message = "No credential response received";
-        }
-
-        // callback.error() requires an active auth session in the KeycloakContext.
-        if (StringUtil.isNotBlank(state)) {
-            try {
-                AuthenticationSessionModel authSession = authSessionResolver.resolveFromStore(state);
-                if (authSession != null) {
-                    session.getContext().setAuthenticationSession(authSession);
-                }
-            } catch (Exception e) {
-                LOG.debugf("Could not resolve auth session from state: %s", e.getMessage());
-            }
-        }
-
-        try {
-            return callback.error(provider.getConfig(), message);
-        } catch (Exception e) {
-            LOG.warnf("Failed to render error page (auth session may have expired): %s", e.getMessage());
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Authentication failed: " + error)
-                    .type(MediaType.TEXT_PLAIN)
-                    .build();
-        }
     }
 
     @POST
