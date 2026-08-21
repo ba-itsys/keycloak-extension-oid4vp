@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.MissingNode;
 import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
@@ -118,22 +119,36 @@ class Oid4vpLoginFlowHelper {
         return new WalletResponse(response.rawBody(), response.redirectUri());
     }
 
+    /** The HTTP status the response URI answered the wallet with, as the wallet reports it. */
+    static int verifierStatusCode(String rawBody) {
+        return verifierResponse(rawBody).path("status_code").asInt(-1);
+    }
+
+    /** The body the response URI answered the wallet with, as the wallet reports it. */
+    static String verifierResponseBody(String rawBody) {
+        JsonNode body = verifierResponse(rawBody).path("body");
+        assertThat(body.isTextual())
+                .as("The wallet's answer carries no verifier response body: %s", rawBody)
+                .isTrue();
+        return body.asText();
+    }
+
+    private static JsonNode verifierResponse(String rawBody) {
+        try {
+            return OBJECT_MAPPER.readTree(rawBody).path("response");
+        } catch (Exception e) {
+            return MissingNode.getInstance();
+        }
+    }
+
     private boolean isSessionExpiredResponse(String rawBody) {
-        if (rawBody == null || rawBody.isBlank()) {
+        if (verifierStatusCode(rawBody) != 400) {
             return false;
         }
         try {
-            JsonNode root = OBJECT_MAPPER.readTree(rawBody);
-            JsonNode responseNode = root.path("response");
-            if (responseNode.path("status_code").asInt(-1) != 400) {
-                return false;
-            }
-            String nestedBody = responseNode.path("body").asText(null);
-            if (nestedBody == null || nestedBody.isBlank()) {
-                return false;
-            }
-            JsonNode nestedJson = OBJECT_MAPPER.readTree(nestedBody);
-            return "session_expired".equals(nestedJson.path("error").asText());
+            JsonNode body = OBJECT_MAPPER.readTree(
+                    verifierResponse(rawBody).path("body").asText(""));
+            return "session_expired".equals(body.path("error").asText());
         } catch (Exception e) {
             return false;
         }

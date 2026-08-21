@@ -16,7 +16,6 @@
 package de.arbeitsagentur.keycloak.oid4vp.conformance;
 
 import de.arbeitsagentur.keycloak.oid4vp.conformance.runner.ConformanceModuleVariant;
-import de.arbeitsagentur.keycloak.oid4vp.conformance.runner.ConformanceResult;
 import java.util.stream.Stream;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
@@ -26,6 +25,6 @@ class InvalidSdHashConformanceTest extends AbstractVerifierConformanceTest {
 
     @Override
     protected Stream<ConformanceModuleVariant> moduleVariants() {
-        return verifierModuleVariants("oid4vp-1final-verifier-invalid-sd-hash", ConformanceResult.PASSED);
+        return negativeVerifierModuleVariants("oid4vp-1final-verifier-invalid-sd-hash");
     }
 }

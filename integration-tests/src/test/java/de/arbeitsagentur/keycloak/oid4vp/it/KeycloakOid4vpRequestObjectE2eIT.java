@@ -19,6 +19,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jwt.SignedJWT;
+import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpRejectionResponse;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
 import java.net.URI;
@@ -211,10 +213,7 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
                 (Map<String, Object>) requestObject.getJWTClaimsSet().getClaim("client_metadata");
         assertThat(clientMetadata.keySet())
                 .containsExactly("vp_formats_supported", "jwks", "encrypted_response_enc_values_supported");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> jwks = (Map<String, Object>) clientMetadata.get("jwks");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> publicJwk = ((List<Map<String, Object>>) jwks.get("keys")).get(0);
+        Map<String, Object> publicJwk = encryptionJwkOf(requestObject);
         assertThat(publicJwk.get("alg")).isEqualTo("ECDH-ES");
         ECKey encryptionKey = ECKey.parse(publicJwk);
 
@@ -227,14 +226,63 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
         HttpResponse<String> directPostResponse = postDirectPostWithRetry(httpClient, endpointUri, formBody);
 
         assertThat(directPostResponse.statusCode()).isEqualTo(200);
-        // An error response is answered with 200 and a redirect_uri, which OID4VP 1.0 §8.2 permits
-        // for Error Responses and the wallet MUST follow, but it leads to the failure endpoint
-        // rather than to the completion the successful path returns.
+        // An error response is answered with 200 and the redirect_uri the wallet MUST follow, which
+        // OID4VP 1.0 §8.2 permits for Error Responses. It leads to the failure endpoint rather than
+        // to the completion the successful path returns.
         assertThat(directPostResponse.body())
-                .contains("access_denied")
                 .contains("/failed")
+                .doesNotContain("access_denied")
+                .doesNotContain("wallet rejected")
                 .doesNotContain("complete-auth")
                 .doesNotContain("Encrypted response expected");
+    }
+
+    /**
+     * The rejection response applies to presentations this verifier refuses, not to the errors a
+     * wallet reports: §8.2 has the response URI process those successfully whatever they say.
+     */
+    @Test
+    void walletReportedErrorStaysHttp200WhenRejectionsAreReportedToTheWallet() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        setIdpConfig(
+                Map.of(Oid4vpIdentityProviderConfig.REJECTION_RESPONSE, Oid4vpRejectionResponse.ERROR.configValue()));
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        String requestUri = Oid4vpLoginFlowHelper.extractRequestUri(flow.getSameDeviceWalletUrl());
+
+        HttpClient httpClient = HttpClient.newHttpClient();
+        HttpResponse<String> requestObjectResponse = httpClient.send(
+                HttpRequest.newBuilder().uri(URI.create(requestUri)).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        SignedJWT requestObject = SignedJWT.parse(requestObjectResponse.body());
+        String state = requestObject.getJWTClaimsSet().getStringClaim("state");
+        ECKey encryptionKey = ECKey.parse(encryptionJwkOf(requestObject));
+
+        String encryptedResponse = encryptWalletResponse(
+                encryptionKey,
+                Map.of("state", state, "error", "access_denied", "error_description", "wallet rejected"));
+        String endpointUri = requestUri.replaceFirst("/request-object/[^/?]+.*$", "");
+        HttpResponse<String> directPostResponse =
+                postDirectPostWithRetry(httpClient, endpointUri, "response=" + urlEncode(encryptedResponse));
+
+        assertThat(directPostResponse.statusCode())
+                .as("A wallet-reported error is processed successfully: %s", directPostResponse.body())
+                .isEqualTo(200);
+        assertThat(directPostResponse.body())
+                .contains("/failed")
+                .doesNotContain("access_denied")
+                .doesNotContain("wallet rejected");
+    }
+
+    /** The response-encryption key the request object advertises in its client metadata. */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> encryptionJwkOf(SignedJWT requestObject) throws Exception {
+        Map<String, Object> clientMetadata =
+                (Map<String, Object>) requestObject.getJWTClaimsSet().getClaim("client_metadata");
+        Map<String, Object> jwks = (Map<String, Object>) clientMetadata.get("jwks");
+        return ((List<Map<String, Object>>) jwks.get("keys")).get(0);
     }
 
     private HttpResponse<String> postDirectPostWithRetry(HttpClient httpClient, String endpointUri, String formBody)

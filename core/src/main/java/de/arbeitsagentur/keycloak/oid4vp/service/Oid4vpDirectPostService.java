@@ -17,11 +17,11 @@ package de.arbeitsagentur.keycloak.oid4vp.service;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpMessages;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredentials;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
-import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -123,7 +123,8 @@ public class Oid4vpDirectPostService {
         Map<String, String> existing = session.singleUseObjects().get(DEFERRED_AUTH_PREFIX + state);
         if (existing != null && StringUtil.isNotBlank(existing.get(KEY_RESPONSE_CODE))) {
             LOG.debugf("Ignoring repeated direct_post for already-completed state=%s", state);
-            return completionResponse(buildCompleteAuthUrl(state, existing.get(KEY_RESPONSE_CODE)), isCrossDevice);
+            return responseFactory.jsonRedirectResponse(
+                    buildCompleteAuthUrl(state, existing.get(KEY_RESPONSE_CODE)), isCrossDevice);
         }
 
         String rootSessionId = authSession.getParentSession() != null
@@ -169,14 +170,7 @@ public class Oid4vpDirectPostService {
                             Map.of(KEY_COMPLETE_AUTH_URL, completeAuthUrl));
         }
 
-        return completionResponse(completeAuthUrl, isCrossDevice);
-    }
-
-    private Response completionResponse(String completeAuthUrl, boolean isCrossDevice) {
-        if (isCrossDevice) {
-            return Response.ok("{}").type(MediaType.APPLICATION_JSON).build();
-        }
-        return responseFactory.jsonRedirectResponse(completeAuthUrl);
+        return responseFactory.jsonRedirectResponse(completeAuthUrl, isCrossDevice);
     }
 
     /**
@@ -194,20 +188,12 @@ public class Oid4vpDirectPostService {
         // must neither complete the flow nor burn the legitimate user's single-use signal.
         Map<String, String> deferredSignal = session.singleUseObjects().get(DEFERRED_AUTH_PREFIX + state);
         if (deferredSignal == null || !responseCodeMatches(deferredSignal.get(KEY_RESPONSE_CODE), responseCode)) {
-            return ErrorPage.error(
-                    session,
-                    null,
-                    Response.Status.BAD_REQUEST,
-                    "Invalid or expired authentication response. Please try logging in again.");
+            return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, Oid4vpMessages.INVALID_LOGIN_RESPONSE);
         }
 
         AuthenticationSessionModel storedAuthSession = resolveExpectedAuthSession(state);
         if (storedAuthSession == null) {
-            return ErrorPage.error(
-                    session,
-                    null,
-                    Response.Status.BAD_REQUEST,
-                    "Authentication session expired. Please try logging in again.");
+            return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, Oid4vpMessages.LOGIN_EXPIRED);
         }
 
         AuthenticationSessionModel currentBrowserSession =
@@ -217,7 +203,7 @@ public class Oid4vpDirectPostService {
                     session,
                     currentBrowserSession,
                     Response.Status.BAD_REQUEST,
-                    "Authentication session does not match the current browser session. Please restart the login flow.");
+                    Oid4vpMessages.BROWSER_SESSION_MISMATCH);
         }
         // Use the current request-bound browser session for the broker callback. The stored
         // session is only used to recover deferred broker state that was serialized earlier.
@@ -227,10 +213,7 @@ public class Oid4vpDirectPostService {
         Map<String, String> consumedSignal = session.singleUseObjects().remove(DEFERRED_AUTH_PREFIX + state);
         if (consumedSignal == null) {
             return ErrorPage.error(
-                    session,
-                    activeAuthSession,
-                    Response.Status.BAD_REQUEST,
-                    "Authentication session expired. Please try logging in again.");
+                    session, activeAuthSession, Response.Status.BAD_REQUEST, Oid4vpMessages.LOGIN_EXPIRED);
         }
 
         SerializedBrokeredIdentityContext serializedCtx =
@@ -238,10 +221,7 @@ public class Oid4vpDirectPostService {
                         storedAuthSession, deferredIdentityNote(state));
         if (serializedCtx == null) {
             return ErrorPage.error(
-                    session,
-                    activeAuthSession,
-                    Response.Status.BAD_REQUEST,
-                    "Authentication data not found. Please try logging in again.");
+                    session, activeAuthSession, Response.Status.BAD_REQUEST, Oid4vpMessages.LOGIN_DATA_MISSING);
         }
 
         session.getContext().setAuthenticationSession(activeAuthSession);
@@ -331,8 +311,19 @@ public class Oid4vpDirectPostService {
      *
      * <p>For cross-device flows the wallet runs on another device, so the same URL is additionally
      * published under {@link #CROSS_DEVICE_FAILED_PREFIX} for the browser's SSE stream to pick up.
+     * A repeated failure for the same state returns the URL already handed out.
      */
     public String signalFailure(String state, LoginFailure failure, boolean isCrossDevice) {
+        // Single-completion, like the verified path: the first failure recorded for a state owns the
+        // URL that was handed out with it. Recording a second one would generate a fresh response
+        // code and leave the End-User holding a URL that no longer resolves, which anyone knowing
+        // the public state could cause by posting again.
+        Map<String, String> existing = session.singleUseObjects().get(FAILURE_PREFIX + state);
+        if (existing != null && StringUtil.isNotBlank(existing.get(KEY_RESPONSE_CODE))) {
+            LOG.debugf("Ignoring repeated failure for already-failed state=%s", state);
+            return buildFailureUrl(state, existing.get(KEY_RESPONSE_CODE));
+        }
+
         String responseCode = Base64Url.encode(SecretGenerator.getInstance().randomBytes(RESPONSE_CODE_BYTES));
         String failureUrl = buildFailureUrl(state, responseCode);
 
@@ -385,8 +376,12 @@ public class Oid4vpDirectPostService {
          * of knowing about unless it is named.
          */
         public enum Origin {
+            /** The wallet reported an error response (OID4VP 1.0 §8.5). */
             WALLET,
-            VERIFIER;
+            /** The verifier refused what the wallet presented. */
+            VERIFIER,
+            /** Verification broke on this side, so the presentation was never judged. */
+            SERVER;
 
             static Origin of(String name) {
                 for (Origin origin : values()) {

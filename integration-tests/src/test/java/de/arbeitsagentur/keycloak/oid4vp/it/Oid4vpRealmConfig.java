@@ -30,6 +30,9 @@ public class Oid4vpRealmConfig implements RealmConfig {
     @Override
     public RealmBuilder configure(RealmBuilder realm) {
         return realm.name(REALM)
+                // The rejection cause reaches neither the wallet nor the login page, so tests read
+                // it from the login event.
+                .eventsEnabled(true)
                 .clients(ClientBuilder.create(CLIENT_ID)
                         .publicClient(true)
                         .protocol("openid-connect")

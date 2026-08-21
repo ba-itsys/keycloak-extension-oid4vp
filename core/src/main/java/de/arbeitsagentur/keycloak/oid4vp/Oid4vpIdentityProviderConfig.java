@@ -20,6 +20,7 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpClientIdScheme;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpCredentialSetsValidator;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpRejectionResponse;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpResponseMode;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PrincipalAttribute;
 import de.arbeitsagentur.keycloak.oid4vp.util.DcqlQueryBuilder;
@@ -52,6 +53,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public static final String CLIENT_ID_SCHEME = "clientIdScheme";
     public static final String RESPONSE_MODE = "responseMode";
+    public static final String REJECTION_RESPONSE = "rejectionResponse";
     public static final String X509_CERTIFICATE_PEM = "x509CertificatePem";
     public static final String X509_SIGNING_KEY_JWK = "x509SigningKeyJwk";
 
@@ -164,6 +166,10 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public void setResponseMode(String responseMode) {
         getConfig().put(RESPONSE_MODE, responseMode);
+    }
+
+    public Oid4vpRejectionResponse getRejectionResponse() {
+        return Oid4vpRejectionResponse.resolve(getConfig().get(REJECTION_RESPONSE));
     }
 
     public String getX509CertificatePem() {

@@ -246,6 +246,7 @@ This mode is intended for credentials that do not carry a stable account identif
 | `crossDeviceEnabled` | Enables cross-device QR-code wallet login. | `true` |
 | `walletScheme` | URI scheme used to invoke the wallet app, for the same-device and cross-device flows alike. | `openid4vp://` |
 | `responseMode` | Wallet callback response mode. `direct_post.jwt` encrypts the wallet response and is what wallets following the high assurance profile expect. | `direct_post.jwt` |
+| `rejectionResponse` | How the response URI answers a presentation the verifier rejects. `redirect` answers with HTTP 200 and the `redirect_uri` that returns the End-User to the login page. `error` answers with HTTP 400 and the error beside that `redirect_uri`, which a wallet aborting on a non-2xx status never follows. Wallet-reported errors are answered with HTTP 200 either way. | `redirect` |
 | `requestUriMethodPost` | Advertises `request_uri_method=post` so a conforming wallet retrieves the request object with POST (OID4VP 1.0 §5.10), sending its `wallet_metadata` and `wallet_nonce`. This enables request-object encryption and `wallet_nonce` replay protection. Leave off for wallets that retrieve the request object with GET only. | `false` |
 
 ### Client Authentication (X.509)

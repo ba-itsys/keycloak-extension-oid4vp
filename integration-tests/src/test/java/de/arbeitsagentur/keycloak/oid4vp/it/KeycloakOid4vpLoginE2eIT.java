@@ -192,7 +192,9 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
             // OID4VP 1.0 §8.2 lets the response URI answer an Authorization Error Response with a
             // redirect_uri, and the wallet MUST follow it. Without one the wallet has nowhere to
             // send the End-User and the login stalls with the browser still on the wallet page.
-            assertThat(walletResponse.rawBody()).contains("access_denied");
+            assertThat(Oid4vpLoginFlowHelper.verifierResponseBody(walletResponse.rawBody()))
+                    .contains("redirect_uri")
+                    .doesNotContain("access_denied");
             assertThat(walletResponse.redirectUri())
                     .as("A declined presentation must hand the End-User back to the front channel")
                     .isNotNull()
@@ -239,8 +241,7 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
             otherPage.navigate(redirectUri);
             otherPage.waitForLoadState();
             assertThat(otherPage.url()).contains("/broker/oid4vp/endpoint/complete-auth");
-            assertThat(otherPage.locator("body").textContent().toLowerCase())
-                    .contains("authentication session does not match");
+            assertThat(otherPage.locator("body").textContent().toLowerCase()).contains("different browser");
         } finally {
             otherPage.close();
             otherContext.close();
@@ -428,9 +429,8 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
                 Oid4vpLoginFlowHelper.extractStateFromRequestUri(Oid4vpLoginFlowHelper.extractRequestUri(walletUrl));
 
         String chosenText = "chosen-by-whoever-knows-the-state";
-        String responseUri = keycloakUrls.getBase() + "/realms/" + REALM + "/broker/"
-                + Oid4vpTestKeycloakSetup.IDP_ALIAS + "/endpoint?state=" + urlEncode(state)
-                + "&error=access_denied&error_description=" + urlEncode(chosenText);
+        String responseUri = responseUri() + "?state=" + urlEncode(state) + "&error=access_denied&error_description="
+                + urlEncode(chosenText);
         HttpResponse<String> response = HttpClient.newHttpClient()
                 .send(
                         HttpRequest.newBuilder()

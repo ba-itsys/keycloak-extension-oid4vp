@@ -17,6 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpClientIdScheme;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpRejectionResponse;
 import de.arbeitsagentur.keycloak.oid4vp.util.BoundedLruMap;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpSigningKeyParser;
 import java.nio.charset.StandardCharsets;
@@ -83,6 +84,19 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .defaultValue(Oid4vpConstants.RESPONSE_MODE_DIRECT_POST_JWT)
                 .options(List.of(
                         Oid4vpConstants.RESPONSE_MODE_DIRECT_POST, Oid4vpConstants.RESPONSE_MODE_DIRECT_POST_JWT))
+                .add()
+                .property()
+                .name(Oid4vpIdentityProviderConfig.REJECTION_RESPONSE)
+                .label("Rejected Presentation Response")
+                .helpText("How the response URI answers a presentation this verifier rejects. 'redirect' answers "
+                        + "with HTTP 200 and the redirect_uri that returns the End-User to the login page. 'error' "
+                        + "answers with HTTP 400 and the error beside that redirect_uri; a wallet that aborts on a "
+                        + "non-2xx status does not return the End-User. Wallet-reported errors are always answered "
+                        + "with HTTP 200.")
+                .type(ProviderConfigProperty.LIST_TYPE)
+                .defaultValue(Oid4vpRejectionResponse.REDIRECT.configValue())
+                .options(List.of(
+                        Oid4vpRejectionResponse.REDIRECT.configValue(), Oid4vpRejectionResponse.ERROR.configValue()))
                 .add()
                 .property()
                 .name(Oid4vpIdentityProviderConfig.CREDENTIAL_SETS)

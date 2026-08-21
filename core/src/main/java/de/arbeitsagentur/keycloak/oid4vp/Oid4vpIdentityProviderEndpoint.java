@@ -19,6 +19,7 @@ import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.DecryptedResponse;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpMessages;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpCrossDeviceSseService;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpEndpointResponseFactory;
@@ -52,6 +53,7 @@ import org.keycloak.events.EventBuilder;
 import org.keycloak.events.EventType;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.services.ErrorPage;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.utils.StringUtil;
 
@@ -85,9 +87,6 @@ public class Oid4vpIdentityProviderEndpoint {
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProviderEndpoint.class);
     private static final int REQUEST_CONTEXT_LOOKUP_MAX_ATTEMPTS = 5;
     private static final long REQUEST_CONTEXT_LOOKUP_RETRY_DELAY_MILLIS = 25;
-
-    /** Message bundle key of the text the login page shows for a rejected presentation. */
-    static final String PRESENTATION_REJECTED_MESSAGE = "oid4vpPresentationRejected";
 
     private final KeycloakSession session;
     private final RealmModel realm;
@@ -345,13 +344,8 @@ public class Oid4vpIdentityProviderEndpoint {
     @Path("/complete-auth")
     public Response completeAuth(
             @QueryParam(PARAM_STATE) String state, @QueryParam(PARAM_RESPONSE_CODE) String responseCode) {
-        if (StringUtil.isBlank(state)) {
-            return responseFactory.jsonErrorResponse(
-                    Response.Status.BAD_REQUEST, "invalid_request", "Missing state parameter");
-        }
-        if (StringUtil.isBlank(responseCode)) {
-            return responseFactory.jsonErrorResponse(
-                    Response.Status.BAD_REQUEST, "invalid_request", "Missing response code parameter");
+        if (StringUtil.isBlank(state) || StringUtil.isBlank(responseCode)) {
+            return browserError(Oid4vpMessages.INVALID_LOGIN_RESPONSE);
         }
         return directPostService.completeAuth(state, responseCode, callback, event);
     }
@@ -386,21 +380,18 @@ public class Oid4vpIdentityProviderEndpoint {
     public Response handleFailureRedirect(
             @QueryParam(PARAM_STATE) String state, @QueryParam(PARAM_RESPONSE_CODE) String responseCode) {
         if (StringUtil.isBlank(state) || StringUtil.isBlank(responseCode)) {
-            return responseFactory.jsonErrorResponse(
-                    Response.Status.BAD_REQUEST, "invalid_request", "Missing state or response code parameter");
+            return browserError(Oid4vpMessages.INVALID_LOGIN_RESPONSE);
         }
 
         AuthenticationSessionModel authSession = authSessionResolver.resolveFromStore(state);
         Oid4vpDirectPostService.LoginFailure failure = directPostService.consumeFailure(state, responseCode);
         if (failure == null) {
             LOG.warnf("No failure recorded for state=%s, or the response code did not match", state);
-            return responseFactory.jsonErrorResponse(
-                    Response.Status.BAD_REQUEST, "invalid_request", "Unknown or already consumed failure");
+            return browserError(Oid4vpMessages.LOGIN_ENDED);
         }
         if (authSession == null) {
             LOG.warnf("The failed login for state=%s has no authentication session left to return to", state);
-            return responseFactory.jsonErrorResponse(
-                    Response.Status.BAD_REQUEST, "session_expired", "The login this error belongs to has expired");
+            return browserError(Oid4vpMessages.LOGIN_EXPIRED);
         }
         session.getContext().setAuthenticationSession(authSession);
 
@@ -412,10 +403,11 @@ public class Oid4vpIdentityProviderEndpoint {
                 .detail(OAuth2Constants.ERROR_DESCRIPTION, failure.errorDescription())
                 .error(Errors.IDENTITY_PROVIDER_ERROR);
 
-        if (failure.origin() == Oid4vpDirectPostService.LoginFailure.Origin.VERIFIER) {
-            return callback.error(provider.getConfig(), PRESENTATION_REJECTED_MESSAGE);
-        }
-        return callback.cancelled(provider.getConfig());
+        return switch (failure.origin()) {
+            case VERIFIER -> callback.error(provider.getConfig(), Oid4vpMessages.PRESENTATION_REJECTED);
+            case SERVER -> callback.error(provider.getConfig(), Oid4vpMessages.VERIFICATION_FAILED);
+            case WALLET -> callback.cancelled(provider.getConfig());
+        };
     }
 
     private Response processVpToken(
@@ -426,16 +418,16 @@ public class Oid4vpIdentityProviderEndpoint {
             String mdocGeneratedNonce,
             boolean isCrossDeviceFlow) {
 
+        BrokeredIdentityContext context;
         try {
-            BrokeredIdentityContext context =
-                    provider.getCallbackProcessor().process(requestContext, vpToken, mdocGeneratedNonce);
-            return directPostService.storeAndSignal(authSession, requestContext.state(), context, isCrossDeviceFlow);
+            context = provider.getCallbackProcessor().process(requestContext, vpToken, mdocGeneratedNonce);
         } catch (IdentityBrokerException e) {
             return handleVerificationFailure(e.getMessage(), state, isCrossDeviceFlow);
         } catch (Exception e) {
             LOG.errorf(e, "Failed to process VP token: %s", e.getMessage());
-            return responseFactory.jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", null);
+            return handleServerFailure(e.getMessage(), state, isCrossDeviceFlow);
         }
+        return directPostService.storeAndSignal(authSession, requestContext.state(), context, isCrossDeviceFlow);
     }
 
     /**
@@ -456,66 +448,78 @@ public class Oid4vpIdentityProviderEndpoint {
     }
 
     /**
-     * Answers a wallet-reported error response (OID4VP 1.0 §8.5). The status is 200 because the
-     * response URI processed the Authorization Error Response successfully (OID4VP 1.0 §8.2); the
-     * error belongs in the body, not in the HTTP status.
-     *
-     * <p>The body also carries a {@code redirect_uri}, which §8.2 explicitly permits for error
-     * responses and which the wallet MUST follow. Without it the wallet has nowhere to send the
-     * End-User and the login stalls until it times out. The URL leads to
-     * {@link #handleFailureRedirect}, which returns them to the login page.
+     * Answers a wallet-reported error response (OID4VP 1.0 §8.5), which the response URI processed
+     * successfully whatever the wallet reported.
      */
     private Response handleWalletError(String error, String errorDescription, String state, boolean isCrossDevice) {
         return handleFailure(
                 new Oid4vpDirectPostService.LoginFailure(
                         Oid4vpDirectPostService.LoginFailure.Origin.WALLET, error, errorDescription),
                 state,
-                isCrossDevice,
-                Response.Status.OK);
+                isCrossDevice);
     }
 
     /**
-     * Answers a presentation this verifier rejected. The wallet is told what was wrong, and the
-     * body carries the {@code redirect_uri} that hands the End-User back to the login page, for
-     * the same reason a wallet-reported error does: the response travelled the back channel, so
-     * without it the browser is left waiting on a login that has already failed.
-     *
-     * <p>Unlike a wallet-reported error the status stays 400. The response was not acceptable,
-     * and a rejected presentation answered with a success status is what the OID4VP conformance
-     * suite's negative verifier modules read as a verifier that did not reject at all.
+     * Answers a presentation this verifier rejected, reporting the rejection to the wallet when
+     * {@code rejectionResponse} says so.
      *
      * <p>Only a response that got as far as being verified is answered this way. The transport
      * level failures {@link #handlePost} catches are answered with a plain error instead, because
      * a post that never proved it came from the wallet must not be able to end the attempt.
      */
+    /**
+     * Answers a presentation verification broke on: the End-User waits on the same back channel as
+     * a rejected one, so they are handed back the same way, but nothing about their credential was
+     * judged. The login event carries {@code server_error} and the login page says the verification
+     * failed rather than blaming what the wallet presented, and {@code rejectionResponse} does not
+     * apply, because this is not a rejection to report to the wallet.
+     */
+    private Response handleServerFailure(String errorDescription, String state, boolean isCrossDevice) {
+        return handleFailure(
+                new Oid4vpDirectPostService.LoginFailure(
+                        Oid4vpDirectPostService.LoginFailure.Origin.SERVER, "server_error", errorDescription),
+                state,
+                isCrossDevice);
+    }
+
     private Response handleVerificationFailure(String errorDescription, String state, boolean isCrossDevice) {
         return handleFailure(
                 new Oid4vpDirectPostService.LoginFailure(
                         Oid4vpDirectPostService.LoginFailure.Origin.VERIFIER, "invalid_presentation", errorDescription),
                 state,
-                isCrossDevice,
-                Response.Status.BAD_REQUEST);
+                isCrossDevice);
     }
 
     /**
-     * Records the failure, then answers the wallet with the error alongside the {@code
-     * redirect_uri} it must follow, under the status the caller says the response deserves.
-     * Without a state there is nothing to record and nowhere to send the End-User, so the response
-     * falls back to the plain error the wallet can still act on.
+     * Records the failure, then answers the wallet like a completed login: the {@code redirect_uri}
+     * leading to {@link #handleFailureRedirect}, or an empty object in a cross-device flow. A
+     * rejection is reported to the wallet instead when {@code rejectionResponse} is {@code error}.
+     *
+     * <p>Without a state there is nothing to record and nowhere to send the End-User, so the
+     * response falls back to a plain error.
      */
-    private Response handleFailure(
-            Oid4vpDirectPostService.LoginFailure failure, String state, boolean isCrossDevice, Response.Status status) {
+    private Response handleFailure(Oid4vpDirectPostService.LoginFailure failure, String state, boolean isCrossDevice) {
         event.event(EventType.LOGIN_ERROR)
                 .detail(OAuth2Constants.ERROR, failure.error())
                 .detail(OAuth2Constants.ERROR_DESCRIPTION, failure.errorDescription())
                 .error(Errors.IDENTITY_PROVIDER_ERROR);
 
         if (StringUtil.isBlank(state)) {
-            return responseFactory.jsonErrorResponse(status, failure.error(), failure.errorDescription());
+            return responseFactory.jsonErrorResponse(
+                    Response.Status.BAD_REQUEST, failure.error(), failure.errorDescription());
         }
         String failureUrl = directPostService.signalFailure(state, failure, isCrossDevice);
-        return responseFactory.jsonErrorRedirectResponse(
-                status, failure.error(), failure.errorDescription(), failureUrl);
+        if (failure.origin() == Oid4vpDirectPostService.LoginFailure.Origin.VERIFIER
+                && provider.getConfig().getRejectionResponse().isError()) {
+            return responseFactory.jsonErrorRedirectResponse(
+                    failure.error(), failure.errorDescription(), failureUrl, isCrossDevice);
+        }
+        return responseFactory.jsonRedirectResponse(failureUrl, isCrossDevice);
+    }
+
+    /** Renders Keycloak's error page: these endpoints are opened by a browser, not by the wallet. */
+    private Response browserError(String messageKey) {
+        return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, messageKey);
     }
 
     /**

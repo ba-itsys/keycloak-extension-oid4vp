@@ -15,6 +15,7 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.conformance.runner;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpRejectionResponse;
 import java.util.Map;
 
 /**
@@ -28,7 +29,8 @@ public record ConformanceModuleVariant(
         String name,
         Map<String, String> moduleVariant,
         ConformanceResult expectedResult,
-        boolean allowSkipped) {
+        boolean allowSkipped,
+        Oid4vpRejectionResponse rejectionResponse) {
 
     public ConformanceModuleVariant(
             String plan, Map<String, String> planVariant, String name, Map<String, String> moduleVariant) {
@@ -41,7 +43,13 @@ public record ConformanceModuleVariant(
             String name,
             Map<String, String> moduleVariant,
             ConformanceResult expectedResult) {
-        this(plan, planVariant, name, moduleVariant, expectedResult, false);
+        this(plan, planVariant, name, moduleVariant, expectedResult, false, Oid4vpRejectionResponse.REDIRECT);
+    }
+
+    /** A copy of this variant run against a verifier configured to answer rejections this way. */
+    public ConformanceModuleVariant withRejectionResponse(Oid4vpRejectionResponse rejectionResponse) {
+        return new ConformanceModuleVariant(
+                plan, planVariant, name, moduleVariant, expectedResult, allowSkipped, rejectionResponse);
     }
 
     /**
@@ -50,12 +58,13 @@ public record ConformanceModuleVariant(
      * fails on an unexpected skip.
      */
     public ConformanceModuleVariant allowingSkipped() {
-        return new ConformanceModuleVariant(plan, planVariant, name, moduleVariant, expectedResult, true);
+        return new ConformanceModuleVariant(
+                plan, planVariant, name, moduleVariant, expectedResult, true, rejectionResponse);
     }
 
     // Used as the display name when running multiple variants as a parameterized test
     @Override
     public String toString() {
-        return name + " " + planVariant;
+        return name + " " + planVariant + " rejection=" + rejectionResponse.configValue();
     }
 }
