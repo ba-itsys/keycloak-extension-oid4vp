@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpRejectionResponse;
 import java.math.BigInteger;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -47,6 +48,22 @@ class Oid4vpIdentityProviderFactoryTest {
     @BeforeAll
     static void initCrypto() {
         CryptoIntegration.init(Oid4vpIdentityProviderFactoryTest.class.getClassLoader());
+    }
+
+    /** The dropdown a realm admin picks from, and the answer a realm gets without touching it. */
+    @Test
+    void rejectionResponseProperty_defaultsToRedirectAndOffersBothAnswers() {
+        ProviderConfigProperty property = new Oid4vpIdentityProviderFactory()
+                .getConfigProperties().stream()
+                        .filter(candidate ->
+                                Oid4vpIdentityProviderConfig.REJECTION_RESPONSE.equals(candidate.getName()))
+                        .findFirst()
+                        .orElseThrow();
+
+        assertThat(property.getDefaultValue()).isEqualTo(Oid4vpRejectionResponse.REDIRECT.configValue());
+        assertThat(property.getOptions())
+                .containsExactly(
+                        Oid4vpRejectionResponse.REDIRECT.configValue(), Oid4vpRejectionResponse.ERROR.configValue());
     }
 
     @Test

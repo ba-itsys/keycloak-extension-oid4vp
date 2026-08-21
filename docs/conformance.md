@@ -36,9 +36,17 @@ variant (for example mdoc-only or sd-jwt-only modules), so the matrix is reduced
 ## Modules
 
 Positive modules assert the verifier accepts a valid presentation. Negative modules assert the
-verifier rejects a malformed presentation, which the suite checks by requiring an HTTP 4xx at the
-`direct_post` endpoint. Both finish `PASSED`, so there is no error-page screenshot step (that
-suite mechanism applies to issuer and OP testing, not verifier testing). The covered modules are
+verifier rejects a malformed presentation.
+
+The tests configure the identity provider with `rejectionResponse` set to `error`, so a rejected
+presentation is answered with HTTP 4xx and the negative modules read the outcome from the status
+and finish `PASSED`. Under the default `redirect` the status is 200 for both outcomes, the modules
+ask for a screenshot of the verification result instead and finish `REVIEW`; the runner fills that
+placeholder with a minimal image, so nothing would assert that the presentation was refused.
+Positive modules take the screenshot path either way, and `ConformanceModuleResult.finishedWith`
+accepts their `REVIEW` when evidence was uploaded and no step failed.
+
+The covered modules are
 happy-flow, minimal-cnf-jwk, request-uri-method-post, invalid-session-transcript,
 invalid-kb-jwt-signature, invalid-credential-signature, invalid-sd-hash, invalid-kb-jwt-nonce,
 invalid-kb-jwt-aud, kb-jwt-iat-in-past and kb-jwt-iat-in-future.

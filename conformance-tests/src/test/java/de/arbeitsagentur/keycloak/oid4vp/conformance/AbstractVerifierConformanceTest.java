@@ -29,6 +29,7 @@ import de.arbeitsagentur.keycloak.oid4vp.conformance.verifier.VerifierScenario;
 import de.arbeitsagentur.keycloak.oid4vp.conformance.verifier.VerifierSigningMaterial;
 import de.arbeitsagentur.keycloak.oid4vp.conformance.verifier.VerifierSuiteConfig;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpRejectionResponse;
 import de.arbeitsagentur.keycloak.oid4vp.trust.EtsiTrustListIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.trust.EtsiTrustListIdentityProviderFactory;
 import jakarta.ws.rs.core.Response;
@@ -90,6 +91,19 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
      * enumerated plan variants. Combinations are not fabricated: the suite reports which modules
      * and variants apply, and inapplicable plan variants yield nothing.
      */
+    /**
+     * A negative module in both answers to a rejection. Under {@code error} the suite reads the
+     * refusal from the 4xx status; under {@code redirect} it cannot, so it asks for verification
+     * evidence and finishes REVIEW, which counts as the expected result once the evidence is
+     * uploaded. Both are permitted by OID4VP 1.0 §8.2, so both have to keep the module happy.
+     */
+    protected Stream<ConformanceModuleVariant> negativeVerifierModuleVariants(String moduleName) {
+        return verifierModuleVariants(moduleName, ConformanceResult.PASSED)
+                .flatMap(variant -> Stream.of(
+                        variant.withRejectionResponse(Oid4vpRejectionResponse.ERROR),
+                        variant.withRejectionResponse(Oid4vpRejectionResponse.REDIRECT)));
+    }
+
     protected Stream<ConformanceModuleVariant> verifierModuleVariants(
             String moduleName, ConformanceResult expectedResult) {
         ensureDiscovered();
@@ -180,7 +194,9 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
             Assertions.assertEquals(
                     201, response.getStatus(), "Creating the trust list identity provider failed: " + body(response));
         }
-        try (Response response = realm.admin().identityProviders().create(identityProvider(scenario))) {
+        try (Response response = realm.admin()
+                .identityProviders()
+                .create(identityProvider(scenario, moduleVariant.rejectionResponse()))) {
             Assertions.assertEquals(
                     201, response.getStatus(), "Creating the OID4VP identity provider failed: " + body(response));
         }
@@ -271,7 +287,8 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
         return idp;
     }
 
-    private IdentityProviderRepresentation identityProvider(VerifierScenario scenario) {
+    private IdentityProviderRepresentation identityProvider(
+            VerifierScenario scenario, Oid4vpRejectionResponse rejectionResponse) {
         VerifierSigningMaterial material = signingMaterial();
 
         IdentityProviderRepresentation idp = new IdentityProviderRepresentation();
@@ -287,6 +304,7 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
         config.put(Oid4vpIdentityProviderConfig.CLIENT_ID_SCHEME, scenario.clientIdScheme());
         config.put(Oid4vpIdentityProviderConfig.RESPONSE_MODE, scenario.responseMode());
         config.put(Oid4vpIdentityProviderConfig.SAME_DEVICE_ENABLED, "true");
+        config.put(Oid4vpIdentityProviderConfig.REJECTION_RESPONSE, rejectionResponse.configValue());
         config.put(Oid4vpIdentityProviderConfig.CROSS_DEVICE_ENABLED, "false");
         config.put(Oid4vpIdentityProviderConfig.STATUS_LIST_MAX_CACHE_TTL_SECONDS, "0");
         config.put(Oid4vpIdentityProviderConfig.TRUST_MATERIAL_IDPS, TRUST_IDP_ALIAS);

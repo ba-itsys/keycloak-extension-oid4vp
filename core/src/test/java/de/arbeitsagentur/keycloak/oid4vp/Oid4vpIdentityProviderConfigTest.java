@@ -17,6 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp;
 
 import static org.assertj.core.api.Assertions.*;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpRejectionResponse;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PrincipalAttribute;
 import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
@@ -106,6 +107,23 @@ class Oid4vpIdentityProviderConfigTest {
 
         config.setResponseMode("bogus");
         assertThat(config.getResponseMode()).isEqualTo("direct_post.jwt");
+    }
+
+    @Test
+    void rejectionResponse_respectsConfiguredValue() {
+        config.getConfig().put(Oid4vpIdentityProviderConfig.REJECTION_RESPONSE, "ERROR");
+
+        assertThat(config.getRejectionResponse()).isEqualTo(Oid4vpRejectionResponse.ERROR);
+        assertThat(config.getRejectionResponse().isError()).isTrue();
+    }
+
+    @Test
+    void rejectionResponse_defaultsToRedirectWhenUnsetOrUnknown() {
+        assertThat(config.getRejectionResponse()).isEqualTo(Oid4vpRejectionResponse.REDIRECT);
+        assertThat(config.getRejectionResponse().isError()).isFalse();
+
+        config.getConfig().put(Oid4vpIdentityProviderConfig.REJECTION_RESPONSE, "bogus");
+        assertThat(config.getRejectionResponse()).isEqualTo(Oid4vpRejectionResponse.REDIRECT);
     }
 
     @Test

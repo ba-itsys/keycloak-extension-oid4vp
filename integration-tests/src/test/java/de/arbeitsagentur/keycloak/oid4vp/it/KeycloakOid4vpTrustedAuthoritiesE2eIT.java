@@ -139,7 +139,9 @@ class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
         assertThat(trustedAuthoritiesOf(fetchRequestObject(walletUrl))).containsExactly(expectedTrustedAuthorities);
 
         Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
-        assertLoginFailed(walletResponse, "no matching credentials");
+        // The wallet refuses by posting an Authorization Error Response, so what the login event
+        // records is the wallet's own reason for having nothing to present.
+        assertLoginFailed(walletResponse, "no stored credential satisfies the requested query");
     }
 
     private static Map<String, Object> trustedAuthority(String type, String value) {

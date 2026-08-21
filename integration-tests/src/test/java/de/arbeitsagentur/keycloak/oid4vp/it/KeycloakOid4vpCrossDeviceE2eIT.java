@@ -248,9 +248,9 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
         try {
             otherPage.navigate(completeAuthUrl);
             otherPage.waitForLoadState();
+            // The browser opened this URL, so the rejection is rendered as Keycloak's error page.
             String body = otherPage.locator("body").textContent().toLowerCase();
-            assertThat(body).contains("invalid_request");
-            assertThat(body).contains("response code");
+            assertThat(body).contains("this login link is not valid");
             assertThat(flow.isCallbackUrl(otherPage.url()))
                     .as("Foreign browser must not complete the login")
                     .isFalse();
@@ -280,7 +280,9 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
             String walletUrl = flow.getCrossDeviceWalletUrl();
 
             Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
-            assertThat(walletResponse.rawBody()).contains("access_denied");
+            assertThat(Oid4vpLoginFlowHelper.verifierResponseBody(walletResponse.rawBody()))
+                    .isEqualTo("{}");
+            assertLoginFailedBecauseOf("denied consent");
 
             // Arriving well inside the stream's lifetime is the point: a timeout would also move the
             // browser eventually, but only after the End-User has waited the stream out.
@@ -321,7 +323,9 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
         wallet().client().setNextError("access_denied", "User denied consent");
         try {
             Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
-            assertThat(walletResponse.rawBody()).contains("access_denied");
+            assertThat(Oid4vpLoginFlowHelper.verifierResponseBody(walletResponse.rawBody()))
+                    .isEqualTo("{}");
+            assertLoginFailedBecauseOf("denied consent");
         } finally {
             wallet().client().clearNextError();
         }
@@ -366,7 +370,17 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
             String walletUrl = flow.getCrossDeviceWalletUrl();
 
             Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
-            assertThat(walletResponse.rawBody()).contains("invalid_presentation");
+
+            // The browser is on the other device, so the wallet gets the same empty object a
+            // completed cross-device login returns.
+            assertThat(Oid4vpLoginFlowHelper.verifierStatusCode(walletResponse.rawBody()))
+                    .as("Cross-device wallet response: %s", walletResponse.rawBody())
+                    .isEqualTo(200);
+            assertThat(Oid4vpLoginFlowHelper.verifierResponseBody(walletResponse.rawBody()))
+                    .as("Cross-device wallet response: %s", walletResponse.rawBody())
+                    .isEqualTo("{}");
+            assertThat(walletResponse.redirectUri()).isNull();
+            assertLoginFailedBecauseOf("revoked");
 
             page.waitForURL(
                     url -> url.contains("/failed")

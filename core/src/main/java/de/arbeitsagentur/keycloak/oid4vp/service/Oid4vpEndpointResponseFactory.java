@@ -25,49 +25,51 @@ import org.keycloak.util.JsonSerialization;
 /** Builds the small JSON and redirect responses returned by the OID4VP endpoint. */
 public class Oid4vpEndpointResponseFactory {
 
-    public Response jsonRedirectResponse(String redirectUri) {
-        try {
-            String json = JsonSerialization.writeValueAsString(Map.of(OAuth2Constants.REDIRECT_URI, redirectUri));
-            return Response.ok(json).type(MediaType.APPLICATION_JSON).build();
-        } catch (Exception e) {
-            return Response.ok("{\"redirect_uri\":\"\"}")
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
+    /**
+     * The answer to a response the Response URI processed: HTTP 200 with the {@code redirect_uri}
+     * the wallet must follow, or an empty object in a cross-device flow, where the browser is moved
+     * over the SSE stream instead. §8.2 makes {@code redirect_uri} optional; without it the wallet
+     * stops there.
+     *
+     * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.2">OID4VP 1.0 §8.2 — Response Mode direct_post</a>
+     */
+    public Response jsonRedirectResponse(String redirectUri, boolean isCrossDevice) {
+        if (isCrossDevice) {
+            return json(Response.Status.OK, Map.of());
         }
+        return json(Response.Status.OK, Map.of(OAuth2Constants.REDIRECT_URI, redirectUri));
     }
 
     /**
-     * Answers an error with the {@code redirect_uri} the wallet must follow alongside it, as
-     * OID4VP 1.0 §8.2 permits for Error Responses.
-     *
-     * <p>The status says what happened to the response, not what the redirect is for. A
-     * wallet-reported error response is answered with 200 because the Response URI processed it
-     * successfully, while a presentation this verifier rejected is answered with 400 because the
-     * response itself was not acceptable.
+     * The answer to a rejection the verifier reports to the wallet: HTTP 400 with the error beside
+     * the {@code redirect_uri} that hands the End-User back, which §8.2 permits for Error Responses.
      */
     public Response jsonErrorRedirectResponse(
-            Response.Status status, String error, String description, String redirectUri) {
-        try {
-            Map<String, String> body = new LinkedHashMap<>();
-            body.put(OAuth2Constants.ERROR, error);
-            if (description != null) {
-                body.put(OAuth2Constants.ERROR_DESCRIPTION, description);
-            }
-            body.put(OAuth2Constants.REDIRECT_URI, redirectUri);
-            return Response.status(status)
-                    .entity(JsonSerialization.writeValueAsString(body))
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
-        } catch (Exception e) {
-            return jsonRedirectResponse(redirectUri);
+            String error, String description, String redirectUri, boolean isCrossDevice) {
+        if (isCrossDevice) {
+            return jsonErrorResponse(Response.Status.BAD_REQUEST, error, description);
         }
+        Map<String, String> body = new LinkedHashMap<>();
+        body.put(OAuth2Constants.ERROR, error);
+        if (description != null) {
+            body.put(OAuth2Constants.ERROR_DESCRIPTION, description);
+        }
+        body.put(OAuth2Constants.REDIRECT_URI, redirectUri);
+        return json(Response.Status.BAD_REQUEST, body);
     }
 
+    /** The answer to a post that names no login this verifier can continue. */
     public Response jsonErrorResponse(Response.Status status, String error, String description) {
+        Map<String, String> body = new LinkedHashMap<>();
+        body.put(OAuth2Constants.ERROR, error);
+        if (description != null) {
+            body.put(OAuth2Constants.ERROR_DESCRIPTION, description);
+        }
+        return json(status, body);
+    }
+
+    private Response json(Response.Status status, Map<String, String> body) {
         try {
-            Object body = description != null
-                    ? Map.of(OAuth2Constants.ERROR, error, OAuth2Constants.ERROR_DESCRIPTION, description)
-                    : Map.of(OAuth2Constants.ERROR, error);
             return Response.status(status)
                     .entity(JsonSerialization.writeValueAsString(body))
                     .type(MediaType.APPLICATION_JSON)

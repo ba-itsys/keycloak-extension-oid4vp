@@ -17,6 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpMessages;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -86,7 +87,20 @@ class ThemeResourcesTest {
 
         assertThat(messages)
                 .as("the login page shows this key when the verifier rejected the presentation")
-                .contains(Oid4vpIdentityProviderEndpoint.PRESENTATION_REJECTED_MESSAGE + "=");
+                .contains(Oid4vpMessages.PRESENTATION_REJECTED + "=");
+    }
+
+    /** Every key the error page renders has to resolve, so each one needs a bundle entry. */
+    @Test
+    void messageBundleCoversTheErrorPageKeys() throws Exception {
+        String messages = loadResource("/theme-resources/messages/messages_en.properties");
+
+        assertThat(messages)
+                .contains(Oid4vpMessages.LOGIN_ENDED + "=")
+                .contains(Oid4vpMessages.LOGIN_EXPIRED + "=")
+                .contains(Oid4vpMessages.INVALID_LOGIN_RESPONSE + "=")
+                .contains(Oid4vpMessages.BROWSER_SESSION_MISMATCH + "=")
+                .contains(Oid4vpMessages.LOGIN_DATA_MISSING + "=");
     }
 
     private String loadResource(String resourcePath) throws IOException {

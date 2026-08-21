@@ -50,9 +50,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.keycloak.OAuth2Constants;
 import org.keycloak.admin.client.resource.IdentityProviderResource;
+import org.keycloak.events.EventType;
+import org.keycloak.representations.idm.EventRepresentation;
 import org.keycloak.representations.idm.IdentityProviderMapperRepresentation;
 import org.keycloak.representations.idm.IdentityProviderRepresentation;
 import org.keycloak.testframework.annotations.InjectKeycloakUrls;
@@ -71,9 +75,9 @@ abstract class AbstractOid4vpE2eTest {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     // A revoked credential is rejected with "Credential has been revoked (status=...)"
-    // (StatusListVerifier), which the endpoint returns to the wallet as the error_description and
-    // hands to the error page. Matching on "revoked" ties the rejection to the revocation check
-    // instead of accepting any failure.
+    // (StatusListVerifier), which the endpoint records as the error_description of the login error
+    // event. Matching on "revoked" ties the rejection to the revocation check instead of accepting
+    // any failure.
     private static final String[] REVOCATION_ERROR_SNIPPETS = {"revoked"};
 
     @InjectRealm(config = Oid4vpRealmConfig.class)
@@ -97,6 +101,10 @@ abstract class AbstractOid4vpE2eTest {
 
     @BeforeEach
     void setUpTestEnvironment() {
+        // The realm outlives a single test, so its login events do too. Clearing them keeps a
+        // failure cause assertion tied to the login the test itself drove, which also means these
+        // classes cannot run in parallel against the shared realm.
+        realm.admin().clearEvents();
         ensureIdentityProviderConfigured();
         context = newBrowserContext();
         page = context.newPage();
@@ -347,33 +355,45 @@ abstract class AbstractOid4vpE2eTest {
 
     /**
      * Asserts the login was rejected for the expected cause. The snippets must name that cause
-     * specifically (the endpoint returns the verification error message as the
-     * {@code error_description} of its JSON error response), so a login that fails for an
-     * unrelated reason does not satisfy this assertion.
+     * specifically, so a login that fails for an unrelated reason does not satisfy this assertion.
      */
     protected void assertLoginFailed(Oid4vpLoginFlowHelper.WalletResponse walletResponse, String... expectedSnippets) {
-        String walletResponseText = normalizedWalletResponseText(walletResponse.rawBody());
         String redirectUri = walletResponse.redirectUri();
         if (redirectUri != null) {
             page.navigate(redirectUri);
             page.waitForLoadState();
-            assertThat(flow.isCallbackUrl(page.url()))
-                    .as("Login should not succeed")
-                    .isFalse();
-            // The failure cause surfaces on the rendered error page or in the JSON error response
-            // the wallet received, so both texts answer for the expected snippets.
-            assertThat(normalizedBodyText() + "\n" + walletResponseText)
-                    .as("Expected the error page or the wallet response to name the failure cause")
-                    .containsAnyOf(expectedSnippets);
-            return;
         }
-
         assertThat(flow.isCallbackUrl(page.url()))
                 .as("Login should not succeed")
                 .isFalse();
-        assertThat(walletResponseText)
-                .as("Expected wallet-visible error response when no redirect_uri is returned")
+        assertLoginFailedBecauseOf(expectedSnippets);
+    }
+
+    /**
+     * Asserts the newest login error event names one of the expected causes as its
+     * {@code error_description}. {@code EventBuilder.error} stores the event in its own
+     * transaction, so it is readable as soon as the wallet has been answered.
+     */
+    protected void assertLoginFailedBecauseOf(String... expectedSnippets) {
+        assertThat(newestLoginErrorDescription())
+                .as("Expected the newest login error event to name the failure cause")
+                .isNotNull()
                 .containsAnyOf(expectedSnippets);
+    }
+
+    /** The {@code error_description} of the realm's newest login error event, lower cased. */
+    private String newestLoginErrorDescription() {
+        return realm
+                .admin()
+                .getEvents(List.of(EventType.LOGIN_ERROR.name()), null, null, null, null, null, null, null)
+                .stream()
+                .map(EventRepresentation::getDetails)
+                .filter(Objects::nonNull)
+                .map(details -> details.get(OAuth2Constants.ERROR_DESCRIPTION))
+                .filter(Objects::nonNull)
+                .findFirst()
+                .map(description -> description.toLowerCase(Locale.ROOT))
+                .orElse(null);
     }
 
     protected void assertRevokedCredentialIsRejected(String formatLabel) throws Exception {
@@ -418,63 +438,9 @@ abstract class AbstractOid4vpE2eTest {
                     .as("A revoked %s credential must not complete the login. URL: %s", formatLabel, page.url())
                     .isFalse();
 
-            // The cause is a verification message rather than something an End-User can act on, so
-            // it reaches the wallet and the event log while the login page only names the rejection.
-            assertThat(normalizedWalletResponseText(walletResponse.rawBody()))
-                    .as(
-                            "Revoked %s credential should be rejected with a revocation error. Wallet response: %s",
-                            formatLabel, walletResponse.rawBody())
-                    .containsAnyOf(REVOCATION_ERROR_SNIPPETS);
+            assertLoginFailedBecauseOf(REVOCATION_ERROR_SNIPPETS);
         } finally {
             wallet().client().unrevokeCredential(credentialId);
-        }
-    }
-
-    private String normalizedBodyText() {
-        String bodyText = page.locator("body").textContent();
-        return bodyText == null ? "" : bodyText.toLowerCase(Locale.ROOT);
-    }
-
-    private String normalizedWalletResponseText(String rawBody) {
-        if (rawBody == null || rawBody.isBlank()) {
-            return "";
-        }
-        StringBuilder combined = new StringBuilder(rawBody);
-        try {
-            JsonNode root = OBJECT_MAPPER.readTree(rawBody);
-            appendTextualFields(root, combined);
-            JsonNode nestedBody = root.path("response").path("body");
-            if (nestedBody.isTextual()) {
-                combined.append('\n').append(nestedBody.asText());
-                try {
-                    JsonNode nestedJson = OBJECT_MAPPER.readTree(nestedBody.asText());
-                    appendTextualFields(nestedJson, combined);
-                } catch (Exception ignored) {
-                    // Keep the raw nested response body when it is not JSON.
-                }
-            }
-        } catch (Exception ignored) {
-            // Keep the raw wallet response body when it is not JSON.
-        }
-        return combined.toString().toLowerCase(Locale.ROOT);
-    }
-
-    private void appendTextualFields(JsonNode node, StringBuilder combined) {
-        if (node == null || node.isNull()) {
-            return;
-        }
-        if (node.isTextual()) {
-            combined.append('\n').append(node.asText());
-            return;
-        }
-        if (node.isObject()) {
-            node.fields().forEachRemaining(entry -> appendTextualFields(entry.getValue(), combined));
-            return;
-        }
-        if (node.isArray()) {
-            for (JsonNode child : node) {
-                appendTextualFields(child, combined);
-            }
         }
     }
 
@@ -536,6 +502,12 @@ abstract class AbstractOid4vpE2eTest {
                 new Payload(OBJECT_MAPPER.writeValueAsString(payload)));
         jwe.encrypt(new ECDHEncrypter(publicKey));
         return jwe.serialize();
+    }
+
+    /** The response URI the wallet posts its authorization response to. */
+    protected String responseUri() {
+        return keycloakUrls.getBase() + "/realms/" + REALM + "/broker/" + Oid4vpTestKeycloakSetup.IDP_ALIAS
+                + "/endpoint";
     }
 
     protected static String urlEncode(String value) {
