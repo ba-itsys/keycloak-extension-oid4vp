@@ -24,7 +24,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.time.ZonedDateTime;
+import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
@@ -121,12 +121,15 @@ public final class TrustListServer implements AutoCloseable {
             ObjectNode lote = payload.putObject("LoTE");
             ObjectNode listInformation = lote.putObject("ListAndSchemeInformation");
             listInformation.put("LoTEType", PID_LOTE_TYPE);
+            // ETSI TS 119 602 V1.1.1 clause 6.1.3 wants the seconds field written and no decimal
+            // fraction, which is what a second-truncated Instant prints. OffsetDateTime.toString()
+            // leaves the seconds out whenever they are zero, so one publish a minute produced a
+            // list the provider rejected as unparseable and every module using it then failed.
             listInformation.put(
                     "NextUpdate",
-                    ZonedDateTime.now()
-                            .plusHours(1)
+                    Instant.now()
+                            .plus(1, ChronoUnit.HOURS)
                             .truncatedTo(ChronoUnit.SECONDS)
-                            .toOffsetDateTime()
                             .toString());
             lote.putArray("TrustedEntitiesList")
                     .addObject()

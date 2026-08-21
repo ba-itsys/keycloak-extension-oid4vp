@@ -32,6 +32,7 @@ import java.security.cert.X509Certificate;
 import java.security.interfaces.ECPrivateKey;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -110,7 +111,9 @@ public final class TestTrustListServer implements AutoCloseable {
     }
 
     private static Map<String, Object> listOfTrustedEntities(List<X509Certificate> certificates) {
-        Instant now = Instant.now();
+        // ETSI TS 119 602 V1.1.1 clause 6.1.3 writes date-times to the second and without a
+        // decimal fraction, so the served list carries the times a real one would.
+        Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
 
         Map<String, Object> listAndSchemeInformation = new LinkedHashMap<>();
         listAndSchemeInformation.put("ListIssueDateTime", now.toString());
