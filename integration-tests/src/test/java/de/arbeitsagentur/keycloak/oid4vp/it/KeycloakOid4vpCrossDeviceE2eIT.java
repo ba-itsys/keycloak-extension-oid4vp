@@ -285,7 +285,7 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
             // Arriving well inside the stream's lifetime is the point: a timeout would also move the
             // browser eventually, but only after the End-User has waited the stream out.
             page.waitForURL(
-                    url -> url.contains("/wallet-error")
+                    url -> url.contains("/failed")
                             || page.locator("a#social-oid4vp").count() > 0,
                     new Page.WaitForURLOptions().setTimeout(30000));
             page.waitForLoadState();
@@ -301,11 +301,11 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
 
     /**
      * The stream itself must carry the decline. Reading it directly pins the contract the browser
-     * script depends on: a {@code failed} event whose payload holds the wallet-error URL, rather
-     * than the stream falling silent until it times out.
+     * script depends on: a {@code failed} event whose payload holds the failure URL, rather than
+     * the stream falling silent until it times out.
      */
     @Test
-    void crossDeviceSseEmitsFailedEventWithWalletErrorUrl() throws Exception {
+    void crossDeviceSseEmitsFailedEventWithFailureUrl() throws Exception {
         testApp().reset();
         flow.clearBrowserSession();
         setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.CROSS_DEVICE_ENABLED, "true"));
@@ -341,6 +341,45 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
         assertThat(sseResponse.statusCode()).isEqualTo(200);
         assertThat(sseResponse.body()).contains("event:failed");
         assertThat(sseResponse.body()).doesNotContain("event:complete");
-        assertThat(extractRedirectUriFromSseResponse(sseResponse.body())).contains("/wallet-error");
+        assertThat(extractRedirectUriFromSseResponse(sseResponse.body())).contains("/failed");
+    }
+
+    /**
+     * A presentation the verifier rejects has to move the browser in the cross-device flow too.
+     * The {@code redirect_uri} the response URI returns reaches only the wallet's own user agent
+     * on the other device, so the browser learns of the rejection through the SSE stream or not at
+     * all.
+     */
+    @Test
+    void crossDeviceRejectedPresentationReturnsBrowserToLoginPage() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        deleteAllOid4vpUsers();
+        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.CROSS_DEVICE_ENABLED, "true"));
+
+        String credentialId = wallet().client().getCredentials().get(0).id();
+        wallet().client().revokeCredential(credentialId);
+
+        try {
+            flow.navigateToLoginPage();
+            flow.clickOid4vpIdpButton();
+            String walletUrl = flow.getCrossDeviceWalletUrl();
+
+            Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
+            assertThat(walletResponse.rawBody()).contains("invalid_presentation");
+
+            page.waitForURL(
+                    url -> url.contains("/failed")
+                            || page.locator("a#social-oid4vp").count() > 0,
+                    new Page.WaitForURLOptions().setTimeout(30000));
+            page.waitForLoadState();
+        } finally {
+            wallet().client().unrevokeCredential(credentialId);
+        }
+
+        assertThat(flow.isCallbackUrl(page.url()))
+                .as("A rejected presentation must not complete the login")
+                .isFalse();
+        page.waitForSelector("a#social-oid4vp", new Page.WaitForSelectorOptions().setTimeout(30000));
     }
 }

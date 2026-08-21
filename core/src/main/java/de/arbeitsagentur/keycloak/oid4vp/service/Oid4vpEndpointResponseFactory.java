@@ -37,10 +37,16 @@ public class Oid4vpEndpointResponseFactory {
     }
 
     /**
-     * Answers a wallet-reported error response with 200 and the error alongside the
-     * {@code redirect_uri} the wallet must follow, as OID4VP 1.0 §8.2 permits for Error Responses.
+     * Answers an error with the {@code redirect_uri} the wallet must follow alongside it, as
+     * OID4VP 1.0 §8.2 permits for Error Responses.
+     *
+     * <p>The status says what happened to the response, not what the redirect is for. A
+     * wallet-reported error response is answered with 200 because the Response URI processed it
+     * successfully, while a presentation this verifier rejected is answered with 400 because the
+     * response itself was not acceptable.
      */
-    public Response jsonErrorRedirectResponse(String error, String description, String redirectUri) {
+    public Response jsonErrorRedirectResponse(
+            Response.Status status, String error, String description, String redirectUri) {
         try {
             Map<String, String> body = new LinkedHashMap<>();
             body.put(OAuth2Constants.ERROR, error);
@@ -48,7 +54,8 @@ public class Oid4vpEndpointResponseFactory {
                 body.put(OAuth2Constants.ERROR_DESCRIPTION, description);
             }
             body.put(OAuth2Constants.REDIRECT_URI, redirectUri);
-            return Response.ok(JsonSerialization.writeValueAsString(body))
+            return Response.status(status)
+                    .entity(JsonSerialization.writeValueAsString(body))
                     .type(MediaType.APPLICATION_JSON)
                     .build();
         } catch (Exception e) {

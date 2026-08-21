@@ -61,15 +61,16 @@ public class Oid4vpDirectPostService {
     public static final String CROSS_DEVICE_COMPLETE_PREFIX = "oid4vp_complete:";
     public static final String CROSS_DEVICE_FAILED_PREFIX = "oid4vp_failed:";
     public static final String DEFERRED_AUTH_PREFIX = "oid4vp_deferred:";
-    public static final String WALLET_ERROR_PREFIX = "oid4vp_wallet_error:";
+    public static final String FAILURE_PREFIX = "oid4vp_failure:";
     public static final String DEFERRED_IDENTITY_NOTE = "OID4VP_DEFERRED_IDENTITY";
     public static final String DEFERRED_CLAIMS_NOTE = "OID4VP_DEFERRED_CLAIMS";
 
     static final String KEY_ROOT_SESSION_ID = "root_session_id";
     static final String KEY_TAB_ID = "tab_id";
     static final String KEY_COMPLETE_AUTH_URL = "complete_auth_url";
-    static final String KEY_WALLET_ERROR_URL = "wallet_error_url";
+    static final String KEY_FAILURE_URL = "failure_url";
     static final String KEY_RESPONSE_CODE = "response_code";
+    static final String KEY_ORIGIN = "origin";
     static final String KEY_ERROR = "error";
     static final String KEY_ERROR_DESCRIPTION = "error_description";
 
@@ -318,66 +319,90 @@ public class Oid4vpDirectPostService {
     }
 
     /**
-     * Records a wallet-reported error response (OID4VP 1.0 §8.5) and returns the URL that hands the
-     * End-User back to the front channel, where {@code /wallet-error} returns them to the login
-     * page.
+     * Records a login that ended before it could be completed and returns the URL that hands the
+     * End-User back to the front channel, where {@code /failed} returns them to the login page.
+     * Both ways a presentation can end are recorded here: the wallet reporting an error response
+     * (OID4VP 1.0 §8.5), and this verifier rejecting the presentation it received.
      *
      * <p>OID4VP 1.0 §8.2 lets the Response URI return a {@code redirect_uri} "in response to
      * successful Authorization Responses or for Error Responses", and requires the URL to carry a
      * fresh, cryptographically random value, which is the {@code response_code} minted here. The
-     * error itself is kept server-side so the wallet cannot choose what the client is told.
+     * failure itself is kept server-side so whoever posted cannot choose what the browser is told.
      *
      * <p>For cross-device flows the wallet runs on another device, so the same URL is additionally
      * published under {@link #CROSS_DEVICE_FAILED_PREFIX} for the browser's SSE stream to pick up.
      */
-    public String signalWalletError(String state, String error, String errorDescription, boolean isCrossDevice) {
+    public String signalFailure(String state, LoginFailure failure, boolean isCrossDevice) {
         String responseCode = Base64Url.encode(SecretGenerator.getInstance().randomBytes(RESPONSE_CODE_BYTES));
-        String walletErrorUrl = buildWalletErrorUrl(state, responseCode);
+        String failureUrl = buildFailureUrl(state, responseCode);
 
         Map<String, String> entry = new HashMap<>();
         entry.put(KEY_RESPONSE_CODE, responseCode);
-        entry.put(KEY_ERROR, error != null ? error : "");
-        entry.put(KEY_ERROR_DESCRIPTION, errorDescription != null ? errorDescription : "");
-        session.singleUseObjects().put(WALLET_ERROR_PREFIX + state, deferredAuthTtlSeconds, entry);
+        entry.put(KEY_ORIGIN, failure.origin().name());
+        entry.put(KEY_ERROR, failure.error() != null ? failure.error() : "");
+        entry.put(KEY_ERROR_DESCRIPTION, failure.errorDescription() != null ? failure.errorDescription() : "");
+        session.singleUseObjects().put(FAILURE_PREFIX + state, deferredAuthTtlSeconds, entry);
 
         if (isCrossDevice) {
             session.singleUseObjects()
                     .put(
                             CROSS_DEVICE_FAILED_PREFIX + state,
                             crossDeviceCompleteTtlSeconds,
-                            Map.of(KEY_WALLET_ERROR_URL, walletErrorUrl));
+                            Map.of(KEY_FAILURE_URL, failureUrl));
         }
-        return walletErrorUrl;
+        return failureUrl;
     }
 
     /**
-     * Consumes the recorded wallet error for the given state and ends the attempt it belongs to,
-     * or returns {@code null} when the state is unknown or the response code does not match the
-     * one minted for it. Callers that need the attempt's authentication session must resolve it
-     * before calling this, because the request context it resolves through is dropped here.
+     * Consumes the recorded failure for the given state and ends the attempt it belongs to, or
+     * returns {@code null} when the state is unknown or the response code does not match the one
+     * minted for it. Callers that need the attempt's authentication session must resolve it before
+     * calling this, because the request context it resolves through is dropped here.
      */
-    public WalletError consumeWalletError(String state, String responseCode) {
-        Map<String, String> entry = session.singleUseObjects().get(WALLET_ERROR_PREFIX + state);
+    public LoginFailure consumeFailure(String state, String responseCode) {
+        Map<String, String> entry = session.singleUseObjects().get(FAILURE_PREFIX + state);
         if (entry == null || !responseCodeMatches(entry.get(KEY_RESPONSE_CODE), responseCode)) {
             return null;
         }
-        session.singleUseObjects().remove(WALLET_ERROR_PREFIX + state);
+        session.singleUseObjects().remove(FAILURE_PREFIX + state);
         session.singleUseObjects().remove(CROSS_DEVICE_FAILED_PREFIX + state);
         // The End-User is being handed back to the login page, so this attempt is over. Dropping
         // its request context stops the abandoned state from serving its request object and
         // accepting a presentation for the rest of the login timeout, which is what let a late
         // response reach an authentication session that has long moved on to another attempt.
         requestObjectStore.removeRequestContext(session, state);
-        return new WalletError(entry.get(KEY_ERROR), entry.get(KEY_ERROR_DESCRIPTION));
+        return new LoginFailure(
+                LoginFailure.Origin.of(entry.get(KEY_ORIGIN)), entry.get(KEY_ERROR), entry.get(KEY_ERROR_DESCRIPTION));
     }
 
-    /** A wallet-reported error response, as recorded when it arrived at the response URI. */
-    public record WalletError(String error, String errorDescription) {}
+    /** A login that ended before it could be completed, as recorded when it happened. */
+    public record LoginFailure(Origin origin, String error, String errorDescription) {
 
-    public String buildWalletErrorUrl(String state, String responseCode) {
+        /**
+         * Who ended the login. The two differ in what the End-User is shown: a wallet declining is
+         * the End-User's own choice and ends the login the way Keycloak ends any refused brokered
+         * login, while a presentation this verifier rejected is a failure the End-User has no way
+         * of knowing about unless it is named.
+         */
+        public enum Origin {
+            WALLET,
+            VERIFIER;
+
+            static Origin of(String name) {
+                for (Origin origin : values()) {
+                    if (origin.name().equals(name)) {
+                        return origin;
+                    }
+                }
+                return WALLET;
+            }
+        }
+    }
+
+    public String buildFailureUrl(String state, String responseCode) {
         return Oid4vpConstants.buildEndpointBaseUrl(
                         session.getContext().getUri().getBaseUri(), realm.getName(), config.getAlias())
-                + "/wallet-error?"
+                + "/failed?"
                 + Oid4vpConstants.PARAM_STATE + "=" + URLEncoder.encode(state, StandardCharsets.UTF_8)
                 + "&"
                 + Oid4vpConstants.PARAM_RESPONSE_CODE + "=" + URLEncoder.encode(responseCode, StandardCharsets.UTF_8);

@@ -193,7 +193,7 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
             assertThat(walletResponse.redirectUri())
                     .as("A declined presentation must hand the End-User back to the front channel")
                     .isNotNull()
-                    .contains("/wallet-error")
+                    .contains("/failed")
                     .contains("response_code=");
 
             // The wallet's own error text stays server-side, so a wallet cannot choose what the

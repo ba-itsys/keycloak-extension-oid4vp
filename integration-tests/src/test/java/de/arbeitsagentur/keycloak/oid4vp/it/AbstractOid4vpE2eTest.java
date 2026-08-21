@@ -46,9 +46,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -409,44 +407,27 @@ abstract class AbstractOid4vpE2eTest {
             String walletUrl = flow.getSameDeviceWalletUrl();
             Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
 
-            String walletResponseText = normalizedWalletResponseText(walletResponse.rawBody());
             String redirectUri = walletResponse.redirectUri();
-            String renderedFailureText;
-            if (redirectUri != null) {
-                page.navigate(redirectUri);
-                page.waitForLoadState();
-                renderedFailureText = waitForErrorPageContent(Duration.ofSeconds(10), REVOCATION_ERROR_SNIPPETS) + "\n"
-                        + walletResponseText;
-            } else {
-                renderedFailureText = walletResponseText;
-            }
+            assertThat(redirectUri)
+                    .as("A rejected %s presentation has to hand the End-User back to the front channel", formatLabel)
+                    .isNotNull();
 
-            boolean revocationRejected = containsAnyOf(renderedFailureText, REVOCATION_ERROR_SNIPPETS);
-            assertThat(revocationRejected)
+            page.navigate(redirectUri);
+            page.waitForLoadState();
+            assertThat(flow.isCallbackUrl(page.url()))
+                    .as("A revoked %s credential must not complete the login. URL: %s", formatLabel, page.url())
+                    .isFalse();
+
+            // The cause is a verification message rather than something an End-User can act on, so
+            // it reaches the wallet and the event log while the login page only names the rejection.
+            assertThat(normalizedWalletResponseText(walletResponse.rawBody()))
                     .as(
-                            "Revoked %s credential should be rejected with a revocation error."
-                                    + " URL: %s, Wallet response: %s, Failure text: %s",
-                            formatLabel,
-                            page.url(),
-                            walletResponse.rawBody(),
-                            renderedFailureText.substring(0, Math.min(500, renderedFailureText.length())))
-                    .isTrue();
+                            "Revoked %s credential should be rejected with a revocation error. Wallet response: %s",
+                            formatLabel, walletResponse.rawBody())
+                    .containsAnyOf(REVOCATION_ERROR_SNIPPETS);
         } finally {
             wallet().client().unrevokeCredential(credentialId);
         }
-    }
-
-    private String waitForErrorPageContent(Duration timeout, String... expectedSnippets) throws InterruptedException {
-        long deadline = System.nanoTime() + timeout.toNanos();
-        String lastBodyText = "";
-        while (System.nanoTime() < deadline) {
-            lastBodyText = normalizedBodyText();
-            if (containsAnyOf(lastBodyText, expectedSnippets)) {
-                return lastBodyText;
-            }
-            Thread.sleep(200);
-        }
-        return lastBodyText;
     }
 
     private String normalizedBodyText() {
@@ -495,10 +476,6 @@ abstract class AbstractOid4vpE2eTest {
                 appendTextualFields(child, combined);
             }
         }
-    }
-
-    private static boolean containsAnyOf(String text, String... snippets) {
-        return Arrays.stream(snippets).anyMatch(text::contains);
     }
 
     protected String extractRedirectUriFromSseResponse(String sseBody) throws IOException {
