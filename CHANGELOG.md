@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.9.5...v0.10.0) (2026-08-21)
+
+
+### Features
+
+* add switch for error handling redirect/error response ([ecf0a56](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/ecf0a567884b9dc2a41a1882692b0d344767d3b1))
+
 ## [0.9.5](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.9.4...v0.9.5) (2026-08-21)
 
 
