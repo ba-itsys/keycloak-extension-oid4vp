@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.5](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.9.4...v0.9.5) (2026-08-21)
+
+
+### Bug Fixes
+
+* etsi-tl nextupdate date format test bug ([086b441](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/086b441abf46edf72edb4a3686beaf70cb59bfea))
+
 ## [0.9.4](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.9.3...v0.9.4) (2026-08-21)
 
 
