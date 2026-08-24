@@ -24,7 +24,7 @@ import java.util.Base64;
  *
  * <p>A value is used verbatim unless it is Base64-encoded as a whole, recognized by the decoded
  * text carrying the expected content marker: a PEM {@code -----BEGIN} header, or a leading
- * {@code '{'} or {@code '['} for JSON. PEM values additionally accept {@code \n} escape sequences
+ * <code>'&#123;'</code> or {@code '['} for JSON. PEM values additionally accept {@code \n} escape sequences
  * instead of newlines.
  */
 public final class ConfigValues {
