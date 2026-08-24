@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.11.0...v0.11.1) (2026-08-24)
+
+
+### Bug Fixes
+
+* javadoc ([1b7359d](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/1b7359db4ea71f770fab7c5bed7eff123597a137))
+
 ## [0.11.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.10.0...v0.11.0) (2026-08-24)
 
 
