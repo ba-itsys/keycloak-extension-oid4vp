@@ -23,6 +23,7 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpCredentialSetsValidator;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpRejectionResponse;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpResponseMode;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PrincipalAttribute;
+import de.arbeitsagentur.keycloak.oid4vp.util.ConfigValues;
 import de.arbeitsagentur.keycloak.oid4vp.util.DcqlQueryBuilder;
 import de.arbeitsagentur.keycloak.oid4vp.util.DcqlQueryBuilder.AggregatedCredentials;
 import java.time.Duration;
@@ -173,7 +174,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     }
 
     public String getX509CertificatePem() {
-        return normalizePemConfigValue(getConfig().get(X509_CERTIFICATE_PEM));
+        return ConfigValues.pem(getConfig().get(X509_CERTIFICATE_PEM));
     }
 
     public void setX509CertificatePem(String pem) {
@@ -181,7 +182,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     }
 
     public String getX509SigningKeyJwk() {
-        return getConfig().get(X509_SIGNING_KEY_JWK);
+        return ConfigValues.json(getConfig().get(X509_SIGNING_KEY_JWK));
     }
 
     public void setX509SigningKeyJwk(String jwk) {
@@ -189,7 +190,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     }
 
     public String getVerifierInfo() {
-        return getConfig().get(VERIFIER_INFO);
+        return ConfigValues.json(getConfig().get(VERIFIER_INFO));
     }
 
     public void setVerifierInfo(String verifierInfo) {
@@ -438,9 +439,5 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
             }
         }
         return false;
-    }
-
-    private static String normalizePemConfigValue(String pem) {
-        return pem != null && pem.contains("\\n") ? pem.replace("\\n", "\n") : pem;
     }
 }

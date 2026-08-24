@@ -19,7 +19,9 @@ import static org.assertj.core.api.Assertions.*;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpRejectionResponse;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PrincipalAttribute;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Base64;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -93,6 +95,30 @@ class Oid4vpIdentityProviderConfigTest {
         assertThatThrownBy(() -> config.validate(null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("no private key");
+    }
+
+    @Test
+    void x509CertificatePem_decodesBase64EncodedValue() {
+        String pem = "-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----";
+        config.setX509CertificatePem(Base64.getEncoder().encodeToString(pem.getBytes(StandardCharsets.UTF_8)));
+
+        assertThat(config.getX509CertificatePem()).isEqualTo(pem);
+    }
+
+    @Test
+    void verifierInfo_decodesBase64EncodedJson() {
+        String json = "[{\"format\":\"jwt\",\"data\":\"eyJhbGciOi...\"}]";
+        config.setVerifierInfo(Base64.getEncoder().encodeToString(json.getBytes(StandardCharsets.UTF_8)));
+
+        assertThat(config.getVerifierInfo()).isEqualTo(json);
+    }
+
+    @Test
+    void x509SigningKeyJwk_decodesBase64EncodedJson() {
+        String jwk = "{\"kty\":\"EC\",\"crv\":\"P-256\"}";
+        config.setX509SigningKeyJwk(Base64.getEncoder().encodeToString(jwk.getBytes(StandardCharsets.UTF_8)));
+
+        assertThat(config.getX509SigningKeyJwk()).isEqualTo(jwk);
     }
 
     @Test

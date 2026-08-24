@@ -263,6 +263,8 @@ This mode is intended for credentials that do not carry a stable account identif
 1. Combined PEM with leaf certificate, optional intermediate certificates, and private key.
 2. Certificate-only PEM when request objects should be signed with the Keycloak realm signing key instead.
 
+Multi-line values stay usable in single-line sources such as environment variables from Kubernetes secrets: `x509CertificatePem`, `x509SigningKeyJwk`, `verifierInfo`, `trustListSigningCertPem`, and `trustedCertificates` accept their value verbatim or Base64-encoded as a whole. The PEM values additionally accept `\n` escape sequences instead of line breaks.
+
 ### Trust and Verification
 
 | Key | Description | Default |
