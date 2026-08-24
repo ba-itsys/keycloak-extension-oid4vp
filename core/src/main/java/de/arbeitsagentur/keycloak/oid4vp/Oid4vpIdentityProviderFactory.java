@@ -181,17 +181,20 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .property()
                 .name(Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM)
                 .label("X.509 Certificate (PEM)")
-                .helpText(
-                        "PEM-encoded X.509 certificate chain for x509_san_dns or x509_hash client ID schemes. "
-                                + "Required whenever the effective client ID scheme is certificate-bound. "
-                                + "May include a PRIVATE KEY block to override the realm signing key for request objects. "
-                                + "Wallets following the high assurance profile expect a CA-issued chain, not a self-signed leaf.")
+                .helpText("PEM-encoded X.509 certificate chain for x509_san_dns or x509_hash client ID schemes. "
+                        + "Required whenever the effective client ID scheme is certificate-bound. "
+                        + "May include a PRIVATE KEY block to override the realm signing key for request objects. "
+                        + "Wallets following the high assurance profile expect a CA-issued chain, not a self-signed leaf. "
+                        + "Accepts the value verbatim or Base64-encoded as a whole, for single-line sources such "
+                        + "as environment variables.")
                 .type(ProviderConfigProperty.TEXT_TYPE)
                 .add()
                 .property()
                 .name(Oid4vpIdentityProviderConfig.VERIFIER_INFO)
                 .label("Verifier Info (JSON)")
-                .helpText("JSON array of verifier attestations for EUDI Wallet registration certificates.")
+                .helpText("JSON array of verifier attestations for EUDI Wallet registration certificates. "
+                        + "Accepts the value verbatim or Base64-encoded as a whole, for single-line sources such as "
+                        + "environment variables.")
                 .type(ProviderConfigProperty.TEXT_TYPE)
                 .add()
                 .property()

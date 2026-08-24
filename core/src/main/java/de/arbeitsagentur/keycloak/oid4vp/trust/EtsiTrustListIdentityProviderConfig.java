@@ -16,6 +16,7 @@
 package de.arbeitsagentur.keycloak.oid4vp.trust;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthorityType;
+import de.arbeitsagentur.keycloak.oid4vp.util.ConfigValues;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.Arrays;
@@ -84,7 +85,7 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
     }
 
     public String getTrustListSigningCertPem() {
-        return normalizePemConfigValue(getConfig().get(TRUST_LIST_SIGNING_CERT_PEM));
+        return ConfigValues.pem(getConfig().get(TRUST_LIST_SIGNING_CERT_PEM));
     }
 
     public void setTrustListSigningCertPem(String pem) {
@@ -121,7 +122,7 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
     }
 
     public String getTrustedCertificates() {
-        return normalizePemConfigValue(getConfig().get(TRUSTED_CERTIFICATES));
+        return ConfigValues.pem(getConfig().get(TRUSTED_CERTIFICATES));
     }
 
     public void setTrustedCertificates(String pem) {
@@ -241,9 +242,5 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
         } catch (NumberFormatException e) {
             return null;
         }
-    }
-
-    private static String normalizePemConfigValue(String pem) {
-        return pem != null && pem.contains("\\n") ? pem.replace("\\n", "\n") : pem;
     }
 }

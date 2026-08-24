@@ -17,7 +17,9 @@ package de.arbeitsagentur.keycloak.oid4vp.trust;
 
 import static org.assertj.core.api.Assertions.*;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Base64;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -58,6 +60,22 @@ class EtsiTrustListIdentityProviderConfigTest {
         config.setTrustListSigningCertPem("-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----");
         assertThat(config.getTrustListSigningCertPem())
                 .isEqualTo("-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----");
+    }
+
+    @Test
+    void trustListSigningCertPem_decodesBase64EncodedValue() {
+        String pem = "-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----";
+        config.setTrustListSigningCertPem(Base64.getEncoder().encodeToString(pem.getBytes(StandardCharsets.UTF_8)));
+
+        assertThat(config.getTrustListSigningCertPem()).isEqualTo(pem);
+    }
+
+    @Test
+    void trustedCertificates_decodesBase64EncodedValue() {
+        String pem = "-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----";
+        config.setTrustedCertificates(Base64.getEncoder().encodeToString(pem.getBytes(StandardCharsets.UTF_8)));
+
+        assertThat(config.getTrustedCertificates()).isEqualTo(pem);
     }
 
     @Test

@@ -47,7 +47,9 @@ public class EtsiTrustListIdentityProviderFactory
             .label("Trust List Signing Certificate (PEM)")
             .helpText("PEM-encoded X.509 certificate used to verify the trust list JWT signature. "
                     + "If not configured, the trust list JWT signature is not verified and the fetched trust list "
-                    + "is trusted as-is. This is acceptable for local testing only.")
+                    + "is trusted as-is. This is acceptable for local testing only. "
+                    + "Accepts the value verbatim or Base64-encoded as a whole, for single-line sources such as "
+                    + "environment variables.")
             .type(ProviderConfigProperty.TEXT_TYPE)
             .add()
             .property()
@@ -79,7 +81,9 @@ public class EtsiTrustListIdentityProviderFactory
             .label("Trusted Certificates (PEM)")
             .helpText("PEM-encoded X.509 certificate bundle of trusted issuers. CA certificates become trust "
                     + "anchors for credential certificate chains, end entity certificates are trusted directly. "
-                    + "Used instead of or in addition to the trust list URL.")
+                    + "Used instead of or in addition to the trust list URL. "
+                    + "Accepts the value verbatim or Base64-encoded as a whole, for single-line sources such as "
+                    + "environment variables.")
             .type(ProviderConfigProperty.TEXT_TYPE)
             .add()
             .property()
