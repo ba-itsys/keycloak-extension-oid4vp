@@ -103,8 +103,9 @@ public class StatusListVerifier {
         } catch (IllegalStateException e) {
             throw e;
         } catch (Exception e) {
-            LOG.warnf("Failed to check revocation status from %s: %s", ref.uri, e.getMessage());
-            throw new IllegalStateException("Unable to verify credential revocation status: " + e.getMessage(), e);
+            LOG.warnf(e, "Failed to check revocation status from %s", ref.uri);
+            throw new IllegalStateException(
+                    "Unable to verify credential revocation status from " + ref.uri + ": " + e.getMessage(), e);
         }
     }
 
@@ -253,9 +254,15 @@ public class StatusListVerifier {
 
     String fetchStatusListJwt(String uri) throws Exception {
         if (session != null) {
-            return SimpleHttp.doGet(uri, session)
+            try (SimpleHttp.Response response = SimpleHttp.doGet(uri, session)
                     .header("Accept", "application/statuslist+jwt")
-                    .asString();
+                    .asResponse()) {
+                if (response.getStatus() / 100 != 2) {
+                    throw new IllegalStateException(
+                            "HTTP " + response.getStatus() + " fetching status list from " + uri);
+                }
+                return response.asString();
+            }
         }
         throw new IllegalStateException("No KeycloakSession available for HTTP requests");
     }
