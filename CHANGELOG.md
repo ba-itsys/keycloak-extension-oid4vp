@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.10.0...v0.11.0) (2026-08-24)
+
+
+### Features
+
+* support Base64 encoded values for PEM and JSON identity provider config ([3003f28](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/3003f28b0900aba6bee28c4f066dbfe01d792c4d))
+
+
+### Bug Fixes
+
+* include URL and HTTP status in trust list, status list and issuer metadata fetch failures ([807f05d](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/807f05de8d9d59d7634ae721bea3047d26ed63a0))
+
 ## [0.10.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.9.5...v0.10.0) (2026-08-21)
 
 
