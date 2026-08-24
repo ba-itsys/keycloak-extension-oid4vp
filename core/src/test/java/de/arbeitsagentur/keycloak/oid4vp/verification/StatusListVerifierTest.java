@@ -26,6 +26,7 @@ import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
+import java.io.IOException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.cert.X509Certificate;
@@ -107,6 +108,23 @@ class StatusListVerifierTest {
         assertThat(ref).isNotNull();
         assertThat(ref.uri()).isEqualTo("https://issuer.example/status/abc");
         assertThat(ref.idx()).isEqualTo(42);
+    }
+
+    @Test
+    void revocationCheckFailureCarriesStatusListUri() {
+        StatusListVerifier failingVerifier = new StatusListVerifier() {
+            @Override
+            String fetchStatusListJwt(String uri) throws Exception {
+                throw new IOException("Connection refused");
+            }
+        };
+        Map<String, Object> payload =
+                Map.of("status", Map.of("status_list", Map.of("uri", "https://issuer.example/status/abc", "idx", 1)));
+
+        assertThatThrownBy(() -> failingVerifier.checkRevocationStatus(payload))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("https://issuer.example/status/abc")
+                .hasMessageContaining("Connection refused");
     }
 
     @Test

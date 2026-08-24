@@ -196,11 +196,15 @@ public class TrustListProvider {
                     && Instant.now().isBefore(cached.fetchedAt.plus(maxStaleAge))) {
                 currentLoTEType = cached.loTEType;
                 LOG.warnf(
-                        "Failed to refresh trust list from %s: %s — using stale cache (%d keys, fetched %s, expired %s)",
-                        trustListUrl, e.getMessage(), cached.certificates.size(), cached.fetchedAt, cached.expiresAt);
+                        e,
+                        "Failed to refresh trust list from %s — using stale cache (%d keys, fetched %s, expired %s)",
+                        trustListUrl,
+                        cached.certificates.size(),
+                        cached.fetchedAt,
+                        cached.expiresAt);
                 return cached;
             }
-            LOG.warnf("Failed to fetch trust list from %s: %s", trustListUrl, e.getMessage());
+            LOG.warnf(e, "Failed to fetch trust list from %s", trustListUrl);
             return CachedTrustList.empty();
         }
     }
@@ -270,6 +274,10 @@ public class TrustListProvider {
             try (SimpleHttp.Response response = SimpleHttp.doGet(trustListUrl, session)
                     .header("Accept", "application/jwt")
                     .asResponse()) {
+                if (response.getStatus() / 100 != 2) {
+                    throw new IllegalStateException(
+                            "HTTP " + response.getStatus() + " fetching trust list from " + trustListUrl);
+                }
                 return new FetchedTrustList(response.asString(), resolveHttpCacheExpiry(response));
             }
         }

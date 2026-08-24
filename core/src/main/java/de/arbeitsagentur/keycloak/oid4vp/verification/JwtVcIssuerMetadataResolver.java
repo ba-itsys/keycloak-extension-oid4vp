@@ -18,6 +18,7 @@ package de.arbeitsagentur.keycloak.oid4vp.verification;
 import com.fasterxml.jackson.databind.JsonNode;
 import de.arbeitsagentur.keycloak.oid4vp.util.BoundedLruMap;
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -97,27 +98,35 @@ public class JwtVcIssuerMetadataResolver {
     }
 
     protected FetchResult fetchJson(String url) throws Exception {
-        if (session != null) {
-            try (SimpleHttp.Response response =
-                    SimpleHttp.doGet(url, session).acceptJson().asResponse()) {
-                if (response.getStatus() != 200) {
-                    throw new IllegalStateException("Unexpected HTTP " + response.getStatus() + " fetching " + url);
+        try {
+            if (session != null) {
+                try (SimpleHttp.Response response =
+                        SimpleHttp.doGet(url, session).acceptJson().asResponse()) {
+                    if (response.getStatus() != 200) {
+                        throw new IllegalStateException("Unexpected HTTP " + response.getStatus() + " fetching " + url);
+                    }
+                    return new FetchResult(
+                            response.asJson(),
+                            parseCacheControlMaxAge(response.getHeader("Cache-Control")),
+                            Instant.now());
                 }
-                return new FetchResult(
-                        response.asJson(), parseCacheControlMaxAge(response.getHeader("Cache-Control")), Instant.now());
             }
-        }
 
-        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                .header("Accept", "application/json")
-                .GET()
-                .build();
-        HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() != 200) {
-            throw new IllegalStateException("Unexpected HTTP " + response.statusCode() + " fetching " + url);
+            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                    .header("Accept", "application/json")
+                    .GET()
+                    .build();
+            HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                throw new IllegalStateException("Unexpected HTTP " + response.statusCode() + " fetching " + url);
+            }
+            return new FetchResult(
+                    JsonSerialization.mapper.readTree(response.body()),
+                    parseCacheControlMaxAge(response),
+                    Instant.now());
+        } catch (IOException e) {
+            throw new IllegalStateException("GET " + url + " failed: " + e, e);
         }
-        return new FetchResult(
-                JsonSerialization.mapper.readTree(response.body()), parseCacheControlMaxAge(response), Instant.now());
     }
 
     private CachedIssuerKeys fetchIssuerKeys(String issuer) {
