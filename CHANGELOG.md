@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.11.1...v0.12.0) (2026-08-27)
+
+
+### Features
+
+* add loa-per-flow mapper and conditional same/cross device activation per loa ([0cb77dc](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/0cb77dc800f7ee5bf518c5b95fdc8690a140215d))
+
 ## [0.11.1](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.11.0...v0.11.1) (2026-08-24)
 
 
