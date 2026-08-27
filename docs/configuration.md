@@ -244,10 +244,16 @@ This mode is intended for credentials that do not carry a stable account identif
 |-----|-------------|---------|
 | `sameDeviceEnabled` | Enables same-device wallet login. | `true` |
 | `crossDeviceEnabled` | Enables cross-device QR-code wallet login. | `true` |
+| `sameDeviceMaxLoa` | Highest requested level of authentication the same-device flow is offered at. The level is the integer Keycloak derives from the client's `acr_values` or `claims` request through the realm or client ACR-to-LoA mapping. Empty means no ceiling. | *(none)* |
+| `crossDeviceMaxLoa` | Highest requested level of authentication the cross-device flow is offered at, with the same semantics as `sameDeviceMaxLoa`. | *(none)* |
 | `walletScheme` | URI scheme used to invoke the wallet app, for the same-device and cross-device flows alike. | `openid4vp://` |
 | `responseMode` | Wallet callback response mode. `direct_post.jwt` encrypts the wallet response and is what wallets following the high assurance profile expect. | `direct_post.jwt` |
 | `rejectionResponse` | How the response URI answers a presentation the verifier rejects. `redirect` answers with HTTP 200 and the `redirect_uri` that returns the End-User to the login page. `error` answers with HTTP 400 and the error beside that `redirect_uri`, which a wallet aborting on a non-2xx status never follows. Wallet-reported errors are answered with HTTP 200 either way. | `redirect` |
 | `requestUriMethodPost` | Advertises `request_uri_method=post` so a conforming wallet retrieves the request object with POST (OID4VP 1.0 §5.10), sending its `wallet_metadata` and `wallet_nonce`. This enables request-object encryption and `wallet_nonce` replay protection. Leave off for wallets that retrieve the request object with GET only. | `false` |
+
+A flow above its ceiling is not offered on the login page, and its state is never created, so no request object exists for it and nothing a wallet posts can complete it. When the requested level exceeds the ceiling of every enabled flow, the login ends on an error page. A request that names no level reaches every enabled flow. A ceiling value that is not an integer is rejected when the provider is saved.
+
+The ceilings apply when the wallet login runs. Whether an existing SSO session must re-authenticate for a requested level is the realm's step-up flow configuration. The level itself comes from the request as Keycloak maps it: an `acr` value the ACR-to-LoA mapping does not name counts as the minimum level, and a request naming several `acr` values counts as the lowest of them.
 
 ### Client Authentication (X.509)
 
@@ -373,10 +379,19 @@ The extension provides format-specific mapper types, following the mapper design
 - `SD-JWT User Session Attribute Importer` (`oid4vp-sd-jwt-user-session-attribute-idp-mapper`)
 - `mDoc Attribute Importer` (`oid4vp-mdoc-user-attribute-idp-mapper`)
 - `mDoc User Session Attribute Importer` (`oid4vp-mdoc-user-session-attribute-idp-mapper`)
+- `eIDAS LoA User Session Attribute` (`oid4vp-eidas-loa-user-session-attribute-idp-mapper`)
 
 Each mapper declares a credential type (VCT or doctype) and a claim path. The claim path uses dot notation: `address.locality` selects a nested claim, `nationalities[]` selects all array elements, `nationalities[0]` selects the first presented element, and a literal dot is escaped as `\.`. Arrays import as multivalued attributes, object values as their JSON representation; session attribute mappers join multiple values with commas.
 
 mDoc mappers additionally declare the ISO 18013-5 `namespace` of the data element, defaulting to the credential type (doctype). The claim path addresses the element within that namespace; deeper path steps select into structured element values on the mapper side only. Element values holding serialized JSON objects or arrays become nested structures in the claims JSON, so they follow the same path rules as SD-JWT claims.
+
+### Presentation Flow
+
+Every completed login stores the flow it finished in as the user session note `oid4vp_presentation_flow`, holding `same_device` or `cross_device`. Custom identity provider mappers read the same value from the brokered identity context through `Oid4vpMapperUtils.presentationFlow`.
+
+The flow records which login page affordance started the presentation: the same-device link or the cross-device QR code. OID4VP does not bind the wallet to the device the browser runs on. The note describes the login that created the session, so a token issued from SSO reuse carries the value of that login.
+
+The `eIDAS LoA User Session Attribute` mapper writes a level of assurance chosen by that flow into a configurable user session attribute, defaulting to `eidas_loa` with the values `STORK-QAA-Level-4` for a same-device and `STORK-QAA-Level-3` for a cross-device completion. Set the mapper's sync mode override to `Force`, so the attribute is also set when a first wallet login links an existing account. Use the `User Session Note` protocol mapper on the client or client scope to surface these values in tokens.
 
 These mappers drive the generated DCQL request: every distinct `credential.id` present in the mappers becomes a DCQL credential entry, and every claim path becomes a requested claim. The response is validated against this query, so all requested claims are known to the verifier.
 

@@ -231,6 +231,10 @@ abstract class AbstractOid4vpE2eTest {
         addIdpMappers(idp, mappers);
     }
 
+    protected void addIdpMapper(IdentityProviderMapperRepresentation mapper) {
+        addIdpMappers(realm.admin().identityProviders().get(Oid4vpTestKeycloakSetup.IDP_ALIAS), List.of(mapper));
+    }
+
     private void addIdpMappers(IdentityProviderResource idp, List<IdentityProviderMapperRepresentation> mappers) {
         for (IdentityProviderMapperRepresentation mapper : mappers) {
             try (Response response = idp.addMapper(mapper)) {
@@ -492,6 +496,13 @@ abstract class AbstractOid4vpE2eTest {
                 .withFailMessage("Token exchange failed: status=%d body=%s", response.statusCode(), response.body())
                 .isEqualTo(200);
         return OBJECT_MAPPER.readTree(response.body());
+    }
+
+    /** The id token of the completed login, obtained by exchanging the authorization code. */
+    protected SignedJWT idTokenOfCompletedLogin() throws Exception {
+        String serializedIdToken = exchangeAuthorizationCode().path("id_token").asText();
+        assertThat(serializedIdToken).isNotBlank();
+        return SignedJWT.parse(serializedIdToken);
     }
 
     protected String encryptWalletResponse(ECKey publicKey, Map<String, Object> payload) throws Exception {

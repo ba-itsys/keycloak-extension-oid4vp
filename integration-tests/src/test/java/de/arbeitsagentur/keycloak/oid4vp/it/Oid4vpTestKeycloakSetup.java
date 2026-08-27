@@ -19,6 +19,7 @@ import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialId;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.mapper.AbstractOID4VPClaimMapper;
+import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPEidasLoaUserSessionAttributeMapper;
 import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPMdocUserAttributeMapper;
 import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPMdocUserSessionAttributeMapper;
 import de.arbeitsagentur.keycloak.oid4vp.trust.EtsiTrustListIdentityProviderConfig;
@@ -30,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import org.keycloak.admin.client.resource.RealmResource;
+import org.keycloak.models.IdentityProviderMapperSyncMode;
 import org.keycloak.representations.idm.FederatedIdentityRepresentation;
 import org.keycloak.representations.idm.IdentityProviderMapperRepresentation;
 import org.keycloak.representations.idm.IdentityProviderRepresentation;
@@ -148,6 +150,18 @@ public final class Oid4vpTestKeycloakSetup {
         boolean mdoc = OID4VPMdocUserSessionAttributeMapper.PROVIDER_ID.equals(providerId)
                 || OID4VPMdocUserAttributeMapper.PROVIDER_ID.equals(providerId);
         return mdoc ? Oid4vpConstants.FORMAT_MSO_MDOC : Oid4vpConstants.FORMAT_SD_JWT_VC;
+    }
+
+    // Maps how the presentation finished to the mapper's default STORK QAA level, stored as a
+    // session note under its default attribute name. Sync mode FORCE, so the note is also set
+    // when a first wallet login links an existing account.
+    public static IdentityProviderMapperRepresentation eidasLoaMapper() {
+        IdentityProviderMapperRepresentation mapper = new IdentityProviderMapperRepresentation();
+        mapper.setName("eidas-loa");
+        mapper.setIdentityProviderAlias(IDP_ALIAS);
+        mapper.setIdentityProviderMapper(OID4VPEidasLoaUserSessionAttributeMapper.PROVIDER_ID);
+        mapper.setConfig(Map.of("syncMode", IdentityProviderMapperSyncMode.FORCE.name()));
+        return mapper;
     }
 
     // Default identity provider mapper storing the credential's family name as a session note.

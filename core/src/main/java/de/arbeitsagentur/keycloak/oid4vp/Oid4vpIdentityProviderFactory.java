@@ -71,6 +71,12 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
         }
     }
 
+    private static String maxLoaHelpText(String flow) {
+        return "Highest requested level of authentication the " + flow + " flow is offered at, as the integer "
+                + "from the realm or client ACR-to-LoA mapping of the client's acr_values or claims request. "
+                + "Leave empty for no ceiling.";
+    }
+
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES;
 
     static {
@@ -148,6 +154,18 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .helpText("Enable cross-device flow (QR code for scanning with phone).")
                 .type(ProviderConfigProperty.BOOLEAN_TYPE)
                 .defaultValue("true")
+                .add()
+                .property()
+                .name(Oid4vpIdentityProviderConfig.SAME_DEVICE_MAX_LOA)
+                .label("Same-Device Max Level of Authentication")
+                .helpText(maxLoaHelpText("same-device"))
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .add()
+                .property()
+                .name(Oid4vpIdentityProviderConfig.CROSS_DEVICE_MAX_LOA)
+                .label("Cross-Device Max Level of Authentication")
+                .helpText(maxLoaHelpText("cross-device"))
+                .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
                 .name(Oid4vpIdentityProviderConfig.WALLET_SCHEME)

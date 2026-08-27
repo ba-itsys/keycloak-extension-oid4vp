@@ -15,6 +15,8 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.service;
 
+import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.FLOW_CROSS_DEVICE;
+import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.FLOW_SAME_DEVICE;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.FORMAT_MSO_MDOC;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.FORMAT_SD_JWT_VC;
 import static org.assertj.core.api.Assertions.*;
@@ -81,6 +83,29 @@ class Oid4vpCallbackProcessorTest {
         assertThat(presented.format()).isEqualTo(FORMAT_SD_JWT_VC);
         assertThat(result.getContextData().get(Oid4vpMapperUtils.CONTEXT_ISSUER_KEY))
                 .isEqualTo("https://issuer.example");
+    }
+
+    @Test
+    void process_recordsTheSameDevicePresentationFlowForMappers() {
+        VerifiedCredential credential = sdJwtCredential(Map.of("sub", "user1"));
+
+        BrokeredIdentityContext result =
+                processor(resultOf(credential)).process(requestContext("state", "nonce"), "vp-token", null);
+
+        assertThat(result.getContextData().get(Oid4vpMapperUtils.CONTEXT_PRESENTATION_FLOW_KEY))
+                .isEqualTo("same_device");
+    }
+
+    @Test
+    void process_recordsTheCrossDevicePresentationFlow() {
+        VerifiedCredential credential = sdJwtCredential(Map.of("sub", "user1"));
+        Oid4vpRequestObjectStore.RequestContextEntry crossDeviceContext =
+                requestContext("state", "nonce", FLOW_CROSS_DEVICE, null, List.of());
+
+        BrokeredIdentityContext result = processor(resultOf(credential)).process(crossDeviceContext, "vp-token", null);
+
+        assertThat(result.getContextData().get(Oid4vpMapperUtils.CONTEXT_PRESENTATION_FLOW_KEY))
+                .isEqualTo("cross_device");
     }
 
     @Test
@@ -630,13 +655,22 @@ class Oid4vpCallbackProcessorTest {
             List<RequestedCredential> requestedCredentials,
             List<CredentialSet> credentialSets,
             String... configuredCredentialTypes) {
+        return requestContext(state, nonce, FLOW_SAME_DEVICE, requestedCredentials, credentialSets);
+    }
+
+    private Oid4vpRequestObjectStore.RequestContextEntry requestContext(
+            String state,
+            String nonce,
+            String flow,
+            List<RequestedCredential> requestedCredentials,
+            List<CredentialSet> credentialSets) {
         return new Oid4vpRequestObjectStore.RequestContextEntry(
                 state,
                 "root-session",
                 "tab-1",
                 "test-client",
                 "https://example.com/callback",
-                "same_device",
+                flow,
                 nonce,
                 null,
                 null,

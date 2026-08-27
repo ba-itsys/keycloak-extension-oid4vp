@@ -22,6 +22,7 @@ import de.arbeitsagentur.keycloak.oid4vp.binding.ReferenceBindingCheck;
 import de.arbeitsagentur.keycloak.oid4vp.binding.ReferenceCredentialBinding;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpPresentationFlow;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredentials;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PrincipalAttribute;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
@@ -163,6 +164,10 @@ public class Oid4vpCallbackProcessor {
         context.getContextData().put(Oid4vpMapperUtils.CONTEXT_SUBJECT_KEY, subject);
         if (generatedSubject) {
             context.getContextData().put(Oid4vpMapperUtils.CONTEXT_GENERATED_SUBJECT_KEY, subject);
+        }
+        Oid4vpPresentationFlow flow = Oid4vpPresentationFlow.of(requestContext.flow());
+        if (flow != null) {
+            context.getContextData().put(Oid4vpMapperUtils.CONTEXT_PRESENTATION_FLOW_KEY, flow.value());
         }
         return context;
     }

@@ -15,7 +15,10 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.it;
 
+import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPEidasLoaUserSessionAttributeMapper;
+import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import java.util.Map;
+import org.keycloak.models.Constants;
 import org.keycloak.representations.idm.ProtocolMapperRepresentation;
 import org.keycloak.testframework.realm.ClientBuilder;
 import org.keycloak.testframework.realm.RealmBuilder;
@@ -40,10 +43,21 @@ public class Oid4vpRealmConfig implements RealmConfig {
                         .redirectUris("*")
                         .webOrigins("*")
                         .attribute("pkce.code.challenge.method", "S256")
+                        // The ACR-to-LoA mapping the level-of-authentication tests request
+                        // levels through; other tests send no acr_values, so it stays inert.
+                        .attribute(Constants.ACR_LOA_MAP, "{\"STORK-QAA-Level-3\":3,\"STORK-QAA-Level-4\":4}")
                         .protocolMappers(
                                 credentialFamilyNameIdTokenMapper(),
                                 sessionNoteIdTokenMapper("sd-jwt-family-name", "sdJwtFamilyName", "sd_jwt_family_name"),
-                                sessionNoteIdTokenMapper("mdoc-family-name", "mdocFamilyName", "mdoc_family_name")));
+                                sessionNoteIdTokenMapper("mdoc-family-name", "mdocFamilyName", "mdoc_family_name"),
+                                sessionNoteIdTokenMapper(
+                                        "presentation-flow",
+                                        Oid4vpMapperUtils.CONTEXT_PRESENTATION_FLOW_KEY,
+                                        "presentation_flow"),
+                                sessionNoteIdTokenMapper(
+                                        "eidas-loa",
+                                        OID4VPEidasLoaUserSessionAttributeMapper.DEFAULT_ATTRIBUTE,
+                                        "eidas_loa")));
     }
 
     // Maps the credentialFamilyName session note set by the IdP session mapper into the id token

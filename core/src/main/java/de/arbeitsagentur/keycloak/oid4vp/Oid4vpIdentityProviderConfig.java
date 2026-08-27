@@ -49,6 +49,17 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public static final String SAME_DEVICE_ENABLED = "sameDeviceEnabled";
     public static final String CROSS_DEVICE_ENABLED = "crossDeviceEnabled";
+
+    /**
+     * The highest requested level of authentication the same-device flow is offered at, empty for
+     * no ceiling. The level is the integer Keycloak derives from the client's acr_values or claims
+     * request through the realm or client ACR-to-LoA mapping.
+     */
+    public static final String SAME_DEVICE_MAX_LOA = "sameDeviceMaxLoa";
+
+    /** The cross-device flow's ceiling, with the semantics of {@link #SAME_DEVICE_MAX_LOA}. */
+    public static final String CROSS_DEVICE_MAX_LOA = "crossDeviceMaxLoa";
+
     public static final String WALLET_SCHEME = "walletScheme";
     public static final String REQUEST_URI_METHOD_POST = "requestUriMethodPost";
 
@@ -118,6 +129,32 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public void setCrossDeviceEnabled(boolean enabled) {
         getConfig().put(CROSS_DEVICE_ENABLED, String.valueOf(enabled));
+    }
+
+    /** The same-device flow's requested level of authentication ceiling, or null for none. */
+    public Integer getSameDeviceMaxLoa() {
+        return getOptionalIntConfig(SAME_DEVICE_MAX_LOA);
+    }
+
+    public void setSameDeviceMaxLoa(Integer maxLoa) {
+        if (maxLoa == null) {
+            getConfig().remove(SAME_DEVICE_MAX_LOA);
+        } else {
+            getConfig().put(SAME_DEVICE_MAX_LOA, String.valueOf(maxLoa));
+        }
+    }
+
+    /** The cross-device flow's requested level of authentication ceiling, or null for none. */
+    public Integer getCrossDeviceMaxLoa() {
+        return getOptionalIntConfig(CROSS_DEVICE_MAX_LOA);
+    }
+
+    public void setCrossDeviceMaxLoa(Integer maxLoa) {
+        if (maxLoa == null) {
+            getConfig().remove(CROSS_DEVICE_MAX_LOA);
+        } else {
+            getConfig().put(CROSS_DEVICE_MAX_LOA, String.valueOf(maxLoa));
+        }
     }
 
     public String getWalletScheme() {
@@ -208,6 +245,11 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     @Override
     public void validate(RealmModel realm) {
         super.validate(realm);
+
+        // Parsing the ceilings here rejects a mistyped value when the provider is saved, instead
+        // of failing every login afterwards.
+        getSameDeviceMaxLoa();
+        getCrossDeviceMaxLoa();
 
         if (getResolvedClientIdScheme().isCertificateBound()
                 && StringUtil.isNotBlank(getX509CertificatePem())
@@ -404,6 +446,23 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public void setRequestObjectLifespanSeconds(int seconds) {
         getConfig().put(REQUEST_OBJECT_LIFESPAN_SECONDS, String.valueOf(seconds));
+    }
+
+    /**
+     * An unparseable value fails instead of falling back to a default: the max LoA settings are
+     * ceilings, and dropping a mistyped one would offer a flow at a level the configuration
+     * forbids.
+     */
+    private Integer getOptionalIntConfig(String key) {
+        String value = getConfig().get(key);
+        if (StringUtil.isBlank(value)) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(value.trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Invalid integer value '" + value + "' for " + key);
+        }
     }
 
     private int getIntConfig(String key, int defaultValue) {

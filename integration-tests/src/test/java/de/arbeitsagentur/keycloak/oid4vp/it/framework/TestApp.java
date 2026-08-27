@@ -27,6 +27,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.keycloak.common.util.SecretGenerator;
 import org.keycloak.protocol.oidc.utils.PkceUtils;
 
@@ -55,19 +57,24 @@ public final class TestApp implements AutoCloseable {
     }
 
     // Creates a PKCE authorization request URL for this application
-    public String authorizationRequestUrl(String authorizationEndpoint, String clientId) {
+    public String authorizationRequestUrl(
+            String authorizationEndpoint, String clientId, Map<String, String> extraParams) {
         String state = SecretGenerator.getInstance().randomString(16);
         String codeVerifier = PkceUtils.generateCodeVerifier();
         lastCodeVerifier = codeVerifier;
         String codeChallenge = PkceUtils.generateS256CodeChallenge(codeVerifier);
 
-        return authorizationEndpoint + "?client_id=" + urlEncode(clientId)
+        String url = authorizationEndpoint + "?client_id=" + urlEncode(clientId)
                 + "&redirect_uri=" + urlEncode(callbackUrl())
                 + "&response_type=code"
                 + "&scope=openid"
                 + "&state=" + urlEncode(state)
                 + "&code_challenge=" + urlEncode(codeChallenge)
                 + "&code_challenge_method=S256";
+        return url
+                + extraParams.entrySet().stream()
+                        .map(param -> "&" + urlEncode(param.getKey()) + "=" + urlEncode(param.getValue()))
+                        .collect(Collectors.joining());
     }
 
     // Exchanges the authorization code of the last received callback for tokens

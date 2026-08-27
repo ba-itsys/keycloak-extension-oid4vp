@@ -42,5 +42,8 @@ public final class Oid4vpMessages {
     /** The deferred identity of the login is gone, so it cannot be completed. */
     public static final String LOGIN_DATA_MISSING = "oid4vpLoginDataMissing";
 
+    /** No flow is offered at the level of authentication the client requested. */
+    public static final String NOT_AVAILABLE_FOR_REQUESTED_LEVEL = "oid4vpNotAvailableForRequestedLevel";
+
     private Oid4vpMessages() {}
 }
