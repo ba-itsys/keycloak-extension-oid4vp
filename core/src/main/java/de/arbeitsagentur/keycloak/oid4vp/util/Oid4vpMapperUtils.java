@@ -15,6 +15,7 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpPresentationFlow;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredentials;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.util.JsonSerialization;
@@ -35,7 +36,21 @@ public final class Oid4vpMapperUtils {
     /** Set when the subject was generated because the subject credential was not presented. */
     public static final String CONTEXT_GENERATED_SUBJECT_KEY = "oid4vp_generated_subject";
 
+    /**
+     * The flow the presentation arrived over, as an {@link Oid4vpPresentationFlow} wire value. The
+     * same name doubles as the user session note the identity provider sets on a completed login,
+     * so tokens can carry the flow through the user session note protocol mapper without an
+     * identity provider mapper.
+     */
+    public static final String CONTEXT_PRESENTATION_FLOW_KEY = "oid4vp_presentation_flow";
+
     private Oid4vpMapperUtils() {}
+
+    /** The flow the presentation of this login arrived over, or null when the context carries none. */
+    public static Oid4vpPresentationFlow presentationFlow(BrokeredIdentityContext context) {
+        Object flow = context.getContextData().get(CONTEXT_PRESENTATION_FLOW_KEY);
+        return flow instanceof String value ? Oid4vpPresentationFlow.of(value) : null;
+    }
 
     /** The credentials of the verified presentation, or null when the context carries none. */
     public static PresentedCredentials presentedCredentials(BrokeredIdentityContext context) {

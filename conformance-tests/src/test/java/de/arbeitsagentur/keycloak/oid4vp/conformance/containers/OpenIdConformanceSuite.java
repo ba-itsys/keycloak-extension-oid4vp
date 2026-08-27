@@ -46,7 +46,7 @@ public final class OpenIdConformanceSuite implements AutoCloseable {
     public static final URI KEYCLOAK_BASE_URI = URI.create("https://host.testcontainers.internal:8443");
 
     // Fallback for running outside Maven, where the default is set by the pom property of the same name
-    private static final String DEFAULT_IMAGE_TAG = "release-v5.2.2";
+    private static final String DEFAULT_IMAGE_TAG = "release-v5.2.4";
     private static final String NGINX_CERTIFICATE_PATH = "/etc/ssl/certs/nginx-selfsigned.crt";
 
     private static OpenIdConformanceSuite instance;

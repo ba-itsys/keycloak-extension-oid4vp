@@ -17,7 +17,6 @@ package de.arbeitsagentur.keycloak.oid4vp.it;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.microsoft.playwright.Page;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
@@ -264,11 +263,7 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
         performSameDeviceLogin("session-note-user");
         flow.assertLoginSucceeded();
 
-        JsonNode tokenResponse = exchangeAuthorizationCode();
-        String serializedIdToken = tokenResponse.path("id_token").asText();
-        assertThat(serializedIdToken).isNotBlank();
-
-        SignedJWT idToken = SignedJWT.parse(serializedIdToken);
+        SignedJWT idToken = idTokenOfCompletedLogin();
         String familyNameFromIdToken = idToken.getJWTClaimsSet().getStringClaim("credential_family_name");
         assertThat(familyNameFromIdToken).isEqualTo(expectedFamilyName);
     }
@@ -287,8 +282,7 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
         performSameDeviceLogin("two-credential-user");
         flow.assertLoginSucceeded();
 
-        JsonNode tokenResponse = exchangeAuthorizationCode();
-        SignedJWT idToken = SignedJWT.parse(tokenResponse.path("id_token").asText());
+        SignedJWT idToken = idTokenOfCompletedLogin();
 
         assertThat(idToken.getJWTClaimsSet().getStringClaim("sd_jwt_family_name"))
                 .as("the SD-JWT mapper imports the family_name of the SD-JWT PID")

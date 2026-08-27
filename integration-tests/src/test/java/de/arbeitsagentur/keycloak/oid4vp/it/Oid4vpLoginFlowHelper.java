@@ -70,8 +70,12 @@ class Oid4vpLoginFlowHelper {
     }
 
     void navigateToLoginPage() {
+        navigateToLoginPage(Map.of());
+    }
+
+    void navigateToLoginPage(Map<String, String> extraAuthorizationParams) {
         String authorizationEndpoint = kcHostUrl + "/realms/" + realm + "/protocol/openid-connect/auth";
-        page.navigate(app.authorizationRequestUrl(authorizationEndpoint, clientId));
+        page.navigate(app.authorizationRequestUrl(authorizationEndpoint, clientId, extraAuthorizationParams));
         page.waitForLoadState(LoadState.NETWORKIDLE);
     }
 

@@ -224,4 +224,41 @@ class Oid4vpIdentityProviderConfigTest {
         assertThat(config.getSsePollIntervalMs()).isEqualTo(2000);
         assertThat(config.getSseTimeoutSeconds()).isEqualTo(120);
     }
+
+    @Test
+    void maxLoa_unsetMeansNoCeiling() {
+        assertThat(config.getSameDeviceMaxLoa()).isNull();
+        assertThat(config.getCrossDeviceMaxLoa()).isNull();
+    }
+
+    @Test
+    void maxLoa_readsConfiguredCeilings() {
+        config.setSameDeviceMaxLoa(4);
+        config.setCrossDeviceMaxLoa(3);
+
+        assertThat(config.getSameDeviceMaxLoa()).isEqualTo(4);
+        assertThat(config.getCrossDeviceMaxLoa()).isEqualTo(3);
+    }
+
+    @Test
+    void maxLoa_blankMeansNoCeiling() {
+        config.getConfig().put("crossDeviceMaxLoa", " ");
+        assertThat(config.getCrossDeviceMaxLoa()).isNull();
+    }
+
+    @Test
+    void maxLoa_setNullRemovesTheEntry() {
+        config.setCrossDeviceMaxLoa(3);
+        config.setCrossDeviceMaxLoa(null);
+        assertThat(config.getConfig()).doesNotContainKey("crossDeviceMaxLoa");
+    }
+
+    @Test
+    void maxLoa_invalidValueFails() {
+        config.getConfig().put("crossDeviceMaxLoa", "substantial");
+
+        assertThatThrownBy(() -> config.getCrossDeviceMaxLoa())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("crossDeviceMaxLoa");
+    }
 }

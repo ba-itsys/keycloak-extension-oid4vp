@@ -25,6 +25,8 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpClientIdScheme;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpCredentialSetsValidator;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpMessages;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpPresentationFlow;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PreparedDcqlQuery;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthority;
@@ -33,6 +35,7 @@ import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpRedirectFlowService;
 import de.arbeitsagentur.keycloak.oid4vp.trust.CredentialTrustPlan;
 import de.arbeitsagentur.keycloak.oid4vp.trust.Oid4vpTrustMaterialResolver;
 import de.arbeitsagentur.keycloak.oid4vp.util.DcqlQueryBuilder;
+import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpQrCodeService;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor;
@@ -46,14 +49,20 @@ import java.util.UUID;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.broker.provider.AuthenticationRequest;
+import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.broker.provider.IdentityBrokerException;
+import org.keycloak.events.Details;
+import org.keycloak.events.Errors;
 import org.keycloak.events.EventBuilder;
+import org.keycloak.events.EventType;
 import org.keycloak.forms.login.LoginFormsProvider;
+import org.keycloak.models.Constants;
 import org.keycloak.models.FederatedIdentityModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.UserSessionModel;
+import org.keycloak.services.ErrorPage;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.utils.StringUtil;
 
@@ -120,8 +129,35 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
             LoginContext loginContext = initializeLoginContext(request, authSession);
 
-            boolean sameDeviceEnabled = getConfig().isSameDeviceEnabled();
-            boolean crossDeviceEnabled = getConfig().isCrossDeviceEnabled();
+            boolean sameDeviceConfigured = getConfig().isSameDeviceEnabled();
+            boolean crossDeviceConfigured = getConfig().isCrossDeviceEnabled();
+            int requestedLoa = requestedLevelOfAuthentication(authSession);
+            boolean sameDeviceEnabled =
+                    sameDeviceConfigured && flowOfferedAt(getConfig().getSameDeviceMaxLoa(), requestedLoa);
+            boolean crossDeviceEnabled =
+                    crossDeviceConfigured && flowOfferedAt(getConfig().getCrossDeviceMaxLoa(), requestedLoa);
+
+            // The state of a flow above its ceiling is never created, so no request object exists
+            // for it and nothing a wallet posts can complete it.
+            if (!sameDeviceEnabled && !crossDeviceEnabled && (sameDeviceConfigured || crossDeviceConfigured)) {
+                LOG.debugf(
+                        "OID4VP IdP '%s': no flow is offered at the requested level of authentication %d",
+                        getConfig().getAlias(), requestedLoa);
+                new EventBuilder(
+                                request.getRealm(),
+                                session,
+                                session.getContext().getConnection())
+                        .event(EventType.LOGIN_ERROR)
+                        .detail(
+                                Details.REASON,
+                                "No OID4VP flow is offered at the requested level of authentication " + requestedLoa)
+                        .error(Errors.NOT_ALLOWED);
+                return ErrorPage.error(
+                        session,
+                        authSession,
+                        Response.Status.FORBIDDEN,
+                        Oid4vpMessages.NOT_AVAILABLE_FOR_REQUESTED_LEVEL);
+            }
 
             RedirectFlowData redirectFlowData =
                     buildRedirectFlowData(request, authSession, loginContext, sameDeviceEnabled, crossDeviceEnabled);
@@ -131,6 +167,37 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         } catch (Exception e) {
             LOG.errorf(e, "Failed to initiate OID4VP login: %s", e.getMessage());
             throw new IdentityBrokerException("Failed to initiate wallet login", e);
+        }
+    }
+
+    /**
+     * The presentation flow travels as a user session note so tokens can surface it without a
+     * mapper. Keycloak's first broker login clears the user session notes, so the note is set on
+     * every hook: preprocessing runs before the first broker login, the user centric hooks after
+     * it.
+     */
+    @Override
+    public void preprocessFederatedIdentity(
+            KeycloakSession session, RealmModel realm, BrokeredIdentityContext context) {
+        setPresentationFlowSessionNote(context);
+    }
+
+    @Override
+    public void importNewUser(
+            KeycloakSession session, RealmModel realm, UserModel user, BrokeredIdentityContext context) {
+        setPresentationFlowSessionNote(context);
+    }
+
+    @Override
+    public void updateBrokeredUser(
+            KeycloakSession session, RealmModel realm, UserModel user, BrokeredIdentityContext context) {
+        setPresentationFlowSessionNote(context);
+    }
+
+    private static void setPresentationFlowSessionNote(BrokeredIdentityContext context) {
+        Oid4vpPresentationFlow flow = Oid4vpMapperUtils.presentationFlow(context);
+        if (flow != null) {
+            context.setSessionNote(Oid4vpMapperUtils.CONTEXT_PRESENTATION_FLOW_KEY, flow.value());
         }
     }
 
@@ -243,6 +310,20 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                         getConfig().getAlias(), getConfig().getTrustMaterialIdps(), spec.type(), credentialId);
             }
         });
+    }
+
+    /**
+     * The level of authentication the client requested, as Keycloak derives it from the acr_values
+     * or claims parameter through the realm or client ACR-to-LoA mapping. OIDC and SAML both set
+     * the client note. {@link Constants#NO_LOA} when the request names none.
+     */
+    private static int requestedLevelOfAuthentication(AuthenticationSessionModel authSession) {
+        String requestedLoa = authSession.getClientNote(Constants.REQUESTED_LEVEL_OF_AUTHENTICATION);
+        return StringUtil.isBlank(requestedLoa) ? Constants.NO_LOA : Integer.parseInt(requestedLoa);
+    }
+
+    static boolean flowOfferedAt(Integer maxLoa, int requestedLoa) {
+        return maxLoa == null || requestedLoa <= maxLoa;
     }
 
     private LoginContext initializeLoginContext(AuthenticationRequest request, AuthenticationSessionModel authSession) {
