@@ -33,12 +33,9 @@ import org.keycloak.utils.StringUtil;
 
 /**
  * Trust material identity provider backed by an ETSI TS 119 602 trust list URL, a pasted PEM
- * certificate bundle, or both.
- *
- * <p>CA certificates become X.509 trust anchors for credential issuer chain validation, end entity
- * certificates are trusted directly (pinned leaf or chainless credentials) through
- * {@link #directIssuerCertificates()}. The provider does not authenticate users; OID4VP identity
- * providers reference it by alias through their {@code trustMaterialIdps} setting.
+ * certificate bundle, or both. CA certificates become X.509 trust anchors for credential issuer
+ * chain validation, while end entity certificates are trusted directly through
+ * {@link #directIssuerCertificates()} for pinned leaf or chainless credentials.
  */
 public class EtsiTrustListIdentityProvider
         implements Oid4vpTrustMaterialIdentityProvider<EtsiTrustListIdentityProviderConfig> {
@@ -47,12 +44,10 @@ public class EtsiTrustListIdentityProvider
     private final TrustListProvider urlTrustList;
     private final TrustListProvider staticTrustList;
 
-    // One provider instance serves one trust resolution of one session, during which several methods
-    // ask for the same certificates, once for every credential type. Trust lists without freshness
-    // metadata are not cacheable across requests, so without memoising here every one of those asks
-    // would be another fetch. A failed fetch resolves to an empty certificate list and is memoised
-    // like any other result, so it stays empty for this instance only. A LoTE type mismatch throws
-    // instead and is therefore not memoised.
+    // Several methods ask for the same certificates during one trust resolution, once per credential
+    // type, and a trust list without freshness metadata cannot be cached across requests, so without
+    // memoising here every one of those asks would be another fetch. A failed fetch is memoised as an
+    // empty list for this instance alone; a LoTE type mismatch throws and is not memoised.
     private List<X509Certificate> issuanceCertificates;
     private List<X509Certificate> revocationCertificates;
     private List<String> authorityKeyIdentifiers;
@@ -104,8 +99,8 @@ public class EtsiTrustListIdentityProvider
         return Stream.of(new X509TrustMaterial(anchors, config.getRequiredExtendedKeyUsages()));
     }
 
-    // End entity certificates are served through directIssuerCertificates; exposing them here as
-    // JWKs would duplicate that trust for the extension's consumers.
+    // End entity certificates are served through directIssuerCertificates. Exposing them here as
+    // JWKs as well would duplicate that trust for the extension's consumers.
     @Override
     public Stream<JWK> resolveKeys(TrustMaterialRequest request) {
         return Stream.empty();
@@ -113,9 +108,9 @@ public class EtsiTrustListIdentityProvider
 
     @Override
     public List<X509Certificate> directIssuerCertificates() {
-        // CA certificates are exposed as PKIX trust anchors through resolveX509Trust; only end entity
-        // certificates are trusted directly, so a CA certificate cannot be accepted as a pinned leaf
-        // on the fast path that skips end-entity certificate checks.
+        // CA certificates are exposed as PKIX trust anchors through resolveX509Trust instead. The
+        // pinned leaf fast path skips the end entity certificate checks, so a CA certificate must
+        // never pass it.
         return issuanceCertificates().stream()
                 .filter(certificate -> !X5cChainValidator.isCaCertificate(certificate))
                 .toList();
@@ -147,10 +142,10 @@ public class EtsiTrustListIdentityProvider
     }
 
     /**
-     * The advertised entry of this trust domain, when the configuration names one: the trust list
-     * URL as {@code etsi_tl} or the key identifiers of the issuance certificates as {@code aki}.
-     * At most one entry, because both describe the same anchors and a wallet matches any
-     * advertised entry. Nothing is advertised by default.
+     * Returns the advertised entry of this trust domain, when the configuration names one: either
+     * the trust list URL as {@code etsi_tl} or the key identifiers of the issuance certificates as
+     * {@code aki}. Both describe the same anchors and a wallet matches any advertised entry, so at
+     * most one is advertised, and nothing at all by default.
      */
     @Override
     public List<TrustedAuthority> trustedAuthorities() {
@@ -170,9 +165,9 @@ public class EtsiTrustListIdentityProvider
         return authorityKeyIdentifiers;
     }
 
-    // Advertised while building the authorization request. A cold cache fetches the trust list; an
-    // unreachable one resolves to no aki entries instead of failing the request, so the login page
-    // still renders and the etsi_tl URL lets the wallet resolve the list itself.
+    // This runs while the authorization request is built, so an unreachable trust list resolves to
+    // no aki entries instead of failing the request. The login page still renders, and the etsi_tl
+    // URL lets the wallet resolve the list itself.
     private List<String> resolveAuthorityKeyIdentifiers() {
         Set<String> identifiers = new LinkedHashSet<>();
         if (urlTrustList != null) {

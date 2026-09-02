@@ -18,9 +18,8 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
 import java.util.regex.Pattern;
 
 /**
- * The character set DCQL allows for its identifiers. Credential ids and claim ids are both
- * restricted to non-empty strings of alphanumeric, underscore and hyphen characters, so a value
- * taken from configuration is slugged before it names an entry of the query.
+ * DCQL ids of credentials and claims may only contain letters, digits, underscore and hyphen.
+ * Configured values are slugged before they name an entry of the query.
  *
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1">OID4VP 1.0 §6.1 — Credential Query</a>
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.3">OID4VP 1.0 §6.3 — Claims Query</a>
@@ -36,7 +35,6 @@ public final class DcqlId {
         return id != null && VALID_ID.matcher(id).matches();
     }
 
-    /** Replaces every character DCQL does not allow in an id by an underscore; null reads as empty. */
     public static String slug(String value) {
         return value == null ? "" : ILLEGAL_CHARACTERS.matcher(value).replaceAll("_");
     }

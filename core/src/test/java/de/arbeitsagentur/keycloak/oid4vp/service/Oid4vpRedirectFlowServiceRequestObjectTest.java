@@ -60,7 +60,7 @@ class Oid4vpRedirectFlowServiceRequestObjectTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        // The session is only needed for realm-key signing; these tests sign with x509 keys.
+        // The session is only needed for realm-key signing. These tests sign with x509 keys.
         service = new Oid4vpRedirectFlowService(null, 300);
 
         signingKey = new ECKeyGenerator(Curve.P_256).generate();

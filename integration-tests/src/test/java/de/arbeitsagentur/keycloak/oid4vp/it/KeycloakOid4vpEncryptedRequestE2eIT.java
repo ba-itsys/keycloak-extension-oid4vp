@@ -22,7 +22,6 @@ import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWalletConfigBuilder;
 import org.junit.jupiter.api.Test;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
-// End-to-end test against a wallet that requires encrypted OID4VP request objects
 @KeycloakIntegrationTest(config = Oid4vpServerConfig.class)
 class KeycloakOid4vpEncryptedRequestE2eIT extends AbstractOid4vpE2eTest {
 

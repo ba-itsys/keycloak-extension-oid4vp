@@ -33,13 +33,11 @@ public record ConformanceModuleResult(
         JsonNode logs) {
 
     /**
-     * Whether the module finished with the result expected for it. A suite-initiated SKIPPED is
-     * accepted only for a module that opted in via {@code allowSkipped}: the suite skips such a
-     * module when it is not applicable to the configuration under test (for example a feature the
-     * verifier does not advertise). Every other module has to finish with its expected result, so
-     * an unexpected skip fails instead of passing silently. A REVIEW result is accepted in place
-     * of PASSED when the runner uploaded verification evidence, since such modules always finish
-     * as REVIEW.
+     * Tells whether the module finished with the result expected for it. A SKIPPED result counts only
+     * for a module that opted in via {@code allowSkipped}, which the suite returns when the module
+     * does not apply to the configuration under test, so an unexpected skip fails instead of passing
+     * silently. A REVIEW result counts in place of PASSED when the runner uploaded verification
+     * evidence, because such modules always finish as REVIEW.
      */
     public boolean finishedWith(ConformanceResult expectedResult, boolean allowSkipped) {
         if (!"FINISHED".equals(status)) {

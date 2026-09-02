@@ -36,12 +36,9 @@ import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Configuration model for the OID4VP Identity Provider.
- *
- * <p>Wraps the Keycloak {@link IdentityProviderModel} and provides typed accessors for all
- * OID4VP-specific settings: credential formats, client ID schemes, trust material references,
- * SSE polling parameters, and claim mappings. Implements {@link Oid4vpConfigProvider} for
- * use by domain services without depending on the full Keycloak model.
+ * Typed accessors for the OID4VP settings of a Keycloak {@link IdentityProviderModel}. Implementing
+ * {@link Oid4vpConfigProvider} lets the domain services read the configuration without depending on
+ * the Keycloak model.
  */
 public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implements Oid4vpConfigProvider {
 
@@ -51,13 +48,13 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final String CROSS_DEVICE_ENABLED = "crossDeviceEnabled";
 
     /**
-     * The highest requested level of authentication the same-device flow is offered at, empty for
-     * no ceiling. The level is the integer Keycloak derives from the client's acr_values or claims
-     * request through the realm or client ACR-to-LoA mapping.
+     * The highest requested level of authentication at which the same-device flow is offered, empty
+     * for no ceiling. The level is the integer Keycloak derives from the client's acr_values or
+     * claims request through the realm or client ACR-to-LoA mapping.
      */
     public static final String SAME_DEVICE_MAX_LOA = "sameDeviceMaxLoa";
 
-    /** The cross-device flow's ceiling, with the semantics of {@link #SAME_DEVICE_MAX_LOA}. */
+    /** The same ceiling for the cross-device flow. See {@link #SAME_DEVICE_MAX_LOA}. */
     public static final String CROSS_DEVICE_MAX_LOA = "crossDeviceMaxLoa";
 
     public static final String WALLET_SCHEME = "walletScheme";
@@ -74,13 +71,13 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final String CREDENTIAL_SETS = "credentialSets";
     public static final String PRINCIPAL_ATTRIBUTES = "principalAttributes";
 
-    /** Comma separated aliases of trust material identity providers, same key as upstream. */
+    /** Comma separated aliases of trust material identity providers. Same key as upstream. */
     public static final String TRUST_MATERIAL_IDPS = "trustMaterialIdps";
 
     /**
-     * Whether a presentation without the subject credential is expected. The verifier then generates
-     * a pseudonymous subject and the login that follows establishes which user it belongs to, instead
-     * of failing because nothing identified the user.
+     * Whether a presentation without the subject credential is expected, in which case the verifier
+     * generates a pseudonymous subject and the login that follows establishes which user it belongs
+     * to. Otherwise the login fails because nothing identified the user.
      */
     public static final String ALLOW_MISSING_SUBJECT_CREDENTIAL = "allowMissingSubjectCredential";
 
@@ -131,7 +128,6 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         getConfig().put(CROSS_DEVICE_ENABLED, String.valueOf(enabled));
     }
 
-    /** The same-device flow's requested level of authentication ceiling, or null for none. */
     public Integer getSameDeviceMaxLoa() {
         return getOptionalIntConfig(SAME_DEVICE_MAX_LOA);
     }
@@ -144,7 +140,6 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         }
     }
 
-    /** The cross-device flow's requested level of authentication ceiling, or null for none. */
     public Integer getCrossDeviceMaxLoa() {
         return getOptionalIntConfig(CROSS_DEVICE_MAX_LOA);
     }
@@ -167,12 +162,12 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     }
 
     /**
-     * Whether the authorization request advertises {@code request_uri_method=post}. When it does, a
-     * conforming wallet retrieves the request object with POST (OID4VP 1.0 §5.10), which lets it send
-     * its {@code wallet_metadata} and {@code wallet_nonce}, enabling request-object encryption and
-     * wallet-nonce replay protection. Absent the parameter, the wallet must use GET, so those features
-     * are unreachable. Off by default, because a wallet that cannot POST the request object would be
-     * unable to start the flow.
+     * Whether the authorization request advertises {@code request_uri_method=post}, so that a
+     * conforming wallet retrieves the request object with POST (OID4VP 1.0 §5.10) and sends its
+     * {@code wallet_metadata} and {@code wallet_nonce} along, which is what enables request object
+     * encryption and wallet nonce replay protection. Without the parameter the wallet has to use
+     * GET and those features stay unreachable, but it is off by default because a wallet that
+     * cannot POST the request object would be unable to start the flow at all.
      */
     public boolean isRequestUriMethodPost() {
         return getBoolConfig(REQUEST_URI_METHOD_POST, false);
@@ -235,12 +230,11 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     }
 
     /**
-     * Validated by Keycloak when the identity provider is created or updated, so a broken
-     * credential set configuration is rejected in the admin console instead of failing a login.
-     *
-     * <p>On create the provider has no mappers yet, so only the rules that need no mapper
-     * knowledge apply. Identity provider mappers themselves have no validation hook, which is why
-     * the same rules run again when the DCQL query is built.
+     * Rejects a broken credential set configuration in the admin console instead of at login time.
+     * Keycloak calls this when the identity provider is created or updated, and on create the
+     * provider has no mappers yet, so only the rules that need no mapper knowledge apply. Identity
+     * provider mappers have no validation hook of their own, which is why the same rules run again
+     * when the DCQL query is built.
      */
     @Override
     public void validate(RealmModel realm) {
@@ -274,8 +268,6 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     }
 
     /**
-     * The parsed DCQL credential sets, empty when none are configured.
-     *
      * @throws IllegalArgumentException when the configured value is not a valid credential set list
      */
     public List<CredentialSet> getParsedCredentialSets() {
@@ -284,7 +276,6 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
                 : CredentialSet.parse(JsonSerialization.mapper, getCredentialSets());
     }
 
-    /** The credentials the identity provider's mappers request, empty while it has no mappers. */
     private AggregatedCredentials configuredCredentials(RealmModel realm) {
         if (realm == null || StringUtil.isBlank(getAlias())) {
             return new AggregatedCredentials(Map.of(), List.of());
@@ -309,7 +300,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     }
 
     /**
-     * The credentials the subject may be read from, in the configured order.
+     * Returns the credentials the subject may be read from, in the configured order.
      *
      * @throws IllegalArgumentException when the configured value is not a valid entry list
      */
@@ -449,9 +440,9 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     }
 
     /**
-     * An unparseable value fails instead of falling back to a default: the max LoA settings are
-     * ceilings, and dropping a mistyped one would offer a flow at a level the configuration
-     * forbids.
+     * Fails on an unparseable value instead of falling back to a default, because the max LoA
+     * settings are ceilings and dropping a mistyped one would offer a flow at a level the
+     * configuration forbids.
      */
     private Integer getOptionalIntConfig(String key) {
         String value = getConfig().get(key);

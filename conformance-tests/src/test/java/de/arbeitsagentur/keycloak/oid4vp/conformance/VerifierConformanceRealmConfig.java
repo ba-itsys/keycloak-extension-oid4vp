@@ -19,7 +19,6 @@ import org.keycloak.testframework.realm.ClientBuilder;
 import org.keycloak.testframework.realm.RealmBuilder;
 import org.keycloak.testframework.realm.RealmConfig;
 
-// The realm the verifier conformance flows log in to with the public PKCE test client
 public class VerifierConformanceRealmConfig implements RealmConfig {
 
     public static final String REALM = "wallet-demo";

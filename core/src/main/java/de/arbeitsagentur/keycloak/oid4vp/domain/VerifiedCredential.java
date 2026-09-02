@@ -16,34 +16,48 @@
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import java.util.List;
 import java.util.Map;
 import org.keycloak.util.JsonSerialization;
 
 /**
- * A credential that has been cryptographically verified and had its claims extracted.
- *
- * <p>Produced by {@link de.arbeitsagentur.keycloak.oid4vp.verification.SdJwtVerifier} or
- * {@link de.arbeitsagentur.keycloak.oid4vp.verification.MdocVerifier} after validating
- * the issuer signature, key binding, and revocation status.
+ * A credential whose issuer signature, key binding and revocation status are checked and whose
+ * claims are extracted. {@code alsoKnownAsTypes} are the further types an SD-JWT VC names in its
+ * {@code aka_vcts} claim, which an mDoc has none of.
  */
 public record VerifiedCredential(
         String credentialId,
         String issuer,
         String credentialType,
         Map<String, Object> claims,
-        PresentationType presentationType) {
+        PresentationType presentationType,
+        List<String> alsoKnownAsTypes) {
 
-    /** The identity key of the subject claim, see {@link Oid4vpIdentityKey#of}. */
+    public VerifiedCredential {
+        alsoKnownAsTypes = alsoKnownAsTypes != null ? List.copyOf(alsoKnownAsTypes) : List.of();
+    }
+
+    public VerifiedCredential(
+            String credentialId,
+            String issuer,
+            String credentialType,
+            Map<String, Object> claims,
+            PresentationType presentationType) {
+        this(credentialId, issuer, credentialType, claims, presentationType, List.of());
+    }
+
+    public boolean isOfType(String requestedType) {
+        return CredentialTypeHierarchy.isOfType(credentialType, alsoKnownAsTypes, requestedType);
+    }
+
     public String generateIdentityKey(String subject) {
         return Oid4vpIdentityKey.of(subject);
     }
 
-    /** The case-insensitive identity key of the subject, see {@link Oid4vpIdentityKey#caseInsensitive}. */
     public String generateCaseInsensitiveIdentityKey(String subject) {
         return Oid4vpIdentityKey.caseInsensitive(subject);
     }
 
-    /** The claims as a JSON tree, which is what a {@code ClaimPath} resolves against. */
     public JsonNode claimsNode() {
         return JsonSerialization.mapper.valueToTree(claims);
     }

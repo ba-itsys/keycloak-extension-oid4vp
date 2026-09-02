@@ -21,10 +21,6 @@ import java.util.Map;
 import org.keycloak.testframework.TestFrameworkExtension;
 import org.keycloak.testframework.injection.Supplier;
 
-/**
- * Test framework extension providing the OID4VP test environment: eudi-dev test wallets, a
- * Playwright browser and the OAuth client application under test.
- */
 public class Oid4vpTestFrameworkExtension implements TestFrameworkExtension {
 
     @Override

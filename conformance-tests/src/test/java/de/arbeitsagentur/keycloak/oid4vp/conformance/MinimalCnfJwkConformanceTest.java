@@ -20,7 +20,6 @@ import de.arbeitsagentur.keycloak.oid4vp.conformance.runner.ConformanceResult;
 import java.util.stream.Stream;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
-// Verifier accepts a presentation with a minimal cnf JWK
 @KeycloakIntegrationTest(config = AbstractVerifierConformanceTest.VerifierServerConfig.class)
 class MinimalCnfJwkConformanceTest extends AbstractVerifierConformanceTest {
 

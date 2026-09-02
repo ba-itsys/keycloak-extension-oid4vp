@@ -16,10 +16,8 @@
 package de.arbeitsagentur.keycloak.oid4vp.mapper;
 
 import org.keycloak.models.SubjectCredentialManager;
-import org.keycloak.models.UserModel;
 import org.keycloak.storage.adapter.AbstractInMemoryUserAdapter;
 
-/** Typed in-memory {@link UserModel} test double for asserting brokered user updates. */
 final class InMemoryUser extends AbstractInMemoryUserAdapter {
 
     InMemoryUser() {

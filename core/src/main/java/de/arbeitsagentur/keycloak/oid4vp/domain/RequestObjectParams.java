@@ -16,14 +16,11 @@
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
 /**
- * Parameters for building an OID4VP Authorization Request Object (a signed JWT).
+ * The parameters of one OID4VP Authorization Request Object, a signed JWT.
  *
- * <p>Passed from {@link de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderEndpoint} to
- * {@link de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpRedirectFlowService#buildSignedRequestObject}
- * each time the wallet fetches the {@code request_uri}. The stable browser/auth-session lookup is
- * the request handle, but the transaction-bound values (`state`, `nonce`, `responseUri`, and
- * optional response-encryption key for {@code direct_post.jwt}) belong to a single created request
- * object.
+ * <p>They are assembled again each time the wallet fetches the {@code request_uri}, so
+ * {@code state}, {@code nonce}, {@code responseUri} and the response encryption key of
+ * {@code direct_post.jwt} are bound to a single request object.
  *
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5">OID4VP 1.0 §5 — Authorization Request</a>
  */

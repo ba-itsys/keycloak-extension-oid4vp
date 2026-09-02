@@ -23,16 +23,13 @@ import org.keycloak.crypto.KeyUse;
 import org.keycloak.util.JsonSerialization;
 
 /**
- * Parsed {@code wallet_metadata} from a wallet's POST to the request-object endpoint.
+ * The encryption a wallet asks for in the {@code wallet_metadata} it may send when it fetches the
+ * request object.
  *
- * <p>In the OID4VP redirect flow, a wallet may optionally include a {@code wallet_metadata} form
- * parameter when fetching the request object (POST to {@code /request-object/{handle}}). The
- * metadata advertises what the wallet supports. A wallet that requires the verifier to encrypt the
- * request object passes its public encryption keys in the {@code jwks} member (OID4VP 1.0 §5.10),
- * so metadata carrying no such key describes a wallet that takes the signed request object as it is.
- *
- * <p>This record holds the wallet key the request object is encrypted to and the algorithms that
- * encryption uses. It exists only for a wallet that asks for encryption.
+ * <p>A wallet that requires an encrypted request object passes its public encryption keys in the
+ * {@code jwks} member of that metadata (OID4VP 1.0 §5.10), so metadata without such a key
+ * describes a wallet that takes the signed request object as it is and no instance of this record
+ * exists for it.
  *
  * @see de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectEncryptor
  */
@@ -44,13 +41,12 @@ public record WalletMetadata(Oid4vpJwk encryptionKey, String algorithm, String e
     private static final String DEFAULT_ENCRYPTION_METHOD = "A128GCM";
 
     /**
-     * The encryption the given {@code wallet_metadata} asks for, empty when it names no key the
-     * request object can be encrypted to. The key decides the JWE algorithm, because a JWK carries
-     * the algorithm it is meant for; the content encryption method is the first advertised value
-     * that is supported, and A128GCM when the wallet advertises none of them.
+     * Returns the encryption the given {@code wallet_metadata} asks for, empty when it names no
+     * key the request object can be encrypted to. The JWE algorithm comes from the key itself,
+     * because a JWK carries the algorithm it is meant for.
      *
-     * @throws IllegalArgumentException if the metadata is not valid JSON or its {@code jwks} member
-     *     is malformed
+     * @throws IllegalArgumentException when the metadata is not valid JSON or its {@code jwks}
+     *     member is malformed
      */
     @SuppressWarnings("unchecked")
     public static Optional<WalletMetadata> encryptionRequestedBy(String walletMetadataJson) {
@@ -67,11 +63,10 @@ public record WalletMetadata(Oid4vpJwk encryptionKey, String algorithm, String e
     }
 
     /**
-     * The first key of the metadata the request object can be encrypted to, empty when it names
-     * none. A key qualifies when it is an EC key on a supported curve that is not reserved for
-     * another purpose by its {@code use} and not bound to an unsupported algorithm by its
-     * {@code alg}, which is how a wallet publishing its signing key next to its encryption key is
-     * read correctly.
+     * Returns the first key of the metadata the request object can be encrypted to. A key
+     * qualifies when it is an EC key on a supported curve whose {@code use} does not reserve it
+     * for another purpose and whose {@code alg} does not bind it to an unsupported algorithm, so
+     * that a wallet publishing its signing key next to its encryption key is read correctly.
      */
     @SuppressWarnings("unchecked")
     private static Optional<Oid4vpJwk> extractEncryptionKey(Map<String, Object> metadata) {
@@ -101,13 +96,12 @@ public record WalletMetadata(Oid4vpJwk encryptionKey, String algorithm, String e
         }
     }
 
-    /** The given JWK when the request object can be encrypted to it, null otherwise. */
     private static Oid4vpJwk usableEncryptionKey(Map<String, Object> rawKey) {
         Oid4vpJwk key;
         try {
             key = Oid4vpJwk.parse(rawKey);
-            // Reading the point out rejects an unsupported curve and malformed coordinates here,
-            // where another key can still answer, rather than while encrypting.
+            // Reading the point out rejects an unsupported curve and malformed coordinates while
+            // another key can still take over, which is impossible once encryption starts.
             key.toPublicKey();
         } catch (IllegalArgumentException e) {
             LOG.debugf("Skipping unusable wallet_metadata key: %s", e.getMessage());
@@ -132,22 +126,18 @@ public record WalletMetadata(Oid4vpJwk encryptionKey, String algorithm, String e
     }
 
     /**
-     * The content encryption method the request object is encrypted with. The wallet is the
-     * authorization server of the flow, and {@code request_object_encryption_enc_values_supported}
-     * is the authorization server metadata for request object encryption (RFC 9101, which OID4VP
-     * 1.0 §5.10.1 delegates the request object to). It is what the EUDI reference wallet library
-     * sends next to its {@code jwks}. The {@code authorization_encryption_*} parameters describe
-     * the authorization response (OID4VP 1.0 §5.10) and say nothing about the request object, so
-     * they are not read here. The advertisement is a preference rather than a demand: a wallet
-     * advertising only methods this verifier does not support still receives a request object it
-     * can attempt to decrypt, rather than an error that ends its login.
+     * Selects the content encryption method the request object is encrypted with, reading
+     * {@code request_object_encryption_enc_values_supported}. The wallet is the authorization
+     * server of the flow, and OID4VP 1.0 §5.10.1 delegates the request object to RFC 9101, which
+     * defines that parameter. The {@code authorization_encryption_*} parameters describe the
+     * authorization response (OID4VP 1.0 §5.10) and say nothing about the request object, so they
+     * are not read here.
      *
-     * <p>A wallet that names a key without advertising a method still gets a JWE, so a method has
-     * to be chosen for it. No specification defines a default for this direction. A128GCM is the
-     * default OID4VP 1.0 §8.3 names for the encrypted response, the one direction where the
-     * protocol names a default at all, so the same value is applied here. The JWE header states
-     * the chosen method, so the wallet decrypts it without prior agreement as long as its crypto
-     * implements the method.
+     * <p>The advertisement is a preference and not a demand, so a wallet advertising only
+     * unsupported methods still receives a request object it may attempt to decrypt. No
+     * specification defines a default for this direction, so A128GCM is applied, which OID4VP 1.0
+     * §8.3 names as the default for the encrypted response. The JWE header states the chosen
+     * method, which lets the wallet decrypt without prior agreement.
      */
     private static String selectEncryptionMethod(Map<String, Object> metadata) {
         if (metadata.get("request_object_encryption_enc_values_supported") instanceof List<?> encList) {

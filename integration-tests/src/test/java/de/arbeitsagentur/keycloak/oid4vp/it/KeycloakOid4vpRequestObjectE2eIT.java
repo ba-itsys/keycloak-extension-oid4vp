@@ -84,8 +84,8 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
         assertThat(kid1).isNotNull();
         assertThat(kid2).isNotNull();
         assertThat(kid3).isNotNull();
-        // State, nonce, and the response-encryption key are allocated once per flow at login-page
-        // render and stay stable across repeated request-object fetches for the same request_uri.
+        // State, nonce and the response encryption key are allocated once per flow when the login
+        // page is rendered. Repeated fetches of the same request_uri return the same values.
         assertThat(kid1).isEqualTo(kid2).isEqualTo(kid3);
         assertThat(nonce1).isEqualTo(nonce2).isEqualTo(nonce3);
         assertThat(state1).isEqualTo(state2).isEqualTo(state3);
@@ -105,10 +105,10 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
         flow.clickOid4vpIdpButton();
         Map<String, Object> secondJwk = fetchEncryptionJwk(flow.getSameDeviceWalletUrl());
 
-        // OID4VP 1.0 section 8.3 (HAIP 5-5): the response-encryption key is ephemeral and specific
-        // to one authorization request. The conformance suite enforces this across requests since
-        // release-v5.2.1 (VP1FinalCheckEncryptionKeyNotReused), so two flows never share key
-        // material, and with kid derived from the flow state the kid differs as well.
+        // OID4VP 1.0 section 8.3 (HAIP 5-5) makes the response encryption key ephemeral and specific
+        // to one authorization request, which the conformance suite checks across requests in
+        // VP1FinalCheckEncryptionKeyNotReused. Two flows therefore share no key material, and the kid
+        // differs too because it is derived from the flow state.
         assertThat(secondJwk.get("x")).isNotEqualTo(firstJwk.get("x"));
         assertThat(secondJwk.get("kid")).isNotEqualTo(firstJwk.get("kid"));
     }
@@ -226,9 +226,9 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
         HttpResponse<String> directPostResponse = postDirectPostWithRetry(httpClient, endpointUri, formBody);
 
         assertThat(directPostResponse.statusCode()).isEqualTo(200);
-        // An error response is answered with 200 and the redirect_uri the wallet MUST follow, which
-        // OID4VP 1.0 §8.2 permits for Error Responses. It leads to the failure endpoint rather than
-        // to the completion the successful path returns.
+        // OID4VP 1.0 §8.2 lets an Error Response be answered with 200 and a redirect_uri the wallet
+        // MUST follow. That redirect leads to the failure endpoint, not to the completion URL the
+        // successful path returns.
         assertThat(directPostResponse.body())
                 .contains("/failed")
                 .doesNotContain("access_denied")
@@ -238,8 +238,8 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
     }
 
     /**
-     * The rejection response applies to presentations this verifier refuses, not to the errors a
-     * wallet reports: §8.2 has the response URI process those successfully whatever they say.
+     * The rejection response setting applies to presentations this verifier refuses, not to errors a
+     * wallet reports, which the response URI processes successfully per §8.2 whatever they say.
      */
     @Test
     void walletReportedErrorStaysHttp200WhenRejectionsAreReportedToTheWallet() throws Exception {
@@ -276,7 +276,6 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
                 .doesNotContain("wallet rejected");
     }
 
-    /** The response-encryption key the request object advertises in its client metadata. */
     @SuppressWarnings("unchecked")
     private static Map<String, Object> encryptionJwkOf(SignedJWT requestObject) throws Exception {
         Map<String, Object> clientMetadata =

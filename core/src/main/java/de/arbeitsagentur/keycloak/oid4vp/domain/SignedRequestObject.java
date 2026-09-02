@@ -18,7 +18,7 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
 /**
  * The result of signing an OID4VP Authorization Request Object.
  *
- * @param jwt the compact-serialized signed JWT (JWS) containing the authorization request claims
+ * @param jwt the compact serialized JWS with the authorization request claims
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.10.1">OID4VP 1.0 §5.10.1 — Request URI Response</a>
  */
 public record SignedRequestObject(String jwt) {}

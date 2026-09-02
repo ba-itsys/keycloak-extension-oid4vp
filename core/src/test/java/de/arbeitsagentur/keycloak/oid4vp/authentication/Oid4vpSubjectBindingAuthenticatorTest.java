@@ -32,7 +32,6 @@ import org.keycloak.representations.idm.oid4vc.VerifiableCredentialOfferActionCo
 
 class Oid4vpSubjectBindingAuthenticatorTest {
 
-    /** What the authenticator derives from the user id and the credential carries afterwards. */
     private static final String SUBJECT = "Zm9vYmFyLXN1YmplY3Qtb2YtdGhlLXVzZXI";
 
     @Test
@@ -63,8 +62,6 @@ class Oid4vpSubjectBindingAuthenticatorTest {
         SerializedBrokeredIdentityContext brokeredContext = generatedSubjectContext("oid4vp-3f2c");
         Oid4vpSubjectBindingAuthenticator.bind(brokeredContext, SUBJECT, "alice");
 
-        // The credential the user receives carries that subject, so the next presentation has to
-        // derive exactly the identity this login stored.
         VerifiedCredential issuedCredential = new VerifiedCredential(
                 "employee",
                 "https://kc.example/realms/company",

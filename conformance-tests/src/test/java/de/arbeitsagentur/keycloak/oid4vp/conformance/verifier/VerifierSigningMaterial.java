@@ -48,9 +48,8 @@ import org.keycloak.crypto.JavaAlgorithm;
 import org.keycloak.jose.jws.crypto.HashUtils;
 
 /**
- * Verifier signing material for the conformance run: a CA and a leaf certificate with the
- * Keycloak public host as SAN, the combined PEM for the identity provider configuration, the
- * leaf JWK uploaded to the suite, and the x509_hash client id.
+ * Verifier signing material for the conformance run, built around a leaf certificate that carries the
+ * Keycloak public host as its SAN and the CA that issued it.
  */
 public final class VerifierSigningMaterial {
 

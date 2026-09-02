@@ -42,22 +42,14 @@ import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.provider.ProviderConfigurationBuilder;
 import org.keycloak.utils.StringUtil;
 
-/**
- * Keycloak SPI factory for the OID4VP Identity Provider.
- *
- * <p>Registered via {@code META-INF/services} and discovered by Keycloak at startup.
- * Defines all configuration properties shown in the Admin Console, resolves X.509 signing keys
- * from inline PEM certificates, and validates the verifier certificate on provider creation.
- */
 public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFactory<Oid4vpIdentityProvider> {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProviderFactory.class);
 
     private static final int MAX_CACHE_ENTRIES = 256;
 
-    // Bounded and keyed by a fingerprint of the PEM, not the PEM itself: config edits change the PEM
-    // and would otherwise grow this without limit, and the raw PEM carries the private key, so it must
-    // not be retained as a cache key.
+    // The cache is keyed by a fingerprint of the PEM rather than by the PEM itself, because the
+    // raw PEM carries the private key and must not be retained as a cache key.
     private static final Map<String, String> RESOLVED_KEY_CACHE = BoundedLruMap.withMaxEntries(MAX_CACHE_ENTRIES);
     private static final Set<String> WARNED_MISSING_TRUST_MATERIAL_IDPS =
             Collections.newSetFromMap(BoundedLruMap.withMaxEntries(MAX_CACHE_ENTRIES));
@@ -332,8 +324,8 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
             return;
         }
 
-        // Strip non-certificate blocks (e.g. PRIVATE KEY) before parsing,
-        // because PemUtils.decodeCertificates fails on mixed PEM content.
+        // PemUtils.decodeCertificates fails on mixed PEM content, so the non-certificate blocks
+        // such as PRIVATE KEY are stripped before parsing.
         List<String> certPemBlocks = extractPemBlocks(pem, "CERTIFICATE");
         String certOnlyPem = String.join("\n", certPemBlocks);
         config.setX509CertificatePem(certOnlyPem);

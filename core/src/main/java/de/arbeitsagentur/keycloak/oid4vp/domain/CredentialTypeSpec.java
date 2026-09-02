@@ -22,19 +22,17 @@ import java.util.TreeSet;
 import java.util.stream.IntStream;
 
 /**
- * Specification of one credential entry of a DCQL query: its format, the credential types it
- * accepts and the claims it requests, aggregated from the identity provider mappers.
+ * One credential entry of the DCQL query. It holds the format, the accepted types and the claims
+ * to request. The identity provider mappers are aggregated into it.
  *
- * <p>An SD-JWT entry may accept several credential types, which DCQL requests as one
- * {@code vct_values} array: a wallet answers with a credential of any of them. That covers
- * credentials whose type identifier differs per country or rulebook version, such as the EUDI PID
- * {@code urn:eudi:pid:1} and the German PID {@code urn:eudi:pid:de:1}. An mDoc entry names exactly
- * one doctype, as DCQL defines {@code doctype_value} as a single string.
+ * <p>An SD-JWT entry can accept several types. DCQL sends them as one {@code vct_values} array.
+ * The wallet answers with a credential of any of them. That covers types that differ per country
+ * or rulebook version, like {@code urn:eudi:pid:1} and {@code urn:eudi:pid:de:1}. An mDoc entry
+ * has exactly one doctype. {@code doctype_value} is a single string.
  *
  * @param format the credential format ({@code dc+sd-jwt} or {@code mso_mdoc})
- * @param types the accepted credential type identifiers (VCTs for SD-JWT, the doctype for mDoc), in
- *     the order they are requested
- * @param claimSpecs the claims to request within this credential, one per mapper
+ * @param types the accepted types (VCTs for SD-JWT, the doctype for mDoc), in request order
+ * @param claimSpecs the claims to request, one per mapper
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6">OID4VP 1.0 §6 — DCQL Query</a>
  */
 public record CredentialTypeSpec(String format, List<String> types, List<ClaimSpec> claimSpecs) {
@@ -47,24 +45,22 @@ public record CredentialTypeSpec(String format, List<String> types, List<ClaimSp
         claimSpecs = List.copyOf(claimSpecs);
     }
 
-    /** A credential of a single type. */
     public CredentialTypeSpec(String format, String type, List<ClaimSpec> claimSpecs) {
         this(format, List.of(type), claimSpecs);
     }
 
-    /** The first accepted type, which derives the default credential id. */
+    /** Returns the first accepted type. The default credential id is derived from it. */
     public String firstType() {
         return types.get(0);
     }
 
-    /** Parses the comma-separated credential types of a mapper. */
     public static List<String> parseTypes(String rawTypes) {
         return ConfigList.parse(rawTypes);
     }
 
     /**
-     * The claims the DCQL query requests, one per path: every claim spec expanded into its path and
-     * alternative paths, in claim spec order. {@link #claimSetOptionIndexes()} indexes this list.
+     * Lists every claim the query asks for. Each spec contributes its own path and its
+     * alternatives, in spec order. The claim set options index this list.
      */
     public List<ClaimSpec> requestedClaims() {
         return claimSpecs.stream()
@@ -73,16 +69,14 @@ public record CredentialTypeSpec(String format, List<String> types, List<ClaimSp
     }
 
     /**
-     * Computes the DCQL {@code claim_sets} options as indexes into {@link #requestedClaims()}.
+     * Computes the DCQL {@code claim_sets} options as indexes into {@link #requestedClaims()}. An
+     * empty result means the query carries no {@code claim_sets} entry, so every claim is required.
      *
-     * <p>The claim set ids form the base options: one per distinct id, ordered lexicographically by
-     * id, with claims without ids members of every option. Alternative paths then multiply every
-     * base option: each becomes one option per combination of the path choices of its members, so
-     * an option requests exactly one of a claim's path and alternatives. The combinations are
-     * ordered with the paths themselves first and the last member's alternatives varying fastest,
-     * so the first option is the one asking for every claim under its own path.
-     *
-     * <p>An empty result means no {@code claim_sets} entry is generated and all claims are required.
+     * <p>The claim set ids give the base options, one per id and sorted by id, with a claim that
+     * carries no ids in every option. Alternative paths then multiply each base option by the path
+     * choices of its members, so that every option asks for exactly one path per claim. The own
+     * path comes before the alternatives and the last member varies fastest, which puts the option
+     * asking for every claim under its own path first.
      */
     public List<List<Integer>> claimSetOptionIndexes() {
         List<List<Integer>> baseOptions = optionsByClaimSetId();
@@ -109,7 +103,7 @@ public record CredentialTypeSpec(String format, List<String> types, List<ClaimSp
         return options;
     }
 
-    /** One option per claim set id as indexes into {@link #claimSpecs()}; empty without ids. */
+    /** Builds one option per claim set id, as indexes into {@link #claimSpecs()}. */
     private List<List<Integer>> optionsByClaimSetId() {
         SortedSet<String> claimSetIds = new TreeSet<>();
         for (ClaimSpec claimSpec : claimSpecs) {
@@ -129,7 +123,7 @@ public record CredentialTypeSpec(String format, List<String> types, List<ClaimSp
         return options;
     }
 
-    /** The cross product of the path choices of the option's claim specs, as requested claim indexes. */
+    /** Combines the path choices of the given specs into every option, as indexes into {@link #requestedClaims()}. */
     private List<List<Integer>> pathCombinations(List<Integer> specIndexes, int[] offsets) {
         List<List<Integer>> combinations = new ArrayList<>();
         combinations.add(List.of());

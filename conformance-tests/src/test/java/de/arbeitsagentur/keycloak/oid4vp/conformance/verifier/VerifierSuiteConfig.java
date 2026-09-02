@@ -20,9 +20,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.keycloak.util.JsonSerialization;
 
 /**
- * The test configuration uploaded to the conformance suite when creating a verifier plan. The
- * structure is defined by the suite: the verifier's client identifier and the trust anchor used to
- * validate the request object chain, plus the verifier's signing key.
+ * The test configuration uploaded to the conformance suite when creating a verifier plan. The suite
+ * defines the structure.
  */
 public record VerifierSuiteConfig(
         String alias, String description, String publish, Client client, Credential credential) {

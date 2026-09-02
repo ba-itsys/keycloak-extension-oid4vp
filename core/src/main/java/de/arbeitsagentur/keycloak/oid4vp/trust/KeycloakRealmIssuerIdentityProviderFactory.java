@@ -25,7 +25,7 @@ import org.keycloak.provider.ProviderConfigurationBuilder;
 
 /**
  * Factory of the trust material identity provider for credentials this Keycloak issues itself.
- * Instances are referenced by OID4VP identity providers via their {@code trustMaterialIdps}
+ * OID4VP identity providers reference its instances through their {@code trustMaterialIdps}
  * setting, like every other trust material provider.
  */
 public class KeycloakRealmIssuerIdentityProviderFactory

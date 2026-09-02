@@ -85,7 +85,7 @@ class OID4VPMdocUserAttributeMapperTest {
         assertThat(context.getFirstName()).isNull();
     }
 
-    // Without a namespace or doctype the mapper is misconfigured, so an update must leave the
+    // Without a namespace or doctype the mapper is misconfigured. An update must leave the
     // existing attribute untouched instead of removing it.
     @Test
     void updateKeepsAttributeWhenNamespaceIsUnconfigured() throws Exception {
@@ -99,8 +99,8 @@ class OID4VPMdocUserAttributeMapperTest {
         assertThat(user.getAttributeStream("givenName")).containsExactly("Keep");
     }
 
-    // A well-configured mapper whose namespace the credential does not carry keeps the
-    // remove-on-absent update semantics.
+    // A well-configured mapper whose namespace the credential does not carry removes the
+    // attribute, as for any absent claim.
     @Test
     void updateRemovesAttributeWhenNamespaceIsAbsentFromTheCredential() throws Exception {
         BrokeredIdentityContext context = mdlContext("""

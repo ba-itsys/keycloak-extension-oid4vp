@@ -96,7 +96,7 @@ class OID4VPSdJwtUserSessionAttributeMapperTest {
         assertThat(sessionNote(context, "credential_vct")).isEqualTo("identity");
     }
 
-    // The note is per login state, so it must also be set on the preprocess path that runs for
+    // The note is per login state, so it must also be set on the preprocess path, which runs for
     // existing users whose effective sync mode skips updateBrokeredUser.
     @Test
     void preprocessFederatedIdentityAlsoSetsTheNote() throws Exception {

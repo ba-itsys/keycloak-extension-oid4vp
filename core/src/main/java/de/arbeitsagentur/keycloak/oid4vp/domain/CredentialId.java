@@ -16,12 +16,9 @@
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
 /**
- * The identifier of a credential entry in a DCQL query. The id names the credential in the
+ * The identifier of a credential entry in a DCQL query. It names the credential in the
  * {@code credential_sets} constraints and is the key under which the wallet returns the matching
- * presentation in the {@code vp_token}, so it must stay stable across mapper changes.
- *
- * <p>A mapper may configure the id explicitly; otherwise it is derived from the credential format
- * and type, slugged to the characters DCQL allows in an id.
+ * presentation in the {@code vp_token}, so it has to stay stable across mapper changes.
  *
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1">OID4VP 1.0 §6.1 — Credential Query</a>
  */
@@ -32,16 +29,15 @@ public final class CredentialId {
 
     private CredentialId() {}
 
-    /** The id used when a mapper does not configure one: the format prefix and the slugged type. */
     public static String defaultFor(String format, String type) {
         return formatPrefix(format) + "_" + DcqlId.slug(type);
     }
 
     /**
-     * The credential id a mapper contributes to: its configured id when that is a valid DCQL id, and the
-     * id derived from format and type otherwise. Request-side DCQL generation and response-side mapping
-     * must resolve the id the same way, so that a mapper configured with an invalid id maps against the
-     * same credential the wallet was asked to present rather than silently mapping nothing.
+     * Resolves the credential id a mapper contributes to, falling back to the derived id when the
+     * configured one is not a valid DCQL id. Query generation and response mapping have to resolve
+     * the id the same way, so a mapper with an invalid id still maps against the credential the
+     * wallet was asked to present instead of silently mapping nothing.
      */
     public static String resolve(String configuredId, String format, String type) {
         String trimmed = configuredId == null ? null : configuredId.trim();

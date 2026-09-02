@@ -109,8 +109,8 @@ class Oid4vpClientIdSchemeTest {
     void validateCertificateBinding_acceptsSelfSignedCertificateBecauseTheWalletDecides() throws Exception {
         String pemCertificate = toPem(generateCertificate("self-signed.example.org"));
 
-        // A wallet following the high assurance profile rejects this, which the verifier warns
-        // about, but the decision is the wallet's and not every deployment faces such a wallet.
+        // A wallet following the high assurance profile rejects this, and the verifier warns about
+        // it. The decision is the wallet's, and not every deployment faces such a wallet.
         assertThatCode(() -> Oid4vpClientIdScheme.X509_HASH.validateCertificateBinding(pemCertificate))
                 .doesNotThrowAnyException();
     }
@@ -143,7 +143,7 @@ class Oid4vpClientIdSchemeTest {
         X509Certificate foreignLeaf = generateCertificate("foreign.example.org");
         String pemChain = toPem(foreignLeaf) + toPem(caCertificate);
 
-        // The verifier puts this chain into the request object, so an incoherent one is its own bug
+        // The verifier puts this chain into the request object. An incoherent chain is its own bug.
         assertThatThrownBy(() -> Oid4vpClientIdScheme.X509_HASH.validateCertificateBinding(pemChain))
                 .isInstanceOf(IllegalStateException.class);
     }

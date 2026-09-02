@@ -24,14 +24,12 @@ import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.sessions.RootAuthenticationSessionModel;
 
 /**
- * Resolves Keycloak authentication sessions from OID4VP session state.
+ * Recovers the Keycloak authentication session a wallet response belongs to. In the direct_post
+ * flow that response arrives in a separate HTTP request without session cookies, so the session has
+ * to be found through the state parameter or the root session id stored while the request object
+ * was generated.
  *
- * <p>In the OID4VP direct_post flow, the wallet's response arrives in a separate HTTP request
- * without session cookies. This resolver recovers the original authentication session using
- * the state parameter (via {@link Oid4vpRequestObjectStore}) or root session ID stored during
- * request object generation.
- *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.2">OID4VP 1.0 §8.2 — Response Mode direct_post</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.2">OID4VP 1.0 §8.2, Response Mode direct_post</a>
  */
 public class Oid4vpAuthSessionResolver {
 
@@ -46,7 +44,6 @@ public class Oid4vpAuthSessionResolver {
         this.requestObjectStore = requestObjectStore;
     }
 
-    /** Resolves an authentication session using the OAuth {@code state} parameter from the store. */
     public AuthenticationSessionModel resolveFromStore(String state) {
         if (state == null) return null;
 
@@ -63,7 +60,6 @@ public class Oid4vpAuthSessionResolver {
         return resolveFromTokenEntry(requestContext.rootSessionId(), tabId);
     }
 
-    /** Resolves an authentication session directly from a stored request context. */
     public AuthenticationSessionModel resolveFromRequestContext(
             Oid4vpRequestObjectStore.RequestContextEntry requestContext) {
         if (requestContext == null) {
@@ -72,7 +68,6 @@ public class Oid4vpAuthSessionResolver {
         return resolveFromTokenEntry(requestContext.rootSessionId(), requestContext.tabId());
     }
 
-    /** Resolves an authentication session directly from root session and tab IDs. */
     public AuthenticationSessionModel resolveFromTokenEntry(String rootSessionId, String tabId) {
         if (rootSessionId == null) return null;
 
@@ -85,11 +80,6 @@ public class Oid4vpAuthSessionResolver {
         return tabId != null ? rootSession.getAuthenticationSessions().get(tabId) : null;
     }
 
-    /**
-     * Resolves the current browser authentication session for the same client/tab as the expected
-     * session. First trusts an already-populated request context auth session, then falls back to
-     * Keycloak's auth-session cookie handling.
-     */
     public AuthenticationSessionModel resolveCurrentBrowserSession(AuthenticationSessionModel expectedAuthSession) {
         if (expectedAuthSession == null) {
             return null;

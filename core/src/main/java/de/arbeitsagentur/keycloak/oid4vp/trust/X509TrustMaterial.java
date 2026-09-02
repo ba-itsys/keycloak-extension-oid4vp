@@ -25,13 +25,12 @@ import java.util.Set;
  *
  * <p>Mirror of {@code org.keycloak.broker.provider.X509TrustMaterial} from Keycloak main. Delete
  * this copy and switch imports once the extension builds against a Keycloak release that ships it.
- * Deviation from upstream: anchors must be CA certificates but are not required to be self-issued
+ * It deviates from upstream in that anchors must be CA certificates but need not be self-issued
  * roots, because ETSI trust lists commonly list the issuing (intermediate) CA of a trust domain.
  *
- * @param trustAnchors              CA certificates anchoring one trust domain; issuing
- *                                  (intermediate) CAs are accepted alongside self-signed roots
- * @param requiredExtendedKeyUsages extended key usage OIDs of which the end entity certificate must
- *                                  contain at least one, an empty list imposes no restriction
+ * @param trustAnchors              CA certificates anchoring one trust domain
+ * @param requiredExtendedKeyUsages extended key usage OIDs. The end entity certificate must contain
+ *                                  at least one of them, and an empty list imposes no restriction.
  */
 public record X509TrustMaterial(Set<X509Certificate> trustAnchors, List<String> requiredExtendedKeyUsages) {
 

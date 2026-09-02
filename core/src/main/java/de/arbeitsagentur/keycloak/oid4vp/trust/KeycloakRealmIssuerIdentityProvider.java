@@ -36,38 +36,31 @@ import org.keycloak.urls.UrlType;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Trust material identity provider for credentials issued by this Keycloak.
+ * Trust material identity provider for credentials issued by this Keycloak, whose trust material is
+ * the signature key material of the issuing realm. The published JWKs are bound to the realm's
+ * issuer identifier and serve credentials that identify their key by {@code kid}, while the keys'
+ * certificates are directly trusted issuer certificates and serve credentials that pin their leaf
+ * in {@code x5c}. Reading them in process avoids Keycloak fetching its own metadata over HTTP and
+ * makes a key rotation apply immediately, with passive keys staying published while credentials
+ * signed with them are still valid.
  *
- * <p>Keycloak signs the credentials it issues with a realm key, so the trust material is that
- * realm's signature key material: the published JWKs bound to the realm's issuer identifier for
- * credentials that identify their key by {@code kid}, and the keys' certificates as directly
- * trusted issuer certificates for credentials that pin their leaf in {@code x5c}. Reading them in
- * process avoids Keycloak fetching its own metadata over HTTP, and a key rotation applies
- * immediately because passive keys stay published while credentials signed with them are still
- * valid.
- *
- * <p>A realm key certificate issued by an external CA works the same way: the signing leaf is
- * trusted directly, so a credential presenting the full chain validates against the pinned leaf
- * without the CA being configured anywhere in Keycloak.
+ * <p>A realm key certificate issued by an external CA works the same way, because only the signing
+ * leaf is trusted directly. A credential presenting the full chain validates against that pinned
+ * leaf without the CA being configured anywhere in Keycloak.
  */
 public class KeycloakRealmIssuerIdentityProvider
         implements Oid4vpTrustMaterialIdentityProvider<KeycloakRealmIssuerIdentityProviderConfig> {
 
     private static final Logger LOG = Logger.getLogger(KeycloakRealmIssuerIdentityProvider.class);
 
-    /**
-     * The signature key material of the issuing realm, as the trust material identity provider sees
-     * it. Replaceable in tests with a typed double, the way the trust list provider is.
-     */
+    /** The signature key material of the issuing realm, replaced by a typed double in tests. */
     public interface RealmKeyMaterial {
 
-        /** The realm issuer identifier the credentials carry as {@code iss}, or null when unknown. */
+        /** Returns the realm issuer identifier the credentials carry as {@code iss}, or null when unknown. */
         String issuer();
 
-        /** The realm's enabled signature keys as JWKs. */
         List<JWK> signatureKeys();
 
-        /** The certificates of the realm's signature keys. */
         List<X509Certificate> certificates();
     }
 
@@ -125,7 +118,7 @@ public class KeycloakRealmIssuerIdentityProvider
     }
 
     /**
-     * The realm key certificates, trusted for the realm issuer alone. This provider does know whose
+     * Returns the realm key certificates bound to the realm issuer alone. This provider knows whose
      * certificates these are, so a credential claiming another issuer cannot borrow them.
      */
     @Override
@@ -209,8 +202,9 @@ public class KeycloakRealmIssuerIdentityProvider
             }
         }
 
-        // Only the signing leaf is pinned. A CA-issued realm key's chain must not widen the pinned
-        // set: the CA belongs to a chain-validating trust provider, not to the directly trusted keys.
+        // Only the signing leaf is pinned. The chain of a CA-issued realm key must not widen the
+        // pinned set. The CA belongs to a chain validating trust provider, not to the directly
+        // trusted keys.
         private static void collectCertificates(KeyWrapper key, Set<X509Certificate> certificates) {
             if (key.getCertificate() != null) {
                 certificates.add(key.getCertificate());

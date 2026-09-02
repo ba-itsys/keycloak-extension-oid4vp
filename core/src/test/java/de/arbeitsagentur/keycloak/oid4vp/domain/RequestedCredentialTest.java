@@ -122,6 +122,29 @@ class RequestedCredentialTest {
         assertThat(requested.describeTypes()).isEqualTo("urn:eudi:pid:1, urn:eudi:pid:de:1");
     }
 
+    @Test
+    void matches_acceptsACredentialOfADerivedType() {
+        RequestedCredential requested =
+                new RequestedCredential("pid", "dc+sd-jwt", "urn:eudi:pid:1", List.of(), List.of());
+
+        assertThat(requested.matches(sdJwtOf("urn:eudi:pid:de:1")))
+                .as("the German PID derives from the EUDI PID by its identifier")
+                .isTrue();
+        assertThat(requested.matches(new VerifiedCredential(
+                        "c1",
+                        "https://issuer.example",
+                        "urn:example:national-pid:1",
+                        Map.of(),
+                        PresentationType.SD_JWT,
+                        List.of("urn:eudi:pid:1"))))
+                .as("aka_vcts states the derivation")
+                .isTrue();
+        assertThat(new RequestedCredential("pid", "dc+sd-jwt", "urn:eudi:pid:de:1", List.of(), List.of())
+                        .matches(sdJwtOf("urn:eudi:pid:1")))
+                .as("a base type credential does not satisfy a request for the derived type")
+                .isFalse();
+    }
+
     private static VerifiedCredential sdJwtOf(String type) {
         return new VerifiedCredential("c1", "https://issuer.example", type, Map.of(), PresentationType.SD_JWT);
     }

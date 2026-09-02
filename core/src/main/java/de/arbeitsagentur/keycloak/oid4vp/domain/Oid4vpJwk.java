@@ -40,7 +40,7 @@ import org.keycloak.jose.jwk.JWKUtil;
 import org.keycloak.util.JWKSUtils;
 import org.keycloak.util.JsonSerialization;
 
-/** OID4VP EC JWK with explicit private-key support for response-encryption keys. */
+/** An EC JWK that can carry its private key. Response encryption keys need that. */
 public class Oid4vpJwk extends ECPublicJWK {
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
@@ -198,7 +198,7 @@ public class Oid4vpJwk extends ECPublicJWK {
         }
     }
 
-    /** JOSE JWKs use `P-xxx` names while JCA EC APIs expect SEC curve names like `secp256r1`. */
+    /** Translates a JOSE curve name to the SEC name JCA expects, {@code P-256} to {@code secp256r1}. */
     private static String toJcaCurveName(String joseCurve) {
         return switch (joseCurve) {
             case JOSE_CURVE_P_256 -> JCA_CURVE_SECP256R1;

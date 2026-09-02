@@ -46,7 +46,7 @@ public interface X509TrustMaterialIdentityProvider<C extends IdentityProviderMod
     /**
      * Validates the x5c certificate chain of a presented artifact against this provider's X.509
      * trust material and returns the chain leaf key. Exposing X.509 trust anchors mandates chain
-     * validation: a missing or unverifiable chain fails.
+     * validation, so a missing or unverifiable chain fails.
      *
      * @return the leaf key of the validated chain, or null when this provider exposes no X.509
      *         trust material
@@ -67,7 +67,7 @@ public interface X509TrustMaterialIdentityProvider<C extends IdentityProviderMod
 
     /**
      * Validates the x5c certificate chain against the given trust materials and returns the chain
-     * leaf key. The materials are tried in order and the first successful validation wins.
+     * leaf key, trying the materials in order until one validates.
      *
      * @return the leaf key of the validated chain, or null if no trust material was given
      */

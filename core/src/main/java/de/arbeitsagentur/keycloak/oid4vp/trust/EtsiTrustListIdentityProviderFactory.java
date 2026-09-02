@@ -24,9 +24,8 @@ import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.provider.ProviderConfigurationBuilder;
 
 /**
- * Factory of the OID4VP trust material identity provider. Instances expose trust anchors from an
- * ETSI trust list URL or a pasted PEM bundle and are referenced by OID4VP identity providers via
- * their {@code trustMaterialIdps} setting.
+ * Factory of the ETSI trust list identity provider. OID4VP identity providers reference its
+ * instances by alias through their {@code trustMaterialIdps} setting.
  */
 public class EtsiTrustListIdentityProviderFactory
         extends AbstractIdentityProviderFactory<EtsiTrustListIdentityProvider> {

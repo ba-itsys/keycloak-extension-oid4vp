@@ -16,6 +16,8 @@
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import de.arbeitsagentur.keycloak.oid4vp.domain.ClaimedTypes;
+import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeHierarchy;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SdJwtVerificationResult;
 import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
 import java.util.List;
@@ -26,14 +28,12 @@ import org.keycloak.sdjwt.vp.KeyBindingJwtVerificationOpts;
 import org.keycloak.sdjwt.vp.SdJwtVP;
 
 /**
- * Verifies SD-JWT Verifiable Credentials presented in a VP token.
+ * Verifies SD-JWT Verifiable Credentials presented in a VP token. This is a thin facade over
+ * Keycloak's SD-JWT consumer APIs: Keycloak runs the presentation verification flow, while the
+ * extension keeps its own issuer trust policy and the orchestration after verification.
  *
- * <p>This is a thin facade over Keycloak's SD-JWT consumer APIs. The extension keeps its custom
- * issuer-trust policy and post-verification orchestration, but relies on Keycloak for the actual
- * presentation verification flow.
- *
- * @see <a href="https://www.rfc-editor.org/rfc/rfc9901.html">RFC 9901 — Selective Disclosure for JSON Web Tokens</a>
- * @see <a href="https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-13">draft-ietf-oauth-sd-jwt-vc-13 — SD-JWT VC</a>
+ * @see <a href="https://www.rfc-editor.org/rfc/rfc9901.html">RFC 9901, Selective Disclosure for JSON Web Tokens</a>
+ * @see <a href="https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-13">draft-ietf-oauth-sd-jwt-vc-13, SD-JWT VC</a>
  */
 public class SdJwtVerifier {
 
@@ -62,26 +62,26 @@ public class SdJwtVerifier {
     }
 
     /**
-     * The {@code vct} the issuer-signed JWT of an SD-JWT presentation claims, read without any
-     * verification; null when the token does not parse or names none. It only ever selects among
-     * the types the verifier requested, so nothing is trusted from it.
+     * Reads the {@code vct} and {@code aka_vcts} of the issuer-signed JWT without verifying
+     * anything, so the caller can tell which requested type a presentation answers before it picks
+     * the trust material. Returns null when the token does not parse or carries no {@code vct}.
      */
-    public String peekVct(String sdJwt) {
+    public ClaimedTypes peekTypes(String sdJwt) {
         try {
-            JsonNode vct = SdJwtVP.of(sdJwt).getIssuerSignedJWT().getPayload().get(VCT_CLAIM);
-            return vct != null && vct.isTextual() ? vct.asText() : null;
+            JsonNode payload = SdJwtVP.of(sdJwt).getIssuerSignedJWT().getPayload();
+            JsonNode vct = payload.get(VCT_CLAIM);
+            if (vct == null || !vct.isTextual()) {
+                return null;
+            }
+            return new ClaimedTypes(vct.asText(), CredentialTypeHierarchy.alsoKnownAsTypes(payload));
         } catch (Exception e) {
             return null;
         }
     }
 
     /**
-     * Verifies an SD-JWT VP: validates issuer signature, key binding, and extracts disclosed claims.
-     *
-     * @param sdJwt the compact SD-JWT string (issuer JWT + disclosures + optional KB-JWT, tilde-separated)
-     * @param expectedAudience the expected {@code aud} claim in the key binding JWT
-     * @param expectedNonce the expected {@code nonce} claim in the key binding JWT
-     * @param trust trust material for issuer signature verification
+     * Verifies an SD-JWT VP, checking the issuer signature and the key binding and extracting the
+     * disclosed claims. The expected audience and nonce are matched against the key binding JWT.
      */
     @SuppressWarnings("unchecked")
     public SdJwtVerificationResult verify(
@@ -92,8 +92,9 @@ public class SdJwtVerifier {
             Oid4vpPresentationRequirements requirements = new Oid4vpPresentationRequirements();
 
             // The ClaimVerifier.Builder constructor adds an IatLifetimeCheck with the KB-JWT default
-            // maxAge (300s) to ALL builders, including issuer opts. We must remove it for issuer JWTs
-            // since credentials can be arbitrarily old — expiration is handled by the exp claim.
+            // maxAge of 300 seconds to every builder, including the issuer options. It is removed for
+            // issuer JWTs because credentials can be arbitrarily old, and their expiration is judged
+            // by the exp claim.
             IssuerSignedJwtVerificationOpts issuerOpts = IssuerSignedJwtVerificationOpts.builder()
                     .withClockSkew(clockSkewSeconds)
                     .withIatCheck(null)

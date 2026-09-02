@@ -34,7 +34,7 @@ class CredentialTrustPlanTest {
     private static final String PID = "urn:eudi:pid:1";
 
     /**
-     * Building the authorization request must not depend on the trust material being reachable: a
+     * Building the authorization request must not depend on the trust material being reachable. A
      * trust list that cannot be fetched has to fail the presentation, not the login page.
      */
     @Test
@@ -61,6 +61,40 @@ class CredentialTrustPlanTest {
         assertThat(provider.resolutions)
                 .as("one resolution per credential type, plus one for the unscoped trust")
                 .isEqualTo(2);
+    }
+
+    @Test
+    void servingType_isTheDeclaredTypeNearestToTheCredential() {
+        FixedTrustMaterialIdentityProvider pidProvider =
+                FixedTrustMaterialIdentityProvider.serving(TestTrust.ofCertificates(), PID);
+        FixedTrustMaterialIdentityProvider germanPidProvider =
+                FixedTrustMaterialIdentityProvider.serving(TestTrust.ofCertificates(), "urn:eudi:pid:de:1");
+
+        CredentialTrustPlan baseOnly = new CredentialTrustPlan(List.of(pidProvider));
+        assertThat(baseOnly.servingType("urn:eudi:pid:de:1", List.of()))
+                .as("a base type's provider serves the derived types without a provider of their own")
+                .isEqualTo(PID);
+        assertThat(baseOnly.servingType("urn:example:national-pid:1", List.of(PID)))
+                .as("aka_vcts leads to the base type's provider")
+                .isEqualTo(PID);
+        assertThat(baseOnly.serves("urn:eudi:pid:de:1")).isTrue();
+
+        CredentialTrustPlan both = new CredentialTrustPlan(List.of(pidProvider, germanPidProvider));
+        assertThat(both.servingType("urn:eudi:pid:de:1", List.of()))
+                .as("a provider declared for the derived type takes precedence")
+                .isEqualTo("urn:eudi:pid:de:1");
+        assertThat(both.servingType(PID, List.of()))
+                .as("the base type never inherits downwards")
+                .isEqualTo(PID);
+    }
+
+    @Test
+    void servingType_isTheTypeItselfWhenNoProviderDeclaresAnyOfItsTypes() {
+        CredentialTrustPlan plan = new CredentialTrustPlan(
+                List.of(FixedTrustMaterialIdentityProvider.serving(TestTrust.ofCertificates(), "urn:eudi:mdl:1")));
+
+        assertThat(plan.servingType("urn:eudi:pid:de:1", List.of())).isEqualTo("urn:eudi:pid:de:1");
+        assertThat(plan.serves("urn:eudi:pid:de:1")).isFalse();
     }
 
     /** Advertises its trust domain but cannot serve the material behind it. */
@@ -96,7 +130,6 @@ class CredentialTrustPlanTest {
         public void close() {}
     }
 
-    /** Counts how often its trust material is pulled. */
     private static class CountingTrustMaterialProvider
             implements Oid4vpTrustMaterialIdentityProvider<IdentityProviderModel> {
 

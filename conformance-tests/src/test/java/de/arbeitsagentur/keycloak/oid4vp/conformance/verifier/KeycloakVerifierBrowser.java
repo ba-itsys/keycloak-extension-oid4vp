@@ -43,10 +43,10 @@ import org.keycloak.protocol.oidc.utils.PkceUtils;
 import org.keycloak.util.JsonSerialization;
 
 /**
- * Plays the user's browser in the same-device flow: it requests the Keycloak login page, follows
- * the wallet link parameters into the conformance suite, and follows redirects back to Keycloak
- * sharing one cookie session. The suite and Keycloak advertise container-network hostnames that
- * are rewritten to their host-reachable counterparts.
+ * Plays the user's browser in the same-device flow: it requests the Keycloak login page, follows the
+ * wallet link parameters into the conformance suite, and follows the redirects back to Keycloak on
+ * one shared cookie session. Both sides advertise container network hostnames, which it rewrites to
+ * their host reachable counterparts.
  */
 public final class KeycloakVerifierBrowser {
 
@@ -68,7 +68,6 @@ public final class KeycloakVerifierBrowser {
                 .build();
     }
 
-    // Requests the Keycloak login page and extracts the same-device authorization request
     public AuthorizationRequest fetchSameDeviceAuthorizationRequest(String realm, String clientId, String idpAlias) {
         String codeVerifier = PkceUtils.generateCodeVerifier();
         String loginUrl = keycloakLocalBaseUrl + "/realms/" + realm + "/protocol/openid-connect/auth"
@@ -96,7 +95,6 @@ public final class KeycloakVerifierBrowser {
         return new AuthorizationRequest(walletClientId, requestUri, fetchRequestObjectClaims(requestUri));
     }
 
-    // Hands the authorization request to the suite's wallet and follows redirects back to Keycloak
     public void triggerAuthorization(ModuleRun moduleRun, AuthorizationRequest request) {
         URI authorizationEndpoint = suite.externalUri(moduleRun.authorizationEndpoint());
         String url = authorizationEndpoint
@@ -157,7 +155,7 @@ public final class KeycloakVerifierBrowser {
                     .orElseThrow(
                             () -> new IllegalStateException("Redirect without Location header from " + requested)));
             // A redirect to the suite's results page means the wallet interaction is complete. The
-            // module verdict is then read from the suite's module status, not the browser response
+            // module verdict comes from the suite's module status, not from this browser response.
             if (next.getPath() != null && next.getPath().contains("log-detail")) {
                 return response;
             }
@@ -166,7 +164,6 @@ public final class KeycloakVerifierBrowser {
         throw new IllegalStateException("Too many redirects, last URL: " + current);
     }
 
-    // Rewrites container-network hostnames to their host-reachable counterparts
     private URI rewriteToHostReachable(URI uri) {
         if (OpenIdConformanceSuite.KEYCLOAK_BASE_URI.getHost().equals(uri.getHost())) {
             return toLocalKeycloakUri(uri);

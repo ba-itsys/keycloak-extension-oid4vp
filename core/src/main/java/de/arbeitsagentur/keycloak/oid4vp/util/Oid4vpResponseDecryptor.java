@@ -29,27 +29,21 @@ import org.keycloak.jose.jwe.JWEHeader;
 import org.keycloak.util.JsonSerialization;
 
 /**
- * Decrypts wallet responses encrypted with {@code direct_post.jwt} response mode.
+ * Decrypts wallet responses sent in the {@code direct_post.jwt} response mode. The verifier
+ * advertises an ephemeral encryption key per flow in the request object's {@code client_metadata},
+ * and the JWE header kid of the response names the key the wallet used. The {@code apu} (Agreement
+ * PartyUInfo) header carries the nonce the wallet generated for mDoc session transcripts.
  *
- * <p>With the direct_post.jwt response mode the verifier includes an ephemeral encryption key in the request
- * object's {@code client_metadata}. The wallet encrypts its response (containing the
- * {@code vp_token}) as a JWE using that key. This class extracts the KID from the JWE header
- * to look up the matching private key, then decrypts the payload.
- *
- * <p>Also extracts the {@code apu} (Agreement PartyUInfo) header for mDoc-specific nonce handling.
- *
- * @see Oid4vpRequestObjectEncryptor the inverse operation (encrypting request objects for wallets)
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3.1">OID4VP 1.0 §8.3.1 — Response Mode direct_post.jwt</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3.1">OID4VP 1.0 §8.3.1, Response Mode direct_post.jwt</a>
  */
 public class Oid4vpResponseDecryptor {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpResponseDecryptor.class);
 
     /**
-     * Extracts the JWE Key ID header without decrypting, used only to look up the candidate
-     * decryption key. This is intentionally tolerant: malformed JWEs or JWEs without {@code kid}
-     * return {@code null}, while the actual {@link #decrypt(String, Oid4vpJwk)} path remains
-     * strict and rejects invalid input.
+     * Reads the JWE key id header without decrypting. Since the value only selects a candidate
+     * decryption key, this stays tolerant and returns {@code null} for malformed input, while
+     * {@link #decrypt(String, Oid4vpJwk)} remains strict and rejects it.
      */
     public String extractKid(String encryptedResponse) {
         String kid;
@@ -65,13 +59,6 @@ public class Oid4vpResponseDecryptor {
         return kid;
     }
 
-    /**
-     * Decrypts a JWE-encrypted wallet response and extracts the {@code vp_token} or error.
-     *
-     * @param encryptedResponse the compact-serialized JWE from the wallet's direct_post.jwt response
-     * @param decryptionKey the ephemeral EC private key that was advertised in the request object
-     * @return the decrypted response containing the VP token, mDoc nonce, or error details
-     */
     public DecryptedResponse decrypt(String encryptedResponse, Oid4vpJwk decryptionKey) {
         try {
             JWE jwe = decryptJwe(encryptedResponse, decryptionKey);

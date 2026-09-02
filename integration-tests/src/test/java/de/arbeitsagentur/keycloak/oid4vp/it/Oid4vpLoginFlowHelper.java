@@ -123,12 +123,10 @@ class Oid4vpLoginFlowHelper {
         return new WalletResponse(response.rawBody(), response.redirectUri());
     }
 
-    /** The HTTP status the response URI answered the wallet with, as the wallet reports it. */
     static int verifierStatusCode(String rawBody) {
         return verifierResponse(rawBody).path("status_code").asInt(-1);
     }
 
-    /** The body the response URI answered the wallet with, as the wallet reports it. */
     static String verifierResponseBody(String rawBody) {
         JsonNode body = verifierResponse(rawBody).path("body");
         assertThat(body.isTextual())

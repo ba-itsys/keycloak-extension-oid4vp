@@ -16,6 +16,7 @@
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeHierarchy;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SdJwtVerificationResult;
 import java.util.Map;
 import org.keycloak.common.VerificationException;
@@ -23,8 +24,8 @@ import org.keycloak.sdjwt.consumer.PresentationRequirements;
 import org.keycloak.util.JsonSerialization;
 
 /**
- * Captures the fully disclosed payload produced by Keycloak's SD-JWT verifier so the verified
- * claims, issuer and VCT can be read after verification.
+ * Captures the fully disclosed payload produced by Keycloak's SD-JWT verifier, so that the verified
+ * claims, issuer and VCT can be read once verification has run.
  */
 public class Oid4vpPresentationRequirements implements PresentationRequirements {
 
@@ -45,7 +46,10 @@ public class Oid4vpPresentationRequirements implements PresentationRequirements 
         }
         Map<String, Object> claims = JsonSerialization.mapper.convertValue(disclosedPayload, Map.class);
         return new SdJwtVerificationResult(
-                claims, readStringClaim(disclosedPayload, "iss"), readStringClaim(disclosedPayload, "vct"));
+                claims,
+                readStringClaim(disclosedPayload, "iss"),
+                readStringClaim(disclosedPayload, "vct"),
+                CredentialTypeHierarchy.alsoKnownAsTypes(disclosedPayload));
     }
 
     private String readStringClaim(JsonNode payload, String name) {

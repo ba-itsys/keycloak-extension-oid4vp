@@ -235,10 +235,9 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
         Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
         assertThat(walletResponse.redirectUri()).isNull();
 
-        // A foreign party can only observe the public state (in the request_uri / SSE URL), not the
-        // single-use response_code generated during direct_post. Without it, /complete-auth is
-        // rejected at the response_code gate before any browser-session check, so the foreign browser
-        // never completes the login.
+        // A foreign party can observe the public state in the request_uri or the SSE URL, but not
+        // the single-use response_code generated during direct_post, and without that code
+        // /complete-auth rejects the request before it even checks the browser session.
         String completeAuthUrl = keycloakUrls.getBase() + "/realms/" + REALM
                 + "/broker/oid4vp/endpoint/complete-auth?state="
                 + URLEncoder.encode(state, StandardCharsets.UTF_8);
@@ -248,7 +247,7 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
         try {
             otherPage.navigate(completeAuthUrl);
             otherPage.waitForLoadState();
-            // The browser opened this URL, so the rejection is rendered as Keycloak's error page.
+            // The browser opened this URL, so the rejection arrives as Keycloak's error page.
             String body = otherPage.locator("body").textContent().toLowerCase();
             assertThat(body).contains("this login link is not valid");
             assertThat(flow.isCallbackUrl(otherPage.url()))
@@ -261,11 +260,11 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
     }
 
     /**
-     * A declined presentation must move the browser in the cross-device flow too. The wallet runs on
-     * another device, so the {@code redirect_uri} the response URI returns reaches only the wallet's
-     * own user agent; the browser learns of the decline through the SSE stream instead. Without that
-     * signal it keeps polling for a completion that never comes and shows a generic timeout only
-     * after the stream's full lifetime.
+     * A declined presentation has to move the browser in the cross-device flow too. Since the wallet
+     * runs on another device, a {@code redirect_uri} returned by the response URI reaches only the
+     * wallet's own user agent, so the browser learns of the decline through the SSE stream. Without
+     * that signal it waits for a completion that never comes and shows a generic timeout only after
+     * the stream's full lifetime.
      */
     @Test
     void crossDeviceWalletErrorReturnsBrowserToLoginPage() throws Exception {
@@ -284,8 +283,8 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
                     .isEqualTo("{}");
             assertLoginFailedBecauseOf("denied consent");
 
-            // Arriving well inside the stream's lifetime is the point: a timeout would also move the
-            // browser eventually, but only after the End-User has waited the stream out.
+            // The browser has to move well inside the stream's lifetime, because a timeout would move
+            // it eventually too, but only after the End-User has waited the stream out.
             page.waitForURL(
                     url -> url.contains("/failed")
                             || page.locator("a#social-oid4vp").count() > 0,
@@ -302,9 +301,9 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
     }
 
     /**
-     * The stream itself must carry the decline. Reading it directly pins the contract the browser
+     * The stream itself has to carry the decline, so reading it directly pins the contract the browser
      * script depends on: a {@code failed} event whose payload holds the failure URL, rather than
-     * the stream falling silent until it times out.
+     * silence until the stream times out.
      */
     @Test
     void crossDeviceSseEmitsFailedEventWithFailureUrl() throws Exception {
@@ -349,10 +348,9 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
     }
 
     /**
-     * A presentation the verifier rejects has to move the browser in the cross-device flow too.
-     * The {@code redirect_uri} the response URI returns reaches only the wallet's own user agent
-     * on the other device, so the browser learns of the rejection through the SSE stream or not at
-     * all.
+     * A presentation the verifier rejects has to move the browser in the cross-device flow too. A
+     * {@code redirect_uri} returned by the response URI reaches only the wallet's own user agent on
+     * the other device, so the browser learns of the rejection through the SSE stream or not at all.
      */
     @Test
     void crossDeviceRejectedPresentationReturnsBrowserToLoginPage() throws Exception {
@@ -371,7 +369,7 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
 
             Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
 
-            // The browser is on the other device, so the wallet gets the same empty object a
+            // The browser is on the other device, so the wallet gets the same empty object that a
             // completed cross-device login returns.
             assertThat(Oid4vpLoginFlowHelper.verifierStatusCode(walletResponse.rawBody()))
                     .as("Cross-device wallet response: %s", walletResponse.rawBody())

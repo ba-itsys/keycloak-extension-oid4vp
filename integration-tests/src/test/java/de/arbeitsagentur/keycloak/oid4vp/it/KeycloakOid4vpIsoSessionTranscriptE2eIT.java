@@ -22,7 +22,7 @@ import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWalletConfigBuilder;
 import org.junit.jupiter.api.Test;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
-// End-to-end test against a wallet using the ISO 18013-7 mDoc session transcript
+// End to end test against a wallet using the ISO 18013-7 mDoc session transcript.
 @KeycloakIntegrationTest(config = Oid4vpServerConfig.class)
 class KeycloakOid4vpIsoSessionTranscriptE2eIT extends AbstractOid4vpE2eTest {
 

@@ -27,10 +27,8 @@ import org.keycloak.provider.ProviderConfigurationBuilder;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Imports a claim of the presented SD JWT credential into a user session attribute, so it can be
- * surfaced in tokens through the user session note protocol mappers. Session notes hold one string
- * value: multivalued selections are joined with a comma and object values are stored as their JSON
- * representation.
+ * Imports a claim of the presented SD-JWT credential into a user session attribute. A session note
+ * holds one string value, so a multivalued selection is joined with a comma.
  *
  * <p>Kept in sync with upstream Keycloak's mapper of the same name.
  */
@@ -90,9 +88,9 @@ public class OID4VPSdJwtUserSessionAttributeMapper extends AbstractOID4VPClaimMa
     }
 
     /**
-     * The note is per login state, so it is also set during preprocessing, which runs for every
-     * login. The user centric hooks below never run for an existing user whose effective sync
-     * mode is IMPORT.
+     * The note is per login state, so preprocessing sets it too because it runs for every login,
+     * while the user centric hooks below never run for an existing user whose effective sync mode
+     * is IMPORT.
      */
     @Override
     public void preprocessFederatedIdentity(

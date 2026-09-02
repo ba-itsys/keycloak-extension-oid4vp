@@ -29,10 +29,7 @@ import org.keycloak.provider.ProviderConfigurationBuilder;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Maps a claim of the presented SD JWT credential to a user property or attribute. A single mapper
- * covers the credential value types: string, number and boolean claims become a single text value,
- * arrays become a multivalued attribute, and object values are imported as their JSON
- * representation.
+ * Maps a claim of the presented SD-JWT credential to a user property or attribute.
  *
  * <p>Kept in sync with upstream Keycloak's mapper of the same name.
  */
@@ -136,7 +133,7 @@ public class OID4VPSdJwtUserAttributeMapper extends AbstractOID4VPClaimMapper {
         }
         ClaimResolution resolution = resolveClaim(mapperModel, context);
         if (resolution.misconfigured()) {
-            // A configuration mistake must not destroy user state, so nothing is updated or removed.
+            // A configuration mistake must not destroy user state, so nothing is updated here.
             return;
         }
         List<String> values = resolution.values();

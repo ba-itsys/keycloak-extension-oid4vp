@@ -33,12 +33,11 @@ import javax.net.ssl.SSLContext;
 import org.jboss.logging.Logger;
 import org.keycloak.util.JsonSerialization;
 
-// Client for the conformance suite REST API, driving plans and test modules
 public final class ConformanceApiClient {
 
     private static final Logger LOG = Logger.getLogger(ConformanceApiClient.class);
 
-    // 1x1 transparent PNG as a data URI, uploaded as automated verification evidence
+    // A 1x1 transparent PNG uploaded as automated verification evidence.
     private static final String PLACEHOLDER_EVIDENCE_IMAGE = "data:image/png;base64,"
             + "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
@@ -46,8 +45,8 @@ public final class ConformanceApiClient {
     private final HttpClient httpClient;
 
     // Plans created for a plan variant, keyed by plan name and variant. Discovery creates a plan to
-    // read back its modules and the run reuses that same plan, so a plan variant is never
-    // provisioned on the suite twice.
+    // read back its modules and the run reuses that same plan, so a plan variant is never provisioned
+    // on the suite twice.
     private final Map<String, JsonNode> createdPlans = new ConcurrentHashMap<>();
 
     public ConformanceApiClient(URI baseUri, SSLContext sslContext) {
@@ -77,13 +76,12 @@ public final class ConformanceApiClient {
         throw new IllegalStateException("Conformance server did not become available at " + baseUri, lastFailure);
     }
 
-    // One module of a plan as the suite reports it, with its own variant combination
     public record DiscoveredModule(String name, Map<String, String> variant) {}
 
     /**
-     * Discovers every module and its variant combination from the suite for the given plan
-     * variant. The suite is the source of truth for which modules and module variants exist, so a
-     * non applicable plan variant yields an empty list rather than fabricated combinations.
+     * Discovers every module and its variant combination from the suite for the given plan variant.
+     * The suite decides which modules and module variants exist, so a plan variant that does not apply
+     * yields an empty list rather than fabricated combinations.
      */
     public List<DiscoveredModule> discoverPlanModules(
             String planName, Map<String, String> planVariant, JsonNode suiteConfig) {
@@ -91,7 +89,7 @@ public final class ConformanceApiClient {
         try {
             plan = getOrCreatePlan(planName, suiteConfig, planVariant);
         } catch (RuntimeException e) {
-            // The suite rejects plan variants with no applicable modules
+            // The suite rejects plan variants with no applicable modules.
             LOG.warnf("Plan creation failed for %s %s: %s", planName, planVariant, e.getMessage());
             return List.of();
         }
@@ -114,8 +112,8 @@ public final class ConformanceApiClient {
     }
 
     /**
-     * Runs one module of a plan. Once the module waits for the verifier, the interaction is
-     * invoked with the module info to trigger the authorization request against the suite.
+     * Runs one module of a plan. Once the module waits for the verifier, the interaction is invoked
+     * with the module info and triggers the authorization request against the suite.
      */
     public ConformanceModuleResult run(
             ConformanceModuleVariant module, JsonNode suiteConfig, VerifierInteraction interaction) {
@@ -151,9 +149,9 @@ public final class ConformanceApiClient {
     private record ModuleCompletion(JsonNode info, boolean evidenceUploaded) {}
 
     /**
-     * Waits for the module to finish. Since suite release-v5.2.2, modules whose flow succeeds log
-     * a screenshot placeholder and wait for verification evidence, finishing as REVIEW once it is
-     * uploaded, so unfilled placeholders are filled with a minimal image while waiting.
+     * Waits for the module to finish. A module whose flow succeeds logs a screenshot placeholder and
+     * waits for verification evidence, finishing as REVIEW once that evidence arrives, so unfilled
+     * placeholders are filled with a minimal image while waiting.
      */
     private ModuleCompletion waitForFinishedFillingEvidencePlaceholders(String moduleId, Duration timeout) {
         long deadline = System.nanoTime() + timeout.toNanos();
@@ -174,7 +172,7 @@ public final class ConformanceApiClient {
                     }
                 }
             } catch (RuntimeException e) {
-                // Transient failures are tolerated until the deadline
+                // Transient failures are tolerated until the deadline.
                 lastFailure = e;
             }
             sleep(Duration.ofSeconds(1));
@@ -208,7 +206,7 @@ public final class ConformanceApiClient {
     }
 
     // Returns the plan for this plan variant, creating it on the suite only the first time. The key
-    // excludes the suite config because it is constant for a plan variant apart from a cosmetic alias.
+    // leaves out the suite config, which is constant for a plan variant apart from a cosmetic alias.
     private JsonNode getOrCreatePlan(String planName, JsonNode suiteConfig, Map<String, String> variants) {
         String key = planName + "|" + (variants == null ? "" : JsonSerialization.valueAsString(variants));
         JsonNode cached = createdPlans.get(key);
@@ -266,12 +264,12 @@ public final class ConformanceApiClient {
             try {
                 lastInfo = getInfo(moduleId);
                 String status = lastInfo.path("status").asText();
-                // INTERRUPTED is a terminal state too and surfaces as a normal assertion failure downstream
+                // INTERRUPTED is terminal as well and surfaces as a normal assertion failure later.
                 if (states.contains(status) || "INTERRUPTED".equals(status)) {
                     return lastInfo;
                 }
             } catch (RuntimeException e) {
-                // Transient failures are tolerated until the deadline
+                // Transient failures are tolerated until the deadline.
                 lastFailure = e;
             }
             sleep(Duration.ofSeconds(1));

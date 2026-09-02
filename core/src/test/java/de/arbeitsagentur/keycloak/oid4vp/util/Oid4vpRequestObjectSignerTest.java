@@ -62,7 +62,7 @@ class Oid4vpRequestObjectSignerTest {
 
         SignedJWT requestObject = signRequestObject(leafKeyPair, List.of(leafCert, caCert));
 
-        // HAIP requires that the trust anchor not appear in x5c, so only the leaf remains here
+        // HAIP requires that the trust anchor not appear in x5c. Only the leaf remains here.
         assertThat(requestObject.getHeader().getX509CertChain()).containsExactly(Base64.encode(leafCert.getEncoded()));
     }
 

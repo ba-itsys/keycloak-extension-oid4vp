@@ -81,8 +81,7 @@ class X509CertificateChainValidatorTest {
     @Test
     void validatesChainThatIncludesTheTrustedIntermediate() throws Exception {
         // The wallet presents [leaf, issuing CA] and the trust list contains the issuing CA. The
-        // previous hand-rolled validator required the anchor to be the *parent* of the chain top
-        // and rejected this shape.
+        // anchor is the top of the presented chain itself, not its parent.
         X509Certificate leaf = leafCert(intermediateKp, "CN=Issuing CA");
 
         JWK jwk = X509CertificateChainValidator.validate(

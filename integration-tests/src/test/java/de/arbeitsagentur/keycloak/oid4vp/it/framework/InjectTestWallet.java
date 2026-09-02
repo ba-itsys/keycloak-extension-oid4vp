@@ -22,9 +22,8 @@ import java.lang.annotation.Target;
 import org.keycloak.testframework.injection.LifeCycle;
 
 /**
- * Injects an eudi-dev wallet into a test. The wallet binds fixed host ports, so a test class
- * uses exactly one wallet. Classes requesting a different wallet configuration get a fresh
- * wallet container.
+ * Injects an eudi-dev wallet. The container binds fixed host ports, so a test class can only use one
+ * wallet at a time; a class that requests a different configuration gets a fresh container.
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.FIELD)

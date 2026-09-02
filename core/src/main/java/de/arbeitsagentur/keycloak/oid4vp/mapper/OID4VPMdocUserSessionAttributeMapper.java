@@ -24,9 +24,9 @@ import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.provider.ProviderConfigurationBuilder;
 
 /**
- * Imports a data element of the presented mDoc credential into a user session attribute. The
- * claim path addresses the element within the configured ISO 18013-5 namespace. Follows the
- * design of the SD-JWT mappers of upstream Keycloak's OID4VP work, which does not cover mDoc yet.
+ * Imports a data element of the presented mDoc credential into a user session attribute, addressed
+ * by a claim path within the configured ISO 18013-5 namespace. Follows the design of the SD-JWT
+ * mappers of upstream Keycloak's OID4VP work, which does not cover mDoc yet.
  */
 public class OID4VPMdocUserSessionAttributeMapper extends OID4VPSdJwtUserSessionAttributeMapper {
 

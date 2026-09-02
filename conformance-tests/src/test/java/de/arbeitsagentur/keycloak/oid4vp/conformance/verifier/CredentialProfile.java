@@ -19,8 +19,8 @@ import java.util.List;
 import java.util.Map;
 import org.keycloak.representations.idm.IdentityProviderMapperRepresentation;
 
-// The credential format profile a verifier conformance scenario runs with. The mappers drive
-// both the generated DCQL query and the claim-to-attribute mapping.
+// The credential format profile a verifier conformance scenario runs with. Its mappers drive both
+// the generated DCQL query and the claim to attribute mapping.
 public enum CredentialProfile {
     SD_JWT_VC(
             "sdjwt_urn_eudi_pid_1:given_name",
@@ -41,9 +41,9 @@ public enum CredentialProfile {
                             "family_name",
                             "lastName")));
 
-    // The mDL issuer certificate of the conformance suite, trusted for mdoc scenarios.
-    // Matches the document signer certificate in the suite's TestAppUtils/VciMdocUtils
-    // (regenerated upstream 2026-08-03, valid until 2027-08-03).
+    // The mDL issuer certificate of the conformance suite, trusted for mdoc scenarios. It is the
+    // document signer certificate from the suite's TestAppUtils and VciMdocUtils, and it is valid
+    // until 2027-08-03.
     public static final String MDL_ISSUER_CERTIFICATE_PEM = """
             -----BEGIN CERTIFICATE-----
             MIICqzCCAlCgAwIBAgIULSsWFZgeqNOj8G3xd228JGgWiOUwCgYIKoZIzj0EAwIw
@@ -75,7 +75,7 @@ public enum CredentialProfile {
         this.mappers = mappers;
     }
 
-    /** The credential the subject is read from, and the claim of it that carries the subject. */
+    /** Names the credential the subject is read from and the claim of that credential carrying it. */
     public String principalAttributes() {
         return principalAttributes;
     }

@@ -18,12 +18,11 @@ package de.arbeitsagentur.keycloak.oid4vp.conformance.runner;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.net.URI;
 
-// A running conformance module: the runner creation response and the latest module info
 public record ModuleRun(JsonNode created, JsonNode info) {
 
     /**
-     * The authorization endpoint of the module's wallet. Exported by newer suite versions;
-     * otherwise derived from the module URL.
+     * Returns the authorization endpoint of the module's wallet. The suite exports it in the module
+     * info, and without that export it is derived from the module URL.
      */
     public URI authorizationEndpoint() {
         String exported = info.path("exported").path("authorization_endpoint").asText("");

@@ -40,10 +40,10 @@ class CredentialIdTest {
                 .isEqualTo(CredentialId.defaultFor(FORMAT_SD_JWT_VC, "urn:eudi:pid:1"));
     }
 
-    // The DCQL query and the claim mappers both resolve the id this way, so an id that DCQL cannot carry
-    // (a space is not a legal DCQL id character) resolves to the same derived id on both sides. Otherwise
-    // the wallet would be asked for the derived id while the mapper looked up the raw id and mapped
-    // nothing, silently dropping the claim.
+    // The DCQL query and the claim mappers both resolve the id this way, so an id that DCQL cannot
+    // carry (a space is not a legal DCQL id character) derives the same id on both sides. Otherwise
+    // the wallet would be asked for the derived id while the mapper looked up the raw id, and would
+    // map nothing, dropping the claim silently.
     @Test
     void resolve_invalidConfiguredId_fallsBackToDerivedIdOnBothSides() {
         String derived = CredentialId.defaultFor(FORMAT_SD_JWT_VC, "urn:eudi:pid:1");

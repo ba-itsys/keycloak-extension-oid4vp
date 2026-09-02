@@ -25,18 +25,15 @@ import java.util.Base64;
 import java.util.Map;
 
 /**
- * Generates QR codes for the OID4VP cross-device flow.
+ * Renders the wallet authorization URL as the QR code the user scans with a wallet on another device.
  *
- * <p>In the cross-device flow, the verifier displays a QR code containing the wallet authorization
- * URL ({@code openid4vp://...}). The user scans the QR code with their wallet app on another device.
- *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5">OID4VP 1.0 §5 — Authorization Request</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5">OID4VP 1.0 §5, Authorization Request</a>
  */
 public class Oid4vpQrCodeService {
 
     private static final int QR_CODE_MARGIN = 1;
 
-    /** Generates a Base64-encoded PNG QR code image for the given content string. */
+    /** Generates the QR code and returns it as a Base64-encoded PNG, ready for embedding in the login page. */
     public String generateQrCode(String content, int width, int height) {
         try {
             QRCodeWriter writer = new QRCodeWriter();

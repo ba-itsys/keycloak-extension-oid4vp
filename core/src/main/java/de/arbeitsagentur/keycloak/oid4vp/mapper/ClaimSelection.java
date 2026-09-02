@@ -27,20 +27,18 @@ import java.util.TreeMap;
 import org.keycloak.util.JsonSerialization;
 
 /**
- * Reading a claim out of a presented credential, addressed by a {@link ClaimPath}.
- *
- * <p>Shared by the OID4VP mappers and by everything else that reads a configured claim, so a path
- * means the same everywhere: it resolves against the claims of an SD-JWT credential, and against the
- * namespace of an mDoc, which is where its data elements live.
+ * Reads a claim addressed by a {@link ClaimPath} out of a presented credential. The OID4VP mappers
+ * and everything else that reads a configured claim share this, so that a path means the same
+ * everywhere: it resolves against the claims of an SD-JWT credential and against the namespace of
+ * an mDoc, where its data elements live.
  */
 public final class ClaimSelection {
 
     private ClaimSelection() {}
 
     /**
-     * The node a path resolves against. For an mDoc that is the given namespace, falling back to the
-     * one named like the doctype and then, when the credential carries a single namespace, to that
-     * one.
+     * Returns the node a path resolves against, which for an mDoc is the given namespace, or the
+     * one named like the doctype when none is given, or the only namespace the credential carries.
      */
     public static JsonNode claimsRoot(PresentedCredential credential, String namespace) {
         JsonNode claims = credential.claimsNode();
@@ -56,8 +54,8 @@ public final class ClaimSelection {
     }
 
     /**
-     * The values the path selects, empty when it selects nothing. A single selected array is read as
-     * its elements, which is how a mapper writes multiple values of one claim.
+     * Returns the values the path selects, reading a single selected array as its elements, which
+     * is how a mapper writes several values of one claim.
      */
     public static List<String> values(ClaimPath path, JsonNode claimsRoot) {
         List<JsonNode> matches = path.select(claimsRoot);
@@ -77,8 +75,8 @@ public final class ClaimSelection {
     }
 
     /**
-     * The value as a string. An object or array is serialized with its keys ordered, so the same
-     * claim always reads the same, whatever order a wallet rendered it in.
+     * Returns the value as a string, serializing an object or array with its keys ordered so that
+     * the same claim always reads the same whatever order a wallet rendered it in.
      */
     public static String value(JsonNode node) {
         if (node.isValueNode()) {

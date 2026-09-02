@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
+import de.arbeitsagentur.keycloak.oid4vp.trust.EtsiTrustListIdentityProviderConfig;
 import io.github.dominikschlosser.eudi.CredentialFormat;
 import io.github.dominikschlosser.eudi.IssueRequest;
 import java.util.List;
@@ -33,10 +34,11 @@ import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
 /**
- * End to end coverage of one credential entry accepting several VCTs: the mappers name the EUDI
- * PID and the German PID together, the DCQL entry lists both in {@code vct_values}, and a wallet
- * holding either PID signs in through the same mappers. The two rulebooks name the birth name
- * differently, which the alternative claim of the birth name mapper bridges.
+ * End to end coverage of one credential entry accepting several VCTs. Mappers that name the EUDI PID
+ * and the German PID together produce a DCQL entry listing both in {@code vct_values}, so a wallet
+ * holding either one signs in through the same mappers. Where the two rulebooks name the birth name
+ * differently, the alternative claim of the birth name mapper bridges the difference, and a request
+ * naming the EUDI PID alone is answered by the German PID as its derived type.
  */
 @KeycloakIntegrationTest(config = Oid4vpServerConfig.class)
 class KeycloakOid4vpCredentialTypesE2eIT extends AbstractOid4vpE2eTest {
@@ -80,7 +82,7 @@ class KeycloakOid4vpCredentialTypesE2eIT extends AbstractOid4vpE2eTest {
         deleteAllOid4vpUsers();
         replaceDcqlMappers(bothPidMappers());
 
-        // The German PID rulebook has no administrative number, so the test principal is added.
+        // The German PID rulebook has no administrative number, so the principal claim is added here.
         wallet().client().deleteCredentialsByType(SD_JWT_PID_VCT);
         wallet().client()
                 .issueCredential(IssueRequest.fromTemplate(GERMAN_PID_TEMPLATE).claim(PRINCIPAL_CLAIM, "DE-123456"));
@@ -99,7 +101,50 @@ class KeycloakOid4vpCredentialTypesE2eIT extends AbstractOid4vpE2eTest {
         }
     }
 
-    /** Mappers naming both PID types, reading the birth name under either rulebook's claim name. */
+    @Test
+    void germanPidSatisfiesARequestForTheEudiPidAndIsJudgedByItsTrustList() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        deleteAllOid4vpUsers();
+        replaceDcqlMappers(eudiPidMappers());
+        // The trust list serves the EUDI PID only, so the German PID is judged as its derived type.
+        setTrustIdpConfig(Map.of(EtsiTrustListIdentityProviderConfig.SERVED_CREDENTIAL_TYPES, SD_JWT_PID_VCT));
+
+        // PIDs in the field carry no aka_vcts, so the derivation has to rest on the URN alone.
+        wallet().client().deleteCredentialsByType(SD_JWT_PID_VCT);
+        wallet().client()
+                .issueCredential(IssueRequest.fromTemplate(GERMAN_PID_TEMPLATE)
+                        .claim(PRINCIPAL_CLAIM, "DE-123456")
+                        .omit("aka_vcts"));
+        try {
+            assertThat(wallet().client()
+                            .getCredentialsByType(GERMAN_PID_VCT)
+                            .get(0)
+                            .claims())
+                    .doesNotContainKey("aka_vcts");
+            assertThat(vctValuesOfFirstCredential(fetchCurrentRequestObject())).containsExactly(SD_JWT_PID_VCT);
+
+            performSameDeviceLogin("derived-pid-user");
+            flow.assertLoginSucceeded();
+
+            UserRepresentation user = singleOid4vpUser();
+            assertThat(user.getFirstName()).isEqualTo(walletPidClaim(GERMAN_PID_VCT, "given_name"));
+            assertThat(user.getLastName()).isEqualTo(walletPidClaim(GERMAN_PID_VCT, "birth_name"));
+        } finally {
+            setTrustIdpConfig(Map.of(EtsiTrustListIdentityProviderConfig.SERVED_CREDENTIAL_TYPES, ""));
+            wallet().client().deleteCredentialsByType(GERMAN_PID_VCT);
+            wallet().client().issueCredential(IssueRequest.pid(CredentialFormat.SD_JWT));
+        }
+    }
+
+    private static List<IdentityProviderMapperRepresentation> eudiPidMappers() {
+        IdentityProviderMapperRepresentation birthName =
+                sdJwtAttributeMapper("ct-birth-name", SD_JWT_PID_VCT, "birth_family_name", "lastName", null);
+        birthName.getConfig().put("claim.alternatives", "birth_name");
+        return List.of(
+                sdJwtAttributeMapper("ct-given-name", SD_JWT_PID_VCT, "given_name", "firstName", null), birthName);
+    }
+
     private static List<IdentityProviderMapperRepresentation> bothPidMappers() {
         IdentityProviderMapperRepresentation birthName =
                 sdJwtAttributeMapper("ct-birth-name", BOTH_PID_VCTS, "birth_family_name", "lastName", null);

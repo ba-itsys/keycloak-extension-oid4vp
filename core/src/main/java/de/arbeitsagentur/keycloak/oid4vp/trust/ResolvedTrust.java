@@ -32,20 +32,18 @@ import org.keycloak.common.VerificationException;
  *
  * @param issuanceTrust             X.509 trust anchors and policy for credential issuer chains
  *                                  (SD-JWT x5c, mDoc x5chain)
- * @param directIssuerCertificates  end entity certificates listed as issuance services whose keys
- *                                  are trusted directly when a credential carries no chain, each
- *                                  bound to the issuer it is trusted for
+ * @param directIssuerCertificates  end entity certificates listed as issuance services. Their keys
+ *                                  are trusted directly when a credential carries no chain. Each is
+ *                                  bound to the issuer it is trusted for.
  * @param trustedIssuerKeys         trusted issuer keys from providers that expose keys instead of
  *                                  X.509 anchors, each bound to the issuer it is trusted for
- * @param revocationCertificates    certificates of status list (revocation) services
- * @param trustedAuthorities        the DCQL {@code trusted_authorities} entries these providers
- *                                  advertise for the credential
- * @param hasDeclaredTrustSource    whether any trust material provider is configured. Derived from
- *                                  configuration, so it is the same whether or not the trust material
- *                                  is currently reachable: a credential type no provider serves and a
- *                                  declared source that resolves to no anchors (empty lists here) both
- *                                  make verification fail instead of falling back to trusting the
- *                                  issuer's own self-published metadata.
+ * @param hasDeclaredTrustSource    whether any trust material provider is configured. This is
+ *                                  derived from configuration alone, so it holds whether or not the
+ *                                  trust material is currently reachable. A credential type no
+ *                                  provider serves and a declared source that resolves to no
+ *                                  anchors both leave the lists empty and make verification fail
+ *                                  instead of falling back to the issuer's own self-published
+ *                                  metadata.
  */
 public record ResolvedTrust(
         List<X509TrustMaterial> issuanceTrust,
@@ -71,35 +69,33 @@ public record ResolvedTrust(
         return hasX509Trust() || !trustedIssuerKeys.isEmpty();
     }
 
-    /** Whether a presented certificate chain can be validated against this trust material. */
+    /** Returns whether a presented certificate chain can be validated against this trust material. */
     public boolean hasX509Trust() {
         return !issuanceTrust.isEmpty() || !directIssuerCertificates.isEmpty();
     }
 
-    /** Whether a presented certificate chain can be built to an anchor of this trust material. */
     public boolean hasCertificateChainAnchors() {
         return !issuanceTrust.isEmpty();
     }
 
     /**
-     * Whether a credential without a certificate chain can be verified: pinned issuer certificates
-     * and published issuer keys both identify the issuer key directly. Providers exposing them make
-     * a chainless credential a configured case rather than a missing chain.
+     * Returns whether a credential without a certificate chain can be verified. Pinned issuer
+     * certificates and published issuer keys both identify the issuer key directly, so a provider
+     * exposing either makes a chainless credential a configured case rather than a missing chain.
      */
     public boolean hasChainlessIssuerTrust() {
         return !directIssuerCertificates.isEmpty() || !trustedIssuerKeys.isEmpty();
     }
 
     /**
-     * Whether an issuer key route is configured for this credential. Providers that publish keys
-     * make the {@code kid} route legitimate, so discovering keys from the credential's own issuer
-     * metadata is not needed.
+     * Returns whether an issuer key route is configured for this credential. A provider that
+     * publishes keys makes the {@code kid} route legitimate, so keys need not be discovered from
+     * the credential's own issuer metadata.
      */
     public boolean hasIssuerKeyTrust() {
         return !trustedIssuerKeys.isEmpty();
     }
 
-    /** The trusted keys usable for a credential of the given issuer and JOSE {@code kid}. */
     public List<TrustedIssuerKey> issuerKeysFor(String issuer, String keyId) {
         return trustedIssuerKeys.stream()
                 .filter(key -> key.trustedFor(issuer))
@@ -108,9 +104,9 @@ public record ResolvedTrust(
     }
 
     /**
-     * The directly trusted certificates usable for a credential of the given issuer. Used where a
-     * credential names no certificate and its bare key is taken on trust, which is the case that
-     * needs the issuer to match.
+     * Returns the directly trusted certificates usable for a credential of the given issuer. This
+     * serves the case where a credential names no certificate and its bare key is taken on trust,
+     * which is exactly where the issuer has to match.
      */
     public List<X509Certificate> issuerCertificatesFor(String issuer) {
         return directIssuerCertificates.stream()
@@ -120,9 +116,9 @@ public record ResolvedTrust(
     }
 
     /**
-     * Every directly trusted certificate, whichever issuer it belongs to. Used where a credential
-     * presents the certificate itself, so matching it is already the stronger statement, and by the
-     * formats that have no issuer identifier to match against.
+     * Returns every directly trusted certificate, whichever issuer it belongs to. This serves the
+     * case where a credential presents the certificate itself, because matching the certificate is
+     * the stronger statement, and the formats that have no issuer identifier to match against.
      */
     public List<X509Certificate> pinnedCertificates() {
         return directIssuerCertificates.stream()
@@ -132,30 +128,31 @@ public record ResolvedTrust(
 
     /**
      * Validates a credential issuer certificate chain and returns the leaf key. A chain whose leaf
-     * is a directly trusted issuer certificate is accepted after a validity check; otherwise the
-     * chain must build a PKIX path to the anchors of one of the issuance trust materials,
-     * honoring that material's extended key usage policy.
+     * is a directly trusted issuer certificate is accepted after a validity check. Otherwise the
+     * chain must build a PKIX path to the anchors of one of the issuance trust materials. That
+     * material's extended key usage policy applies.
      */
     public PublicKey validateIssuerChain(List<X509Certificate> chain) throws VerificationException {
         return validateIssuerChain(chain, null);
     }
 
     /**
-     * Validates a credential issuer certificate chain for a credential of the given issuer and returns
-     * the leaf key. When {@code issuer} is non-null (formats that name their issuer, such as SD-JWT),
-     * only directly trusted certificates bound to that issuer satisfy the pinned fast path, and a chain
-     * built to the PKIX anchors is additionally bound to the issuer through the leaf certificate's
-     * subject alternative names, so a certificate trusted for one issuer cannot validate a credential
-     * claiming another. When {@code issuer} is null (formats without an issuer identifier, such as
-     * mDoc), every pinned certificate is eligible and the trust material's credential-type scope keeps
-     * trust domains apart.
+     * Validates a credential issuer certificate chain for a credential of the given issuer and
+     * returns the leaf key.
      *
-     * <p>A chain whose leaf is itself one of the configured trust anchors is complete without path
-     * building: the trust source pins that exact certificate, so only its validity window is
-     * checked. Path building could never accept it anyway, because a leaf must be an end entity
-     * certificate. This is how an mDoc signed directly by a trust listed self-signed document
-     * signer certificate validates, such as the OpenID conformance suite's hard-coded mDL signer
-     * (conformance-suite issue #1663).
+     * <p>A non-null {@code issuer} comes from formats that name their issuer, such as SD-JWT. Only
+     * directly trusted certificates bound to that issuer satisfy the pinned fast path. A chain built
+     * to the PKIX anchors is bound to the issuer as well, through the subject alternative names of
+     * the leaf certificate. A certificate trusted for one issuer can therefore not validate a
+     * credential claiming another.
+     *
+     * <p>A null {@code issuer} comes from formats without an issuer identifier, such as mDoc. Every
+     * pinned certificate is then eligible, and the credential type scope of the trust material is
+     * what keeps the trust domains apart. A chain whose leaf is itself one of the configured trust
+     * anchors is complete without path building: the trust source pins that exact certificate, so
+     * only its validity window is checked, and path building could never accept it anyway because a
+     * leaf must be an end entity certificate. An mDoc signed directly by a trust listed self-signed
+     * document signer certificate validates this way.
      */
     public PublicKey validateIssuerChain(List<X509Certificate> chain, String issuer) throws VerificationException {
         if (chain.isEmpty()) {
@@ -193,18 +190,17 @@ public record ResolvedTrust(
         throw firstFailure;
     }
 
-    /** Whether the certificate is itself one of the configured PKIX trust anchors. */
     private boolean isTrustAnchor(X509Certificate certificate) {
         return issuanceTrust.stream()
                 .anyMatch(material -> material.trustAnchors().contains(certificate));
     }
 
     /**
-     * Binds the credential's {@code iss} to the validated leaf certificate: the value must appear as
-     * a uniformResourceIdentifier subject alternative name of the leaf, or its host as a dNSName
-     * entry for an HTTPS issuer. SD-JWT VC (draft-ietf-oauth-sd-jwt-vc-13, section 3.5) identifies
-     * the issuer of an x5c credential by the end-entity certificate; this check is how that
-     * certificate and the {@code iss} claim are held together.
+     * Binds the credential's {@code iss} to the validated leaf certificate. The value must appear
+     * as a uniformResourceIdentifier subject alternative name of the leaf. For an HTTPS issuer its
+     * host may appear as a dNSName entry instead. SD-JWT VC (draft-ietf-oauth-sd-jwt-vc-13,
+     * section 3.5) identifies the issuer of an x5c credential by the end entity certificate. This
+     * check holds that certificate and the {@code iss} claim together.
      */
     private static void requireIssuerMatchesLeafSan(X509Certificate leaf, String issuer) throws VerificationException {
         Collection<List<?>> subjectAlternativeNames;

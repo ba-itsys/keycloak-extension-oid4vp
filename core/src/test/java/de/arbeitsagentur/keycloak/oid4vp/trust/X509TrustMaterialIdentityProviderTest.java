@@ -116,7 +116,6 @@ class X509TrustMaterialIdentityProviderTest {
                 .isNull();
     }
 
-    /** Minimal provider double exposing fixed X.509 trust material. */
     private static class TrustMaterialDouble implements X509TrustMaterialIdentityProvider<IdentityProviderModel> {
 
         private final List<X509TrustMaterial> materials;

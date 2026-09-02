@@ -44,14 +44,10 @@ import org.keycloak.models.IdentityProviderMapperModel;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Builds DCQL (Digital Credentials Query Language) queries for OID4VP authorization requests.
+ * Builds the DCQL (Digital Credentials Query Language) query that tells the wallet which credential
+ * types and claims the verifier requires, for both the SD-JWT VC and the mDoc (ISO 18013-5) format.
  *
- * <p>DCQL queries specify which credential types and claims the verifier requires from the wallet.
- * This builder constructs the query from configured IdP mapper settings or programmatically added
- * credential types. Supports claim sets driven by per-mapper claim set ids, multi-credential sets,
- * and both SD-JWT VC and mDoc (ISO 18013-5) credential formats.
- *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6">OID4VP 1.0 §6 — DCQL Query</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6">OID4VP 1.0 §6, DCQL Query</a>
  */
 public class DcqlQueryBuilder {
 
@@ -69,7 +65,6 @@ public class DcqlQueryBuilder {
         this.objectMapper = objectMapper;
     }
 
-    /** Adds a credential under the id derived from its format and type. */
     public DcqlQueryBuilder addCredentialType(String format, String type, List<ClaimSpec> claimSpecs) {
         return addCredentialType(CredentialId.defaultFor(format, type), format, type, claimSpecs);
     }
@@ -79,7 +74,6 @@ public class DcqlQueryBuilder {
         return addCredentialType(credentialId, format, List.of(type), claimSpecs);
     }
 
-    /** Adds a credential accepting any of the given types, see {@link CredentialTypeSpec#types()}. */
     public DcqlQueryBuilder addCredentialType(
             String credentialId, String format, List<String> types, List<ClaimSpec> claimSpecs) {
         credentialTypes.put(
@@ -88,8 +82,8 @@ public class DcqlQueryBuilder {
     }
 
     /**
-     * Sets the DCQL {@code credential_sets} constraints. Without them the query carries no
-     * {@code credential_sets} member, which per DCQL means every credential is required.
+     * Sets the DCQL {@code credential_sets} constraints. Leaving them empty writes no
+     * {@code credential_sets} member, which per DCQL makes every credential required.
      */
     public DcqlQueryBuilder setCredentialSets(List<CredentialSet> credentialSets) {
         this.credentialSets = credentialSets != null ? List.copyOf(credentialSets) : List.of();
@@ -97,12 +91,12 @@ public class DcqlQueryBuilder {
     }
 
     /**
-     * Sets the {@code trusted_authorities} entries per credential id. They are not a verifier-wide
-     * policy: each credential advertises what the trust material identity providers serving its
-     * credential type expose, so a credential from a trusted list and one from a private trust
+     * Sets the {@code trusted_authorities} entries per credential id. They are not a verifier wide
+     * policy: each credential advertises only what the trust material identity providers serving
+     * its credential type expose, so a credential from a trusted list and one from a private trust
      * domain carry different entries.
      *
-     * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1.1">OID4VP 1.0 §6.1.1 — Trusted Authorities Query</a>
+     * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1.1">OID4VP 1.0 §6.1.1, Trusted Authorities Query</a>
      */
     public DcqlQueryBuilder setTrustedAuthorities(
             Map<String, List<TrustedAuthority>> trustedAuthoritiesByCredentialId) {
@@ -113,7 +107,6 @@ public class DcqlQueryBuilder {
         return this;
     }
 
-    /** Builds the DCQL query JSON string from the configured credential types and claims. */
     public String build() {
         if (credentialTypes.isEmpty()) {
             throw new IllegalStateException(
@@ -143,7 +136,6 @@ public class DcqlQueryBuilder {
         }
     }
 
-    /** Creates a builder pre-populated from aggregated mapper credential type specifications. */
     public static DcqlQueryBuilder fromMapperSpecs(
             ObjectMapper objectMapper,
             Map<String, CredentialTypeSpec> credentialTypes,
@@ -157,14 +149,11 @@ public class DcqlQueryBuilder {
     }
 
     /**
-     * Aggregates credential type specifications from the given OID4VP claim mappers, keyed by the
-     * credential id the mappers resolve to. The mapper's provider id determines the credential
-     * format; its configuration carries the credential types, credential id, claim path, mDoc
-     * namespace, and claim set ids. Mappers sharing a credential id form one credential entry that
-     * accepts every type any of them names, so the same credential type can be requested more than
-     * once with different claims, and a mapper may name several types for one entry. An mDoc entry
-     * accepts one doctype only. Credentials are ordered by id so the generated query does not depend
-     * on mapper enumeration order.
+     * Aggregates the credential entries from the OID4VP claim mappers, keyed by credential id.
+     * Mappers sharing a credential id form a single entry that accepts every type any of them
+     * names, while an mDoc entry is limited to one doctype because DCQL takes a single
+     * {@code doctype_value}. Entries are sorted by id so that the resulting query does not depend
+     * on the order in which the realm returns the mappers.
      */
     public static AggregatedCredentials aggregateFromMappers(
             Stream<IdentityProviderMapperModel> mappers, Oid4vpConfigProvider config) {
@@ -224,8 +213,8 @@ public class DcqlQueryBuilder {
 
             if (!config.isTransientUsersEnabled()) {
                 // The claim carrying the subject is requested from the credentials named as
-                // principal attributes, each the claim it was named with, so a credential that
-                // never answers for the subject is not asked for it.
+                // principal attributes. Each credential is asked for the claim it was named with.
+                // A credential that never answers for the subject is not asked for it.
                 Map<String, PrincipalAttribute> principalByCredentialId = new LinkedHashMap<>();
                 config.getPrincipalAttributes()
                         .forEach(principal -> principalByCredentialId.put(principal.credentialId(), principal));
@@ -261,13 +250,8 @@ public class DcqlQueryBuilder {
         return new AggregatedCredentials(result, List.copyOf(problems));
     }
 
-    /**
-     * The credentials the mappers request, keyed by credential id, together with the configuration
-     * problems found while aggregating them.
-     */
     public record AggregatedCredentials(Map<String, CredentialTypeSpec> credentials, List<String> problems) {}
 
-    /** The DCQL credential format covered by the given mapper provider id, or null for other mappers. */
     private static String formatOfMapper(String mapperProviderId) {
         return switch (mapperProviderId) {
             case OID4VPSdJwtUserAttributeMapper.PROVIDER_ID, OID4VPSdJwtUserSessionAttributeMapper.PROVIDER_ID ->
@@ -279,9 +263,8 @@ public class DcqlQueryBuilder {
     }
 
     /**
-     * The claim a mapper requests, under the slugged mapper name as claim id so the generated
-     * {@code claim_sets} read like the mapper configuration. An alternative path equal to the
-     * claim path is dropped, as it would request the same claim twice.
+     * Builds the claim of one mapper, giving it the slugged mapper name as its id so that the generated
+     * {@code claim_sets} read like the configuration an admin sees.
      */
     private static ClaimSpec claimSpecOfMapper(
             IdentityProviderMapperModel mapper, String format, String type, String claimPath) {
@@ -303,16 +286,15 @@ public class DcqlQueryBuilder {
         return claimSpec.withId(claimIdOfMapper(mapper)).withAlternativePaths(alternativePaths);
     }
 
-    /** The DCQL claim id derived from the mapper name, or null for a mapper without one. */
     private static String claimIdOfMapper(IdentityProviderMapperModel mapper) {
         String name = mapper.getName();
         return StringUtil.isBlank(name) ? null : DcqlId.slug(name.trim());
     }
 
     /**
-     * The claim spec that requests the subject of one credential. The configured path starts at the
-     * root of the presentation, so for an mDoc its first step is the namespace DCQL asks for
-     * separately.
+     * Builds the claim that requests the subject of one credential. The configured path starts at
+     * the root of the presentation, so for an mDoc its first step is the namespace, which DCQL asks
+     * for separately.
      */
     private static ClaimSpec principalClaim(PrincipalAttribute principal, CredentialTypeKey typeKey) {
         if (principal == null) {
@@ -323,7 +305,7 @@ public class DcqlQueryBuilder {
         }
         String namespace = principal.mdocNamespace();
         if (namespace == null) {
-            // The path names no namespace, so it cannot address a data element of this credential.
+            // Without a namespace the path cannot address a data element of an mDoc.
             return null;
         }
         return ClaimSpec.mdoc(namespace, principal.mdocElementPath());
@@ -347,7 +329,6 @@ public class DcqlQueryBuilder {
         return credential;
     }
 
-    /** The type constraint: every accepted VCT of an SD-JWT entry, the single doctype of an mDoc entry. */
     private Map<String, Object> buildMetaConstraint(CredentialTypeSpec typeSpec) {
         Map<String, Object> meta = new LinkedHashMap<>();
         if (FORMAT_MSO_MDOC.equals(typeSpec.format())) {
@@ -359,21 +340,14 @@ public class DcqlQueryBuilder {
     }
 
     /**
-     * Adds the credential's claims and, when any claim declares claim set ids or alternative paths,
-     * a {@code claim_sets} entry with the options {@link CredentialTypeSpec#claimSetOptionIndexes()}
-     * computes. The option order expresses the verifier's preference; wallets use the first option
-     * they can satisfy.
+     * Adds the claims, along with the {@code claim_sets} options whenever a claim carries claim set
+     * ids or alternatives. The option order expresses the verifier's preference, since a wallet
+     * takes the first option it can satisfy.
      *
-     * <p>Claims are addressed by their claims path pointer, and a query points to the same claim at
-     * most once (OID4VP 1.0 §6.1). Mappers that read the same claim into different places therefore
-     * share one entry, as do mDoc mappers that read different parts of one data element, because a
-     * claims path pointer into an mDoc names the namespace and the data element and nothing below it.
-     * The shared entry keeps the id of the first claim requesting it, and options that collapse to
-     * the same claim ids are emitted once.
-     *
-     * <p>A claim is requested under the id its spec carries, which the aggregation derives from the
-     * mapper name; a second spec naming an already used id for another claim gets a numbered
-     * suffix, and a spec without an id is numbered.
+     * <p>Claims are keyed by their DCQL path because a query may point to a claim only once (OID4VP
+     * 1.0 §6.1), so mappers reading the same claim share one entry under the id of the first of
+     * them. mDoc mappers reading different parts of one data element share an entry as well,
+     * because an mDoc path stops at the element.
      */
     private void addClaims(Map<String, Object> credential, CredentialTypeSpec typeSpec) {
         List<ClaimSpec> requestedClaims = typeSpec.requestedClaims();
@@ -428,17 +402,14 @@ public class DcqlQueryBuilder {
             credentialSet.put(DCQL_PURPOSE, configuredSet.purpose());
         }
         credentialSet.put(DCQL_OPTIONS, configuredSet.options());
-        // DCQL defaults required to true, so it is only written when the set is optional.
+        // DCQL defaults required to true, so it only needs writing when the set is optional.
         if (!configuredSet.required()) {
             credentialSet.put(DCQL_REQUIRED, false);
         }
         return credentialSet;
     }
 
-    /**
-     * The credential id a mapper contributes to: its explicit id, or the one derived from the format
-     * and the first credential type.
-     */
+    /** Resolves the credential id a mapper contributes to, falling back to one derived from format and first type. */
     private static String credentialIdOfMapper(IdentityProviderMapperModel mapper, CredentialTypeKey typeKey) {
         String configured = mapper.getConfig().get(AbstractOID4VPClaimMapper.CREDENTIAL_ID);
         if (StringUtil.isNotBlank(configured) && !CredentialId.isValid(configured.trim())) {
@@ -449,14 +420,12 @@ public class DcqlQueryBuilder {
         return CredentialId.resolve(configured, typeKey.format(), typeKey.firstType());
     }
 
-    /** The format and accepted types of one credential entry while the mappers are aggregated. */
     private record CredentialTypeKey(String format, List<String> types) {
 
         String firstType() {
             return types.get(0);
         }
 
-        /** This entry also accepting the given types, appended in their order. */
         CredentialTypeKey withTypes(List<String> moreTypes) {
             List<String> merged = new ArrayList<>(types);
             moreTypes.stream().filter(type -> !merged.contains(type)).forEach(merged::add);

@@ -25,10 +25,9 @@ import org.keycloak.provider.ProviderConfigurationBuilder;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Maps a data element of the presented mDoc credential to a user property or attribute. The claim
- * path addresses the element within the configured ISO 18013-5 namespace; deeper path steps
- * address into structured element values. Follows the design of the SD-JWT mappers of upstream
- * Keycloak's OID4VP work, which does not cover mDoc yet.
+ * Maps a data element of the presented mDoc credential to a user property or attribute, addressed
+ * by a claim path within the configured ISO 18013-5 namespace. Follows the design of the SD-JWT
+ * mappers of upstream Keycloak's OID4VP work, which does not cover mDoc yet.
  */
 public class OID4VPMdocUserAttributeMapper extends OID4VPSdJwtUserAttributeMapper {
 
@@ -62,7 +61,7 @@ public class OID4VPMdocUserAttributeMapper extends OID4VPSdJwtUserAttributeMappe
         return property;
     }
 
-    /** The effective namespace: the configured one, falling back to the doctype. */
+    /** Returns the configured namespace, falling back to the doctype. */
     static String namespace(IdentityProviderMapperModel mapperModel) {
         String namespace = mapperModel.getConfig().get(NAMESPACE);
         if (StringUtil.isNotBlank(namespace)) {
@@ -72,7 +71,6 @@ public class OID4VPMdocUserAttributeMapper extends OID4VPSdJwtUserAttributeMappe
         return StringUtil.isNotBlank(doctype) ? doctype.trim() : null;
     }
 
-    /** Whether an effective namespace is configured, shared by both mDoc mappers. */
     static boolean namespaceConfigured(IdentityProviderMapperModel mapperModel) {
         if (namespace(mapperModel) == null) {
             logger.warnf("No namespace or credential type configured for mapper %s", mapperModel.getName());

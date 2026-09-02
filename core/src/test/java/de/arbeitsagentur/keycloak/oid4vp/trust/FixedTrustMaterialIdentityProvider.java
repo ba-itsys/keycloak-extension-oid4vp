@@ -23,10 +23,6 @@ import org.keycloak.broker.provider.TrustMaterialRequest;
 import org.keycloak.jose.jwk.JWK;
 import org.keycloak.models.IdentityProviderModel;
 
-/**
- * Trust material identity provider double that serves fixed material for the credential types it
- * declares, so tests can compose trust domains the way an admin composes provider instances.
- */
 public class FixedTrustMaterialIdentityProvider implements Oid4vpTrustMaterialIdentityProvider<IdentityProviderModel> {
 
     private final ResolvedTrust trust;

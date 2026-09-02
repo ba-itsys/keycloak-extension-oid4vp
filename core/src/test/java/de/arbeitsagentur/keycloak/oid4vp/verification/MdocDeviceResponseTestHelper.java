@@ -54,8 +54,8 @@ import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 
 /**
- * Test helper for building complete mDoc DeviceResponse CBOR structures
- * with issuerAuth, deviceAuth, MSO (valueDigests, validityInfo, deviceKeyInfo).
+ * Builds complete mDoc DeviceResponse CBOR structures for tests, with issuerAuth, deviceAuth and
+ * an MSO carrying valueDigests, validityInfo and deviceKeyInfo.
  */
 class MdocDeviceResponseTestHelper {
 
@@ -106,8 +106,8 @@ class MdocDeviceResponseTestHelper {
     }
 
     /**
-     * Signs with a self-signed certificate carrying a CA profile (CA:TRUE, keyCertSign), the shape
-     * of the OpenID conformance suite's hard-coded mDL document signer certificate.
+     * Signs with a self-signed certificate carrying a CA profile (CA:TRUE, keyCertSign). This is the
+     * shape of the OpenID conformance suite's hard-coded mDL document signer certificate.
      */
     MdocDeviceResponseTestHelper caProfileIssuerCert() throws Exception {
         X500Principal subject = new X500Principal("CN=Test mDoc CA Profile Issuer");
@@ -127,7 +127,6 @@ class MdocDeviceResponseTestHelper {
         return this;
     }
 
-    /** A Mobile Security Object docType differing from the document-level one. */
     MdocDeviceResponseTestHelper msoDocType(String msoDocType) {
         this.msoDocType = msoDocType;
         return this;
@@ -139,7 +138,6 @@ class MdocDeviceResponseTestHelper {
         return this;
     }
 
-    /** Flips a byte of the device signature after signing. */
     MdocDeviceResponseTestHelper tamperDeviceSignature() {
         this.tamperDeviceSignature = true;
         return this;
@@ -155,19 +153,16 @@ class MdocDeviceResponseTestHelper {
         return this;
     }
 
-    /** Builds a Mobile Security Object without validityInfo. */
     MdocDeviceResponseTestHelper withoutValidityInfo() {
         this.omitValidityInfo = true;
         return this;
     }
 
-    /** Builds validityInfo without its mandatory validUntil timestamp. */
     MdocDeviceResponseTestHelper withoutValidUntil() {
         this.omitValidUntil = true;
         return this;
     }
 
-    /** Renders validFrom as the given raw string instead of a well-formed timestamp. */
     MdocDeviceResponseTestHelper rawValidFrom(String rawValidFrom) {
         this.rawValidFrom = rawValidFrom;
         return this;
@@ -185,25 +180,20 @@ class MdocDeviceResponseTestHelper {
         return this;
     }
 
-    /**
-     * Builds a complete DeviceResponse with issuerAuth, deviceAuth, and MSO.
-     *
-     * @param sessionTranscript the session transcript CBOR to sign in deviceAuth (null to skip deviceAuth)
-     */
+    /** Builds a complete DeviceResponse; a null session transcript leaves deviceAuth out. */
     String build(CBORItemList sessionTranscript) throws Exception {
         return build(sessionTranscript, false);
     }
 
     /**
      * Builds a complete DeviceResponse whose first presented element value differs from the value the
-     * MSO digest was computed over, so digest verification must reject it.
+     * MSO digest is computed over. Digest verification must reject it.
      */
     String buildWithTamperedElementValue(CBORItemList sessionTranscript) throws Exception {
         return build(sessionTranscript, true);
     }
 
     private String build(CBORItemList sessionTranscript, boolean tamperFirstElementValue) throws Exception {
-        // Build IssuerSignedItems and compute digests
         List<CBORItem> elements = new ArrayList<>();
         List<CBORPair> digestPairs = new ArrayList<>();
         MessageDigest digest = MessageDigest.getInstance(digestAlgorithm);
@@ -219,7 +209,7 @@ class MdocDeviceResponseTestHelper {
             byte[] itemBytes = item.encode();
             CBORTaggedItem taggedItem = new CBORTaggedItem(24, new CBORByteArray(itemBytes));
 
-            // Digest is taken over the tag-24 wrapped bytes of the genuine item.
+            // The digest covers the tag-24 wrapped bytes of the genuine item.
             byte[] itemDigest = digest.digest(taggedItem.encode());
             digestPairs.add(new CBORPair(new CBORInteger(i), new CBORByteArray(itemDigest)));
 
@@ -239,13 +229,10 @@ class MdocDeviceResponseTestHelper {
                 new CBORPairList(List.of(new CBORPair(new CBORString(namespace), new CBORItemList(elements))));
         CBORPairList digestMap = new CBORPairList(digestPairs);
 
-        // Build MSO
         CBORPairList mso = buildMso(digestMap);
 
-        // Build issuerAuth (COSE_Sign1 over MSO)
         CBORItem issuerAuth = buildIssuerAuth(mso);
 
-        // Build document
         List<CBORPair> docPairs = new ArrayList<>();
         docPairs.add(new CBORPair(new CBORString("docType"), new CBORString(docType)));
         docPairs.add(new CBORPair(
@@ -254,14 +241,12 @@ class MdocDeviceResponseTestHelper {
                         new CBORPair(new CBORString("nameSpaces"), nameSpaces),
                         new CBORPair(new CBORString("issuerAuth"), issuerAuth)))));
 
-        // Build deviceSigned (if session transcript provided)
         if (sessionTranscript != null) {
             docPairs.add(new CBORPair(new CBORString("deviceSigned"), buildDeviceSigned(sessionTranscript)));
         }
 
         CBORPairList document = new CBORPairList(docPairs);
 
-        // Wrap in DeviceResponse
         CBORPairList root = new CBORPairList(List.of(
                 new CBORPair(new CBORString("documents"), new CBORItemList(document)),
                 new CBORPair(new CBORString("version"), new CBORString("1.0")),
@@ -276,7 +261,6 @@ class MdocDeviceResponseTestHelper {
     }
 
     private CBORPairList buildMso(CBORPairList digestMap) {
-        // validityInfo
         String validFromValue = rawValidFrom != null ? rawValidFrom : validFrom.toString();
         List<CBORPair> validityPairs = new ArrayList<>(List.of(
                 new CBORPair(new CBORString("signed"), new CBORTaggedItem(0, new CBORString(validFrom.toString()))),
@@ -287,12 +271,10 @@ class MdocDeviceResponseTestHelper {
         }
         CBORPairList validityInfo = new CBORPairList(validityPairs);
 
-        // deviceKeyInfo with COSE key
         CBORPairList deviceKey = buildDeviceKey();
 
         CBORPairList deviceKeyInfo = new CBORPairList(List.of(new CBORPair(new CBORString("deviceKey"), deviceKey)));
 
-        // valueDigests
         CBORPairList valueDigests = new CBORPairList(List.of(new CBORPair(new CBORString(namespace), digestMap)));
 
         List<CBORPair> msoPairs = new ArrayList<>(List.of(
@@ -310,7 +292,6 @@ class MdocDeviceResponseTestHelper {
     }
 
     private CBORItem buildIssuerAuth(CBORPairList mso) throws Exception {
-        // Tag-24 wrap the MSO
         byte[] msoBytes = mso.encode();
         CBORTaggedItem taggedMso = new CBORTaggedItem(24, new CBORByteArray(msoBytes));
         byte[] payload = taggedMso.encode();
@@ -320,7 +301,6 @@ class MdocDeviceResponseTestHelper {
         var unprotectedHeader =
                 new COSEUnprotectedHeaderBuilder().x5chain(List.of(issuerCert)).build();
 
-        // Build sig structure and sign
         var sigStructure = new SigStructureBuilder()
                 .signature1()
                 .bodyAttributes(protectedHeader)
@@ -344,13 +324,11 @@ class MdocDeviceResponseTestHelper {
                 new CBORString(docType),
                 new CBORPairList(List.of())); // empty device nameSpaces
 
-        // Tag-24 wrap
         byte[] payload = new CBORTaggedItem(24, new CBORByteArray(deviceAuthentication.encode())).encode();
 
         var protectedHeader =
                 new COSEProtectedHeaderBuilder().alg(algorithm.coseAlgorithm()).build();
 
-        // Build sig structure and sign
         var sigStructure = new SigStructureBuilder()
                 .signature1()
                 .bodyAttributes(protectedHeader)
@@ -362,7 +340,6 @@ class MdocDeviceResponseTestHelper {
             signature[signature.length / 2] ^= 0x01;
         }
 
-        // Build device signature COSE_Sign1
         CBORItem deviceSignature = new COSESign1Builder()
                 .protectedHeader(protectedHeader)
                 .payload(payload)

@@ -48,7 +48,7 @@ import org.keycloak.util.KeyWrapperUtil;
  * <ol>
  *   <li>Prefer x5c validation: a pinned trusted leaf or a PKIX path to the issuance trust anchors</li>
  *   <li>Then the issuer keys the credential's trust domain publishes, matched on iss and kid</li>
- *   <li>Finally, when that trust domain publishes no keys, fall back to JWT VC issuer metadata</li>
+ *   <li>Finally, when no trust source is declared for the credential, fall back to JWT VC issuer metadata</li>
  * </ol>
  */
 public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
@@ -88,10 +88,10 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
             return directVerifiers;
         }
 
-        // Web-of-trust discovery from the credential's own issuer metadata is only a route when the
-        // verifier declares no trust source for this credential type. A declared source that resolves
-        // to nothing (for example a trust list that is momentarily unreachable) makes verification
-        // fail here rather than silently trusting whatever keys the issuer publishes about itself.
+        // Discovery from the credential's own issuer metadata is only a route when the verifier
+        // declares no trust source for this credential type. A declared source that resolves to
+        // nothing, an unreachable trust list for instance, fails verification here rather than
+        // silently trusting the keys the issuer publishes about itself.
         if (issuerMetadataResolver != null && !trust.hasIssuerKeyTrust() && !trust.hasDeclaredTrustSource()) {
             try {
                 ResolvedIssuerKey issuerKey = resolveIssuerKeyFromMetadata(issuerSignedJWT);
@@ -112,10 +112,10 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
     }
 
     /**
-     * Whether a certificate chain is mandatory for this credential. It is when the trust material
-     * serving the credential can only validate chains. Pinned issuer certificates and published
-     * issuer keys make a chainless credential a configured case, for example a credential signed
-     * with a key whose certificate is trusted directly.
+     * Returns whether a certificate chain is mandatory for this credential, which it is when the
+     * trust material serving the credential can only validate chains. Pinned issuer certificates
+     * and published issuer keys make a chainless credential a configured case instead, for example
+     * one signed with a key whose certificate is trusted directly.
      */
     private boolean requiresCertificateChain() {
         return trust.hasCertificateChainAnchors() && !trust.hasChainlessIssuerTrust();
@@ -140,8 +140,8 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
         String issuer = issuerSignedJWT.getPayload().path("iss").asText(null);
         try {
             List<X509Certificate> chain = X509CertificateChainValidator.decodeCertificateChain(x5c);
-            // Bind the chain to the credential's issuer, so a pinned certificate trusted for one issuer
-            // cannot validate a credential that claims to come from another.
+            // The chain is bound to the credential's issuer, so a pinned certificate trusted for one
+            // issuer cannot validate a credential that claims to come from another.
             PublicKey leafKey = trust.validateIssuerChain(chain, issuer);
             LOG.debug("SD-JWT x5c chain validated against trust material, using leaf certificate key");
             return List.of(toVerifierContext(leafKey));
@@ -182,10 +182,11 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
     }
 
     /**
-     * Verifiers for a credential that identifies its issuer key directly: pinned issuer
-     * certificates, and the trusted issuer keys published for this credential's {@code iss} that
-     * answer its {@code kid}. Binding the keys keeps trust domains apart, so a key published by one
-     * issuer cannot verify a credential claiming to come from another.
+     * Builds the verifiers for a credential that identifies its issuer key directly: the pinned
+     * issuer certificates trusted for this credential's {@code iss}, and the trusted issuer keys
+     * published for that {@code iss} that answer its {@code kid}. Binding them to the issuer keeps
+     * trust domains apart, so a key published by one issuer cannot verify a credential claiming to
+     * come from another.
      */
     private List<SignatureVerifierContext> directTrustVerifiers(IssuerSignedJWT issuerSignedJWT) {
         JWSHeader header = issuerSignedJWT.getJwsHeader();

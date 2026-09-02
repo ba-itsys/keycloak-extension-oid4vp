@@ -67,12 +67,9 @@ import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Keycloak Identity Provider implementation for OpenID for Verifiable Presentations (OID4VP) 1.0.
- *
- * <p>Enables Keycloak to act as an OID4VP verifier, accepting Verifiable Credentials from
- * digital wallets as a login mechanism. Supports same-device (wallet redirect) and cross-device
- * (QR code scanning) flows. The {@link #performLogin} method renders the login page with wallet
- * URLs and QR codes, while {@link #callback} returns the JAX-RS endpoint that handles wallet responses.
+ * Keycloak identity provider that acts as an OID4VP verifier and accepts verifiable credentials
+ * from a wallet as a login, over the same-device flow (wallet redirect) and the cross-device flow
+ * (QR code).
  *
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html">OID4VP 1.0</a>
  */
@@ -137,8 +134,8 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
             boolean crossDeviceEnabled =
                     crossDeviceConfigured && flowOfferedAt(getConfig().getCrossDeviceMaxLoa(), requestedLoa);
 
-            // The state of a flow above its ceiling is never created, so no request object exists
-            // for it and nothing a wallet posts can complete it.
+            // A flow above its LoA ceiling gets no state and no request object, so nothing a wallet
+            // posts can complete it.
             if (!sameDeviceEnabled && !crossDeviceEnabled && (sameDeviceConfigured || crossDeviceConfigured)) {
                 LOG.debugf(
                         "OID4VP IdP '%s': no flow is offered at the requested level of authentication %d",
@@ -171,10 +168,10 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     }
 
     /**
-     * The presentation flow travels as a user session note so tokens can surface it without a
-     * mapper. Keycloak's first broker login clears the user session notes, so the note is set on
-     * every hook: preprocessing runs before the first broker login, the user centric hooks after
-     * it.
+     * Stores the presentation flow as a user session note so that tokens can carry it without a
+     * mapper. Keycloak's first broker login clears the user session notes, so every hook sets the
+     * note again: preprocessing runs before the first broker login and the user centric hooks run
+     * after it.
      */
     @Override
     public void preprocessFederatedIdentity(
@@ -249,10 +246,10 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     }
 
     /**
-     * The {@code trusted_authorities} entries of every credential, taken from the trust material
-     * identity providers serving its credential types. Only they know whether their trust domain can
-     * be advertised at all, so there is no verifier-wide setting to override them. An entry accepting
-     * several types advertises the trust domains of all of them.
+     * Collects the {@code trusted_authorities} entries for every credential from the trust material
+     * identity providers that serve its credential types. Only those providers know whether their
+     * trust domain may be advertised, so no verifier wide setting overrides them. An entry that
+     * accepts several types advertises the trust domains of all of them.
      */
     private static Map<String, List<TrustedAuthority>> trustedAuthorities(
             Map<String, CredentialTypeSpec> credentialTypes, CredentialTrustPlan trustPlan) {
@@ -266,10 +263,10 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     }
 
     /**
-     * The credential set configuration is validated again here because identity provider mappers
-     * have no validation hook: a mapper edited after the provider was last saved can invalidate a
-     * configuration the admin console accepted. Failing here is deliberate, since an inconsistent
-     * query would only be rejected by the wallet with an opaque error.
+     * Validates the credential set configuration again, because identity provider mappers have no
+     * validation hook and a mapper edited after the provider was last saved can invalidate a
+     * configuration the admin console accepted. Failing here is deliberate, since a wallet would
+     * reject an inconsistent query with an opaque error.
      */
     private List<CredentialSet> validatedCredentialSets(Map<String, CredentialTypeSpec> credentialTypes) {
         List<CredentialSet> credentialSets;
@@ -291,15 +288,14 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         return credentialSets;
     }
 
-    /** Resolves the configured trust material identity providers into a per credential type plan. */
     public CredentialTrustPlan resolveTrustPlan() {
         return trustMaterialResolver.resolvePlan(session, getConfig().getTrustMaterialIdps());
     }
 
     /**
-     * Warns about requested credential types that no trust material identity provider serves. Only
-     * reported once the providers declare credential types at all, because an unscoped provider
-     * serves everything and cannot leave a type uncovered.
+     * Warns about requested credential types that no trust material identity provider serves, but
+     * only when the providers declare credential types at all, because an unscoped provider serves
+     * everything and cannot leave a type uncovered.
      */
     private void warnIfCredentialTypesAreUnserved(
             Map<String, CredentialTypeSpec> credentialTypes, CredentialTrustPlan trustPlan) {
@@ -315,9 +311,9 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     }
 
     /**
-     * The level of authentication the client requested, as Keycloak derives it from the acr_values
-     * or claims parameter through the realm or client ACR-to-LoA mapping. OIDC and SAML both set
-     * the client note. {@link Constants#NO_LOA} when the request names none.
+     * Returns the level of authentication the client requested, or {@link Constants#NO_LOA} when
+     * the request names none. Keycloak derives the value from the acr_values or claims parameter
+     * through the realm or client ACR-to-LoA mapping, and both OIDC and SAML set the client note.
      */
     private static int requestedLevelOfAuthentication(AuthenticationSessionModel authSession) {
         String requestedLoa = authSession.getClientNote(Constants.REQUESTED_LEVEL_OF_AUTHENTICATION);
@@ -365,9 +361,9 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         FlowEntry crossDeviceFlow = null;
         String qrCodeBase64 = null;
 
-        // A failure here (for example an invalid credential-set configuration, see validatedCredentialSets)
-        // is deliberately not swallowed: it propagates to performLogin, which renders Keycloak's error
-        // page instead of a wallet login page with no button and no QR code.
+        // A failure here, an invalid credential set configuration for example, is deliberately not
+        // swallowed: it propagates to performLogin, which renders Keycloak's error page instead of
+        // a wallet login page with no button and no QR code.
         if (sameDeviceEnabled) {
             sameDeviceFlow = createFlowEntry(
                     request,

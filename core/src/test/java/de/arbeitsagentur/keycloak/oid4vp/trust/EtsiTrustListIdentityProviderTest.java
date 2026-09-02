@@ -301,12 +301,10 @@ class EtsiTrustListIdentityProviderTest {
         CountingTrustListProvider trustList = new CountingTrustListProvider(List.of(ca));
         EtsiTrustListIdentityProvider provider = new EtsiTrustListIdentityProvider(config, trustList, null);
 
-        // Everything a trust resolution asks the provider for, once for a first credential type.
         resolveAllTrustMaterial(provider);
         int issuancePullsOfFirstResolution = trustList.issuancePulls;
         int revocationPullsOfFirstResolution = trustList.revocationPulls;
 
-        // Two further credential types resolve against the same provider instance.
         resolveAllTrustMaterial(provider);
         resolveAllTrustMaterial(provider);
 
@@ -337,7 +335,6 @@ class EtsiTrustListIdentityProviderTest {
         assertThat(trustList.pulls).isEqualTo(2);
     }
 
-    /** Trust list double counting how often its certificates are pulled. */
     private static class CountingTrustListProvider extends TrustListProvider {
 
         private final List<X509Certificate> certificates;
@@ -362,7 +359,6 @@ class EtsiTrustListIdentityProviderTest {
         }
     }
 
-    /** Trust list double that cannot be reached. */
     private static class FailingTrustListProvider extends TrustListProvider {
 
         private int pulls;
@@ -378,7 +374,6 @@ class EtsiTrustListIdentityProviderTest {
         }
     }
 
-    /** Trust list double that serves fixed certificates and a fixed LoTE type. */
     private static class FixedTrustListProvider extends TrustListProvider {
 
         private final List<X509Certificate> certificates;

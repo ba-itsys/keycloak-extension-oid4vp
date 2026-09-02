@@ -34,8 +34,8 @@ import org.keycloak.crypto.KeyWrapper;
 
 /**
  * The values that decide whether a credential this Keycloak issued belongs to the presentation it
- * is shown in. Both sides of that decision run in different logins, so what matters is that the same
- * presentation always yields the same digest and a different one never does.
+ * is shown in. Both sides of that decision run in different logins, so the same presentation has
+ * to yield the same digest every time, and a different presentation never yields it.
  */
 class ReferenceCredentialBindingTest {
 
@@ -150,7 +150,7 @@ class ReferenceCredentialBindingTest {
 
     @Test
     void aSubjectIsNotTheBindingOfTheSameInput() {
-        // Both are HMACs of the same realm secret, so they are separated by their context string.
+        // Both are HMACs of the same realm secret. Their context strings keep them apart.
         assertThat(realm.subjectOf("value"))
                 .isNotEqualTo(realm.referenceBindingOf(presentation("value", "value"), null));
     }
@@ -194,7 +194,6 @@ class ReferenceCredentialBindingTest {
         return new PresentedCredentials(credentials);
     }
 
-    /** The same two credentials, in the given answer order. */
     private static Map<String, PresentedCredential> ordered(String first, String second) {
         Map<String, PresentedCredential> all =
                 presentation("Erika", "Mustermann").byCredentialId();
@@ -208,7 +207,6 @@ class ReferenceCredentialBindingTest {
         return new SecretKeySpec(material.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
     }
 
-    /** The realm secrets, as a typed double of what the session provides. */
     private record FixedRealmSecrets(SecretKey active, List<SecretKey> allAccepted)
             implements ReferenceCredentialBinding.RealmSecrets {}
 }

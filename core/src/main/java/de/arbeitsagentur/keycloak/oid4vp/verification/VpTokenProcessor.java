@@ -17,6 +17,8 @@ package de.arbeitsagentur.keycloak.oid4vp.verification;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
+import de.arbeitsagentur.keycloak.oid4vp.domain.ClaimedTypes;
+import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeHierarchy;
 import de.arbeitsagentur.keycloak.oid4vp.domain.MdocVerificationResult;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
@@ -37,18 +39,17 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Top-level processor for VP tokens received from wallets.
- *
- * <p>Handles format detection (SD-JWT vs mDoc), single-credential VP tokens,
- * signature verification (delegated to {@link SdJwtVerifier} / {@link MdocVerifier}),
- * trust validation, and revocation checking (via {@link StatusListVerifier}).
+ * Top level processor for VP tokens received from wallets, covering format detection (SD-JWT or
+ * mDoc), single and multi credential VP tokens, signature verification through
+ * {@link SdJwtVerifier} and {@link MdocVerifier}, trust validation, and revocation checking through
+ * {@link StatusListVerifier}.
  *
  * <p>Trust is selected per credential: a presentation is verified against the trust material of the
- * providers serving the credential type that was requested under the credential id the wallet
- * answered with. The requested id to credential type binding comes from the request context, never
- * from the presentation, so a wallet cannot choose the trust domain its credential is judged by.
+ * providers serving the credential type requested under the credential id the wallet answered with.
+ * The binding from requested id to credential type comes from the request context and never from
+ * the presentation, so a wallet cannot choose the trust domain its credential is judged by.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1">OID4VP 1.0 §8.1 — VP Token</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1">OID4VP 1.0 §8.1, VP Token</a>
  */
 public class VpTokenProcessor implements VpTokenVerifier {
 
@@ -119,7 +120,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
                 new CredentialTrustSelection(resolveTrustPlan(), request.requestedCredentials());
 
         try {
-            // Detect format: single credential or a JSON wrapper around one credential
+            // A JSON object is the credential id keyed wrapper. Anything else is a bare credential.
             if (request.vpToken().trim().startsWith("{")) {
                 return processMultiCredential(request, trust);
             }
@@ -153,8 +154,8 @@ public class VpTokenProcessor implements VpTokenVerifier {
                 String credentialId = entry.getKey();
                 for (String credential : extractCredentialStrings(entry.getValue())) {
                     VerifiedCredential cred = verifyCredential(credentialId, credential, request, trust);
-                    // Several presentations under one id answer the same request: the first one is
-                    // used, and an invalid duplicate aborts the login during its own verification.
+                    // Several presentations under one id answer the same request, so the first one
+                    // is used. An invalid duplicate aborts the login during its own verification.
                     if (cred != null) {
                         credentials.putIfAbsent(credentialId, cred);
                     }
@@ -186,7 +187,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
     private VerifiedCredential verifyCredential(
             String credentialId, String credential, Request request, CredentialTrustSelection trustSelection) {
 
-        ResolvedTrust trust = trustSelection.forCredentialId(credentialId, claimedType(credential));
+        ResolvedTrust trust = trustSelection.forCredentialId(credentialId, claimedTypes(credential));
         LOG.debugf(
                 "Credential '%s' is verified against %d trust anchor sets, %d direct issuer certificates and %d issuer keys",
                 credentialId,
@@ -199,7 +200,12 @@ public class VpTokenProcessor implements VpTokenVerifier {
                     credential, request.clientId(), request.expectedNonce(), trust, request.alternateResponseUri());
             statusListVerifier.checkRevocationStatus(result.claims(), trust.revocationCertificates());
             return new VerifiedCredential(
-                    credentialId, result.issuer(), result.credentialType(), result.claims(), PresentationType.SD_JWT);
+                    credentialId,
+                    result.issuer(),
+                    result.credentialType(),
+                    result.claims(),
+                    PresentationType.SD_JWT,
+                    result.alsoKnownAsTypes());
         }
 
         if (mdocVerifier.isMdoc(credential)) {
@@ -220,16 +226,18 @@ public class VpTokenProcessor implements VpTokenVerifier {
     }
 
     /**
-     * The credential type a presentation names before anything about it is verified: the SD-JWT
-     * {@code vct} or the mDoc {@code docType}. It only chooses among the types requested under the
-     * credential id, and the verified type is compared against the request afterwards, so a wallet
-     * cannot have a credential judged by the trust domain of a type it does not carry.
+     * Reads the types a presentation claims for itself before anything about it is verified: the
+     * SD-JWT {@code vct} with its {@code aka_vcts}, or the mDoc {@code docType}. Reading them
+     * unverified is safe because they only select among the types the query already requested, and
+     * the verified types are checked against the request again after verification, so a wallet
+     * cannot have its credential judged by the trust domain of a type it does not carry.
      */
-    private String claimedType(String credential) {
+    private ClaimedTypes claimedTypes(String credential) {
         if (sdJwtVerifier.isSdJwt(credential)) {
-            return sdJwtVerifier.peekVct(credential);
+            return sdJwtVerifier.peekTypes(credential);
         }
-        return mdocVerifier.isMdoc(credential) ? mdocVerifier.peekDocType(credential) : null;
+        String docType = mdocVerifier.isMdoc(credential) ? mdocVerifier.peekDocType(credential) : null;
+        return docType != null ? new ClaimedTypes(docType, List.of()) : null;
     }
 
     private byte[] decodeJwkThumbprint(String encoded) {
@@ -242,9 +250,8 @@ public class VpTokenProcessor implements VpTokenVerifier {
         }
     }
 
-    // Wallets in the field are inconsistent here: some bind the KB-JWT to client_id, others to
-    // response_uri. We try the configured client_id first and then one bounded fallback to the
-    // redirect flow's response_uri so interoperability does not depend on a single audience choice.
+    // Wallets bind the KB-JWT audience either to client_id or to response_uri, so the configured
+    // client_id is tried first with a single fallback to the redirect flow's response_uri.
     private SdJwtVerificationResult verifySdJwtWithFallback(
             String sdJwt, String clientId, String expectedNonce, ResolvedTrust trust, String alternateResponseUri) {
         try {
@@ -266,9 +273,10 @@ public class VpTokenProcessor implements VpTokenVerifier {
     /**
      * Resolves the trust material of one response, keyed by the credential id the wallet answered
      * under. An id that was not requested is rejected before any signature is verified, so an
-     * unknown id can never borrow the trust of a requested credential. An id requested with several
-     * types is judged by the trust domain of the type the presentation claims, provided that type
-     * was requested under the id.
+     * unknown id can never borrow the trust of a requested credential. The presentation is judged by
+     * the trust domain of the type it claims, as long as that type is requested under the id or
+     * derives from one (see {@link CredentialTypeHierarchy}). Without a readable type the first
+     * requested type is used, and the type check after verification then fails.
      */
     private static class CredentialTrustSelection {
 
@@ -282,9 +290,9 @@ public class VpTokenProcessor implements VpTokenVerifier {
             this.credentialTypesById = Map.copyOf(credentialTypesById);
         }
 
-        ResolvedTrust forCredentialId(String credentialId, String claimedType) {
+        ResolvedTrust forCredentialId(String credentialId, ClaimedTypes claimed) {
             if (credentialTypesById.isEmpty()) {
-                // A request that carries no DCQL query binds no id to a type, so only the providers
+                // A request without a DCQL query binds no id to a type, so only the providers
                 // serving every credential type can judge the response.
                 return trustPlan.forCredentialType(null);
             }
@@ -293,22 +301,22 @@ public class VpTokenProcessor implements VpTokenVerifier {
                 throw new IdentityBrokerException(
                         "VP token contains the credential id '" + credentialId + "', which was not requested");
             }
-            if (credentialTypes.size() == 1) {
+            if (claimed == null) {
                 return trustPlan.forCredentialType(credentialTypes.get(0));
             }
-            if (claimedType == null || !credentialTypes.contains(claimedType)) {
+            if (credentialTypes.stream().noneMatch(claimed::isOfType)) {
                 throw new IdentityBrokerException("The credential presented under the id '" + credentialId
-                        + "' names the type '" + claimedType + "', which is none of the requested types "
-                        + credentialTypes);
+                        + "' names the type '" + claimed.type() + "', which is none of the requested types "
+                        + credentialTypes + " and derives from none of them");
             }
-            return trustPlan.forCredentialType(claimedType);
+            return trustPlan.forCredential(claimed);
         }
 
         /**
-         * The credential id of a VP token that is a bare credential instead of the credential id
-         * keyed object OID4VP 1.0 §8.1 defines. It can only be attributed when exactly one
-         * credential was requested; otherwise the placeholder id is not among the requested ids
-         * and the presentation is rejected.
+         * Returns the credential id of a VP token that is a bare credential instead of the
+         * credential id keyed object OID4VP 1.0 §8.1 defines. It can only be attributed when
+         * exactly one credential is requested; with several, the placeholder id is not among the
+         * requested ids and the presentation is rejected.
          */
         String singleCredentialId() {
             if (credentialTypesById.size() == 1) {

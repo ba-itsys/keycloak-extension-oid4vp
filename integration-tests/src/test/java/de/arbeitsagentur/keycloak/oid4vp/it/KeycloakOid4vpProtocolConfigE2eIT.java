@@ -88,13 +88,14 @@ class KeycloakOid4vpProtocolConfigE2eIT extends AbstractOid4vpE2eTest {
 
         SignedJWT requestJwt = SignedJWT.parse(response.body());
         assertThat(requestJwt.getHeader().getAlgorithm().getName()).isEqualTo("ES256");
-        // HAIP requires the self-signed trust anchor to be excluded from x5c, so only the leaf
-        // remains when a leaf + self-signed CA chain is configured
+        // HAIP requires the self-signed trust anchor to be excluded from x5c, so a configured chain
+        // of leaf plus self-signed CA leaves only the leaf.
         assertThat(requestJwt.getHeader().getX509CertChain()).hasSize(1);
     }
 
     // A certificate without its private key cannot sign the request object it advertises, so the
-    // configuration is rejected at save instead of producing logins every wallet rejects.
+    // configuration is rejected at save time rather than letting every login produce a request object
+    // that every wallet rejects.
     @Test
     void certOnlyPemUnderCertificateBoundSchemeIsRejected() throws Exception {
         KeyPair leafKeyPair = TestCertificates.generateEcKeyPair();

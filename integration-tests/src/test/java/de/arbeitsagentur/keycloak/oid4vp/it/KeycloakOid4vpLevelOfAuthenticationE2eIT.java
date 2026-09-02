@@ -27,12 +27,12 @@ import org.junit.jupiter.api.Test;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
 /**
- * Documents the intended level-of-authentication usage pattern. The client maps the STORK QAA
- * ACR values to levels 3 and 4 ({@code acr.loa.map} in {@link Oid4vpRealmConfig}), the identity
- * provider caps the cross-device flow at level 3, and the eIDAS LoA mapper writes the level
- * configured for the flow the presentation finished in into the session, from where the client's
- * user session note protocol mapper carries it into the id token. A request for level 3 offers
- * both flows, a request for level 4 offers only the same-device flow.
+ * Documents the intended level of authentication usage pattern. The client maps the STORK QAA ACR
+ * values to levels 3 and 4 ({@code acr.loa.map} in {@link Oid4vpRealmConfig}) while the identity
+ * provider caps the cross-device flow at level 3, so a request for level 3 offers both flows and a
+ * request for level 4 only the same-device one. The eIDAS LoA mapper writes the level configured for
+ * the flow the presentation finished in into the session, from where the client's user session note
+ * protocol mapper carries it into the id token.
  */
 @KeycloakIntegrationTest(config = Oid4vpServerConfig.class)
 class KeycloakOid4vpLevelOfAuthenticationE2eIT extends AbstractOid4vpE2eTest {
@@ -115,7 +115,6 @@ class KeycloakOid4vpLevelOfAuthenticationE2eIT extends AbstractOid4vpE2eTest {
                 .contains("not available for the requested level of authentication");
     }
 
-    // A ceiling never suppresses logins that request no level.
     @Test
     void requestWithoutALevelOffersBothFlowsDespiteTheCeiling() {
         testApp().reset();

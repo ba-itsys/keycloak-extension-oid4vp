@@ -50,26 +50,21 @@ import org.keycloak.utils.StringUtil;
  * Binds an OID4VP login that carried no subject credential to the user who signed in.
  *
  * <p>A presentation without the subject credential identifies nobody, so the verifier continues the
- * login with a generated subject and the user signs in another way. This authenticator derives a
- * subject for that user and sets the brokered identity to its identity key, which the first broker
- * login flow then stores as the link. The credential the user receives carries that same subject, so
- * the next presentation reaches the same account. The subject is derived rather than being the user
- * id, so every verifier the credential is shown to reads an opaque value.
- *
- * <p>It then ends the login in Keycloak's credential offer, entitling the user first: the
- * entitlement is what carries the subject and the reference credential binding to the issuance.
+ * login with a generated subject and the user signs in another way. This authenticator then derives a
+ * subject for that user and sets the brokered identity to its identity key, so that the first broker
+ * login flow stores that key as the link and the credential the user receives afterwards carries the
+ * same subject, which makes the next presentation reach the same account. The subject is derived rather
+ * than the user id, so every verifier the credential is shown to reads an opaque value.
  *
  * <p>Place it in the first broker login flow after the step that authenticates the user. Logins that
- * carry a subject credential, and logins of other identity providers, pass through untouched.
+ * carry a subject credential pass through untouched, and so do logins of other identity providers.
  */
 public class Oid4vpSubjectBindingAuthenticator implements Authenticator, AuthenticatorFactory {
 
     public static final String PROVIDER_ID = "oid4vp-subject-binding";
 
-    /** Credential configuration of the issuer, which is what the credential offer offers. */
     public static final String CREDENTIAL_CONFIGURATION_ID = "credentialConfigurationId";
 
-    /** Client the credential offer is addressed to, which the wallet asks for the credential as. */
     public static final String OFFER_CLIENT_ID = "offerClientId";
 
     private static final Logger LOG = Logger.getLogger(Oid4vpSubjectBindingAuthenticator.class);
@@ -104,13 +99,11 @@ public class Oid4vpSubjectBindingAuthenticator implements Authenticator, Authent
     }
 
     /**
-     * Removes the link this identity provider already has to the user, so the first broker login
-     * flow can store the one this login establishes.
-     *
-     * <p>A user who lost the issued credential arrives here a second time, and Keycloak fails the
-     * first broker login flow with "already linked" for a user it has linked. Removing the link
-     * loses nothing: the subject is derived from the user, so the link stored a moment later holds
-     * the same identity.
+     * Removes the link this identity provider already has to the user, so that the first broker login
+     * flow can store the one this login establishes. A user who lost the issued credential arrives here
+     * a second time, and Keycloak fails the first broker login flow with "already linked" for a user it
+     * has linked. Removing the link loses nothing, because the subject is derived from the user and the
+     * link stored a moment later holds the same identity.
      */
     private static void clearExistingLink(AuthenticationFlowContext context, UserModel user, String identityProvider) {
         if (StringUtil.isBlank(identityProvider)) {
@@ -124,7 +117,7 @@ public class Oid4vpSubjectBindingAuthenticator implements Authenticator, Authent
     }
 
     /**
-     * Ends the login in Keycloak's credential offer required action, so the user receives the
+     * Ends the login in Keycloak's credential offer required action, so that the user receives the
      * credential that identifies them next time. The action reads which credential to offer from the
      * client note it is triggered with.
      */
@@ -158,8 +151,8 @@ public class Oid4vpSubjectBindingAuthenticator implements Authenticator, Authent
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
         try {
             authSession.setClientNote(Constants.KC_ACTION_PARAMETER, offerConfig.asEncodedParameter());
-            // Offered even when the user is entitled already: arriving here means the presentation
-            // carried no subject credential, so whatever the user holds does not identify them.
+            // The offer is made even when the user is entitled already, because arriving here means the
+            // presentation carried no subject credential and what the user holds does not identify them.
             authSession.addRequiredAction(OID4VCIConstants.VERIFIABLE_CREDENTIAL_OFFER_PROVIDER_ID);
         } catch (IOException e) {
             LOG.errorf(
@@ -170,9 +163,9 @@ public class Oid4vpSubjectBindingAuthenticator implements Authenticator, Authent
     }
 
     /**
-     * The offer of the credential. It is pre-authorized, because the user is authenticated in this
-     * login already and the wallet redeems it without authenticating again. Keycloak ties the
-     * pre-authorized code to this login session.
+     * Builds a pre-authorized credential offer. The user is authenticated in this login already, so the
+     * wallet redeems the offer without authenticating again and Keycloak ties the pre-authorized code to
+     * this login session.
      */
     static VerifiableCredentialOfferActionConfig offerFor(String credentialConfigurationId, String offerClientId) {
         VerifiableCredentialOfferActionConfig offerConfig = new VerifiableCredentialOfferActionConfig();
@@ -185,14 +178,12 @@ public class Oid4vpSubjectBindingAuthenticator implements Authenticator, Authent
     }
 
     /**
-     * Entitles the user to the credential, because Keycloak only offers a credential to a user who
-     * is entitled to it, and records on that entitlement what the credential says: the subject of
-     * this account and the reference credential binding of this presentation. The pre-authorized
-     * code is redeemed in a session of its own, so the entitlement is the only thing of this login
-     * the issuance sees.
-     *
-     * <p>An entitlement that exists already is replaced, so a login after a change of the bound
-     * claims issues a credential that matches the presentation of today.
+     * Entitles the user to the credential, because Keycloak only offers a credential to a user who is
+     * entitled to it. The entitlement records the subject of this account and the reference credential
+     * binding of this presentation, and since the pre-authorized code is redeemed in a session of its
+     * own, the entitlement is the only thing of this login the issuance sees. An entitlement that exists
+     * already is replaced, so a login after a change of the bound claims issues a credential that
+     * matches the presentation of today.
      */
     private static void entitleUser(
             AuthenticationFlowContext context,
@@ -206,7 +197,7 @@ public class Oid4vpSubjectBindingAuthenticator implements Authenticator, Authent
         credentialAttributes.put(ReferenceCredentialBinding.SUBJECT_ATTRIBUTE, List.of(subject));
         String referenceBinding = binding.referenceBindingOf(
                 presentedCredentials(context, brokeredContext),
-                // The subject credential is the one being issued, so the presentation cannot carry it
+                // The subject credential is the one being issued, so the presentation cannot carry it.
                 null);
         if (referenceBinding != null) {
             credentialAttributes.put(ReferenceCredentialBinding.REFERENCE_BINDING_ATTRIBUTE, List.of(referenceBinding));
@@ -223,7 +214,6 @@ public class Oid4vpSubjectBindingAuthenticator implements Authenticator, Authent
                 user.getId(), credentialScope.getName());
     }
 
-    /** The credentials of the presentation this login carried, or null when it carried none. */
     private static PresentedCredentials presentedCredentials(
             AuthenticationFlowContext context, SerializedBrokeredIdentityContext brokeredContext) {
         return Oid4vpMapperUtils.presentedCredentials(
@@ -231,8 +221,8 @@ public class Oid4vpSubjectBindingAuthenticator implements Authenticator, Authent
     }
 
     /**
-     * Whether this login needs a subject at all. A login that carried its own subject identifies the
-     * user already, and a login of another identity provider is none of this authenticator's
+     * Reports whether this login needs a subject at all. A login that carried its own subject identifies
+     * the user already, and a login of another identity provider is none of this authenticator's
      * business.
      */
     static boolean bindsSubjectOf(SerializedBrokeredIdentityContext brokeredContext) {
@@ -240,9 +230,9 @@ public class Oid4vpSubjectBindingAuthenticator implements Authenticator, Authent
     }
 
     /**
-     * Sets the brokered identity to the identity key of the given subject, which is the subject the
-     * credential of this user will carry. The identity key is derived the way it is derived from a
-     * credential claim, so the credential the user receives afterwards reaches this identity.
+     * Sets the brokered identity to the identity key of the given subject, derived the same way it is
+     * derived from a credential claim, so that the credential the user receives afterwards reaches this
+     * identity.
      */
     static void bind(SerializedBrokeredIdentityContext brokeredContext, String subject, String username) {
         brokeredContext.setId(Oid4vpIdentityKey.caseInsensitive(subject));
@@ -265,9 +255,7 @@ public class Oid4vpSubjectBindingAuthenticator implements Authenticator, Authent
     }
 
     @Override
-    public void setRequiredActions(KeycloakSession session, RealmModel realm, UserModel user) {
-        // Nothing to require of the user.
-    }
+    public void setRequiredActions(KeycloakSession session, RealmModel realm, UserModel user) {}
 
     @Override
     public Authenticator create(KeycloakSession session) {
@@ -275,14 +263,10 @@ public class Oid4vpSubjectBindingAuthenticator implements Authenticator, Authent
     }
 
     @Override
-    public void init(org.keycloak.Config.Scope config) {
-        // No configuration.
-    }
+    public void init(org.keycloak.Config.Scope config) {}
 
     @Override
-    public void postInit(KeycloakSessionFactory factory) {
-        // No configuration.
-    }
+    public void postInit(KeycloakSessionFactory factory) {}
 
     @Override
     public void close() {}

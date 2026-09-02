@@ -19,17 +19,13 @@ import java.util.Arrays;
 import java.util.List;
 import org.keycloak.utils.StringUtil;
 
-/**
- * The comma-separated lists of the mapper configuration: credential types, claim set ids and
- * alternative claim paths all use the same notation, so they parse the same way.
- */
+/** Comma separated lists in the mapper configuration. */
 public final class ConfigList {
 
     private static final String SEPARATOR = ",";
 
     private ConfigList() {}
 
-    /** The distinct trimmed entries of a comma-separated value; empty for a blank value. */
     public static List<String> parse(String rawList) {
         if (StringUtil.isBlank(rawList)) {
             return List.of();

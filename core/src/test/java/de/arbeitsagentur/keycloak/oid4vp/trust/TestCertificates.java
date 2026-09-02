@@ -31,7 +31,6 @@ import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 
-/** Certificate fixtures for trust material tests. */
 public final class TestCertificates {
 
     private TestCertificates() {}
@@ -42,7 +41,7 @@ public final class TestCertificates {
         return generator.generateKeyPair();
     }
 
-    /** An end entity certificate signing itself, as a generated Keycloak realm key carries it. */
+    /** Issues a self-signed end entity certificate, the shape a generated Keycloak realm key carries. */
     public static X509Certificate selfSigned(String subject) throws Exception {
         KeyPair keyPair = generateKeyPair();
         return issue(keyPair, keyPair, subject, subject, false);

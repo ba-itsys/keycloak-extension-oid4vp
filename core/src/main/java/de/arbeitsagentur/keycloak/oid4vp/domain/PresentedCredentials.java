@@ -21,15 +21,14 @@ import java.util.Map;
 
 /**
  * The credentials of a verified presentation, keyed by the DCQL credential id the wallet answered
- * under, in query order.
+ * under. The order is the query order.
  *
- * <p>This is the value the identity provider stores in the brokered identity context, so that a
- * mapper resolves its claim path inside its own credential. Credentials of one presentation share
- * claim names, and a merged view would import a value from the wrong credential.
+ * <p>A mapper resolves its claim path inside its own credential, because credentials of one
+ * presentation share claim names and a merged view would import a value from the wrong credential.
  *
- * <p>The whole map is wrapped in this record on purpose: {@code SerializedBrokeredIdentityContext}
- * records the concrete class of every context data value and restores it through that class, so a
- * bare {@code Map} would lose its element type and come back untyped.
+ * <p>The map is wrapped in a record because {@code SerializedBrokeredIdentityContext} restores
+ * every context data value through the concrete class it recorded, and a bare {@code Map} would
+ * lose its element type and come back untyped.
  */
 public record PresentedCredentials(Map<String, PresentedCredential> byCredentialId) {
 
@@ -38,7 +37,6 @@ public record PresentedCredentials(Map<String, PresentedCredential> byCredential
                 byCredentialId != null ? Collections.unmodifiableMap(new LinkedHashMap<>(byCredentialId)) : Map.of();
     }
 
-    /** Derives the mapper view of a verified presentation. */
     public static PresentedCredentials of(Map<String, VerifiedCredential> verifiedCredentials) {
         Map<String, PresentedCredential> credentials = new LinkedHashMap<>();
         verifiedCredentials.forEach((credentialId, credential) -> credentials.put(
@@ -48,12 +46,10 @@ public record PresentedCredentials(Map<String, PresentedCredential> byCredential
         return new PresentedCredentials(credentials);
     }
 
-    /** The credential the wallet answered under that id, or null when it was not presented. */
     public PresentedCredential get(String credentialId) {
         return byCredentialId.get(credentialId);
     }
 
-    /** The first presented credential of the given format in query order, or null. */
     public PresentedCredential firstOfFormat(String format) {
         return byCredentialId.values().stream()
                 .filter(credential -> format.equals(credential.format()))

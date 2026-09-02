@@ -137,12 +137,11 @@ class SdJwtVerifierTest {
 
     @Test
     void verify_withDisclosures_mergesClaims() throws Exception {
-        // Build a disclosure: [salt, claimName, claimValue]
+        // A disclosure is [salt, claimName, claimValue].
         String disclosureJson = "[\"salt123\",\"given_name\",\"John\"]";
         String disclosureB64 = Base64URL.encode(disclosureJson.getBytes(StandardCharsets.UTF_8))
                 .toString();
 
-        // Compute disclosure digest
         String digest = computeDigest(disclosureB64);
 
         String jwt = buildSignedJwt(Map.of(
@@ -165,7 +164,7 @@ class SdJwtVerifierTest {
         String disclosureB64 = Base64URL.encode(disclosureJson.getBytes(StandardCharsets.UTF_8))
                 .toString();
 
-        // Use a _sd array that does NOT contain this disclosure's digest
+        // The _sd array does not contain this disclosure's digest.
         String jwt = buildSignedJwt(Map.of(
                 "iss", "https://issuer.example",
                 "_sd", List.of("wrong_digest"),
@@ -181,7 +180,7 @@ class SdJwtVerifierTest {
     void verify_nestedDisclosures_resolvesAddressSubClaims() throws Exception {
         ObjectMapper objectMapper = new ObjectMapper();
 
-        // Build nested disclosures like the EUDI PID: address has its own _sd array
+        // Nested disclosures like the EUDI PID. The address has its own _sd array.
         String localityDisclosure = "[\"salt1\",\"locality\",\"BERLIN\"]";
         String localityB64 = Base64URL.encode(localityDisclosure.getBytes(StandardCharsets.UTF_8))
                 .toString();
@@ -192,7 +191,6 @@ class SdJwtVerifierTest {
                 .toString();
         String streetDigest = computeDigest(streetB64);
 
-        // address disclosure reveals an object with its own _sd array
         String addressObj = objectMapper.writeValueAsString(Map.of("_sd", List.of(localityDigest, streetDigest)));
         String addressDisclosure = "[\"salt3\",\"address\"," + addressObj + "]";
         String addressB64 = Base64URL.encode(addressDisclosure.getBytes(StandardCharsets.UTF_8))
@@ -226,7 +224,7 @@ class SdJwtVerifierTest {
     void verify_oldCredentialWithFreshKbJwt_succeeds() throws Exception {
         ECKey holderKey = new ECKeyGenerator(Curve.P_256).generate();
 
-        // Credential issued 2 hours ago — well beyond the 300s KB-JWT max age
+        // The credential is two hours old. The 300s maximum age applies to the KB-JWT only.
         Instant issuedAt = Instant.now().minusSeconds(7200);
         String credJwt = buildSignedJwtAt(
                 Map.of(
@@ -274,7 +272,7 @@ class SdJwtVerifierTest {
                 "cnf",
                 Map.of("jwk", holderKey.toPublicJWK().toJSONObject())));
 
-        // KB-JWT issued 10 minutes ago — beyond the 300s + 60s skew max age
+        // The KB-JWT is ten minutes old. That is beyond the 300s maximum age plus 60s skew.
         Instant staleIat = Instant.now().minusSeconds(600);
         String sdJwt = buildSdJwtVpWithKbJwt(credJwt, holderKey, "https://verifier.example", "test-nonce", staleIat);
 
@@ -326,7 +324,6 @@ class SdJwtVerifierTest {
 
     @Test
     void verify_kbJwtMissingCnfJwk_throws() throws Exception {
-        // Build credential JWT without cnf
         String credJwt = buildSignedJwt(Map.of("iss", "https://issuer.example"));
 
         ECKey holderKey = new ECKeyGenerator(Curve.P_256).generate();
@@ -376,20 +373,16 @@ class SdJwtVerifierTest {
 
     @Test
     void verify_x5cChainWithCaTrust_succeeds() throws Exception {
-        // CA key + cert
         ECKey caKey = new ECKeyGenerator(Curve.P_256).generate();
         X509Certificate caCert = generateSelfSignedCaCert(caKey, "CN=Test CA");
 
-        // End-entity key + cert signed by CA
         ECKey entityKey = new ECKeyGenerator(Curve.P_256).generate();
         X509Certificate entityCert = generateCaSignedCert(entityKey, caKey, caCert, "CN=Test Issuer");
 
-        // Sign SD-JWT with entity key, x5c = [entityCert]
         String jwt = buildSignedJwtWithKey(
                 Map.of("iss", "https://issuer.example", "vct", "PID"), entityKey, List.of(entityCert));
         String sdJwt = jwt + "~";
 
-        // Trust list only has the CA cert
         SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, TestTrust.ofCertificates(caCert));
 
         assertThat(result.issuer()).isEqualTo("https://issuer.example");
@@ -398,27 +391,23 @@ class SdJwtVerifierTest {
 
     @Test
     void verify_x5cChainWithFullChain_succeeds() throws Exception {
-        // CA key + cert
         ECKey caKey = new ECKeyGenerator(Curve.P_256).generate();
         X509Certificate caCert = generateSelfSignedCaCert(caKey, "CN=Test CA");
 
-        // End-entity key + cert signed by CA
         ECKey entityKey = new ECKeyGenerator(Curve.P_256).generate();
         X509Certificate entityCert = generateCaSignedCert(entityKey, caKey, caCert, "CN=Test Issuer");
 
-        // Sign SD-JWT with entity key, x5c = [entityCert, caCert]
         String jwt = buildSignedJwtWithKey(
                 Map.of("iss", "https://issuer.example", "vct", "PID"), entityKey, List.of(entityCert, caCert));
         String sdJwt = jwt + "~";
 
-        // Trust list only has the CA cert
         SdJwtVerificationResult result = verifier.verify(sdJwt, null, null, TestTrust.ofCertificates(caCert));
 
         assertThat(result.issuer()).isEqualTo("https://issuer.example");
     }
 
     // SD-JWT VC section 3.5: with an x5c chain, the iss value must match a subject alternative
-    // name of the leaf certificate, so one trusted issuer cannot claim to be another.
+    // name of the leaf certificate. One trusted issuer cannot claim to be another.
     @Test
     void verify_x5cChainIssuerNotInLeafSan_throws() throws Exception {
         ECKey caKey = new ECKeyGenerator(Curve.P_256).generate();
@@ -465,15 +454,12 @@ class SdJwtVerifierTest {
 
     @Test
     void verify_x5cChainUntrustedCa_throws() throws Exception {
-        // CA key + cert (not in trust list)
         ECKey caKey = new ECKeyGenerator(Curve.P_256).generate();
         X509Certificate caCert = generateSelfSignedCaCert(caKey, "CN=Untrusted CA");
 
-        // End-entity key + cert signed by untrusted CA
         ECKey entityKey = new ECKeyGenerator(Curve.P_256).generate();
         X509Certificate entityCert = generateCaSignedCert(entityKey, caKey, caCert, "CN=Test Issuer");
 
-        // Different CA in trust list
         ECKey trustedCaKey = new ECKeyGenerator(Curve.P_256).generate();
         X509Certificate trustedCaCert = generateSelfSignedCaCert(trustedCaKey, "CN=Trusted CA");
 
@@ -481,7 +467,6 @@ class SdJwtVerifierTest {
                 Map.of("iss", "https://issuer.example", "vct", "PID"), entityKey, List.of(entityCert));
         String sdJwt = jwt + "~";
 
-        // Neither the x5c chain nor direct key matching should work
         assertThatThrownBy(() -> verifier.verify(sdJwt, null, null, TestTrust.ofCertificates(trustedCaCert)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Failed to validate the x5c certificate chain");
@@ -497,7 +482,7 @@ class SdJwtVerifierTest {
                         signingKey.toECPublicKey(),
                         List.of(),
                         Instant.now().plusSeconds(3600))));
-        // A trust domain of certificate authorities alone can only validate chains, so a credential
+        // A trust domain of certificate authorities alone can only validate chains. A credential
         // that carries none cannot be verified against it.
         ResolvedTrust anchorsOnly = new ResolvedTrust(
                 List.of(new X509TrustMaterial(
@@ -545,9 +530,9 @@ class SdJwtVerifierTest {
         assertThat(result.credentialType()).isEqualTo("PID");
     }
 
-    // When a trust source is declared for the credential type but resolves to nothing (for example a
-    // trust list that is momentarily unreachable), the issuer's self-published metadata must not be
-    // trusted as a fallback: the credential is rejected instead of accepting attacker-chosen keys.
+    // A trust source is declared for the credential type but resolves to nothing, for example a
+    // trust list that is momentarily unreachable. The issuer's self-published metadata must not be
+    // trusted as a fallback. The credential is rejected instead of accepting attacker-chosen keys.
     @Test
     void verify_declaredButEmptyTrustSource_doesNotFallBackToIssuerMetadata() throws Exception {
         ECKey metadataKey = new ECKeyGenerator(Curve.P_256).keyID("issuer-key").generate();
@@ -563,7 +548,6 @@ class SdJwtVerifierTest {
                         Map.of("iss", "https://issuer.example", "vct", "PID"), metadataKey, "issuer-key")
                 + "~";
 
-        // A declared trust source that currently resolves to no anchors, keys or certificates.
         ResolvedTrust declaredButUnavailable =
                 new ResolvedTrust(List.of(), List.of(), List.of(), List.of(), List.of(), true);
 
@@ -585,9 +569,8 @@ class SdJwtVerifierTest {
         assertThat(result.credentialType()).isEqualTo("PID");
     }
 
-    // A pinned issuer certificate is trusted only for the issuer it is bound to. An SD-JWT presenting
-    // that certificate in its x5c while claiming a different issuer must not be accepted, so a
-    // certificate published for one issuer cannot validate a credential claiming another.
+    // A pinned issuer certificate is trusted only for the issuer it is bound to, so an SD-JWT
+    // presenting that certificate in its x5c while claiming a different issuer must not be accepted.
     @Test
     void verify_x5cCertificateBoundToIssuer_rejectsCredentialFromAnotherIssuer() throws Exception {
         ResolvedTrust boundToIssuerA = new ResolvedTrust(
@@ -652,8 +635,6 @@ class SdJwtVerifierTest {
         assertThat(result.issuer()).isEqualTo("https://issuer-a.example");
     }
 
-    // ===== Helper Methods =====
-
     private String computeDigest(String disclosureB64) throws Exception {
         MessageDigest md = MessageDigest.getInstance("SHA-256");
         byte[] hash = md.digest(disclosureB64.getBytes(StandardCharsets.US_ASCII));
@@ -686,7 +667,6 @@ class SdJwtVerifierTest {
 
     private String buildSdJwtVpWithKbJwt(String credJwt, ECKey holderKey, String audience, String nonce, Instant kbIat)
             throws Exception {
-        // The unbound presentation is: issuerJwt~
         String unboundPresentation = credJwt + "~";
 
         // sd_hash = base64url(SHA-256(unbound_presentation))
@@ -754,7 +734,7 @@ class SdJwtVerifierTest {
         return signedJWT.serialize();
     }
 
-    /** A self-signed end entity signer certificate, the shape a trust list pins directly. */
+    /** Generates a self-signed end entity signer certificate, the shape a trust list pins directly. */
     private static X509Certificate generateSelfSignedCert(ECKey ecKey) throws Exception {
         ECPublicKey publicKey = ecKey.toECPublicKey();
         X500Principal subject = new X500Principal("CN=Test SD-JWT Issuer");

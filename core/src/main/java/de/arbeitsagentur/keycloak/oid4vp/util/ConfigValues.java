@@ -20,12 +20,9 @@ import java.util.Base64;
 
 /**
  * Normalizes multi-line configuration values that reach the identity provider config through
- * single-line transports such as environment variables.
- *
- * <p>A value is used verbatim unless it is Base64-encoded as a whole, recognized by the decoded
- * text carrying the expected content marker: a PEM {@code -----BEGIN} header, or a leading
- * <code>'&#123;'</code> or {@code '['} for JSON. PEM values additionally accept {@code \n} escape sequences
- * instead of newlines.
+ * single-line transports such as environment variables. A value is used verbatim unless decoding it
+ * as Base64 yields text carrying the expected content marker, which is how a wrapped value is told
+ * apart from a literal one.
  */
 public final class ConfigValues {
 
@@ -33,7 +30,6 @@ public final class ConfigValues {
 
     private ConfigValues() {}
 
-    /** Returns the configured PEM bundle as multi-line PEM. */
     public static String pem(String value) {
         if (value == null || value.isBlank()) {
             return value;
@@ -48,7 +44,6 @@ public final class ConfigValues {
         return effective.replace("\\n", "\n");
     }
 
-    /** Returns the configured JSON value. */
     public static String json(String value) {
         if (value == null || value.isBlank() || startsJson(value)) {
             return value;
@@ -62,10 +57,7 @@ public final class ConfigValues {
         return trimmed.startsWith("{") || trimmed.startsWith("[");
     }
 
-    /**
-     * Decodes with the MIME decoder so values wrapped by {@code base64(1)} are read as well.
-     * Returns {@code null} when the value is not Base64.
-     */
+    /** Decodes with the MIME decoder so that values line-wrapped by {@code base64(1)} are read as well. */
     private static String decodeBase64(String value) {
         try {
             return new String(Base64.getMimeDecoder().decode(value.trim()), StandardCharsets.UTF_8);

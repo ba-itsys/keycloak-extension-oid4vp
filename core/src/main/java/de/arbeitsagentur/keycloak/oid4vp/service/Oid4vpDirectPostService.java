@@ -44,15 +44,13 @@ import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Handles the direct_post response mode for OID4VP.
+ * Handles the direct_post response mode. The wallet posts the VP token without the browser taking
+ * part in that request, so the authentication cannot be completed inline. The brokered identity is
+ * serialized into the authentication session and completion is signalled through a single-use
+ * object, which the browser polls for in the cross-device flow and is redirected to in the
+ * same-device flow.
  *
- * <p>In the direct_post flow, the wallet posts the VP token directly to the verifier's endpoint.
- * Since the browser is not involved in this HTTP request, the authentication cannot be completed
- * inline. Instead, this service serializes the brokered identity into the authentication session
- * and signals completion via a single-use object that the browser polls for (cross-device) or
- * redirects to (same-device).
- *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.2">OID4VP 1.0 §8.2 — Response Mode direct_post</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.2">OID4VP 1.0 §8.2, Response Mode direct_post</a>
  */
 public class Oid4vpDirectPostService {
 
@@ -102,24 +100,18 @@ public class Oid4vpDirectPostService {
         this.crossDeviceCompleteTtlSeconds = config.getCrossDeviceCompleteTtlSeconds();
     }
 
-    /**
-     * Stores the verified identity in the authentication session and signals completion.
-     * For cross-device flows, returns an empty 200 OK (the browser polls via SSE).
-     * For same-device flows, returns a JSON redirect to the complete-auth endpoint.
-     */
     public Response storeAndSignal(
             AuthenticationSessionModel authSession,
             String state,
             BrokeredIdentityContext context,
             boolean isCrossDevice) {
 
-        // Single-completion: the first verified presentation for a state wins. If a verified result is
-        // already recorded (its deferred signal is still present, i.e. /complete-auth has not consumed
-        // it yet), do not overwrite it; return the existing completion idempotently. This stops a later
-        // presentation submitted to a known state (e.g. an attacker's own credential) from replacing the
-        // identity the first wallet established, while still letting a wallet safely retry its own
-        // direct_post. Only a successfully verified presentation reaches this method, so a failed
-        // presentation never locks the flow and can be retried.
+        // The first verified presentation for a state wins. A result whose deferred signal
+        // /complete-auth has not consumed yet is not overwritten, so a later presentation submitted
+        // to a known state, an attacker's own credential for example, cannot replace the identity
+        // the first wallet established. Only a successfully verified presentation reaches this
+        // method, so a wallet can still retry its own direct_post and a failed presentation never
+        // locks the flow.
         Map<String, String> existing = session.singleUseObjects().get(DEFERRED_AUTH_PREFIX + state);
         if (existing != null && StringUtil.isNotBlank(existing.get(KEY_RESPONSE_CODE))) {
             LOG.debugf("Ignoring repeated direct_post for already-completed state=%s", state);
@@ -146,8 +138,8 @@ public class Oid4vpDirectPostService {
             }
         }
 
-        // Fresh, unguessable secret bound to this direct_post submission. The browser must present
-        // it back at /complete-auth, so the public state alone is not sufficient to drive
+        // A fresh, unguessable secret bound to this direct_post submission that the browser must
+        // present back at /complete-auth, so the public state alone is not enough to drive
         // completion (OID4VP 1.0 §8.2 response_code).
         String responseCode = Base64Url.encode(SecretGenerator.getInstance().randomBytes(RESPONSE_CODE_BYTES));
         String completeAuthUrl = buildCompleteAuthUrl(state, responseCode);
@@ -173,19 +165,14 @@ public class Oid4vpDirectPostService {
         return responseFactory.jsonRedirectResponse(completeAuthUrl, isCrossDevice);
     }
 
-    /**
-     * Completes the authentication by deserializing the stored identity and invoking the
-     * Keycloak authentication callback. Called by the browser after the wallet's direct_post
-     * has been processed.
-     */
     public Response completeAuth(
             String state,
             String responseCode,
             AbstractIdentityProvider.AuthenticationCallback callback,
             EventBuilder event) {
 
-        // Verify the response_code before consuming anything: the state is public, so a wrong code
-        // must neither complete the flow nor burn the legitimate user's single-use signal.
+        // The response_code is verified before anything is consumed. The state is public, so a
+        // wrong code must neither complete the flow nor burn the legitimate user's single-use signal.
         Map<String, String> deferredSignal = session.singleUseObjects().get(DEFERRED_AUTH_PREFIX + state);
         if (deferredSignal == null || !responseCodeMatches(deferredSignal.get(KEY_RESPONSE_CODE), responseCode)) {
             return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, Oid4vpMessages.INVALID_LOGIN_RESPONSE);
@@ -205,8 +192,8 @@ public class Oid4vpDirectPostService {
                     Response.Status.BAD_REQUEST,
                     Oid4vpMessages.BROWSER_SESSION_MISMATCH);
         }
-        // Use the current request-bound browser session for the broker callback. The stored
-        // session is only used to recover deferred broker state that was serialized earlier.
+        // The broker callback runs on the current request-bound browser session. The stored session
+        // only serves to recover the deferred broker state serialized earlier.
         AuthenticationSessionModel activeAuthSession = currentBrowserSession;
 
         session.singleUseObjects().remove(CROSS_DEVICE_COMPLETE_PREFIX + state);
@@ -252,23 +239,20 @@ public class Oid4vpDirectPostService {
     }
 
     /**
-     * The auth note holding the identity a presentation established, named after the state that
-     * presentation answered.
-     *
-     * <p>One authentication session carries several live states at a time: each render of the
-     * wallet page allocates one for the same-device button and one for the cross-device QR code,
-     * and returning to the login page to start over adds more while the earlier ones stay live
-     * until they expire. Under a single note name the presentation that arrives last would decide
-     * the login another presentation had already been verified for, since the single-completion
-     * guard in {@link #storeAndSignal} only covers repeated posts for the same state. Naming the
-     * notes after their state means {@code /complete-auth} reads back exactly the identity the
-     * {@code response_code} it was given was minted for.
+     * Names the auth note holding the identity a presentation established after the state that
+     * presentation answered, so that {@code /complete-auth} reads back exactly the identity its
+     * {@code response_code} was created for. One authentication session carries several live states
+     * at a time, because every render of the wallet page allocates one for the same-device button
+     * and one for the cross-device QR code, and returning to the login page adds more that stay live
+     * until they expire. Under a single note name the presentation arriving last would decide a
+     * login another presentation had already been verified for, and the single completion guard in
+     * {@link #storeAndSignal} only covers repeated posts for the same state.
      */
     private static String deferredIdentityNote(String state) {
         return DEFERRED_IDENTITY_NOTE + ":" + state;
     }
 
-    /** The auth note holding the presented credentials, named after the state as above. */
+    /** Names the auth note holding the presented credentials after its state, as above. */
     private static String deferredClaimsNote(String state) {
         return DEFERRED_CLAIMS_NOTE + ":" + state;
     }
@@ -299,25 +283,21 @@ public class Oid4vpDirectPostService {
     }
 
     /**
-     * Records a login that ended before it could be completed and returns the URL that hands the
-     * End-User back to the front channel, where {@code /failed} returns them to the login page.
-     * Both ways a presentation can end are recorded here: the wallet reporting an error response
-     * (OID4VP 1.0 §8.5), and this verifier rejecting the presentation it received.
-     *
-     * <p>OID4VP 1.0 §8.2 lets the Response URI return a {@code redirect_uri} "in response to
-     * successful Authorization Responses or for Error Responses", and requires the URL to carry a
-     * fresh, cryptographically random value, which is the {@code response_code} minted here. The
-     * failure itself is kept server-side so whoever posted cannot choose what the browser is told.
-     *
-     * <p>For cross-device flows the wallet runs on another device, so the same URL is additionally
-     * published under {@link #CROSS_DEVICE_FAILED_PREFIX} for the browser's SSE stream to pick up.
-     * A repeated failure for the same state returns the URL already handed out.
+     * Records a login that ended before it could be completed, either because the wallet reported an
+     * error response (OID4VP 1.0 §8.5) or because this verifier rejected the presentation, and
+     * returns the URL that hands the End-User back to the front channel, where {@code /failed}
+     * returns them to the login page. OID4VP 1.0 §8.2 lets the Response URI return a
+     * {@code redirect_uri} for Error Responses and requires the URL to carry a fresh,
+     * cryptographically random value, which is the {@code response_code} created here. The failure
+     * itself is kept server-side, so whoever posted cannot choose what the browser is told. In the
+     * cross-device flow the wallet runs on another device, so the same URL is also published under
+     * {@link #CROSS_DEVICE_FAILED_PREFIX} for the browser's SSE stream.
      */
     public String signalFailure(String state, LoginFailure failure, boolean isCrossDevice) {
-        // Single-completion, like the verified path: the first failure recorded for a state owns the
-        // URL that was handed out with it. Recording a second one would generate a fresh response
-        // code and leave the End-User holding a URL that no longer resolves, which anyone knowing
-        // the public state could cause by posting again.
+        // The first failure recorded for a state owns the URL handed out with it, as on the
+        // verified path. Recording a second one would generate a fresh response code and leave the
+        // End-User holding a URL that resolves to nothing, which anyone who knows the public state
+        // could cause by posting again.
         Map<String, String> existing = session.singleUseObjects().get(FAILURE_PREFIX + state);
         if (existing != null && StringUtil.isNotBlank(existing.get(KEY_RESPONSE_CODE))) {
             LOG.debugf("Ignoring repeated failure for already-failed state=%s", state);
@@ -347,7 +327,7 @@ public class Oid4vpDirectPostService {
     /**
      * Consumes the recorded failure for the given state and ends the attempt it belongs to, or
      * returns {@code null} when the state is unknown or the response code does not match the one
-     * minted for it. Callers that need the attempt's authentication session must resolve it before
+     * created for it. Callers that need the attempt's authentication session must resolve it before
      * calling this, because the request context it resolves through is dropped here.
      */
     public LoginFailure consumeFailure(String state, String responseCode) {
@@ -357,30 +337,29 @@ public class Oid4vpDirectPostService {
         }
         session.singleUseObjects().remove(FAILURE_PREFIX + state);
         session.singleUseObjects().remove(CROSS_DEVICE_FAILED_PREFIX + state);
-        // The End-User is being handed back to the login page, so this attempt is over. Dropping
-        // its request context stops the abandoned state from serving its request object and
-        // accepting a presentation for the rest of the login timeout, which is what let a late
-        // response reach an authentication session that has long moved on to another attempt.
+        // Dropping the request context of the abandoned attempt stops its state from serving a
+        // request object and from accepting a presentation for the rest of the login timeout.
+        // Otherwise a late response could reach an authentication session that has long moved on to
+        // another attempt.
         requestObjectStore.removeRequestContext(session, state);
         return new LoginFailure(
                 LoginFailure.Origin.of(entry.get(KEY_ORIGIN)), entry.get(KEY_ERROR), entry.get(KEY_ERROR_DESCRIPTION));
     }
 
-    /** A login that ended before it could be completed, as recorded when it happened. */
     public record LoginFailure(Origin origin, String error, String errorDescription) {
 
         /**
-         * Who ended the login. The two differ in what the End-User is shown: a wallet declining is
-         * the End-User's own choice and ends the login the way Keycloak ends any refused brokered
-         * login, while a presentation this verifier rejected is a failure the End-User has no way
-         * of knowing about unless it is named.
+         * Who ended the login. The origins differ in what the End-User is shown, because a wallet
+         * that declines acts on the End-User's own choice and ends the login the way Keycloak ends
+         * any refused brokered login, while a presentation this verifier rejected is a failure the
+         * End-User cannot know about unless it is named.
          */
         public enum Origin {
             /** The wallet reported an error response (OID4VP 1.0 §8.5). */
             WALLET,
             /** The verifier refused what the wallet presented. */
             VERIFIER,
-            /** Verification broke on this side, so the presentation was never judged. */
+            /** Verification broke on this side. The presentation was never judged. */
             SERVER;
 
             static Origin of(String name) {

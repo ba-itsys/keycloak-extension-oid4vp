@@ -32,7 +32,6 @@ import org.keycloak.jose.jwk.JWKBuilder;
 import org.keycloak.jose.jws.JWSBuilder;
 import org.keycloak.utils.StringUtil;
 
-// Signs OID4VP request object claims as a compact JWS using Keycloak's key abstractions
 public final class Oid4vpRequestObjectSigner {
 
     public String sign(
@@ -59,9 +58,9 @@ public final class Oid4vpRequestObjectSigner {
     }
 
     /**
-     * Removes a trailing self-signed trust anchor from the chain. HAIP requires that the X.509
-     * trust anchor MUST NOT be included in the {@code x5c} header of the signed request; the wallet
-     * holds it out of band. At least the leaf certificate is always retained.
+     * Removes a trailing self-signed trust anchor from the chain, because HAIP requires that the
+     * trust anchor is not included in the {@code x5c} header of the signed request and the wallet
+     * holds it out of band. The leaf certificate is always retained.
      */
     private static List<X509Certificate> withoutTrustAnchor(List<X509Certificate> chain) {
         List<X509Certificate> trimmed = new ArrayList<>(chain);

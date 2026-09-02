@@ -48,14 +48,9 @@ import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Processes verified VP token responses into Keycloak {@link BrokeredIdentityContext} objects.
+ * Turns a verified VP token response into a Keycloak {@link BrokeredIdentityContext}.
  *
- * <p>Orchestrates the post-response phase of the OID4VP flow: validates the state parameter,
- * delegates VP token verification to {@link VpTokenProcessor}, enforces issuer/credential type
- * allow-lists, resolves the user identity from the configured mapping claim, and populates the
- * brokered identity context with credential claims for downstream mappers.
- *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.6">OID4VP 1.0 §8.6 — VP Token Validation</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.6">OID4VP 1.0 §8.6, VP Token Validation</a>
  */
 public class Oid4vpCallbackProcessor {
 
@@ -92,8 +87,8 @@ public class Oid4vpCallbackProcessor {
             throw new IdentityBrokerException("Missing vp_token");
         }
 
-        // Without the expected audience and nonce the verifier would silently skip key binding
-        // verification, so an incomplete request context must fail instead of downgrading.
+        // Without the expected audience and nonce the verifier would silently skip the key binding
+        // verification. An incomplete request context must fail instead of downgrading.
         if (StringUtil.isBlank(requestContext.effectiveClientId()) || StringUtil.isBlank(requestContext.nonce())) {
             throw new IdentityBrokerException("Request context is missing the client_id or nonce");
         }
@@ -122,9 +117,8 @@ public class Oid4vpCallbackProcessor {
                 primary.credentialType(),
                 primary.claims().keySet());
 
-        // Every presented credential must come from an allowed issuer, not only the first one: in a
-        // multi-credential presentation each credential's claims reach the mappers, so a disallowed
-        // issuer must be rejected wherever it appears.
+        // Every presented credential must come from an allowed issuer, not only the first one,
+        // because in a multi-credential presentation the claims of each credential reach the mappers.
         for (VerifiedCredential presented : vpResult.credentials().values()) {
             String presentedIssuer = presented.issuer();
             if (presentedIssuer != null && !configProvider.isIssuerAllowed(presentedIssuer)) {
@@ -172,15 +166,12 @@ public class Oid4vpCallbackProcessor {
         return context;
     }
 
-    /**
-     * The credential the subject is read from, the claim of it that carries the subject, and the
-     * node that claim path resolves against.
-     */
     private record SubjectSource(VerifiedCredential credential, String claimPath, JsonNode claimsRoot) {}
 
     /**
-     * Where the subject comes from: the first configured principal attribute the wallet presented,
-     * so which credential answers is the verifier's decision rather than the wallet's.
+     * Resolves the subject from the first configured principal attribute the wallet presented. The
+     * order of the configured attributes decides which credential answers, so the wallet cannot
+     * choose which of its credentials identifies the user.
      */
     private SubjectSource subjectSource(VpTokenResult vpResult) {
         List<PrincipalAttribute> principalAttributes = configProvider.getPrincipalAttributes();
@@ -194,11 +185,6 @@ public class Oid4vpCallbackProcessor {
                 continue;
             }
             if (!hasUsableSubjectBinding(vpResult, credential)) {
-                // A subject credential this realm issues is always bound to the credentials present at
-                // issuance. One presented next to such credentials but carrying no reference credential
-                // binding has had that binding withheld, so it does not identify a returning user: the
-                // login falls through to a fresh subject, authenticates by other means, and a bound
-                // credential is issued again, exactly as on a first login.
                 LOG.warnf(
                         "OID4VP IdP '%s': the credential '%s' carries no reference credential binding but was "
                                 + "presented alongside credentials a binding would cover, so it is not used as the "
@@ -206,8 +192,8 @@ public class Oid4vpCallbackProcessor {
                         idpModel.getAlias(), principalAttribute.credentialId());
                 continue;
             }
-            // The path starts at the root of the presentation, so an mDoc path names its own
-            // namespace and none has to be guessed at.
+            // The path starts at the root of the presentation, and an mDoc path names its own
+            // namespace, so no namespace has to be guessed.
             return new SubjectSource(credential, principalAttribute.claimPath(), credential.claimsNode());
         }
         if (!configProvider.isAllowMissingSubjectCredential()) {
@@ -218,10 +204,6 @@ public class Oid4vpCallbackProcessor {
         return null;
     }
 
-    /**
-     * The claim named for this credential becomes the brokered subject. Rejects presentations
-     * without a usable value.
-     */
     private static String extractSubjectFromCredential(SubjectSource subjectSource) {
         String principalPath = subjectSource.claimPath();
         ClaimPath path = StringUtil.isNotBlank(principalPath) ? ClaimPath.parse(principalPath.trim()) : null;
@@ -244,16 +226,11 @@ public class Oid4vpCallbackProcessor {
     }
 
     /**
-     * The presentation without the credentials that were issued for another one. A credential this
-     * Keycloak issued says which credentials it was issued alongside, and a wallet holding the
-     * credentials of two people could otherwise combine them into a login that belongs to neither.
-     *
-     * <p>A refused credential counts as not presented at all: it identifies nobody here, and its
-     * claims must not reach the mappers either. The login continues on whatever is left, which for
-     * the configuration this is built for means a presentation of the PID alone.
-     *
-     * <p>Credentials carrying no reference credential binding pass untouched, which is what a
-     * credential of another issuer and every credential issued without a binding is.
+     * Drops the credentials that were issued for another presentation. A credential this Keycloak
+     * issued says which credentials it was issued alongside, and without that check a wallet holding
+     * the credentials of two people could combine them into a login that belongs to neither. A
+     * dropped credential identifies nobody here and its claims must not reach the mappers either, so
+     * the login continues on whatever is left.
      */
     private VpTokenResult credentialsOfThisPresentation(VpTokenResult vpResult) {
         Map<String, VerifiedCredential> kept = new LinkedHashMap<>();
@@ -273,9 +250,9 @@ public class Oid4vpCallbackProcessor {
     }
 
     /**
-     * Whether the credential was issued for a presentation like this one, judged over the other
-     * credentials of the presentation. The credential itself is never part of that material: it is
-     * what binds to the others, and at issuance it did not exist yet.
+     * Returns whether the credential was issued for a presentation like this one, judged over the
+     * other credentials of the presentation. The credential itself is never part of that material
+     * because it did not exist yet at issuance.
      */
     private boolean boundToThisPresentation(
             VpTokenResult vpResult, String credentialId, VerifiedCredential credential) {
@@ -288,14 +265,12 @@ public class Oid4vpCallbackProcessor {
     }
 
     /**
-     * Whether a credential may identify a returning user. A credential carrying a matching reference
-     * credential binding may (a non-matching one was already dropped as issued for another
-     * presentation). A credential carrying none may too, unless the presentation also contains
-     * credentials a binding would cover: a subject credential this realm issues is always bound to such
-     * credentials, so one presented next to them without a binding has had it withheld and must not be
-     * trusted to identify a user. A subject credential presented on its own, or a login whose subject
-     * comes from a credential this realm did not issue and did not bind, has no such material and is
-     * unaffected.
+     * Returns whether a credential may identify a returning user. A subject credential this realm
+     * issues is always bound to the credentials present at issuance, so one presented next to
+     * credentials a binding would cover but carrying no binding has had that binding withheld and
+     * must not be trusted to identify a user. The login then falls through to a fresh subject and
+     * issues a bound credential again, exactly as on a first login. A subject credential presented
+     * on its own, or one this realm did not issue, has no such material and is unaffected.
      */
     private boolean hasUsableSubjectBinding(VpTokenResult vpResult, VerifiedCredential subjectCredential) {
         boolean carriesBinding =
@@ -308,9 +283,9 @@ public class Oid4vpCallbackProcessor {
     }
 
     /**
-     * A pseudonymous subject for a presentation that carried no subject credential. Nothing in the
-     * presentation identifies the user, so the login that follows establishes which user this
-     * subject belongs to, and an issuer puts it into the credential that identifies them next time.
+     * Generates a pseudonymous subject for a presentation that carried no subject credential. The
+     * login that follows establishes which user this subject belongs to, and an issuer then puts it
+     * into the credential that identifies them next time.
      */
     private static String generateSubject() {
         return GENERATED_SUBJECT_PREFIX + UUID.randomUUID();
@@ -324,9 +299,9 @@ public class Oid4vpCallbackProcessor {
 
     /**
      * Validates that every verified credential contains the claims its DCQL credential entry
-     * requested: all claims when no claim sets are defined, otherwise at least one complete
-     * claim_sets option. Entries are looked up by the credential id the wallet answered under, so
-     * two entries of the same credential type stay distinguishable.
+     * requested, which without claim sets means all of them and with claim sets at least one
+     * complete claim_sets option. Entries are looked up by the credential id the wallet answered
+     * under, so two entries of the same credential type stay distinguishable.
      *
      * @return the credential ids whose presentation satisfied their requested claims
      */
@@ -368,10 +343,10 @@ public class Oid4vpCallbackProcessor {
 
     /**
      * Validates that the presented credentials satisfy one complete option of every required
-     * credential set. Only credentials that passed their own claim validation count, so a
-     * credential that withheld requested claims cannot satisfy an option. Without credential
-     * sets every requested credential is required (OID4VP 1.0, section 6.1), so a wallet cannot
-     * silently omit credentials whose claims the mappers depend on.
+     * credential set. Only credentials that passed their own claim validation qualify, so one that
+     * withheld requested claims cannot satisfy an option. Without credential sets every requested
+     * credential is required (OID4VP 1.0, section 6.1), which stops a wallet from silently omitting
+     * credentials whose claims the mappers depend on.
      */
     private void enforceCredentialSets(
             Oid4vpRequestObjectStore.RequestContextEntry requestContext, Set<String> satisfiedCredentialIds) {
@@ -404,7 +379,7 @@ public class Oid4vpCallbackProcessor {
             return;
         }
         // The subject credential this realm issues may be absent when the configuration expects
-        // that: the login then continues towards issuing it.
+        // that, and the login then continues towards issuing it.
         Set<String> allowedMissing = configProvider.isAllowMissingSubjectCredential()
                 ? Set.copyOf(PrincipalAttribute.credentialIdsOf(configProvider.getPrincipalAttributes()))
                 : Set.of();

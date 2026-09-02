@@ -28,12 +28,10 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Configuration of the OID4VP trust material identity provider.
- *
- * <p>Trust anchors come from an ETSI TS 119 602 trust list URL (fetched, cached and refreshed by
- * {@code TrustListProvider}), from a pasted PEM certificate bundle, or both. The
- * {@code trustedCertificates} and {@code requiredExtendedKeyUsages} keys match the upstream
- * {@code DefaultTrustIdentityProviderConfig}.
+ * Configuration of the OID4VP trust material identity provider. Trust anchors come from an ETSI
+ * TS 119 602 trust list URL, from a pasted PEM certificate bundle, or both. The
+ * {@code trustedCertificates} and {@code requiredExtendedKeyUsages} keys deliberately match the
+ * upstream {@code DefaultTrustIdentityProviderConfig}.
  */
 public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
 
@@ -138,8 +136,9 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
     }
 
     /**
-     * The credential types (SD-JWT VCT, mDoc doctype) this trust domain is responsible for. Empty
-     * means the provider serves every credential type of the identity providers referencing it.
+     * Returns the credential types (SD-JWT VCT, mDoc doctype) this trust domain is responsible for.
+     * Empty means the provider serves every credential type of the identity providers referencing
+     * it.
      */
     public List<String> getServedCredentialTypes() {
         return ServedCredentialTypes.of(this);
@@ -161,11 +160,10 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
     }
 
     /**
-     * The trust anchor type of this provider the DCQL query advertises to wallets, empty when the
-     * query carries no {@code trusted_authorities} for the served credentials, which is the
-     * default. A trust domain advertises at most one type, because every entry describes the same
-     * anchors and a wallet matches any of them. The configured value is {@code aki} or
-     * {@code etsi_tl}.
+     * Returns the trust anchor type the DCQL query advertises to wallets for this provider, either
+     * {@code aki} or {@code etsi_tl}. A trust domain advertises at most one type, because every
+     * entry describes the same anchors and a wallet matches any of them. Empty, the default, leaves
+     * the query without {@code trusted_authorities} for the served credentials.
      *
      * @throws IllegalArgumentException when the configured value is neither, or {@code etsi_tl} is
      *     configured without a trust list URL
@@ -195,7 +193,6 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
         getConfig().put(ADVERTISE_TRUSTED_AUTHORITIES, type);
     }
 
-    /** Parses the pasted PEM bundle. Returns an empty list when unset or unparsable. */
     public List<X509Certificate> parseTrustedCertificates() {
         String pem = getTrustedCertificates();
         if (StringUtil.isBlank(pem)) {
@@ -210,8 +207,9 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
     }
 
     /**
-     * Parses the trust list signing certificate PEM bundle. Returns null when unset. A configured
-     * but unparsable value throws instead of silently disabling trust list signature verification.
+     * Parses the trust list signing certificate PEM bundle and returns null when it is unset. A
+     * configured but unparsable value throws instead of silently disabling trust list signature
+     * verification.
      */
     public List<X509Certificate> parseTrustListSigningCerts() {
         String pem = getTrustListSigningCertPem();

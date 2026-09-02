@@ -22,27 +22,22 @@ import org.keycloak.crypto.JavaAlgorithm;
 import org.keycloak.jose.jws.crypto.HashUtils;
 
 /**
- * The brokered identity of an OID4VP login, derived from the subject alone.
- *
- * <p>The key is scoped to the identity provider alias by Keycloak, so neither the issuer nor the
- * credential format is part of it. A user presenting the same subject in different credential
- * formats therefore reaches the same Keycloak identity.
- *
- * <p>Both sides of a login that establishes a subject use this, so a login that only learns the
- * subject later derives the same key as the presentation that carries it.
+ * The brokered identity of an OID4VP login, derived from the subject alone. Keycloak already
+ * scopes the key to the identity provider alias, and leaving issuer and credential format out of
+ * it means a user presenting the same subject in different credential formats reaches the same
+ * Keycloak identity.
  */
 public final class Oid4vpIdentityKey {
 
     private Oid4vpIdentityKey() {}
 
-    /** The identity key of a subject, matching it exactly. */
     public static String of(String subject) {
         return hash(normalize(subject));
     }
 
     /**
-     * The identity key of a subject, matching it without regard to case. Human readable credential
-     * claims vary in casing across formats while meaning the same user.
+     * Returns the identity key of a subject, ignoring case, because human readable credential
+     * claims vary in casing across formats and still mean the same user.
      */
     public static String caseInsensitive(String subject) {
         return hash(normalize(subject).toLowerCase(Locale.ROOT));

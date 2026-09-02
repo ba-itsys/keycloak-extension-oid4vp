@@ -43,9 +43,9 @@ import org.keycloak.jose.jwk.JWKBuilder;
  * Validates x5c certificate chains of end entity signing certificates against a set of trust
  * anchors and an optional extended key usage requirement.
  *
- * <p>Mirror of {@code org.keycloak.crypto.X509CertificateChainValidator} from Keycloak main.
- * Delete this copy and switch imports once the extension builds against a Keycloak release that
- * ships it. Local addition over upstream: {@link #validateCertificateChain(List, Collection, List)}
+ * <p>Mirror of {@code org.keycloak.crypto.X509CertificateChainValidator} from Keycloak main. Delete
+ * this copy and switch imports once the extension builds against a Keycloak release that ships it.
+ * The one local addition is {@link #validateCertificateChain(List, Collection, List)}, which
  * accepts an already decoded chain for callers that hold {@code X509Certificate}s (mdoc x5chain,
  * issuer metadata JWK chains).
  */
@@ -58,8 +58,8 @@ public final class X509CertificateChainValidator {
     /**
      * Validates the x5c certificate chain against the given trust anchors and returns the leaf key
      * as JWK. The leaf must be a currently valid end entity certificate usable for digital
-     * signatures. When {@code requiredExtendedKeyUsages} is not empty, the leaf must additionally
-     * contain at least one of the given extended key usage OIDs.
+     * signatures, and when {@code requiredExtendedKeyUsages} is not empty it must additionally
+     * carry at least one of the given extended key usage OIDs.
      */
     public static JWK validate(
             List<String> x5c,
@@ -80,8 +80,8 @@ public final class X509CertificateChainValidator {
     }
 
     /**
-     * Validates an already decoded certificate chain against the given trust anchors. The chain
-     * leaf is the first certificate.
+     * Validates an already decoded certificate chain against the given trust anchors, taking the
+     * first certificate as the leaf.
      */
     public static void validateCertificateChain(
             List<X509Certificate> certificateChain,
@@ -105,9 +105,8 @@ public final class X509CertificateChainValidator {
             PKIXBuilderParameters parameters = new PKIXBuilderParameters(anchors, selector);
             parameters.addCertStore(
                     CryptoIntegration.getProvider().getCertStore(new CollectionCertStoreParameters(certificateChain)));
-            // PKIX enables its provider specific revocation mechanism by default. Certificate
-            // revocation is not supported yet, so disable it explicitly until a configurable
-            // mechanism is available.
+            // PKIX enables its provider specific revocation mechanism by default, and certificate
+            // revocation checking is not supported here, so it is disabled explicitly.
             parameters.setRevocationEnabled(false);
 
             CryptoIntegration.getProvider().getCertPathBuilder().build(parameters);

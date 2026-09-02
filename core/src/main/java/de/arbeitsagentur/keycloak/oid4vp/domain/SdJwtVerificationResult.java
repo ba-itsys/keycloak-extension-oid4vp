@@ -15,12 +15,22 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
+import java.util.List;
 import java.util.Map;
 
 /**
- * Result of verifying an SD-JWT Verifiable Credential presented in a {@code vp_token}.
- *
- * <p>Contains the disclosed claims after selective disclosure resolution, the issuer identifier,
- * and the credential type (VCT). Produced by {@link de.arbeitsagentur.keycloak.oid4vp.verification.SdJwtVerifier}.
+ * The result of verifying an SD-JWT VC from a {@code vp_token}. The claims are the disclosed ones
+ * after selective disclosure resolution, the credential type is the VCT, and
+ * {@code alsoKnownAsTypes} are the further types the {@code aka_vcts} claim names.
  */
-public record SdJwtVerificationResult(Map<String, Object> claims, String issuer, String credentialType) {}
+public record SdJwtVerificationResult(
+        Map<String, Object> claims, String issuer, String credentialType, List<String> alsoKnownAsTypes) {
+
+    public SdJwtVerificationResult {
+        alsoKnownAsTypes = alsoKnownAsTypes != null ? List.copyOf(alsoKnownAsTypes) : List.of();
+    }
+
+    public SdJwtVerificationResult(Map<String, Object> claims, String issuer, String credentialType) {
+        this(claims, issuer, credentialType, List.of());
+    }
+}

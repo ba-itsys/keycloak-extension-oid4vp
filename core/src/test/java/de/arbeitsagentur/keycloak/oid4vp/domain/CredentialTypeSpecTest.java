@@ -20,10 +20,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/**
- * The claim set options a credential generates from claim set ids and alternative claim paths.
- * Options index the requested claims, where every alternative path is a claim of its own.
- */
 class CredentialTypeSpecTest {
 
     private static final String PID = "urn:eudi:pid:1";

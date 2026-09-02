@@ -29,7 +29,7 @@ import org.keycloak.models.IdentityProviderSyncMode;
 /**
  * Covers value conversion and target application, mirroring the test cases of upstream Keycloak's
  * {@code OID4VPSdJwtUserAttributeMapperTest}. Claim path semantics are covered by
- * {@link ClaimPathTest}; credential matching is covered here because this extension supports
+ * {@link ClaimPathTest}. Credential matching is covered here because this extension supports
  * several credentials per request.
  */
 class OID4VPSdJwtUserAttributeMapperTest {
@@ -193,7 +193,7 @@ class OID4VPSdJwtUserAttributeMapperTest {
         assertThat(user.getAttributeStream("phone")).isEmpty();
     }
 
-    // A configuration mistake must not wipe user state: unlike an absent claim, a blank or
+    // A configuration mistake must not wipe user state. Unlike an absent claim, a blank or
     // unparseable claim path leaves the existing attribute untouched.
     @Test
     void updateKeepsAttributeWhenClaimPathIsBlank() throws Exception {
@@ -218,8 +218,6 @@ class OID4VPSdJwtUserAttributeMapperTest {
 
         assertThat(user.getAttributeStream("emailAttribute")).containsExactly("keep@email.cz");
     }
-
-    // --- alternative claims -------------------------------------------------
 
     @Test
     void alternativeClaimIsReadWhenTheClaimIsAbsent() throws Exception {
@@ -300,8 +298,8 @@ class OID4VPSdJwtUserAttributeMapperTest {
         assertThat(user.getAttributeStream("birthName")).isEmpty();
     }
 
-    // A malformed alternative misconfigures the mapper as a whole, exactly as the DCQL query
-    // generation leaves such a mapper out, so user state stays untouched.
+    // A malformed alternative misconfigures the mapper as a whole. The DCQL query generation
+    // leaves such a mapper out for the same reason. User state stays untouched.
     @Test
     void updateKeepsAttributeWhenAnAlternativePathIsInvalid() throws Exception {
         BrokeredIdentityContext context = contextWithClaims("""
@@ -325,11 +323,9 @@ class OID4VPSdJwtUserAttributeMapperTest {
         assertThat(context.getUserAttribute("birthName")).isEqualTo("Gabler");
     }
 
-    // --- several credential types ---------------------------------------------
-
     @Test
     void mapperNamingSeveralTypesReadsTheCredentialAnsweredUnderTheIdOfItsFirstType() throws Exception {
-        // The German PID was presented under the entry whose id derives from the EUDI PID type.
+        // The German PID is presented under the entry whose id derives from the EUDI PID type.
         BrokeredIdentityContext context =
                 MapperTestContexts.context(PresentationType.SD_JWT, "sdjwt_urn_eudi_pid_1", "urn:eudi:pid:de:1", """
                 {"birth_name": "GABLER"}""");

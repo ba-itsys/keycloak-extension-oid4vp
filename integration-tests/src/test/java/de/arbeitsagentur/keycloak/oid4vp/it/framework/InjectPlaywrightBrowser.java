@@ -21,7 +21,6 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import org.keycloak.testframework.injection.LifeCycle;
 
-// Injects a headless Playwright browser
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.FIELD)
 public @interface InjectPlaywrightBrowser {

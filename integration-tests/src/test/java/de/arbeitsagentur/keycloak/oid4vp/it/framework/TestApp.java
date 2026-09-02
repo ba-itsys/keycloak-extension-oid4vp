@@ -32,11 +32,7 @@ import java.util.stream.Collectors;
 import org.keycloak.common.util.SecretGenerator;
 import org.keycloak.protocol.oidc.utils.PkceUtils;
 
-/**
- * The OAuth client application (relying party) the tests log in to. It creates authorization
- * requests (with PKCE), serves the redirect endpoint receiving the authorization callback, and
- * exchanges the received authorization code for tokens.
- */
+/** Stands in for the OAuth client application that the tests log in to. */
 public final class TestApp implements AutoCloseable {
 
     private final HttpServer server;
@@ -51,12 +47,10 @@ public final class TestApp implements AutoCloseable {
         server.start();
     }
 
-    // The redirect URI of this application
     public String callbackUrl() {
         return "http://localhost:%d/callback".formatted(port);
     }
 
-    // Creates a PKCE authorization request URL for this application
     public String authorizationRequestUrl(
             String authorizationEndpoint, String clientId, Map<String, String> extraParams) {
         String state = SecretGenerator.getInstance().randomString(16);
@@ -77,7 +71,6 @@ public final class TestApp implements AutoCloseable {
                         .collect(Collectors.joining());
     }
 
-    // Exchanges the authorization code of the last received callback for tokens
     public HttpResponse<String> exchangeAuthorizationCode(String tokenEndpoint, String clientId) throws Exception {
         URI callbackUri = lastCallbackUri;
         if (callbackUri == null) {
@@ -105,7 +98,6 @@ public final class TestApp implements AutoCloseable {
                         HttpResponse.BodyHandlers.ofString());
     }
 
-    // The URI of the last received authorization callback, including the code
     public URI lastCallbackUri() {
         return lastCallbackUri;
     }

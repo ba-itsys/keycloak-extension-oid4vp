@@ -19,7 +19,6 @@ import de.arbeitsagentur.keycloak.oid4vp.conformance.runner.ConformanceModuleVar
 import java.util.stream.Stream;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
-// Verifier rejects a presentation with an invalid key binding JWT signature
 @KeycloakIntegrationTest(config = AbstractVerifierConformanceTest.VerifierServerConfig.class)
 class InvalidKbJwtSignatureConformanceTest extends AbstractVerifierConformanceTest {
 

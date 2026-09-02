@@ -22,29 +22,23 @@ import java.util.Map;
 /**
  * Validates the credential set configuration of an OID4VP identity provider.
  *
- * <p>Runs when the identity provider is saved and again when the DCQL query is built. The rules
- * that need the credentials aggregated from the mappers are skipped for an empty credential map,
- * which is the state of an identity provider that has no mappers yet. The build time run is what
- * catches mapper edits, since the identity provider mapper endpoints have no validation hook.
- *
- * <p>Every problem is an error. The returned messages are meant for the admin console.
+ * <p>It runs when the identity provider is saved and again when the DCQL query is built. The
+ * second run catches mapper edits, because the identity provider mapper endpoints offer no
+ * validation hook. An empty credential map skips the rules that need the credentials aggregated
+ * from the mappers.
  */
 public final class Oid4vpCredentialSetsValidator {
 
     private Oid4vpCredentialSetsValidator() {}
 
     /**
-     * @param credentials the credentials aggregated from the mappers, keyed by credential id, or
-     *     empty to check only what the identity provider configuration says on its own
-     * @param principalAttributes the credentials the subject may be read from, each with the claim
-     *     of it that carries the subject
-     * @param principalClaimRequested false when the subject comes from a transient user, so no
+     * @param credentials the credentials aggregated from the mappers, keyed by credential id. An
+     *     empty map checks only what the identity provider configuration says on its own.
+     * @param principalClaimRequested false when the subject comes from a transient user, so that no
      *     credential has to carry the principal claim
-     * @param subjectCredentialMayBeMissing whether a presentation without the subject credential is
-     *     expected, which lifts the requirement that every required credential set option carries
-     *     it. The subject is then established by the login that follows instead of by the
-     *     presentation.
-     * @return the problems of this configuration, empty when it is valid
+     * @param subjectCredentialMayBeMissing lifts the rule that every required credential set option
+     *     carries the subject credential, because the login that follows establishes the subject
+     *     instead of the presentation
      */
     public static List<String> problems(
             List<CredentialSet> credentialSets,
@@ -60,7 +54,6 @@ public final class Oid4vpCredentialSetsValidator {
         return List.copyOf(problems);
     }
 
-    /** Every referenced credential id has to be a legal DCQL id naming a configured credential. */
     private static List<String> referenceProblems(
             List<CredentialSet> credentialSets, Map<String, CredentialTypeSpec> credentials) {
         List<String> problems = new ArrayList<>();
@@ -79,7 +72,7 @@ public final class Oid4vpCredentialSetsValidator {
         return problems;
     }
 
-    /** Every combination a wallet may present has to yield a subject. */
+    /** Checks that every combination a wallet may present yields a subject. */
     private static List<String> subjectProblems(
             List<CredentialSet> credentialSets,
             Map<String, CredentialTypeSpec> credentials,
@@ -98,10 +91,11 @@ public final class Oid4vpCredentialSetsValidator {
     }
 
     /**
-     * Every option of every required credential set has to contain one of the subject credentials,
-     * otherwise a wallet can satisfy the query with a combination that identifies nobody. Optional
-     * sets are exempt because a required set always covers the subject, and a configuration that
-     * expects the subject credential to be missing is exempt from that last rule alone.
+     * Checks that every option of every required credential set contains one of the subject
+     * credentials, so that a wallet cannot satisfy the query with a combination that identifies
+     * nobody. Optional sets are exempt because a required set already covers the subject, and a
+     * configuration expecting the subject credential to be missing is exempt from the per option
+     * rule only.
      */
     private static List<String> principalCoverageProblems(
             List<CredentialSet> credentialSets,
@@ -149,7 +143,6 @@ public final class Oid4vpCredentialSetsValidator {
         return problems;
     }
 
-    /** Every subject credential has to request its claim in every claim set option. */
     private static List<String> principalClaimProblems(
             Map<String, CredentialTypeSpec> credentials, List<PrincipalAttribute> principalAttributes) {
         List<String> problems = new ArrayList<>();
@@ -167,9 +160,9 @@ public final class Oid4vpCredentialSetsValidator {
     }
 
     /**
-     * A subject credential has to request its claim. For an mDoc the path names the namespace
-     * before the element, and DCQL asks for the two separately, so both halves have to match a
-     * requested claim.
+     * Checks that a subject credential requests the claim it is read from. For an mDoc the
+     * configured path names the namespace before the element, and DCQL asks for the two
+     * separately, so both halves have to match a requested claim.
      */
     private static List<String> principalClaimProblems(PrincipalAttribute principal, CredentialTypeSpec credential) {
         String credentialId = principal.credentialId();
@@ -187,9 +180,8 @@ public final class Oid4vpCredentialSetsValidator {
 
     private static List<String> claimProblems(
             String credentialId, CredentialTypeSpec credential, String claimPath, String namespace) {
-        // The claim set options index the requested claims, where a mapper's alternative paths
-        // count as claims of their own, so a principal read under an alternative path only
-        // is not in every option.
+        // The options index the requested claims, where every alternative path is a claim of its
+        // own, so a principal read only under an alternative is missing from some option.
         List<ClaimSpec> claimSpecs = credential.requestedClaims();
         List<Integer> principalIndexes = new ArrayList<>();
         for (int i = 0; i < claimSpecs.size(); i++) {

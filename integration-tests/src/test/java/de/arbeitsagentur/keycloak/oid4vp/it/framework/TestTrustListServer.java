@@ -40,15 +40,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Serves an ETSI TS 119 602 trust list of PID providers over HTTP.
+ * Serves an ETSI TS 119 602 trust list of PID providers over HTTP, so that a test can point the
+ * trust material identity provider at a list that does not name the wallet's credential issuer and
+ * see the DCQL {@code trusted_authorities} constraint go unsatisfiable.
  *
- * <p>Tests point the trust material identity provider at this server to run with a trust list that
- * does not list the wallet's credential issuer, so the DCQL {@code trusted_authorities} constraint
- * the verifier derives from it cannot be satisfied by any credential the wallet holds.
- *
- * <p>The server binds all interfaces because both parties fetching the list reach it differently:
- * Keycloak runs on the host, the wallet runs in a container where {@code localhost} resolves to the
- * Docker host gateway.
+ * <p>It binds all interfaces because Keycloak runs on the host while the wallet runs in a container
+ * where {@code localhost} resolves to the Docker host gateway.
  */
 public final class TestTrustListServer implements AutoCloseable {
 
@@ -63,7 +60,6 @@ public final class TestTrustListServer implements AutoCloseable {
         this.server = server;
     }
 
-    /** Starts a server listing the given certificates as PID issuance and revocation services. */
     public static TestTrustListServer serving(X509Certificate... certificates) {
         try {
             String trustListJwt = buildTrustListJwt(List.of(certificates));
@@ -76,7 +72,7 @@ public final class TestTrustListServer implements AutoCloseable {
         }
     }
 
-    /** The trust list URL, resolvable from the Keycloak server and from the wallet container. */
+    /** Returns the trust list URL, which resolves from the Keycloak server and from the wallet container. */
     public String url() {
         return "http://localhost:%d%s".formatted(server.getAddress().getPort(), PATH);
     }
@@ -89,7 +85,7 @@ public final class TestTrustListServer implements AutoCloseable {
     private static void respondWithTrustList(HttpExchange exchange, String trustListJwt) throws IOException {
         byte[] body = trustListJwt.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/jwt");
-        // Neither Keycloak nor the wallet may serve a later test from a cached copy of this list
+        // Neither Keycloak nor the wallet may serve a later test from a cached copy of this list.
         exchange.getResponseHeaders().add("Cache-Control", "no-store");
         exchange.sendResponseHeaders(200, body.length);
         try (OutputStream responseBody = exchange.getResponseBody()) {
@@ -111,8 +107,8 @@ public final class TestTrustListServer implements AutoCloseable {
     }
 
     private static Map<String, Object> listOfTrustedEntities(List<X509Certificate> certificates) {
-        // ETSI TS 119 602 V1.1.1 clause 6.1.3 writes date-times to the second and without a
-        // decimal fraction, so the served list carries the times a real one would.
+        // ETSI TS 119 602 V1.1.1 clause 6.1.3 writes date-times to the second, without a decimal
+        // fraction.
         Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
 
         Map<String, Object> listAndSchemeInformation = new LinkedHashMap<>();

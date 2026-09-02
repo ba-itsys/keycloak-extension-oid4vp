@@ -34,11 +34,9 @@ import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Base for OID4VP identity provider mappers that read a claim of the verified credential
- * presentation, addressed by a {@link ClaimPath} over the claims JSON. Subclasses decide where the
- * resolved values go and which credential format they cover. Every mapper also declares its
- * credential type and optionally its DCQL claim sets, since the mappers drive the generated DCQL
- * query.
+ * Base for the OID4VP identity provider mappers, each of which reads one claim of the verified
+ * credential presentation. Beyond mapping, the credential type and the optional claim sets a mapper
+ * declares are what the generated DCQL query is built from.
  *
  * <p>Kept in sync with upstream Keycloak's {@code AbstractOID4VPClaimMapper}.
  */
@@ -69,12 +67,10 @@ public abstract class AbstractOID4VPClaimMapper extends AbstractIdentityProvider
         ProviderConfigProperty property = new ProviderConfigProperty();
         property.setName(CLAIM_ALTERNATIVES);
         property.setLabel("Alternative Claims");
-        property.setHelpText("Comma-separated paths of claims read instead when the credential does not present "
-                + "the claim, tried in the given order and written in the same notation. Use it when issuers name "
-                + "the same claim differently, i.e. 'birth_name' as an alternative to 'birth_family_name'. Every "
-                + "alternative is requested as a claim of its own, and the generated DCQL claim sets are multiplied "
-                + "so that each option asks for exactly one of the claim and its alternatives. Leave empty to "
-                + "read the claim only.");
+        property.setHelpText("Comma-separated claim paths tried in order when the claim is not presented, in the "
+                + "same notation as the claim. Use it when issuers name the same claim differently, i.e. "
+                + "'birth_name' as an alternative to 'birth_family_name'. Each alternative is requested as a "
+                + "claim of its own, and the generated claim sets ask for exactly one of them per option.");
         property.setType(ProviderConfigProperty.STRING_TYPE);
         return property;
     }
@@ -124,20 +120,18 @@ public abstract class AbstractOID4VPClaimMapper extends AbstractIdentityProvider
         return true;
     }
 
-    /** The credential format this mapper covers, as used in DCQL queries. */
+    /** Returns the credential format this mapper covers, named as DCQL queries name it. */
     public abstract String credentialFormat();
 
-    /** Whether the credential this mapper reads from is part of the presentation. */
     protected boolean matchesCredential(IdentityProviderMapperModel mapperModel, BrokeredIdentityContext context) {
         return presentedCredential(mapperModel, context) != null;
     }
 
     /**
-     * The credential this mapper reads from: the one named by its credential id, or, for a mapper
-     * without a credential type, the first presented credential of the mapper's format. Returns
-     * null when that credential is not part of the presentation. The presented credential carries
-     * one of the types the entry was requested with, which the callback has verified, so the mapper
-     * does not compare types itself.
+     * Returns the presented credential named by this mapper's credential id, or the first presented
+     * credential of the mapper's format when the mapper declares no credential type, and null when
+     * neither is part of the presentation. No type comparison happens here, because the callback
+     * has already checked that a presented credential is of a requested type.
      */
     protected PresentedCredential presentedCredential(
             IdentityProviderMapperModel mapperModel, BrokeredIdentityContext context) {
@@ -157,29 +151,28 @@ public abstract class AbstractOID4VPClaimMapper extends AbstractIdentityProvider
     }
 
     /**
-     * The credential id this mapper contributes to, mirroring the DCQL query generation: the
-     * configured id, or the one derived from the format and the first credential type.
+     * Resolves the credential id this mapper reads under, mirroring how the DCQL query generation
+     * derives it.
      */
     private String credentialId(IdentityProviderMapperModel mapperModel, String firstCredentialType) {
         return CredentialId.resolve(
                 mapperModel.getConfig().get(CREDENTIAL_ID), credentialFormat(), firstCredentialType);
     }
 
-    /** The node claim paths of this mapper resolve against; mDoc mappers narrow it to a namespace. */
+    /** Returns the node the claim paths resolve against. mDoc mappers narrow it to a namespace. */
     protected JsonNode claimsRoot(IdentityProviderMapperModel mapperModel, PresentedCredential credential) {
         return credential.claimsNode();
     }
 
-    /** Whether the mapper's claim source configuration is usable; mDoc mappers require a namespace. */
+    /** Reports whether the claim source configuration is usable. mDoc mappers require a namespace. */
     protected boolean claimSourceConfigured(IdentityProviderMapperModel mapperModel) {
         return true;
     }
 
     /**
-     * How the configured claim resolved against the presentation. The two empty outcomes carry
-     * different obligations: a misconfigured mapper must leave the brokered user untouched, while a
-     * well configured mapper whose claim the presentation does not carry keeps the remove-on-absent
-     * update semantics.
+     * The two empty outcomes carry different obligations: a misconfigured mapper must leave the
+     * brokered user untouched, while a well configured mapper whose claim the presentation does not
+     * carry keeps the remove-on-absent update semantics.
      */
     protected record ClaimResolution(boolean misconfigured, List<String> values) {
 
@@ -192,9 +185,9 @@ public abstract class AbstractOID4VPClaimMapper extends AbstractIdentityProvider
     }
 
     /**
-     * Resolves the configured claim, keeping misconfiguration apart from an absent claim. The claim
-     * path is read first and the alternative paths after it in their order; the first one the
-     * presentation carries a value for wins, matching the claim set options the DCQL query offers.
+     * Resolves the configured claim and tells misconfiguration apart from an absent claim, trying
+     * the claim path before the alternatives in the same order the generated claim set options
+     * prefer them.
      */
     protected ClaimResolution resolveClaim(IdentityProviderMapperModel mapperModel, BrokeredIdentityContext context) {
         List<ClaimPath> paths = claimPaths(mapperModel);
@@ -216,9 +209,9 @@ public abstract class AbstractOID4VPClaimMapper extends AbstractIdentityProvider
     }
 
     /**
-     * The configured claim path followed by the alternative paths, or null when any of them is
-     * missing or malformed. A mapper whose alternatives are broken is misconfigured as a whole,
-     * as the DCQL query generation leaves it out for the same reason.
+     * Returns the claim path together with its alternatives, or null when any of them is missing or
+     * malformed. One broken alternative makes the whole mapper misconfigured, which is also why the
+     * DCQL generation skips it.
      */
     private List<ClaimPath> claimPaths(IdentityProviderMapperModel mapperModel) {
         String claimPath = mapperModel.getConfig().get(CLAIM);

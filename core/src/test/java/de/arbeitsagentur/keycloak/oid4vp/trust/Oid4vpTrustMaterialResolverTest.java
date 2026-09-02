@@ -225,7 +225,6 @@ class Oid4vpTrustMaterialResolverTest {
                 true);
     }
 
-    /** Double for a provider that implements the upstream contract only, such as default-trust. */
     private record UpstreamOnlyTrustDouble(IdentityProviderModel config, List<JWK> keys)
             implements TrustMaterialIdentityProvider<IdentityProviderModel> {
 

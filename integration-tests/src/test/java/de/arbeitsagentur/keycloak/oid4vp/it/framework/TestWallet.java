@@ -26,9 +26,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * An eudi-dev wallet managed by the test framework. The wallet runs in a Docker container with
- * fixed port bindings and advertises {@code localhost} URLs that resolve both from the test JVM
- * (including the embedded Keycloak server) and from within the wallet container itself.
+ * An eudi-dev wallet managed by the test framework. It runs in a Docker container with fixed port
+ * bindings and advertises {@code localhost} URLs, which resolve from the test JVM, from the
+ * embedded Keycloak server and from inside the wallet container alike.
  */
 public final class TestWallet implements AutoCloseable {
 
@@ -36,8 +36,8 @@ public final class TestWallet implements AutoCloseable {
 
     private final EudiWalletContainer container;
     private final String baseUrl;
-    // The credentials the container was seeded with, restored on every reset so a test that
-    // deletes or replaces credentials cannot leak that change into later tests.
+    // Every reset restores these, so a test that deletes or replaces credentials cannot leak that
+    // change into later tests.
     private final List<String> seededCredentials;
 
     TestWallet(EudiWalletContainer container, String baseUrl) {
@@ -56,7 +56,6 @@ public final class TestWallet implements AutoCloseable {
         return container.client();
     }
 
-    // Base URL the wallet advertises, reachable from the test JVM and the Keycloak server
     public String baseUrl() {
         return baseUrl;
     }
@@ -69,7 +68,6 @@ public final class TestWallet implements AutoCloseable {
         return client().acceptPresentationRequest(uri);
     }
 
-    // Trust list URL of the EU PID providers list
     public String pidTrustListUrl() {
         return trustListUrl(PID_PROVIDERS_LOTE_TYPE);
     }
@@ -86,7 +84,6 @@ public final class TestWallet implements AutoCloseable {
         return baseUrl + "/api/trustlists/" + trustList.id();
     }
 
-    // Resets per-test wallet state: preferred formats, scripted errors, and the credential store
     public void resetState() {
         client().clearPreferredFormat();
         client().clearNextError();

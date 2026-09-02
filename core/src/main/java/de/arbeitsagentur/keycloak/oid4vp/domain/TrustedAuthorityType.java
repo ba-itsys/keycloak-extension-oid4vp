@@ -27,10 +27,10 @@ public enum TrustedAuthorityType {
 
     /**
      * Identifier of an ETSI trusted list, OID4VP 1.0 §6.1.1.2. The specification defines the value
-     * as the identifier of a trusted list specified in ETSI TS 119 612. This extension advertises
-     * the URL of the ETSI TS 119 602 trust list it verifies against, the trust list of the EUDI
-     * ecosystem. The wallet resolves the advertised URL either way, so the entry stays a hint for
-     * credential selection rather than a format contract.
+     * as the identifier of a trusted list specified in ETSI TS 119 612, while this extension
+     * advertises the URL of the ETSI TS 119 602 trust list of the EUDI ecosystem it verifies
+     * against. The wallet resolves the advertised URL either way, because the entry is a hint for
+     * credential selection and not a format contract.
      */
     ETSI_TL(Oid4vpConstants.DCQL_TRUSTED_AUTHORITY_ETSI_TL);
 
@@ -40,7 +40,6 @@ public enum TrustedAuthorityType {
         this.dcqlValue = dcqlValue;
     }
 
-    /** The {@code type} member value of the DCQL entry. */
     public String dcqlValue() {
         return dcqlValue;
     }

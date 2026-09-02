@@ -46,7 +46,6 @@ import org.keycloak.jose.jwk.RSAPublicJWK;
 import org.keycloak.util.JWKSUtils;
 import org.keycloak.util.JsonSerialization;
 
-/** Parses and serializes configured signing JWKs into Keycloak {@link KeyWrapper} instances. */
 public final class Oid4vpSigningKeyParser {
 
     private static final String PRIVATE_KEY_MEMBER = "d";

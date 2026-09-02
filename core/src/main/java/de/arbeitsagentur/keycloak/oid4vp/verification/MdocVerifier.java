@@ -61,8 +61,8 @@ public class MdocVerifier {
     private final int clockSkewSeconds;
 
     /**
-     * @param clockSkewSeconds tolerance applied to the validity window of the MSO, so a credential
-     *     is not rejected over a clock difference between issuer and verifier
+     * @param clockSkewSeconds tolerance applied to the validity window of the MSO. A credential is
+     *     then not rejected over a clock difference between issuer and verifier.
      */
     public MdocVerifier(int clockSkewSeconds) {
         this.clockSkewSeconds = clockSkewSeconds;
@@ -80,9 +80,9 @@ public class MdocVerifier {
     }
 
     /**
-     * The {@code docType} the document of a DeviceResponse claims, read without any verification;
-     * null when the token does not parse or names none. It only ever selects among the doctypes the
-     * verifier requested, so nothing is trusted from it.
+     * Reads the {@code docType} of the DeviceResponse without verifying anything, so the caller can
+     * tell which requested doctype a presentation answers before it picks the trust material.
+     * Returns null when the token does not parse.
      */
     public String peekDocType(String deviceResponseToken) {
         try {
@@ -93,24 +93,24 @@ public class MdocVerifier {
     }
 
     /**
-     * Verifies only the issuer signature (and its value digests when the MSO carries them) of an mDoc.
-     *
-     * <p>This is not a wallet-presentation check: it performs no device authentication and does not bind
-     * the credential to a session, so it must not be used to accept a presented credential. Use
-     * {@link #verifyPresentation} for that.
+     * Verifies only the issuer signature of an mDoc, plus its value digests and validity window when
+     * the MSO carries them. This is not a presentation check: it performs no device authentication
+     * and does not bind the credential to a session, so it must never be used to accept a presented
+     * credential. Use {@link #verifyPresentation} for that.
      */
     MdocVerificationResult verifyIssuerSigned(String deviceResponseToken, ResolvedTrust trust) {
         return verify(deviceResponseToken, trust, null);
     }
 
     /**
-     * Fully verifies an mDoc presented in a VP token: issuer signature, MSO validity window, value
-     * digests, and device authentication that binds the presentation to this session.
+     * Fully verifies an mDoc presented in a VP token, covering the issuer signature, the MSO
+     * validity window, the value digests, and the device authentication that binds the presentation
+     * to this session.
      *
-     * <p>Device authentication and value-digest verification are mandatory here (ISO/IEC 18013-5, 9.1.2):
-     * a {@code DeviceResponse} that omits {@code deviceSigned}, omits the Mobile Security Object, or whose
-     * issuer-signed values are not digest-covered is rejected rather than silently accepted. The OID4VP 1.0
-     * session transcript is tried first, with the ISO/IEC 18013-7 transcript as a fallback when
+     * <p>Device authentication and value digest verification are mandatory here (ISO/IEC 18013-5,
+     * 9.1.2), so a {@code DeviceResponse} is rejected when it omits {@code deviceSigned}, omits the
+     * Mobile Security Object, or leaves issuer-signed values uncovered by digests. The OID4VP 1.0
+     * session transcript is tried first, with the ISO/IEC 18013-7 transcript as the fallback when
      * {@code mdocGeneratedNonce} is present.
      *
      * @see <a href="https://www.iso.org/standard/69084.html">ISO/IEC 18013-5:2021, 9.1.2 (mdoc authentication)</a>
@@ -133,7 +133,7 @@ public class MdocVerifier {
                 new DeviceAuthContext(clientId, nonce, responseUri, mdocGeneratedNonce, jwkThumbprint));
     }
 
-    /** Session-binding inputs for device authentication; {@code null} selects issuer-signature-only mode. */
+    /** Session binding inputs for device authentication. A null context selects issuer signature only mode. */
     private record DeviceAuthContext(
             String clientId, String nonce, String responseUri, String mdocGeneratedNonce, byte[] jwkThumbprint) {}
 
@@ -154,8 +154,8 @@ public class MdocVerifier {
             String docType = resolveDocType(document, mso);
 
             verifyIssuerSignature(document, trust);
-            // Claims and digests are both read from the issuer-signed namespaces, so a document can never
-            // present one set of values while a different set is digest-checked.
+            // Claims and digests are both read from the issuer-signed namespaces, so a document can
+            // never present one set of values while a different set is digest checked.
             verifyDigests(mso, issuerSigned, deviceAuth != null);
             validateValidity(mso, deviceAuth != null);
             Map<String, Object> claims = extractClaims(issuerSigned, mso);
@@ -179,8 +179,9 @@ public class MdocVerifier {
     }
 
     /**
-     * The document-level docType must equal the issuer-signed MSO docType (ISO/IEC 18013-5, 9.1.2);
-     * the MSO value wins because only it is covered by the issuer signature.
+     * Resolves the docType, which the document level and the issuer-signed MSO must agree on
+     * (ISO/IEC 18013-5, 9.1.2). The MSO value wins because only it is covered by the issuer
+     * signature.
      */
     private String resolveDocType(CBORPairList document, CBORPairList mso) {
         String documentDocType = str(document, "docType");
@@ -243,7 +244,7 @@ public class MdocVerifier {
     }
 
     // A JSON object or array serialized into a string element becomes a nested structure in the
-    // claims JSON, so mDoc claims follow the same addressing rules as SD-JWT claims.
+    // claims JSON. mDoc claims then follow the same addressing rules as SD-JWT claims.
     private Object structuredValue(Object value) {
         if (!(value instanceof String text)) {
             return value;
@@ -261,10 +262,9 @@ public class MdocVerifier {
     }
 
     /**
-     * CBOR tag 24 means "encoded CBOR data item": the tag content is a byte string whose bytes
-     * contain another CBOR structure. mdoc issuer-signed items commonly use this wrapper, so we
-     * decode the inner bytes before reading fields like {@code elementIdentifier} or
-     * {@code digestID}.
+     * Unwraps CBOR tag 24, "encoded CBOR data item", whose tag content is a byte string holding
+     * another CBOR structure. mdoc issuer-signed items commonly use this wrapper, so the inner bytes
+     * have to be decoded before fields like {@code elementIdentifier} or {@code digestID} are read.
      */
     private CBORPairList unwrapTag24(CBORItem element) {
         if (element instanceof CBORTaggedItem tagged && tagged.getTagNumber().intValue() == 24) {
@@ -311,8 +311,8 @@ public class MdocVerifier {
                 if (leafKey != null && new COSEVerifier(leafKey).verify(sign1)) return;
             }
 
-            // An mDoc names no issuer, so every pinned certificate is tried; the doctype the trust
-            // material is scoped to is what keeps the trust domains apart here.
+            // An mDoc names no issuer, so every pinned certificate is tried and the doctype scope of
+            // the trust material is what keeps the trust domains apart here.
             for (X509Certificate cert : trust.pinnedCertificates()) {
                 try {
                     cert.checkValidity();
@@ -448,10 +448,10 @@ public class MdocVerifier {
     }
 
     /**
-     * The algorithm the value digests are computed with, which the Mobile Security Object declares
-     * and the issuer signature covers. ISO/IEC 18013-5 defines SHA-256, SHA-384 and SHA-512 for it;
-     * a document that declares none is read as SHA-256, and one that declares anything else is
-     * rejected rather than judged by an algorithm its issuer did not use.
+     * Returns the algorithm the value digests are computed with, declared by the Mobile Security
+     * Object and covered by the issuer signature. ISO/IEC 18013-5 defines SHA-256, SHA-384 and
+     * SHA-512 for it. A document that declares none is read as SHA-256, and one that declares
+     * anything else is rejected rather than judged by an algorithm its issuer did not use.
      */
     private String digestAlgorithm(CBORPairList mso) {
         String declared = str(mso, "digestAlgorithm");
@@ -493,11 +493,11 @@ public class MdocVerifier {
     }
 
     /**
-     * Enforces the validity window the issuer signed. A presentation carries it: the MSO of an mDoc
-     * holds {@code validityInfo}, so a presentation without it states no validity at all and is
-     * rejected rather than accepted as valid forever. ISO/IEC 18013-5 makes {@code validFrom} and
-     * {@code validUntil} mandatory in {@code ValidityInfo}, so a validity information that omits a
-     * timestamp or carries an unreadable one is rejected as well; the readable window is judged
+     * Enforces the validity window the issuer signed, held in the MSO {@code validityInfo}. A
+     * presentation without it states no validity at all and is rejected in presentation mode rather
+     * than accepted as valid forever. ISO/IEC 18013-5 makes {@code validFrom} and
+     * {@code validUntil} mandatory in {@code ValidityInfo}, so validity information that omits a
+     * timestamp or carries an unreadable one is rejected as well. The readable window is judged
      * within the configured clock skew.
      */
     private void validateValidity(CBORPairList mso, boolean mandatory) {
@@ -521,7 +521,7 @@ public class MdocVerifier {
         }
     }
 
-    /** The named mandatory ValidityInfo timestamp; missing or unreadable ones fail verification. */
+    /** Reads a mandatory ValidityInfo timestamp, failing verification when it is missing or unreadable. */
     private Instant requireInstant(CBORPairList validityInfo, String field) {
         CBORItem value = val(validityInfo, field);
         if (value == null) {

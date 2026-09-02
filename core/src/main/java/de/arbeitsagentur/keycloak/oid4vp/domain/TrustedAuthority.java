@@ -23,12 +23,12 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * One DCQL {@code trusted_authorities} entry: an authority type and the values the verifier accepts
- * for it. Trust material identity providers expose what they can advertise, the DCQL query carries
- * the entries of the providers serving a credential.
+ * One DCQL {@code trusted_authorities} entry, naming an authority type and the values the verifier
+ * accepts for it. The query carries the entries of the trust material providers serving a
+ * credential.
  *
  * <p>A credential matches when it matches one value of one entry, so several entries of different
- * types are alternatives rather than a conjunction.
+ * types are alternatives and not a conjunction.
  *
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1.1">OID4VP 1.0 §6.1.1 — Trusted Authorities Query</a>
  */
@@ -38,14 +38,13 @@ public record TrustedAuthority(TrustedAuthorityType type, List<String> values) {
         values = values != null ? List.copyOf(values) : List.of();
     }
 
-    /** An entry, or nothing when there are no values to advertise. */
     public static List<TrustedAuthority> of(TrustedAuthorityType type, List<String> values) {
         return values == null || values.isEmpty() ? List.of() : List.of(new TrustedAuthority(type, values));
     }
 
     /**
-     * Merges entries of several providers into one entry per type, keeping the first occurrence
-     * order of both the types and their values.
+     * Merges the entries of several providers into one entry per type. Types and values keep the
+     * order of their first occurrence.
      */
     public static List<TrustedAuthority> merge(List<TrustedAuthority> entries) {
         Map<TrustedAuthorityType, Set<String>> valuesByType = new LinkedHashMap<>();
@@ -62,7 +61,6 @@ public record TrustedAuthority(TrustedAuthorityType type, List<String> values) {
         return List.copyOf(merged);
     }
 
-    /** The DCQL representation of this entry. */
     public Map<String, Object> toDcqlEntry() {
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put(Oid4vpConstants.DCQL_TRUSTED_AUTHORITY_TYPE, type.dcqlValue());
@@ -70,7 +68,6 @@ public record TrustedAuthority(TrustedAuthorityType type, List<String> values) {
         return entry;
     }
 
-    /** The DCQL representation of a list of entries, empty when nothing is advertised. */
     public static List<Map<String, Object>> toDcqlEntries(List<TrustedAuthority> entries) {
         return entries.stream()
                 .filter(entry -> !entry.values().isEmpty())
