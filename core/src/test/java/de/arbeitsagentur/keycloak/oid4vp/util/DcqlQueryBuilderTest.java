@@ -335,7 +335,7 @@ class DcqlQueryBuilderTest {
         assertThat(result).hasSize(1);
         CredentialTypeSpec type = result.values().iterator().next();
         assertThat(type.format()).isEqualTo("dc+sd-jwt");
-        assertThat(type.type()).isEqualTo("IdentityCredential");
+        assertThat(type.types()).containsExactly("IdentityCredential");
         assertThat(type.claimSpecs()).extracting(ClaimSpec::path).containsExactly("given_name", "sub");
         assertThat(type.claimSpecs().get(0).claimSetIds()).containsExactly("1-full", "2-min");
         assertThat(type.claimSpecs().get(1).claimSetIds())
@@ -410,19 +410,101 @@ class DcqlQueryBuilderTest {
                 .isEmpty();
     }
 
+    // --- several credential types per entry -----------------------------------
+
     @Test
-    void aggregateFromMappers_duplicateCredentialIdAcrossCredentialTypes_isReported() {
-        IdentityProviderMapperModel pid = sdJwtMapper("urn:eudi:pid:1", "family_name", null, "shared");
-        IdentityProviderMapperModel other = sdJwtMapper("urn:eudi:diploma:1", "family_name", null, "shared");
+    void build_mapperNamingSeveralVcts_requestsThemAsOneEntry() throws Exception {
+        Map<String, CredentialTypeSpec> credentials = aggregate(
+                Stream.of(sdJwtMapper(" urn:eudi:pid:1 , urn:eudi:pid:de:1 ", "given_name", null)),
+                config("oid4vp", null));
+
+        assertThat(credentials)
+                .as("the default credential id derives from the first type")
+                .containsOnlyKeys("sdjwt_urn_eudi_pid_1");
+        Map<String, Object> credential =
+                firstCredential(DcqlQueryBuilder.fromMapperSpecs(objectMapper, credentials, List.of(), Map.of())
+                        .build());
+        assertThat(credential.get("meta"))
+                .isEqualTo(Map.of("vct_values", List.of("urn:eudi:pid:1", "urn:eudi:pid:de:1")));
+    }
+
+    @Test
+    void aggregateFromMappers_mappersSharingAnId_acceptEveryTypeAnyOfThemNames() {
+        IdentityProviderMapperModel pid = sdJwtMapper("urn:eudi:pid:1", "family_name", null, "pid");
+        IdentityProviderMapperModel germanPid =
+                sdJwtMapper("urn:eudi:pid:de:1, urn:eudi:pid:1", "birth_name", null, "pid");
 
         DcqlQueryBuilder.AggregatedCredentials aggregated =
-                DcqlQueryBuilder.aggregateFromMappers(Stream.of(pid, other), config("oid4vp", null));
+                DcqlQueryBuilder.aggregateFromMappers(Stream.of(pid, germanPid), config("oid4vp", null));
+
+        assertThat(aggregated.problems()).isEmpty();
+        assertThat(aggregated.credentials().get("pid").types())
+                .as("types are merged in the order they first appear")
+                .containsExactly("urn:eudi:pid:1", "urn:eudi:pid:de:1");
+        assertThat(aggregated.credentials().get("pid").claimSpecs())
+                .extracting(ClaimSpec::path)
+                .containsExactly("family_name", "birth_name");
+    }
+
+    @Test
+    void aggregateFromMappers_sameIdForDifferentFormats_isReported() {
+        IdentityProviderMapperModel sdJwt = sdJwtMapper("urn:eudi:pid:1", "family_name", null, "shared");
+        IdentityProviderMapperModel mdoc = mdocMapper("eu.europa.ec.eudi.pid.1", null, "family_name");
+        mdoc.getConfig().put(AbstractOID4VPClaimMapper.CREDENTIAL_ID, "shared");
+
+        DcqlQueryBuilder.AggregatedCredentials aggregated =
+                DcqlQueryBuilder.aggregateFromMappers(Stream.of(sdJwt, mdoc), config("oid4vp", null));
 
         assertThat(aggregated.problems())
-                .as("a credential id addresses exactly one credential")
+                .as("a credential id addresses credentials of one format")
                 .singleElement()
                 .asString()
-                .contains("shared", "urn:eudi:pid:1", "urn:eudi:diploma:1");
+                .contains("shared", "dc+sd-jwt", "mso_mdoc");
+    }
+
+    @Test
+    void aggregateFromMappers_mdocMapperNamingSeveralDoctypes_isReported() {
+        IdentityProviderMapperModel mdoc =
+                mdocMapper("eu.europa.ec.eudi.pid.1, org.iso.18013.5.1.mDL", null, "family_name");
+        mdoc.setName("pid-or-mdl");
+
+        DcqlQueryBuilder.AggregatedCredentials aggregated =
+                DcqlQueryBuilder.aggregateFromMappers(Stream.of(mdoc), config("oid4vp", null));
+
+        assertThat(aggregated.problems())
+                .as("DCQL doctype_value is a single string")
+                .singleElement()
+                .asString()
+                .contains("pid-or-mdl", "one doctype");
+        assertThat(aggregated.credentials()).isEmpty();
+    }
+
+    @Test
+    void aggregateFromMappers_mdocMappersSharingAnIdWithDifferentDoctypes_isReported() {
+        IdentityProviderMapperModel pid = mdocMapper("eu.europa.ec.eudi.pid.1", null, "family_name");
+        pid.getConfig().put(AbstractOID4VPClaimMapper.CREDENTIAL_ID, "shared");
+        IdentityProviderMapperModel mdl = mdocMapper("org.iso.18013.5.1.mDL", "org.iso.18013.5.1", "family_name");
+        mdl.getConfig().put(AbstractOID4VPClaimMapper.CREDENTIAL_ID, "shared");
+
+        DcqlQueryBuilder.AggregatedCredentials aggregated =
+                DcqlQueryBuilder.aggregateFromMappers(Stream.of(pid, mdl), config("oid4vp", null));
+
+        assertThat(aggregated.problems())
+                .singleElement()
+                .asString()
+                .contains("shared", "eu.europa.ec.eudi.pid.1", "org.iso.18013.5.1.mDL");
+    }
+
+    @Test
+    void build_mdocEntry_writesItsSingleDoctype() throws Exception {
+        builder.addCredentialType(
+                "pid",
+                "mso_mdoc",
+                List.of("eu.europa.ec.eudi.pid.1"),
+                List.of(ClaimSpec.mdoc("eu.europa.ec.eudi.pid.1", "given_name")));
+
+        assertThat(firstCredential(builder.build()).get("meta"))
+                .isEqualTo(Map.of("doctype_value", "eu.europa.ec.eudi.pid.1"));
     }
 
     @Test

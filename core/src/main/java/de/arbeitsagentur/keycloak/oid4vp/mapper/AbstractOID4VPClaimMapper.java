@@ -18,6 +18,7 @@ package de.arbeitsagentur.keycloak.oid4vp.mapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import de.arbeitsagentur.keycloak.oid4vp.domain.ClaimSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialId;
+import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredentials;
@@ -94,7 +95,7 @@ public abstract class AbstractOID4VPClaimMapper extends AbstractIdentityProvider
         property.setHelpText("Identifier of this credential in the generated DCQL query, referenced by the "
                 + "identity provider's credential sets and used as the key the wallet answers under. "
                 + "Only letters, digits, '_' and '-' are allowed. Leave empty to derive it from format and "
-                + "credential type, i.e. 'sdjwt_urn_eudi_pid_1' or 'mdoc_org_iso_18013_5_1_mDL'. Mappers "
+                + "first credential type, i.e. 'sdjwt_urn_eudi_pid_1' or 'mdoc_org_iso_18013_5_1_mDL'. Mappers "
                 + "sharing a credential id are requested as one credential, so the same credential type can "
                 + "be requested twice with different claims by giving the mappers different ids.");
         property.setType(ProviderConfigProperty.STRING_TYPE);
@@ -134,7 +135,9 @@ public abstract class AbstractOID4VPClaimMapper extends AbstractIdentityProvider
     /**
      * The credential this mapper reads from: the one named by its credential id, or, for a mapper
      * without a credential type, the first presented credential of the mapper's format. Returns
-     * null when that credential is not part of the presentation.
+     * null when that credential is not part of the presentation. The presented credential carries
+     * one of the types the entry was requested with, which the callback has verified, so the mapper
+     * does not compare types itself.
      */
     protected PresentedCredential presentedCredential(
             IdentityProviderMapperModel mapperModel, BrokeredIdentityContext context) {
@@ -143,19 +146,23 @@ public abstract class AbstractOID4VPClaimMapper extends AbstractIdentityProvider
             return null;
         }
 
-        String credentialType = mapperModel.getConfig().get(CREDENTIAL_TYPE);
-        if (StringUtil.isBlank(credentialType)) {
+        List<String> credentialTypes =
+                CredentialTypeSpec.parseTypes(mapperModel.getConfig().get(CREDENTIAL_TYPE));
+        if (credentialTypes.isEmpty()) {
             return credentials.firstOfFormat(credentialFormat());
         }
 
-        PresentedCredential credential = credentials.get(credentialId(mapperModel, credentialType));
+        PresentedCredential credential = credentials.get(credentialId(mapperModel, credentialTypes.get(0)));
         return credential != null && credentialFormat().equals(credential.format()) ? credential : null;
     }
 
-    /** The credential id this mapper contributes to, mirroring the DCQL query generation. */
-    private String credentialId(IdentityProviderMapperModel mapperModel, String credentialType) {
+    /**
+     * The credential id this mapper contributes to, mirroring the DCQL query generation: the
+     * configured id, or the one derived from the format and the first credential type.
+     */
+    private String credentialId(IdentityProviderMapperModel mapperModel, String firstCredentialType) {
         return CredentialId.resolve(
-                mapperModel.getConfig().get(CREDENTIAL_ID), credentialFormat(), credentialType.trim());
+                mapperModel.getConfig().get(CREDENTIAL_ID), credentialFormat(), firstCredentialType);
     }
 
     /** The node claim paths of this mapper resolve against; mDoc mappers narrow it to a namespace. */

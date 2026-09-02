@@ -352,9 +352,9 @@ public class Oid4vpCallbackProcessor {
             }
             if (!requested.matches(credential)) {
                 throw new IdentityBrokerException("Credential type not trusted by this OID4VP IdP: the query requested"
-                        + " format '" + requested.format() + "' and type '" + requested.type() + "' under credential id"
-                        + " '" + credentialId + "', but the wallet presented type '" + credential.credentialType()
-                        + "'");
+                        + " format '" + requested.format() + "' and type '" + requested.describeTypes()
+                        + "' under credential id '" + credentialId + "', but the wallet presented type '"
+                        + credential.credentialType() + "'");
             }
             try {
                 requested.checkIfSatisfiedBy(credential.claimsNode());

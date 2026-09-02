@@ -41,7 +41,7 @@ class RequestedCredentialTest {
         RequestedCredential requested = RequestedCredential.of("cred1", spec);
 
         assertThat(requested.format()).isEqualTo("dc+sd-jwt");
-        assertThat(requested.type()).isEqualTo("urn:eudi:pid:1");
+        assertThat(requested.types()).containsExactly("urn:eudi:pid:1");
         assertThat(requested.claims())
                 .containsExactly(
                         new RequestedClaim(null, "given_name"),
@@ -101,6 +101,29 @@ class RequestedCredentialTest {
                 "dc+sd-jwt", "urn:eudi:pid:1", List.of(ClaimSpec.sdJwt("given_name"), ClaimSpec.sdJwt("family_name")));
 
         assertThat(RequestedCredential.of("cred1", spec).claimSets()).isEmpty();
+    }
+
+    @Test
+    void of_carriesEveryAcceptedType() {
+        CredentialTypeSpec spec = new CredentialTypeSpec(
+                "dc+sd-jwt", List.of("urn:eudi:pid:1", "urn:eudi:pid:de:1"), List.of(ClaimSpec.sdJwt("given_name")));
+
+        assertThat(RequestedCredential.of("pid", spec).types()).containsExactly("urn:eudi:pid:1", "urn:eudi:pid:de:1");
+    }
+
+    @Test
+    void matches_acceptsACredentialOfAnyRequestedType() {
+        RequestedCredential requested = new RequestedCredential(
+                "pid", "dc+sd-jwt", List.of("urn:eudi:pid:1", "urn:eudi:pid:de:1"), List.of(), List.of());
+
+        assertThat(requested.matches(sdJwtOf("urn:eudi:pid:de:1"))).isTrue();
+        assertThat(requested.matches(sdJwtOf("urn:eudi:pid:1"))).isTrue();
+        assertThat(requested.matches(sdJwtOf("urn:eudi:diploma:1"))).isFalse();
+        assertThat(requested.describeTypes()).isEqualTo("urn:eudi:pid:1, urn:eudi:pid:de:1");
+    }
+
+    private static VerifiedCredential sdJwtOf(String type) {
+        return new VerifiedCredential("c1", "https://issuer.example", type, Map.of(), PresentationType.SD_JWT);
     }
 
     @Test

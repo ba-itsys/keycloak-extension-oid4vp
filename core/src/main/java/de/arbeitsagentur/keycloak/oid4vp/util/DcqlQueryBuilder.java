@@ -76,8 +76,14 @@ public class DcqlQueryBuilder {
 
     public DcqlQueryBuilder addCredentialType(
             String credentialId, String format, String type, List<ClaimSpec> claimSpecs) {
+        return addCredentialType(credentialId, format, List.of(type), claimSpecs);
+    }
+
+    /** Adds a credential accepting any of the given types, see {@link CredentialTypeSpec#types()}. */
+    public DcqlQueryBuilder addCredentialType(
+            String credentialId, String format, List<String> types, List<ClaimSpec> claimSpecs) {
         credentialTypes.put(
-                credentialId, new CredentialTypeSpec(format, type, claimSpecs != null ? claimSpecs : List.of()));
+                credentialId, new CredentialTypeSpec(format, types, claimSpecs != null ? claimSpecs : List.of()));
         return this;
     }
 
@@ -153,10 +159,12 @@ public class DcqlQueryBuilder {
     /**
      * Aggregates credential type specifications from the given OID4VP claim mappers, keyed by the
      * credential id the mappers resolve to. The mapper's provider id determines the credential
-     * format; its configuration carries the credential type, credential id, claim path, mDoc
-     * namespace, and claim set ids. Mappers sharing a credential id form one credential entry, so
-     * the same credential type can be requested more than once with different claims. Credentials
-     * are ordered by id so the generated query does not depend on mapper enumeration order.
+     * format; its configuration carries the credential types, credential id, claim path, mDoc
+     * namespace, and claim set ids. Mappers sharing a credential id form one credential entry that
+     * accepts every type any of them names, so the same credential type can be requested more than
+     * once with different claims, and a mapper may name several types for one entry. An mDoc entry
+     * accepts one doctype only. Credentials are ordered by id so the generated query does not depend
+     * on mapper enumeration order.
      */
     public static AggregatedCredentials aggregateFromMappers(
             Stream<IdentityProviderMapperModel> mappers, Oid4vpConfigProvider config) {
@@ -172,27 +180,42 @@ public class DcqlQueryBuilder {
                 if (format == null) {
                     return;
                 }
-                String type = mapper.getConfig().get(AbstractOID4VPClaimMapper.CREDENTIAL_TYPE);
+                List<String> types = CredentialTypeSpec.parseTypes(
+                        mapper.getConfig().get(AbstractOID4VPClaimMapper.CREDENTIAL_TYPE));
                 String claimPath = mapper.getConfig().get(AbstractOID4VPClaimMapper.CLAIM);
-                if (StringUtil.isBlank(type) || StringUtil.isBlank(claimPath)) {
+                if (types.isEmpty() || StringUtil.isBlank(claimPath)) {
                     return;
                 }
-                ClaimSpec claimSpec = claimSpecOfMapper(mapper, format, type.trim(), claimPath.trim());
+                if (FORMAT_MSO_MDOC.equals(format) && types.size() > 1) {
+                    problems.add("mapper '" + mapper.getName() + "' names the doctypes " + types
+                            + ", but an mDoc credential entry accepts one doctype (DCQL doctype_value is a"
+                            + " single string). Request each doctype under its own credential id.");
+                    return;
+                }
+                ClaimSpec claimSpec = claimSpecOfMapper(mapper, format, types.get(0), claimPath.trim());
                 if (!claimSpec.pathsWellFormed()) {
                     LOG.warnf(
                             "Ignoring mapper %s: invalid claim path among '%s' and the alternatives %s",
                             mapper.getName(), claimPath, claimSpec.alternativePaths());
                     return;
                 }
-                CredentialTypeKey typeKey = new CredentialTypeKey(format, type.trim());
+                CredentialTypeKey typeKey = new CredentialTypeKey(format, types);
                 String credentialId = credentialIdOfMapper(mapper, typeKey);
                 CredentialTypeKey known = typesByCredentialId.putIfAbsent(credentialId, typeKey);
-                if (known != null && !known.equals(typeKey)) {
-                    problems.add("mapper '" + mapper.getName() + "' uses the credential id '" + credentialId
-                            + "' of credential type '" + known.type() + "' (format '" + known.format()
-                            + "') for credential type '" + typeKey.type() + "' (format '" + typeKey.format()
-                            + "'). A credential id addresses exactly one credential.");
-                    return;
+                if (known != null) {
+                    if (!known.format().equals(format)) {
+                        problems.add("mapper '" + mapper.getName() + "' uses the credential id '" + credentialId
+                                + "' of format '" + known.format() + "' for format '" + format
+                                + "'. A credential id addresses credentials of one format.");
+                        return;
+                    }
+                    if (FORMAT_MSO_MDOC.equals(format) && !known.types().equals(types)) {
+                        problems.add("mapper '" + mapper.getName() + "' uses the credential id '" + credentialId
+                                + "' of doctype '" + known.firstType() + "' for doctype '" + types.get(0)
+                                + "'. An mDoc credential id addresses exactly one doctype.");
+                        return;
+                    }
+                    typesByCredentialId.put(credentialId, known.withTypes(types));
                 }
                 claimsByCredentialId
                         .computeIfAbsent(credentialId, k -> new ArrayList<>())
@@ -229,7 +252,7 @@ public class DcqlQueryBuilder {
                 result.put(
                         credentialId,
                         new CredentialTypeSpec(
-                                typeKey.format(), typeKey.type(), claimsByCredentialId.get(credentialId)));
+                                typeKey.format(), typeKey.types(), claimsByCredentialId.get(credentialId)));
             });
         } catch (Exception e) {
             LOG.warnf("Failed to aggregate mappers: %s", e.getMessage());
@@ -324,12 +347,13 @@ public class DcqlQueryBuilder {
         return credential;
     }
 
+    /** The type constraint: every accepted VCT of an SD-JWT entry, the single doctype of an mDoc entry. */
     private Map<String, Object> buildMetaConstraint(CredentialTypeSpec typeSpec) {
         Map<String, Object> meta = new LinkedHashMap<>();
         if (FORMAT_MSO_MDOC.equals(typeSpec.format())) {
-            meta.put(DCQL_DOCTYPE_VALUE, typeSpec.type());
+            meta.put(DCQL_DOCTYPE_VALUE, typeSpec.firstType());
         } else {
-            meta.put(DCQL_VCT_VALUES, List.of(typeSpec.type()));
+            meta.put(DCQL_VCT_VALUES, typeSpec.types());
         }
         return meta;
     }
@@ -411,7 +435,10 @@ public class DcqlQueryBuilder {
         return credentialSet;
     }
 
-    /** The credential id a mapper contributes to: its explicit id, or the one derived from format and type. */
+    /**
+     * The credential id a mapper contributes to: its explicit id, or the one derived from the format
+     * and the first credential type.
+     */
     private static String credentialIdOfMapper(IdentityProviderMapperModel mapper, CredentialTypeKey typeKey) {
         String configured = mapper.getConfig().get(AbstractOID4VPClaimMapper.CREDENTIAL_ID);
         if (StringUtil.isNotBlank(configured) && !CredentialId.isValid(configured.trim())) {
@@ -419,8 +446,21 @@ public class DcqlQueryBuilder {
                     "Mapper %s configures the invalid credential id '%s'; falling back to the derived id",
                     mapper.getName(), configured.trim());
         }
-        return CredentialId.resolve(configured, typeKey.format(), typeKey.type());
+        return CredentialId.resolve(configured, typeKey.format(), typeKey.firstType());
     }
 
-    private record CredentialTypeKey(String format, String type) {}
+    /** The format and accepted types of one credential entry while the mappers are aggregated. */
+    private record CredentialTypeKey(String format, List<String> types) {
+
+        String firstType() {
+            return types.get(0);
+        }
+
+        /** This entry also accepting the given types, appended in their order. */
+        CredentialTypeKey withTypes(List<String> moreTypes) {
+            List<String> merged = new ArrayList<>(types);
+            moreTypes.stream().filter(type -> !merged.contains(type)).forEach(merged::add);
+            return new CredentialTypeKey(format, merged);
+        }
+    }
 }

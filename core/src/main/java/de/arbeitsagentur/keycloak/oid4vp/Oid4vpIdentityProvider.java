@@ -250,14 +250,18 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
     /**
      * The {@code trusted_authorities} entries of every credential, taken from the trust material
-     * identity providers serving its credential type. Only they know whether their trust domain can
-     * be advertised at all, so there is no verifier-wide setting to override them.
+     * identity providers serving its credential types. Only they know whether their trust domain can
+     * be advertised at all, so there is no verifier-wide setting to override them. An entry accepting
+     * several types advertises the trust domains of all of them.
      */
     private static Map<String, List<TrustedAuthority>> trustedAuthorities(
             Map<String, CredentialTypeSpec> credentialTypes, CredentialTrustPlan trustPlan) {
         Map<String, List<TrustedAuthority>> trustedAuthorities = new LinkedHashMap<>();
-        credentialTypes.forEach((credentialId, spec) ->
-                trustedAuthorities.put(credentialId, trustPlan.trustedAuthoritiesFor(spec.type())));
+        credentialTypes.forEach((credentialId, spec) -> trustedAuthorities.put(
+                credentialId,
+                TrustedAuthority.merge(spec.types().stream()
+                        .flatMap(type -> trustPlan.trustedAuthoritiesFor(type).stream())
+                        .toList())));
         return trustedAuthorities;
     }
 
@@ -302,14 +306,12 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         if (!trustPlan.isScopedByCredentialType()) {
             return;
         }
-        credentialTypes.forEach((credentialId, spec) -> {
-            if (!trustPlan.serves(spec.type())) {
-                LOG.warnf(
+        credentialTypes.forEach((credentialId, spec) -> spec.types().stream()
+                .filter(type -> !trustPlan.serves(type))
+                .forEach(type -> LOG.warnf(
                         "OID4VP IdP '%s': no trust material identity provider of '%s' serves the credential type '%s' "
                                 + "requested as '%s'; presentations of that credential cannot be verified",
-                        getConfig().getAlias(), getConfig().getTrustMaterialIdps(), spec.type(), credentialId);
-            }
-        });
+                        getConfig().getAlias(), getConfig().getTrustMaterialIdps(), type, credentialId)));
     }
 
     /**

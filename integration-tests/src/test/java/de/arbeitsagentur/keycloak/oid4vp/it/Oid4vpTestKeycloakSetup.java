@@ -17,6 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp.it;
 
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialId;
+import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.mapper.AbstractOID4VPClaimMapper;
 import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPEidasLoaUserSessionAttributeMapper;
@@ -148,8 +149,11 @@ public final class Oid4vpTestKeycloakSetup {
         if (configured != null && !configured.isBlank()) {
             return configured;
         }
+        // Mirrors the extension: the default id derives from the first of the mapper's types.
         return CredentialId.defaultFor(
-                formatOf(mapper), mapper.getConfig().get(AbstractOID4VPClaimMapper.CREDENTIAL_TYPE));
+                formatOf(mapper),
+                CredentialTypeSpec.parseTypes(mapper.getConfig().get(AbstractOID4VPClaimMapper.CREDENTIAL_TYPE))
+                        .get(0));
     }
 
     private static String formatOf(IdentityProviderMapperRepresentation mapper) {

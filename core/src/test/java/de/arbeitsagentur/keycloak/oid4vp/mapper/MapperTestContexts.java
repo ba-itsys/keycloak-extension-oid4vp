@@ -34,13 +34,16 @@ final class MapperTestContexts {
 
     static BrokeredIdentityContext context(PresentationType presentationType, String credentialType, String claimsJson)
             throws Exception {
+        return context(presentationType, credentialIdOf(presentationType, credentialType), credentialType, claimsJson);
+    }
+
+    /** A context whose single credential was answered under the given credential id. */
+    static BrokeredIdentityContext context(
+            PresentationType presentationType, String credentialId, String credentialType, String claimsJson)
+            throws Exception {
         Map<String, Object> claims = JsonSerialization.readValue(claimsJson, new TypeReference<>() {});
         VerifiedCredential credential = new VerifiedCredential(
-                credentialIdOf(presentationType, credentialType),
-                "https://issuer.example",
-                credentialType,
-                claims,
-                presentationType);
+                credentialId, "https://issuer.example", credentialType, claims, presentationType);
 
         Oid4vpIdentityProviderConfig config = new Oid4vpIdentityProviderConfig();
         config.setAlias("oid4vp");
