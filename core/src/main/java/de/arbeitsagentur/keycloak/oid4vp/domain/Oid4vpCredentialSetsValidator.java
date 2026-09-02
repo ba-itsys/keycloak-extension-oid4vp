@@ -187,7 +187,10 @@ public final class Oid4vpCredentialSetsValidator {
 
     private static List<String> claimProblems(
             String credentialId, CredentialTypeSpec credential, String claimPath, String namespace) {
-        List<ClaimSpec> claimSpecs = credential.claimSpecs();
+        // The claim set options index the requested claims, where a mapper's alternative paths
+        // count as claims of their own, so a principal read under an alternative path only
+        // is not in every option.
+        List<ClaimSpec> claimSpecs = credential.requestedClaims();
         List<Integer> principalIndexes = new ArrayList<>();
         for (int i = 0; i < claimSpecs.size(); i++) {
             ClaimSpec claimSpec = claimSpecs.get(i);

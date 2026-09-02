@@ -22,6 +22,7 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.ClaimSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialId;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
+import de.arbeitsagentur.keycloak.oid4vp.domain.DcqlId;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PrincipalAttribute;
 import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthority;
@@ -31,10 +32,12 @@ import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPMdocUserSessionAttributeMa
 import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPSdJwtUserAttributeMapper;
 import de.arbeitsagentur.keycloak.oid4vp.mapper.OID4VPSdJwtUserSessionAttributeMapper;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Stream;
 import org.jboss.logging.Logger;
 import org.keycloak.models.IdentityProviderMapperModel;
@@ -54,6 +57,8 @@ public class DcqlQueryBuilder {
 
     private static final Logger LOG = Logger.getLogger(DcqlQueryBuilder.class);
     private static final String CLAIM_ID_PREFIX = "claim";
+    private static final String CLAIM_ID_COLLISION_SEPARATOR = "-";
+    private static final String PRINCIPAL_CLAIM_ID = "principal";
 
     private final ObjectMapper objectMapper;
     private final Map<String, CredentialTypeSpec> credentialTypes = new LinkedHashMap<>();
@@ -173,8 +178,10 @@ public class DcqlQueryBuilder {
                     return;
                 }
                 ClaimSpec claimSpec = claimSpecOfMapper(mapper, format, type.trim(), claimPath.trim());
-                if (claimSpec.claimPath() == null) {
-                    LOG.warnf("Ignoring invalid claim path '%s' of mapper %s", claimPath, mapper.getName());
+                if (!claimSpec.pathsWellFormed()) {
+                    LOG.warnf(
+                            "Ignoring mapper %s: invalid claim path among '%s' and the alternatives %s",
+                            mapper.getName(), claimPath, claimSpec.alternativePaths());
                     return;
                 }
                 CredentialTypeKey typeKey = new CredentialTypeKey(format, type.trim());
@@ -212,7 +219,7 @@ public class DcqlQueryBuilder {
                             .anyMatch(spec -> spec.path().equals(principal.path())
                                     && Objects.equals(spec.namespace(), principal.namespace()));
                     if (!alreadyPresent) {
-                        entry.getValue().add(principal);
+                        entry.getValue().add(principal.withId(PRINCIPAL_CLAIM_ID));
                     }
                 }
             }
@@ -248,16 +255,35 @@ public class DcqlQueryBuilder {
         };
     }
 
+    /**
+     * The claim a mapper requests, under the slugged mapper name as claim id so the generated
+     * {@code claim_sets} read like the mapper configuration. An alternative path equal to the
+     * claim path is dropped, as it would request the same claim twice.
+     */
     private static ClaimSpec claimSpecOfMapper(
             IdentityProviderMapperModel mapper, String format, String type, String claimPath) {
         List<String> claimSetIds =
                 ClaimSpec.parseClaimSetIds(mapper.getConfig().get(AbstractOID4VPClaimMapper.CLAIM_SET_IDS));
+        List<String> alternativePaths =
+                ClaimSpec.parseAlternativePaths(mapper.getConfig().get(AbstractOID4VPClaimMapper.CLAIM_ALTERNATIVES))
+                        .stream()
+                        .filter(alternative -> !alternative.equals(claimPath))
+                        .toList();
+        ClaimSpec claimSpec;
         if (FORMAT_MSO_MDOC.equals(format)) {
             String namespace = mapper.getConfig().get(OID4VPMdocUserAttributeMapper.NAMESPACE);
             String effectiveNamespace = StringUtil.isNotBlank(namespace) ? namespace.trim() : type;
-            return ClaimSpec.mdoc(effectiveNamespace, claimPath, claimSetIds);
+            claimSpec = ClaimSpec.mdoc(effectiveNamespace, claimPath, claimSetIds);
+        } else {
+            claimSpec = ClaimSpec.sdJwt(claimPath, claimSetIds);
         }
-        return ClaimSpec.sdJwt(claimPath, claimSetIds);
+        return claimSpec.withId(claimIdOfMapper(mapper)).withAlternativePaths(alternativePaths);
+    }
+
+    /** The DCQL claim id derived from the mapper name, or null for a mapper without one. */
+    private static String claimIdOfMapper(IdentityProviderMapperModel mapper) {
+        String name = mapper.getName();
+        return StringUtil.isBlank(name) ? null : DcqlId.slug(name.trim());
     }
 
     /**
@@ -309,35 +335,44 @@ public class DcqlQueryBuilder {
     }
 
     /**
-     * Adds the credential's claims and, when any claim declares claim set ids, a {@code claim_sets}
-     * entry with one option per distinct id, ordered lexicographically. The option order expresses
-     * the verifier's preference; wallets use the first option they can satisfy. Claims without ids
-     * are included in every option.
+     * Adds the credential's claims and, when any claim declares claim set ids or alternative paths,
+     * a {@code claim_sets} entry with the options {@link CredentialTypeSpec#claimSetOptionIndexes()}
+     * computes. The option order expresses the verifier's preference; wallets use the first option
+     * they can satisfy.
      *
      * <p>Claims are addressed by their claims path pointer, and a query points to the same claim at
      * most once (OID4VP 1.0 §6.1). Mappers that read the same claim into different places therefore
      * share one entry, as do mDoc mappers that read different parts of one data element, because a
      * claims path pointer into an mDoc names the namespace and the data element and nothing below it.
+     * The shared entry keeps the id of the first claim requesting it, and options that collapse to
+     * the same claim ids are emitted once.
+     *
+     * <p>A claim is requested under the id its spec carries, which the aggregation derives from the
+     * mapper name; a second spec naming an already used id for another claim gets a numbered
+     * suffix, and a spec without an id is numbered.
      */
     private void addClaims(Map<String, Object> credential, CredentialTypeSpec typeSpec) {
-        List<ClaimSpec> claimSpecs = typeSpec.claimSpecs();
+        List<ClaimSpec> requestedClaims = typeSpec.requestedClaims();
         List<Map<String, Object>> claims = new ArrayList<>();
-        List<String> claimIdsBySpec = new ArrayList<>();
+        List<String> claimIdsByRequestedClaim = new ArrayList<>();
         Map<List<Object>, String> claimIdsByPointer = new LinkedHashMap<>();
-        int claimIndex = 1;
+        Set<String> usedClaimIds = new HashSet<>();
+        int unnamedClaimIndex = 1;
 
-        for (ClaimSpec claimSpec : claimSpecs) {
+        for (ClaimSpec claimSpec : requestedClaims) {
             List<Object> pointer = claimSpec.toDcqlPath();
             String claimId = claimIdsByPointer.get(pointer);
             if (claimId == null) {
-                claimId = CLAIM_ID_PREFIX + claimIndex++;
+                String preferredId = claimSpec.id() != null ? claimSpec.id() : CLAIM_ID_PREFIX + unnamedClaimIndex++;
+                claimId = uniqueClaimId(preferredId, usedClaimIds);
+                usedClaimIds.add(claimId);
                 claimIdsByPointer.put(pointer, claimId);
                 Map<String, Object> claim = new LinkedHashMap<>();
                 claim.put(DCQL_ID, claimId);
                 claim.put(DCQL_PATH, pointer);
                 claims.add(claim);
             }
-            claimIdsBySpec.add(claimId);
+            claimIdsByRequestedClaim.add(claimId);
         }
         credential.put(DCQL_CLAIMS, claims);
 
@@ -346,10 +381,21 @@ public class DcqlQueryBuilder {
             return;
         }
         List<List<String>> claimSets = options.stream()
-                .map(option ->
-                        option.stream().map(claimIdsBySpec::get).distinct().toList())
+                .map(option -> option.stream()
+                        .map(claimIdsByRequestedClaim::get)
+                        .distinct()
+                        .toList())
+                .distinct()
                 .toList();
         credential.put(DCQL_CLAIM_SETS, claimSets);
+    }
+
+    private static String uniqueClaimId(String preferredId, Set<String> usedClaimIds) {
+        String claimId = preferredId;
+        for (int suffix = 2; usedClaimIds.contains(claimId); suffix++) {
+            claimId = preferredId + CLAIM_ID_COLLISION_SEPARATOR + suffix;
+        }
+        return claimId;
     }
 
     private static Map<String, Object> buildCredentialSet(CredentialSet configuredSet) {

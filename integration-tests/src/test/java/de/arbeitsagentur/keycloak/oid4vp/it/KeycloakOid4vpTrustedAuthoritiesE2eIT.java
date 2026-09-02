@@ -23,6 +23,7 @@ import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestCertificates;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestTrustListServer;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.trust.EtsiTrustListIdentityProviderConfig;
+import io.github.dominikschlosser.eudi.ValidationMode;
 import java.security.cert.X509Certificate;
 import java.util.List;
 import java.util.Map;
@@ -104,10 +105,16 @@ class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
 
+        // The wallet's default debug mode would present the credential anyway and only flag the
+        // unmatched trusted authorities in its consent dialog. Strict mode makes it refuse like a
+        // production wallet, which is the behavior under test.
+        wallet().client().setValidationMode(ValidationMode.STRICT);
         try (TestTrustListServer foreignTrustList = TestTrustListServer.serving(foreignAuthority)) {
             useTrustList(foreignTrustList.url());
 
             assertPresentationIsRefused(trustedAuthority("etsi_tl", foreignTrustList.url()));
+        } finally {
+            wallet().client().resetConformance();
         }
     }
 

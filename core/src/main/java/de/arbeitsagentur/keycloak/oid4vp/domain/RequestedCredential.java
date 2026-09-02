@@ -57,9 +57,13 @@ public record RequestedCredential(
         claimSets = claimSets != null ? claimSets.stream().map(List::copyOf).toList() : List.of();
     }
 
-    /** Derives the requested claims model for a credential type aggregated from IdP mappers. */
+    /**
+     * Derives the requested claims model for a credential type aggregated from IdP mappers. The
+     * claims are the expanded ones, a mapper's alternative paths among them, so the claim set
+     * indexes address the same list as in the generated query.
+     */
     public static RequestedCredential of(String credentialId, CredentialTypeSpec spec) {
-        List<RequestedClaim> claims = spec.claimSpecs().stream()
+        List<RequestedClaim> claims = spec.requestedClaims().stream()
                 .map(claimSpec -> new RequestedClaim(claimSpec.namespace(), claimSpec.path()))
                 .toList();
         return new RequestedCredential(credentialId, spec.format(), spec.type(), claims, spec.claimSetOptionIndexes());

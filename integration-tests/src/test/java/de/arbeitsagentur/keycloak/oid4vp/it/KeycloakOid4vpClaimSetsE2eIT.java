@@ -24,6 +24,7 @@ import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.keycloak.representations.idm.IdentityProviderMapperRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
@@ -93,6 +94,38 @@ class KeycloakOid4vpClaimSetsE2eIT extends AbstractOid4vpE2eTest {
         assertThat(user.getEmail())
                 .as("email is not part of the satisfied claim set and must not come from the credential")
                 .startsWith("claimset-fallback-user");
+    }
+
+    @Test
+    void walletDisclosesAlternativeClaimWhenTheClaimIsAbsent() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        deleteAllOid4vpUsers();
+
+        // The German PID rulebook names the birth name birth_name, the EUDI PID rulebook
+        // birth_family_name. The wallet's PID follows the latter, so the mapper reading birth_name
+        // with birth_family_name as its alternative only gets an answer under the alternative.
+        // Combined with the claim set ids of the email mapper, the generated claim_sets offer four
+        // options; the wallet can satisfy only the two asking for the alternative without email.
+        IdentityProviderMapperRepresentation birthName =
+                sdJwtAttributeMapper("cs-birth-name", SD_JWT_PID_VCT, "birth_name", "lastName", null);
+        birthName.getConfig().put("claim.alternatives", "birth_family_name");
+        replaceDcqlMappers(List.of(
+                sdJwtAttributeMapper("cs-given-name", SD_JWT_PID_VCT, "given_name", "firstName", "1-full,2-min"),
+                sdJwtAttributeMapper("cs-email", SD_JWT_PID_VCT, "email", "email", "1-full"),
+                birthName));
+
+        performSameDeviceLogin("claimset-alternative-user");
+        flow.assertLoginSucceeded();
+
+        UserRepresentation user = singleOid4vpUser();
+        assertThat(user.getLastName())
+                .as("birth_family_name is disclosed as the alternative of birth_name and mapped by the same mapper")
+                .isEqualTo(walletPidClaim("birth_family_name"));
+        assertThat(user.getFirstName()).isEqualTo(walletPidClaim("given_name"));
+        assertThat(user.getEmail())
+                .as("the satisfied option is the one without email")
+                .startsWith("claimset-alternative-user");
     }
 
     private UserRepresentation singleOid4vpUser() {

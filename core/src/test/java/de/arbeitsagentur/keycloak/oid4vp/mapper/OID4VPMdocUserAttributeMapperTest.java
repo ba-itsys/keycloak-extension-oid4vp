@@ -146,6 +146,32 @@ class OID4VPMdocUserAttributeMapperTest {
         assertThat(notes).containsEntry("credentialFamilyName", "Mustermann");
     }
 
+    @Test
+    void alternativeElementIsReadFromTheSameNamespace() throws Exception {
+        BrokeredIdentityContext context = contextWithClaims("""
+                {"eu.europa.ec.eudi.pid.1": {"birth_name": "Gabler"}}""", "eu.europa.ec.eudi.pid.1");
+        IdentityProviderMapperModel model = model("birth_family_name", "birthName", null, "eu.europa.ec.eudi.pid.1");
+        model.getConfig().put(AbstractOID4VPClaimMapper.CLAIM_ALTERNATIVES, "birth_name");
+
+        mapper.preprocessFederatedIdentity(null, null, model, context);
+
+        assertThat(context.getUserAttribute("birthName")).isEqualTo("Gabler");
+    }
+
+    @Test
+    void alternativeElementOfAnotherNamespaceIsNotRead() throws Exception {
+        BrokeredIdentityContext context = mdlContext("""
+                {"org.iso.18013.5.1": {"given_name": "Erika"}, "org.iso.18013.5.1.aamva": {"birth_name": "Gabler"}}""");
+        IdentityProviderMapperModel model = model("birth_family_name", "birthName", MDL_NAMESPACE, MDL_DOCTYPE);
+        model.getConfig().put(AbstractOID4VPClaimMapper.CLAIM_ALTERNATIVES, "birth_name");
+
+        mapper.preprocessFederatedIdentity(null, null, model, context);
+
+        assertThat(context.getUserAttribute("birthName"))
+                .as("alternatives address elements of the configured namespace only")
+                .isNull();
+    }
+
     private static IdentityProviderMapperModel model(String claim, String attribute, String namespace, String doctype) {
         IdentityProviderMapperModel model = new IdentityProviderMapperModel();
         model.setName("test-mapper");

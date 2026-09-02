@@ -51,6 +51,51 @@ class RequestedCredentialTest {
     }
 
     @Test
+    void of_expandsAlternativePathsIntoClaimsAndOneOptionPerPath() throws Exception {
+        CredentialTypeSpec spec = new CredentialTypeSpec(
+                "dc+sd-jwt",
+                "urn:eudi:pid:1",
+                List.of(
+                        ClaimSpec.sdJwt("given_name"),
+                        ClaimSpec.sdJwt("birth_family_name").withAlternativePaths(List.of("birth_name"))));
+
+        RequestedCredential requested = RequestedCredential.of("cred1", spec);
+
+        assertThat(requested.claims())
+                .containsExactly(
+                        new RequestedClaim(null, "given_name"),
+                        new RequestedClaim(null, "birth_family_name"),
+                        new RequestedClaim(null, "birth_name"));
+        assertThat(requested.claimSets()).containsExactly(List.of(0, 1), List.of(0, 2));
+        assertThat(requested.missingClaims(json("""
+                        {"given_name": "Erika", "birth_name": "Gabler"}""")))
+                .as("a presentation carrying the alternative satisfies the fallback option")
+                .isEmpty();
+        assertThat(requested.missingClaims(json("""
+                        {"given_name": "Erika"}""")))
+                .as("neither path presented: the preferred option's missing claim is reported")
+                .containsExactly("birth_family_name");
+    }
+
+    @Test
+    void of_alternativePathsOfAnMdocClaim_stayInTheNamespace() throws Exception {
+        CredentialTypeSpec spec = new CredentialTypeSpec(
+                "mso_mdoc",
+                "eu.europa.ec.eudi.pid.1",
+                List.of(ClaimSpec.mdoc("eu.europa.ec.eudi.pid.1", "birth_family_name")
+                        .withAlternativePaths(List.of("birth_name"))));
+
+        RequestedCredential requested = RequestedCredential.of("cred1", spec);
+
+        assertThat(requested.claims())
+                .containsExactly(
+                        new RequestedClaim("eu.europa.ec.eudi.pid.1", "birth_family_name"),
+                        new RequestedClaim("eu.europa.ec.eudi.pid.1", "birth_name"));
+        assertThat(requested.missingClaims(json("""
+                        {"eu.europa.ec.eudi.pid.1": {"birth_name": "Gabler"}}"""))).isEmpty();
+    }
+
+    @Test
     void of_withoutClaimSetIds_hasNoClaimSets() {
         CredentialTypeSpec spec = new CredentialTypeSpec(
                 "dc+sd-jwt", "urn:eudi:pid:1", List.of(ClaimSpec.sdJwt("given_name"), ClaimSpec.sdJwt("family_name")));

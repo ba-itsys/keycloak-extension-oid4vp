@@ -43,6 +43,7 @@ public class OID4VPSdJwtUserSessionAttributeMapper extends AbstractOID4VPClaimMa
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES = ProviderConfigurationBuilder.create()
             .property(credentialTypeProperty("VCT of the SD-JWT credential this claim is requested from."))
             .property(claimProperty())
+            .property(claimAlternativesProperty())
             .property()
             .name(ATTRIBUTE)
             .label("User Session Attribute")

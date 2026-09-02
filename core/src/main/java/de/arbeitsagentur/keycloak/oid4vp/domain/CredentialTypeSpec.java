@@ -19,13 +19,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.SortedSet;
 import java.util.TreeSet;
+import java.util.stream.IntStream;
 
 /**
  * Specification of a credential type to request, used when building DCQL queries from IdP mappers.
  *
  * @param format the credential format ({@code dc+sd-jwt} or {@code mso_mdoc})
  * @param type the credential type identifier (VCT for SD-JWT, doctype for mDoc)
- * @param claimSpecs the claims to request within this credential
+ * @param claimSpecs the claims to request within this credential, one per mapper
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6">OID4VP 1.0 §6 — DCQL Query</a>
  */
 public record CredentialTypeSpec(String format, String type, List<ClaimSpec> claimSpecs) {
@@ -35,18 +36,57 @@ public record CredentialTypeSpec(String format, String type, List<ClaimSpec> cla
     }
 
     /**
-     * Computes the DCQL {@code claim_sets} options as indexes into {@link #claimSpecs()}. One
-     * option is generated per distinct claim set id, ordered lexicographically by id; claims
-     * without ids are members of every option. An empty result means no {@code claim_sets} entry
-     * is generated and all claims are required.
+     * The claims the DCQL query requests, one per path: every claim spec expanded into its path and
+     * alternative paths, in claim spec order. {@link #claimSetOptionIndexes()} indexes this list.
+     */
+    public List<ClaimSpec> requestedClaims() {
+        return claimSpecs.stream()
+                .flatMap(claimSpec -> claimSpec.expand().stream())
+                .toList();
+    }
+
+    /**
+     * Computes the DCQL {@code claim_sets} options as indexes into {@link #requestedClaims()}.
+     *
+     * <p>The claim set ids form the base options: one per distinct id, ordered lexicographically by
+     * id, with claims without ids members of every option. Alternative paths then multiply every
+     * base option: each becomes one option per combination of the path choices of its members, so
+     * an option requests exactly one of a claim's path and alternatives. The combinations are
+     * ordered with the paths themselves first and the last member's alternatives varying fastest,
+     * so the first option is the one asking for every claim under its own path.
+     *
+     * <p>An empty result means no {@code claim_sets} entry is generated and all claims are required.
      */
     public List<List<Integer>> claimSetOptionIndexes() {
+        List<List<Integer>> baseOptions = optionsByClaimSetId();
+        boolean alternatives = claimSpecs.stream()
+                .anyMatch(claimSpec -> !claimSpec.alternativePaths().isEmpty());
+        if (baseOptions.isEmpty()) {
+            if (!alternatives) {
+                return List.of();
+            }
+            baseOptions = List.of(IntStream.range(0, claimSpecs.size()).boxed().toList());
+        }
+
+        int[] offsets = new int[claimSpecs.size()];
+        int offset = 0;
+        for (int i = 0; i < claimSpecs.size(); i++) {
+            offsets[i] = offset;
+            offset += claimSpecs.get(i).alternativePaths().size() + 1;
+        }
+
+        List<List<Integer>> options = new ArrayList<>();
+        for (List<Integer> baseOption : baseOptions) {
+            options.addAll(pathCombinations(baseOption, offsets));
+        }
+        return options;
+    }
+
+    /** One option per claim set id as indexes into {@link #claimSpecs()}; empty without ids. */
+    private List<List<Integer>> optionsByClaimSetId() {
         SortedSet<String> claimSetIds = new TreeSet<>();
         for (ClaimSpec claimSpec : claimSpecs) {
             claimSetIds.addAll(claimSpec.claimSetIds());
-        }
-        if (claimSetIds.isEmpty()) {
-            return List.of();
         }
         List<List<Integer>> options = new ArrayList<>();
         for (String claimSetId : claimSetIds) {
@@ -60,5 +100,24 @@ public record CredentialTypeSpec(String format, String type, List<ClaimSpec> cla
             options.add(option);
         }
         return options;
+    }
+
+    /** The cross product of the path choices of the option's claim specs, as requested claim indexes. */
+    private List<List<Integer>> pathCombinations(List<Integer> specIndexes, int[] offsets) {
+        List<List<Integer>> combinations = new ArrayList<>();
+        combinations.add(List.of());
+        for (int specIndex : specIndexes) {
+            int pathCount = claimSpecs.get(specIndex).alternativePaths().size() + 1;
+            List<List<Integer>> extended = new ArrayList<>();
+            for (List<Integer> combination : combinations) {
+                for (int choice = 0; choice < pathCount; choice++) {
+                    List<Integer> next = new ArrayList<>(combination);
+                    next.add(offsets[specIndex] + choice);
+                    extended.add(next);
+                }
+            }
+            combinations = extended;
+        }
+        return combinations;
     }
 }
