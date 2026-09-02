@@ -16,7 +16,7 @@
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
 /**
- * Credential presentation format detected in a {@code vp_token}.
+ * The credential format of a presentation in a {@code vp_token}.
  *
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1">OID4VP 1.0 §8.1 — VP Token</a>
  */
@@ -30,7 +30,6 @@ public enum PresentationType {
         this.dcqlFormat = dcqlFormat;
     }
 
-    /** The DCQL credential format string of this presentation format. */
     public String dcqlFormat() {
         return dcqlFormat;
     }

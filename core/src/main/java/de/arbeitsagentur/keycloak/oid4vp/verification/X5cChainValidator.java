@@ -34,11 +34,9 @@ import org.keycloak.util.KeyWrapperUtil;
 
 /**
  * JWT signature verification against pinned trusted certificates, used for trust list and status
- * list JWTs.
- *
- * <p>A presented x5c chain is accepted when its leaf is one of the trusted certificates (pinned)
- * or when it builds a PKIX path to a trusted CA certificate via
- * {@link X509CertificateChainValidator}. Without a usable x5c chain, the signature is verified
+ * list JWTs. A presented x5c chain is accepted when its leaf is one of the trusted certificates or
+ * when it builds a PKIX path to a trusted CA certificate via
+ * {@link X509CertificateChainValidator}. Without a usable x5c chain the signature is verified
  * directly against each trusted certificate's key.
  */
 public final class X5cChainValidator {
@@ -77,10 +75,6 @@ public final class X5cChainValidator {
         }
     }
 
-    /**
-     * Returns the leaf key of an x5c chain whose leaf is pinned in the trusted certificates or
-     * that builds a PKIX path to a trusted CA certificate.
-     */
     static PublicKey validateChain(List<String> x5c, List<X509Certificate> trustedCertificates) throws Exception {
         List<X509Certificate> chain = X509CertificateChainValidator.decodeCertificateChain(x5c);
         X509Certificate leaf = chain.get(0);
@@ -102,7 +96,6 @@ public final class X5cChainValidator {
         return leaf.getPublicKey();
     }
 
-    /** Returns whether the certificate is a CA certificate usable for certificate signing. */
     public static boolean isCaCertificate(X509Certificate certificate) {
         if (certificate.getBasicConstraints() < 0) {
             return false;
@@ -112,11 +105,11 @@ public final class X5cChainValidator {
     }
 
     /**
-     * Validates the verifier certificate chain the verifier itself puts into the request object
-     * {@code x5c} header and derives its client id from. Only what the verifier emits is checked:
-     * every certificate has to be currently valid and every certificate has to be signed by the
-     * next one. Whether the chain is acceptable is the wallet's decision, made against its own
-     * relying party trust list, so no policy about certificate authorities is enforced here.
+     * Validates the certificate chain the verifier itself puts into the request object {@code x5c}
+     * header and derives its client id from. Only what the verifier emits is checked here: every
+     * certificate has to be currently valid and signed by the next one. Whether the chain is
+     * acceptable at all is the wallet's decision, made against its own relying party trust list, so
+     * no policy about certificate authorities is enforced here.
      */
     public static void validateEmittedVerifierChain(List<X509Certificate> chain) throws Exception {
         if (chain.isEmpty()) {

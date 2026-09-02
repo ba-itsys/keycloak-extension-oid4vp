@@ -15,7 +15,6 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.conformance.runner;
 
-// Terminal results a conformance module can finish with
 public enum ConformanceResult {
     PASSED,
     WARNING,

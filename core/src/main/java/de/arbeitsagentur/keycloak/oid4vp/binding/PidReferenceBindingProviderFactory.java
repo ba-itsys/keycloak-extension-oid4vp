@@ -25,20 +25,18 @@ import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.provider.ProviderConfigurationBuilder;
 
 /**
- * Binds an issued credential to the PID of its holder, which is the case this extension is built
- * for. A person is identified by a PID, and the credential this Keycloak issues carries the account
- * that person signs in to.
+ * Binds an issued credential to the PID of its holder, which is the case this extension is built for.
  *
- * <p>The defaults identify a person and change rarely, so a change is not a lockout: the user signs
- * in with a password once and receives a credential bound to the PID of today. They include
- * {@code personal_administrative_number}, which distinguishes two people who share a name and a date
- * of birth; it is only bound when the PID actually carries it, so where it is absent the binding
- * falls back to the mandatory name and birthdate attributes and two such homonyms would share the
- * same binding material. A deployment whose PIDs do not carry a unique identifier should configure a
- * claim that is unique to the person.
+ * <p>The defaults identify a person and change rarely, so a change is not a lockout: the user signs in
+ * with a password once and receives a credential bound to the PID of today. They include {@code
+ * personal_administrative_number}, which distinguishes two people who share a name and a date of birth,
+ * and which is only bound when the PID carries it. Where it is absent the binding falls back to the
+ * mandatory name and birthdate attributes, and two such homonyms then share the same binding material,
+ * so a deployment whose PIDs carry no unique identifier should configure a claim that is unique to the
+ * person.
  *
- * <p>Configured through the server configuration, because the login that issues a credential and the
- * login that presents it again have to select the same claims, and those two run in places that
+ * <p>The selection is configured through the server configuration, because the login that issues a
+ * credential and the login that presents it again have to select the same claims and run in places that
  * share no other configuration.
  *
  * <pre>
@@ -50,15 +48,12 @@ public class PidReferenceBindingProviderFactory implements ReferenceCredentialBi
 
     public static final String PROVIDER_ID = "pid";
 
-    /** Credential types to bind to. Empty binds to every credential presented alongside. */
     public static final String CREDENTIAL_TYPES = "credential-types";
 
-    /** Claim paths to bind to, in the dot notation the OID4VP mappers use. Required. */
     public static final String CLAIMS = "claims";
 
-    // The default claim names are the SD-JWT PID names, so only the SD-JWT PID is covered by
-    // default. An mDoc PID uses different data element names (birth_date) and needs an explicit
-    // configuration of both settings.
+    // The default claim names are the SD-JWT PID names, so only the SD-JWT PID is covered by default.
+    // An mDoc PID uses different data element names such as birth_date and needs both settings set.
     static final String DEFAULT_CREDENTIAL_TYPES = "urn:eudi:pid:1";
     static final String DEFAULT_CLAIMS = "given_name,family_name,birthdate,personal_administrative_number";
 
@@ -77,9 +72,9 @@ public class PidReferenceBindingProviderFactory implements ReferenceCredentialBi
     }
 
     /**
-     * The claim paths to bind to. At least one is required: binding to every claim of a credential
-     * would cover the issuance metadata as well, so a re-issued credential of the same person, or
-     * another copy of a batch issued one, would already break the binding.
+     * Parses the claim paths to bind to, of which at least one is required. Binding to every claim of a
+     * credential would cover the issuance metadata as well, so a re-issued credential of the same person
+     * would break the binding, and so would another copy of a batch issued one.
      */
     static List<String> parseClaims(String configured) {
         List<String> claimPaths = parse(configured);
@@ -91,7 +86,6 @@ public class PidReferenceBindingProviderFactory implements ReferenceCredentialBi
         return claimPaths;
     }
 
-    /** The configured values in order, without blanks and duplicates. */
     static List<String> parse(String configured) {
         if (configured == null || configured.isBlank()) {
             return List.of();

@@ -21,7 +21,6 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import org.keycloak.testframework.injection.LifeCycle;
 
-// Injects the OAuth client application (relying party) the tests log in to
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.FIELD)
 public @interface InjectTestApp {

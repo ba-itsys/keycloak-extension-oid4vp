@@ -49,8 +49,8 @@ class PrincipalAttributeTest {
 
     @Test
     void anMdocPathNamesItsNamespaceBeforeTheElement() {
-        // DCQL asks for the namespace and the element separately, and the presentation nests the
-        // element inside the namespace, so both halves are read off the one configured path.
+        // DCQL asks for the namespace and the element separately. The presentation nests the
+        // element inside the namespace. Both halves are read off the one configured path.
         PrincipalAttribute mdocPid = PrincipalAttribute.parse("pid_mdoc:eu\\.europa\\.ec\\.eudi\\.pid\\.1.family_name")
                 .get(0);
 

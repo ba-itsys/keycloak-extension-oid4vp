@@ -27,12 +27,10 @@ import java.util.Set;
 import org.jboss.logging.Logger;
 
 /**
- * Binds an issued credential to the person a PID names, by the claims that identify them.
- *
- * <p>Credentials are selected by type, and claims are read the way the OID4VP mappers read them: a
- * path in dot notation, resolved against the claims of an SD-JWT credential and against the
- * namespace of an mDoc. A path therefore means here what it means in a mapper and in the principal
- * attribute.
+ * Binds an issued credential to the person a PID names, by the claims that identify them. Claims are
+ * read the way the OID4VP mappers read them, so a path in dot notation resolves against the claims of
+ * an SD-JWT credential and against the namespace of an mDoc, and means here what it means in a mapper
+ * and in the principal attribute.
  */
 public class PidReferenceBindingProvider implements ReferenceCredentialBindingProvider {
 
@@ -68,7 +66,6 @@ public class PidReferenceBindingProvider implements ReferenceCredentialBindingPr
         return credentialTypes.isEmpty() || credentialTypes.contains(credential.type());
     }
 
-    /** The configured claims of one credential, keyed by the path that selected them. */
     private BoundCredential select(PresentedCredential credential) {
         JsonNode claimsRoot = ClaimSelection.claimsRoot(credential, null);
         if (claimsRoot == null) {

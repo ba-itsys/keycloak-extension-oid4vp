@@ -100,8 +100,8 @@ class TrustListProviderTest {
 
     @Test
     void parseTrustListJwt_withNextUpdateAsEtsiWritesIt_usesNextUpdateAsExpiry() throws Exception {
-        // The date-time ETSI TS 119 602 V1.1.1 clause 6.1.3 prescribes: UTC, four-digit year down
-        // to the second, no decimal fraction, "Z"
+        // ETSI TS 119 602 V1.1.1 clause 6.1.3 prescribes this date-time form: UTC, four-digit year
+        // down to the second, no decimal fraction, "Z".
         String jwt = buildSignedJwt(new JWTClaimsSet.Builder()
                 .claim("ListAndSchemeInformation", Map.of("NextUpdate", "2035-01-02T03:04:05Z"))
                 .claim("TrustedEntitiesList", List.of())
@@ -114,8 +114,8 @@ class TrustListProviderTest {
 
     @Test
     void parseTrustListJwt_withNextUpdateMissingSeconds_isRejected() throws Exception {
-        // Not a date-time clause 6.1.3 allows, and how long the list stays fresh is not something
-        // to guess at, so the list is refused rather than read as one without an expiry
+        // Clause 6.1.3 does not allow this date-time. How long the list stays fresh is not something
+        // to guess at. The list is refused rather than read as one without an expiry.
         String jwt = buildSignedJwt(new JWTClaimsSet.Builder()
                 .claim("ListAndSchemeInformation", Map.of("NextUpdate", "2035-01-02T03:04Z"))
                 .claim("TrustedEntitiesList", List.of())
@@ -299,7 +299,7 @@ class TrustListProviderTest {
         void fetchFailure_withRecentStaleEntry_returnsStaleCertificates() throws Exception {
             X509Certificate cert = generateTestCert(true);
 
-            // Seed cache: expired 10 seconds ago, fetched 30 seconds ago
+            // The cached list expired 10 seconds ago and was fetched 30 seconds ago.
             TrustListProvider provider = new TrustListProvider(null, TEST_URL, null, null, null);
             TrustListProvider.seedExpiredCache(
                     provider,
@@ -315,7 +315,7 @@ class TrustListProviderTest {
         void fetchFailure_withStaleEntryBeyondMaxAge_returnsEmpty() throws Exception {
             X509Certificate cert = generateTestCert(true);
 
-            // Seed cache: fetched 2 hours ago
+            // The cached list was fetched 2 hours ago, beyond the one hour it may be served stale.
             TrustListProvider provider = new TrustListProvider(null, TEST_URL, null, Duration.ofHours(1), null);
             TrustListProvider.seedExpiredCache(
                     provider,
@@ -331,7 +331,6 @@ class TrustListProviderTest {
         void fetchFailure_withMaxStaleAgeZero_returnsEmpty() throws Exception {
             X509Certificate cert = generateTestCert(true);
 
-            // Seed cache: recently fetched
             TrustListProvider provider = new TrustListProvider(null, TEST_URL, null, Duration.ZERO, null);
             TrustListProvider.seedExpiredCache(
                     provider,
@@ -347,7 +346,7 @@ class TrustListProviderTest {
         void fetchFailure_withStaleEntryWithinCustomMaxAge_returnsStaleCertificates() throws Exception {
             X509Certificate cert = generateTestCert(true);
 
-            // Seed cache: fetched 5 minutes ago
+            // The cached list was fetched 5 minutes ago, within the ten minutes it may be served stale.
             TrustListProvider provider = new TrustListProvider(null, TEST_URL, null, Duration.ofMinutes(10), null);
             TrustListProvider.seedExpiredCache(
                     provider,
@@ -361,7 +360,6 @@ class TrustListProviderTest {
 
         @Test
         void fetchFailure_withEmptyStaleEntry_returnsEmpty() {
-            // Seed cache with empty certificate list
             TrustListProvider provider = new TrustListProvider(null, TEST_URL, null, null, null);
             TrustListProvider.seedExpiredCache(
                     provider,
@@ -514,7 +512,7 @@ class TrustListProviderTest {
         void verifySignature_withNoCert_skipsVerification() throws Exception {
             TrustListProvider provider = new TrustListProvider(null, "https://example.com", null, null);
 
-            // Sign with any key — verification should be skipped
+            // Signed with an arbitrary key. Without a certificate the signature is not verified.
             String jwt = buildSignedJwt(new JWTClaimsSet.Builder()
                     .claim("TrustedEntitiesList", List.of())
                     .build());
@@ -564,7 +562,7 @@ class TrustListProviderTest {
         return new JcaX509CertificateConverter().getCertificate(certBuilder.build(contentSigner));
     }
 
-    /** A certificate authority of a trust list, which is what its issuance services list. */
+    /** Generates a CA certificate, the kind the issuance services of a trust list carry. */
     private static X509Certificate generateTestCert(boolean includeSubjectKeyIdentifier) throws Exception {
         return generateTestCert(includeSubjectKeyIdentifier, true);
     }

@@ -58,29 +58,17 @@ import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.utils.StringUtil;
 
 /**
- * JAX-RS endpoint handling all OID4VP protocol interactions with wallets.
- *
- * <p>Exposes the following sub-resources:
- * <ul>
- *   <li>{@code POST /} — receives the wallet's direct_post response ({@code vp_token} or encrypted JWE)
- *   <li>{@code GET|POST /request-object/{handle}} — serves the signed (and optionally encrypted)
- *       authorization request object to the wallet
- *   <li>{@code GET /cross-device/status} — SSE stream for cross-device login polling
- *   <li>{@code GET /complete-auth} — finalizes authentication after the wallet's response is processed
- *   <li>{@code GET /failed} — returns the End-User to the login page after a presentation that
- *       ended without completing it
- * </ul>
+ * JAX-RS endpoint for the OID4VP protocol interactions with wallets.
  *
  * <p>There is no handler for {@code GET /}. Under {@code direct_post} and {@code direct_post.jwt}
  * a wallet posts its response, error responses included (OID4VP 1.0 §8.5), and the only way back
- * to the browser is the {@code redirect_uri} the response URI answers with. A wallet that instead
- * redirected an error to the response URI by itself would arrive with nothing that proves it is
- * the End-User's browser or that the error is the one that happened, so such a request cannot be
- * allowed to end a login.
- * </p>
+ * to the browser is the {@code redirect_uri} that the response URI answers with. A wallet that
+ * redirects an error to the response URI on its own arrives with nothing that proves it is the
+ * End-User's browser, and nothing proves that the error is the one that happened, so such a
+ * request must not end a login.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5">OID4VP 1.0 §5 — Authorization Request</a>
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.2">OID4VP 1.0 §8.2 — Response Mode direct_post</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5">OID4VP 1.0 §5, Authorization Request</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.2">OID4VP 1.0 §8.2, Response Mode direct_post</a>
  */
 public class Oid4vpIdentityProviderEndpoint {
 
@@ -143,10 +131,10 @@ public class Oid4vpIdentityProviderEndpoint {
             }
 
             ResolvedSubmission submission = resolveSubmission(incomingPost, resolvedRequest);
-            // Under direct_post.jwt the wallet's error responses arrive in the response JWE too
-            // (OID4VP 1.0 §8.3). Checking the encryption requirement before the error branch keeps
-            // an unencrypted post from recording attacker-chosen error details as a wallet error
-            // and being answered with 200.
+            // Under direct_post.jwt the wallet's error responses arrive inside the response JWE
+            // as well (OID4VP 1.0 §8.3), so the encryption requirement is checked before the error
+            // branch. Otherwise an unencrypted post could record attacker-chosen error details as a
+            // wallet error and be answered with 200.
             ensureEncryptedWhenRequired(submission.wasEncrypted());
             if (StringUtil.isNotBlank(submission.error())) {
                 return handleWalletError(
@@ -187,15 +175,15 @@ public class Oid4vpIdentityProviderEndpoint {
             boolean wasEncrypted) {}
 
     private ResolvedRequest resolveRequest(String state, String encryptedResponse) {
-        // The response-encryption JWK is created with kid == state, so an encrypted callback that
+        // The response encryption JWK is created with kid == state, so an encrypted callback that
         // omits the state form field still resolves through the cleartext JWE header kid.
         String kid = StringUtil.isNotBlank(encryptedResponse) ? responseDecryptor.extractKid(encryptedResponse) : null;
 
         String lookupState = StringUtil.isNotBlank(state) ? state : kid;
 
-        // A direct_post.jwt callback can land on a different node immediately after the request
-        // object was created. In that case the state index may exist logically but still be
-        // briefly invisible via the shared single-use store, so we retry with a short bounded pause.
+        // A direct_post.jwt callback can land on a different node right after the request object
+        // was created, where the state index already exists but is briefly invisible through the
+        // shared single-use store, so the lookup retries with a short bounded pause.
         for (int attempt = 1; attempt <= REQUEST_CONTEXT_LOOKUP_MAX_ATTEMPTS; attempt++) {
             Oid4vpRequestObjectStore.RequestContextEntry requestContext =
                     requestObjectStore.resolveByState(session, lookupState);
@@ -294,8 +282,8 @@ public class Oid4vpIdentityProviderEndpoint {
 
     private void pauseRequestContextLookup() {
         try {
-            // Sleeping here is intentional: repeated reads without time passing do not help when
-            // the request-context indexes are still propagating across nodes.
+            // Sleeping is intentional: repeated reads without time passing do not help while the
+            // request context indexes are still propagating across nodes.
             TimeUnit.MILLISECONDS.sleep(REQUEST_CONTEXT_LOOKUP_RETRY_DELAY_MILLIS);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
@@ -351,29 +339,29 @@ public class Oid4vpIdentityProviderEndpoint {
     }
 
     /**
-     * Front-channel landing point for a presentation that ended without completing the login,
-     * either because the wallet reported an error response (OID4VP 1.0 §8.5) or because this
-     * verifier rejected what the wallet presented. The wallet sends the End-User here after the
-     * response URI answered it, which is the only way control returns to the browser when the
+     * Returns the End-User to the login page after a presentation that ended without completing
+     * the login, either because the wallet reported an error response (OID4VP 1.0 §8.5) or because
+     * this verifier rejected what the wallet presented. The wallet sends the End-User here once the
+     * response URI has answered it, which is the only way control returns to the browser while the
      * response itself travels the back channel.
      *
-     * <p>How the login ends follows from who ended it. A wallet declining is a step in the login,
-     * not a failure of it, so {@code callback.cancelled()} returns the End-User to the login page
-     * with the standard "access denied" message, exactly as Keycloak ends any refused brokered
-     * login. A presentation this verifier rejected is something the End-User cannot otherwise
-     * learn about, so {@code callback.error()} names it on the login page instead. Either way the
-     * client is deliberately not sent an OAuth error: another attempt or another authentication
-     * method is still possible.
+     * <p>How the login ends depends on who ended it. A wallet that declines takes a step in the
+     * login rather than failing it, so {@code callback.cancelled()} returns the End-User to the
+     * login page with the standard "access denied" message that Keycloak uses for every refused
+     * brokered login. A presentation this verifier rejected is something the End-User cannot learn
+     * about otherwise, so {@code callback.error()} names it on the login page instead. In both
+     * cases the client deliberately gets no OAuth error, leaving room for another attempt or
+     * another authentication method.
      *
-     * <p>The error code and description are read from the server-side record rather than from
-     * query parameters, so they cannot be chosen by whoever opens this URL, and the response code
-     * proves the caller is the End-User of the wallet that posted rather than anyone who learned
-     * the state. They are recorded on the login event and not shown: OID4VP 1.0 §8.5 spans
-     * everything from a declined presentation to a request the wallet could not parse and nothing
-     * authenticates which of them actually happened, and a rejection reason is an internal
-     * verification message rather than something an End-User can act on.
+     * <p>The error code and description come from the server-side record rather than from query
+     * parameters, so whoever opens this URL cannot choose them, and the response code proves that
+     * the caller is the End-User of the wallet that posted, which someone who only learned the
+     * state cannot pass. Both values only reach the login event, because §8.5 covers everything
+     * from a declined presentation to a request the wallet could not parse without authenticating
+     * which of them happened, and a rejection reason is an internal verification message an
+     * End-User cannot act on.
      *
-     * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.5">OID4VP 1.0 §8.5 — Error Response</a>
+     * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.5">OID4VP 1.0 §8.5, Error Response</a>
      */
     @GET
     @Path("/failed")
@@ -431,12 +419,10 @@ public class Oid4vpIdentityProviderEndpoint {
     }
 
     /**
-     * Answers a post that failed before its presentation could be verified: an unresolvable state,
-     * a response that could not be decrypted, or one that arrived unencrypted where encryption is
-     * required. Nothing here proves the post came from the wallet whose login it names, so it is
-     * answered with a plain error and the attempt it claims to belong to is left alone: a
-     * front-channel return would hand whoever posted a way to end a login they only know the state
-     * of.
+     * Answers a post that failed before its presentation could be verified, an unresolvable state
+     * or a response that could not be decrypted for example. Nothing proves such a post came from
+     * the wallet whose login it names, so it gets a plain error and the attempt it claims to belong
+     * to is left alone: a front-channel return would let anyone who knows the state end that login.
      */
     private Response handleError(String error, String errorDescription) {
         event.event(EventType.LOGIN_ERROR)
@@ -448,8 +434,8 @@ public class Oid4vpIdentityProviderEndpoint {
     }
 
     /**
-     * Answers a wallet-reported error response (OID4VP 1.0 §8.5), which the response URI processed
-     * successfully whatever the wallet reported.
+     * Answers a wallet-reported error response (OID4VP 1.0 §8.5). Whatever the wallet reported,
+     * the response URI processed the post successfully.
      */
     private Response handleWalletError(String error, String errorDescription, String state, boolean isCrossDevice) {
         return handleFailure(
@@ -460,19 +446,11 @@ public class Oid4vpIdentityProviderEndpoint {
     }
 
     /**
-     * Answers a presentation this verifier rejected, reporting the rejection to the wallet when
-     * {@code rejectionResponse} says so.
-     *
-     * <p>Only a response that got as far as being verified is answered this way. The transport
-     * level failures {@link #handlePost} catches are answered with a plain error instead, because
-     * a post that never proved it came from the wallet must not be able to end the attempt.
-     */
-    /**
-     * Answers a presentation verification broke on: the End-User waits on the same back channel as
-     * a rejected one, so they are handed back the same way, but nothing about their credential was
-     * judged. The login event carries {@code server_error} and the login page says the verification
-     * failed rather than blaming what the wallet presented, and {@code rejectionResponse} does not
-     * apply, because this is not a rejection to report to the wallet.
+     * Answers a presentation on which verification broke. The End-User waits on the same back
+     * channel as for a rejected presentation and is handed back the same way, but nothing about
+     * their credential was judged, so the login event carries {@code server_error} and the login
+     * page says that the verification failed instead of blaming what the wallet presented.
+     * {@code rejectionResponse} does not apply, because there is no rejection to report.
      */
     private Response handleServerFailure(String errorDescription, String state, boolean isCrossDevice) {
         return handleFailure(
@@ -482,6 +460,12 @@ public class Oid4vpIdentityProviderEndpoint {
                 isCrossDevice);
     }
 
+    /**
+     * Answers a presentation this verifier rejected, reporting the rejection to the wallet when
+     * {@code rejectionResponse} says so. Only a response that got as far as verification is
+     * answered this way, while the transport level failures {@link #handlePost} catches get a plain
+     * error, because a post that never proved it came from the wallet must not end the attempt.
+     */
     private Response handleVerificationFailure(String errorDescription, String state, boolean isCrossDevice) {
         return handleFailure(
                 new Oid4vpDirectPostService.LoginFailure(
@@ -491,12 +475,10 @@ public class Oid4vpIdentityProviderEndpoint {
     }
 
     /**
-     * Records the failure, then answers the wallet like a completed login: the {@code redirect_uri}
-     * leading to {@link #handleFailureRedirect}, or an empty object in a cross-device flow. A
-     * rejection is reported to the wallet instead when {@code rejectionResponse} is {@code error}.
-     *
-     * <p>Without a state there is nothing to record and nowhere to send the End-User, so the
-     * response falls back to a plain error.
+     * Records the failure and answers the wallet like a completed login, handing it the
+     * {@code redirect_uri} that leads to {@link #handleFailureRedirect}, or an empty object in a
+     * cross-device flow. Without a state there is nothing to record and nowhere to send the
+     * End-User, so the response falls back to a plain error.
      */
     private Response handleFailure(Oid4vpDirectPostService.LoginFailure failure, String state, boolean isCrossDevice) {
         event.event(EventType.LOGIN_ERROR)
@@ -517,7 +499,7 @@ public class Oid4vpIdentityProviderEndpoint {
         return responseFactory.jsonRedirectResponse(failureUrl, isCrossDevice);
     }
 
-    /** Renders Keycloak's error page: these endpoints are opened by a browser, not by the wallet. */
+    /** Renders Keycloak's error page. These endpoints are opened by a browser, not by the wallet. */
     private Response browserError(String messageKey) {
         return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, messageKey);
     }

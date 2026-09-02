@@ -64,9 +64,9 @@ import org.keycloak.testframework.annotations.InjectRealm;
 import org.keycloak.testframework.realm.ManagedRealm;
 import org.keycloak.testframework.server.KeycloakUrls;
 
-// @KeycloakIntegrationTest and the injection annotations for class specific resources such as the
-// wallet live on the concrete test classes. @KeycloakIntegrationTest is not @Inherited and the
-// framework ignores it on an abstract base class.
+// @KeycloakIntegrationTest is not @Inherited and the framework ignores it on an abstract base
+// class, so it and the injection annotations for class specific resources such as the wallet live
+// on the concrete test classes.
 abstract class AbstractOid4vpE2eTest {
 
     static final String REALM = Oid4vpRealmConfig.REALM;
@@ -74,10 +74,9 @@ abstract class AbstractOid4vpE2eTest {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    // A revoked credential is rejected with "Credential has been revoked (status=...)"
-    // (StatusListVerifier), which the endpoint records as the error_description of the login error
-    // event. Matching on "revoked" ties the rejection to the revocation check instead of accepting
-    // any failure.
+    // StatusListVerifier rejects a revoked credential with "Credential has been revoked (status=...)"
+    // and the endpoint records that message as the error_description of the login error event.
+    // Matching on "revoked" ties the assertion to the revocation check instead of any failure.
     private static final String[] REVOCATION_ERROR_SNIPPETS = {"revoked"};
 
     @InjectRealm(config = Oid4vpRealmConfig.class)
@@ -96,14 +95,13 @@ abstract class AbstractOid4vpE2eTest {
     protected Page page;
     protected Oid4vpLoginFlowHelper flow;
 
-    // The wallet injected by the concrete test class
     protected abstract TestWallet wallet();
 
     @BeforeEach
     void setUpTestEnvironment() {
-        // The realm outlives a single test, so its login events do too. Clearing them keeps a
-        // failure cause assertion tied to the login the test itself drove, which also means these
-        // classes cannot run in parallel against the shared realm.
+        // The realm outlives a single test and so do its login events, so clearing them ties the
+        // failure cause assertions to the login this test drove. It also means these classes cannot
+        // run in parallel against the shared realm.
         realm.admin().clearEvents();
         ensureIdentityProviderConfigured();
         context = newBrowserContext();
@@ -112,11 +110,11 @@ abstract class AbstractOid4vpE2eTest {
     }
 
     /**
-     * Creates the OID4VP identity provider pointing at the injected wallet's trust list. The
-     * realm has CLASS lifecycle, so the provider is created once per test class while the mappers
-     * and the credential sets that reference them are reset to the defaults before every test
-     * (neither is restored by the framework, unlike identity provider config changes made through
-     * {@link #setIdpConfig(Map)}).
+     * Creates the OID4VP identity provider pointing at the injected wallet's trust list. Because the
+     * realm has CLASS lifecycle the provider is created once per test class, and since the framework
+     * restores neither the mappers nor the credential sets that reference them, this resets both to
+     * the defaults before every test. Config changes made through {@link #setIdpConfig(Map)} are
+     * restored by the framework itself.
      */
     private void ensureIdentityProviderConfigured() {
         boolean trustIdpExists = realm.admin().identityProviders().findAll().stream()
@@ -154,9 +152,9 @@ abstract class AbstractOid4vpE2eTest {
     }
 
     /**
-     * Restores the credential sets and the settings that are validated against them in one update.
-     * They have to travel together: a configuration that expects the subject credential to be
-     * missing has to name it, so clearing one without the other is refused when it is saved.
+     * Restores the credential sets and the settings validated against them in a single update,
+     * because a configuration that expects the subject credential to be missing has to name it and
+     * clearing one without the other is refused on save.
      */
     private void resetSubjectCredentialSettings() {
         IdentityProviderResource idp = realm.admin().identityProviders().get(Oid4vpTestKeycloakSetup.IDP_ALIAS);
@@ -178,10 +176,9 @@ abstract class AbstractOid4vpE2eTest {
     }
 
     /**
-     * Replaces the DCQL-driving identity provider mappers (those with a credential type) while
-     * keeping untyped mappers, and narrows the credential sets to the credentials these mappers
-     * produce so no set references a credential that is not configured. The next test starts
-     * from the default mapper set again.
+     * Replaces the identity provider mappers that carry a credential type and keeps the untyped
+     * ones, narrowing the credential sets and principal attributes to the credentials the new
+     * mappers produce, because naming a credential no mapper produces is refused on save.
      */
     protected void replaceDcqlMappers(List<IdentityProviderMapperRepresentation> mappers) {
         IdentityProviderResource idp = realm.admin().identityProviders().get(Oid4vpTestKeycloakSetup.IDP_ALIAS);
@@ -195,8 +192,6 @@ abstract class AbstractOid4vpE2eTest {
         addIdpMappers(idp, mappers);
         String[] credentialIds =
                 Oid4vpTestKeycloakSetup.credentialIdsOf(mappers).toArray(String[]::new);
-        // The credential sets and the credentials carrying the subject travel together: naming a
-        // credential no mapper produces is refused when it is saved.
         IdentityProviderRepresentation representation = idp.toRepresentation();
         representation
                 .getConfig()
@@ -213,8 +208,8 @@ abstract class AbstractOid4vpE2eTest {
 
     /**
      * Applies a DCQL {@code credential_sets} configuration to the OID4VP identity provider. The
-     * framework does not restore this write, so every test starts from the default credential sets
-     * again through {@link #ensureIdentityProviderConfigured()}.
+     * framework does not restore this write; {@link #ensureIdentityProviderConfigured()} puts the
+     * default credential sets back before the next test.
      */
     protected void setCredentialSets(String credentialSetsJson) {
         IdentityProviderResource idp = realm.admin().identityProviders().get(Oid4vpTestKeycloakSetup.IDP_ALIAS);
@@ -275,19 +270,16 @@ abstract class AbstractOid4vpE2eTest {
     }
 
     /**
-     * Updates the OID4VP identity provider config. The framework restores the original
-     * configuration after the test. Apply all changes of a test in a single call so the restore
-     * order is correct.
+     * Updates the OID4VP identity provider config. The framework restores the original configuration
+     * after the test, so apply all changes of a test in a single call to keep the restore order
+     * correct.
      */
     protected void setIdpConfig(Map<String, String> entries) {
         realm.updateIdentityProvider(
                 Oid4vpTestKeycloakSetup.IDP_ALIAS, idp -> idp.getConfig().putAll(entries));
     }
 
-    /**
-     * Updates the ETSI trust list identity provider config. The framework restores the original
-     * configuration after the test.
-     */
+    /** Updates the ETSI trust list identity provider config, which the framework restores afterwards. */
     protected void setTrustIdpConfig(Map<String, String> entries) {
         realm.updateIdentityProvider(
                 Oid4vpTestKeycloakSetup.TRUST_IDP_ALIAS, idp -> idp.getConfig().putAll(entries));
@@ -318,8 +310,8 @@ abstract class AbstractOid4vpE2eTest {
     }
 
     /**
-     * Fetches the request object of a wallet URL of a login already in progress. Retrieval does not
-     * consume the request context, so the wallet can still be driven through the same wallet URL.
+     * Fetches the request object behind a wallet URL of a login already in progress. Fetching it does
+     * not consume the request context, so the wallet can still be driven through the same URL.
      */
     protected SignedJWT fetchRequestObject(String walletUrl) throws Exception {
         HttpResponse<String> response = requestObjectResponse(walletUrl);
@@ -327,7 +319,6 @@ abstract class AbstractOid4vpE2eTest {
         return SignedJWT.parse(response.body());
     }
 
-    /** The answer a wallet gets when it fetches the request object a wallet URL points at. */
     protected HttpResponse<String> requestObjectResponse(String walletUrl) throws Exception {
         String requestUri = Oid4vpLoginFlowHelper.extractRequestUri(walletUrl);
         return HttpClient.newHttpClient()
@@ -349,17 +340,17 @@ abstract class AbstractOid4vpE2eTest {
                             || flow.isCallbackUrl(url),
                     new Page.WaitForURLOptions().setTimeout(30000));
         } catch (Exception e) {
-            // The complete-auth URL carries a single-use response_code that is delivered to the
-            // browser only via the SSE 'complete' event, so it cannot be reconstructed manually.
-            // If the SSE never navigated the browser, the cross-device login genuinely cannot complete.
+            // The complete-auth URL carries a single-use response_code that only the SSE 'complete'
+            // event delivers to the browser, so the test cannot build the URL itself and a browser
+            // that never navigated means the cross-device login cannot complete.
             throw new AssertionError("Cross-device: SSE did not navigate browser. URL: " + page.url(), e);
         }
         page.waitForLoadState();
     }
 
     /**
-     * Asserts the login was rejected for the expected cause. The snippets must name that cause
-     * specifically, so a login that fails for an unrelated reason does not satisfy this assertion.
+     * Asserts the login was rejected for the expected cause. The snippets have to name that cause
+     * specifically, so that a login failing for an unrelated reason does not satisfy the assertion.
      */
     protected void assertLoginFailed(Oid4vpLoginFlowHelper.WalletResponse walletResponse, String... expectedSnippets) {
         String redirectUri = walletResponse.redirectUri();
@@ -375,8 +366,8 @@ abstract class AbstractOid4vpE2eTest {
 
     /**
      * Asserts the newest login error event names one of the expected causes as its
-     * {@code error_description}. {@code EventBuilder.error} stores the event in its own
-     * transaction, so it is readable as soon as the wallet has been answered.
+     * {@code error_description}. {@code EventBuilder.error} stores the event in its own transaction,
+     * so it is readable as soon as the wallet has been answered.
      */
     protected void assertLoginFailedBecauseOf(String... expectedSnippets) {
         assertThat(newestLoginErrorDescription())
@@ -385,7 +376,6 @@ abstract class AbstractOid4vpE2eTest {
                 .containsAnyOf(expectedSnippets);
     }
 
-    /** The {@code error_description} of the realm's newest login error event, lower cased. */
     private String newestLoginErrorDescription() {
         return realm
                 .admin()
@@ -498,7 +488,6 @@ abstract class AbstractOid4vpE2eTest {
         return OBJECT_MAPPER.readTree(response.body());
     }
 
-    /** The id token of the completed login, obtained by exchanging the authorization code. */
     protected SignedJWT idTokenOfCompletedLogin() throws Exception {
         String serializedIdToken = exchangeAuthorizationCode().path("id_token").asText();
         assertThat(serializedIdToken).isNotBlank();
@@ -515,7 +504,6 @@ abstract class AbstractOid4vpE2eTest {
         return jwe.serialize();
     }
 
-    /** The response URI the wallet posts its authorization response to. */
     protected String responseUri() {
         return keycloakUrls.getBase() + "/realms/" + REALM + "/broker/" + Oid4vpTestKeycloakSetup.IDP_ALIAS
                 + "/endpoint";

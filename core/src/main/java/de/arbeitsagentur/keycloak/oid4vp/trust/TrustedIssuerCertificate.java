@@ -19,27 +19,26 @@ import java.security.cert.X509Certificate;
 import org.keycloak.utils.StringUtil;
 
 /**
- * A directly trusted issuer certificate together with the issuer it is trusted for. The counterpart
- * of {@link TrustedIssuerKey} for the credentials that pin a certificate instead of naming a key,
- * and it keeps trust domains apart the same way: a certificate published for one issuer must not
- * verify a credential that claims to come from another.
+ * A directly trusted issuer certificate together with the issuer it is trusted for, the counterpart
+ * of {@link TrustedIssuerKey} for credentials that pin a certificate instead of naming a key. It
+ * keeps trust domains apart the same way, so a certificate published for one issuer must not verify
+ * a credential that claims to come from another.
  *
- * @param issuer the credential {@code iss} this certificate is trusted for, or null when the
- *               provider does not identify an issuer and the certificate is trusted for any of them
- * @param certificate the trusted certificate
+ * @param issuer the credential {@code iss} this certificate is trusted for. Null when the provider
+ *               does not identify an issuer. The certificate is then trusted for any issuer.
  */
 public record TrustedIssuerCertificate(String issuer, X509Certificate certificate) {
 
     /**
-     * A certificate trusted for any issuer, as exposed by providers that do not know whose it is. A
-     * trust list names services rather than SD-JWT issuer identifiers, so its end entity
+     * Returns a certificate trusted for any issuer, as exposed by providers that do not know whose
+     * it is. A trust list names services rather than SD-JWT issuer identifiers, so its end entity
      * certificates arrive this way.
      */
     public static TrustedIssuerCertificate ofAnyIssuer(X509Certificate certificate) {
         return new TrustedIssuerCertificate(null, certificate);
     }
 
-    /** Whether this certificate may verify a credential issued by the given issuer. */
+    /** Returns whether this certificate may verify a credential issued by the given issuer. */
     public boolean trustedFor(String credentialIssuer) {
         return StringUtil.isBlank(issuer) || issuer.equals(credentialIssuer);
     }

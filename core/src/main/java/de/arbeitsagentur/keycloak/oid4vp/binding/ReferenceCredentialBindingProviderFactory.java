@@ -17,6 +17,5 @@ package de.arbeitsagentur.keycloak.oid4vp.binding;
 
 import org.keycloak.provider.ProviderFactory;
 
-/** Factory of {@link ReferenceCredentialBindingProvider} implementations. */
 public interface ReferenceCredentialBindingProviderFactory
         extends ProviderFactory<ReferenceCredentialBindingProvider> {}

@@ -337,7 +337,7 @@ class StatusListVerifierTest {
         };
     }
 
-    /** A statuslist+jwt whose single status entry is 0 (not revoked). */
+    /** Builds a statuslist+jwt whose single status entry is 0, meaning not revoked. */
     private static String signedStatusListJwt(KeyPair signer, String uri) throws Exception {
         Deflater deflater = new Deflater(Deflater.DEFAULT_COMPRESSION, true);
         deflater.setInput(new byte[] {0x00});
@@ -390,8 +390,6 @@ class StatusListVerifierTest {
         assertThat(ref.idx()).isEqualTo(7);
     }
 
-    // --- validateStatusListToken tests ---
-
     @Test
     void validateStatusListTokenAcceptsValidToken() {
         verifier.validateStatusListToken(
@@ -441,8 +439,6 @@ class StatusListVerifierTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("expired");
     }
-
-    // --- resolveExpiry tests ---
 
     @Test
     void resolveExpiryUsesTtlClaim() {

@@ -42,9 +42,9 @@ public final class TestCertificates {
     private TestCertificates() {}
 
     /**
-     * Generates a fresh CA + leaf certificate chain with the SAN {@code test.example.com} and
-     * returns it as combined PEM (leaf, CA, private key) suitable for the identity provider's
-     * x509 certificate configuration.
+     * Generates a fresh CA and leaf certificate with the SAN {@code test.example.com} and returns
+     * leaf, CA and private key as one combined PEM, the shape the identity provider's x509
+     * certificate configuration expects.
      */
     public static String generateHaipCertificateChainPem() {
         try {
@@ -79,7 +79,7 @@ public final class TestCertificates {
                 subject,
                 caKeyPair.getPublic());
         builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(true));
-        // Certificates signed by this CA derive their authority key identifier from this extension
+        // Certificates signed by this CA derive their authority key identifier from this extension.
         builder.addExtension(
                 Extension.subjectKeyIdentifier,
                 false,
@@ -124,9 +124,9 @@ public final class TestCertificates {
     }
 
     /**
-     * The certificate's subject key identifier, base64url encoded without padding. Credentials
-     * issued under this certificate carry the same value in their authority key identifier, which
-     * is what DCQL {@code trusted_authorities} entries of type {@code aki} advertise.
+     * Returns the certificate's subject key identifier, base64url encoded without padding. Credentials
+     * issued under this certificate carry the same value as their authority key identifier, which is
+     * what DCQL {@code trusted_authorities} entries of type {@code aki} advertise.
      */
     public static String subjectKeyIdentifierBase64Url(X509Certificate certificate) {
         try {

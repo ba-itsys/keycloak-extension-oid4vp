@@ -123,7 +123,7 @@ class MdocVerifierTest {
                 .containsEntry("family_name", "Doe");
     }
 
-    // A namespace element carrying serialized JSON becomes a nested structure, so mDoc claims
+    // A namespace element carrying serialized JSON becomes a nested structure. mDoc claims then
     // follow the same addressing rules as SD-JWT claims. Scalar and malformed strings stay raw.
     @Test
     void verify_jsonEncodedStringElements_becomeNestedStructures() throws Exception {
@@ -178,7 +178,7 @@ class MdocVerifierTest {
     }
 
     // A DeviceResponse document that carries its data elements at the top level instead of inside a
-    // signed issuerSigned structure must be rejected: only issuer-signed values may become claims.
+    // signed issuerSigned structure must be rejected. Only issuer-signed values may become claims.
     @Test
     void verify_documentWithoutIssuerSigned_throws() {
         CBORPairList item = new CBORPairList(List.of(
@@ -260,8 +260,6 @@ class MdocVerifierTest {
                 MdocDeviceResponseTestHelper.MdocAlgorithmSpec.ES512);
     }
 
-    // ===== Helper Methods =====
-
     @SuppressWarnings("unchecked")
     private static Map<String, Object> namespaceClaims(MdocVerificationResult result, String namespace) {
         assertThat(result.claims()).containsKey(namespace);
@@ -280,7 +278,6 @@ class MdocVerifierTest {
         CBORPairList nameSpaces =
                 new CBORPairList(List.of(new CBORPair(new CBORString(namespace), buildElements(claimPairs))));
 
-        // Build MSO with status
         CBORPairList statusList = new CBORPairList(List.of(
                 new CBORPair(new CBORString("idx"), new CBORInteger(statusIdx)),
                 new CBORPair(new CBORString("uri"), new CBORString(statusUri))));
@@ -323,7 +320,6 @@ class MdocVerifierTest {
     }
 
     private CBORItem signMso(CBORPairList mso) throws Exception {
-        // Tag-24 wrap the MSO, then sign it as a COSE_Sign1 (issuerAuth).
         byte[] payload = new CBORTaggedItem(24, new CBORByteArray(mso.encode())).encode();
         var protectedHeader =
                 new COSEProtectedHeaderBuilder().alg(COSE_ALG_ES256).build();
@@ -367,8 +363,6 @@ class MdocVerifierTest {
         return new JcaX509CertificateConverter().getCertificate(certBuilder.build(signer));
     }
 
-    // ===== Device Authentication, Digest, and Validity Tests =====
-
     private static final String CLIENT_ID = "https://verifier.example.com";
     private static final String NONCE = "test-nonce-12345";
     private static final String RESPONSE_URI = "https://verifier.example.com/response";
@@ -398,8 +392,9 @@ class MdocVerifierTest {
 
         /**
          * The OpenID conformance suite signs its mDLs directly with a self-signed CA profile
-         * certificate, which a trust list serves as a PKIX anchor rather than a pinned end entity
-         * certificate. A chain consisting of exactly that anchor is trusted without path building.
+         * certificate. A trust list serves such a certificate as a PKIX anchor rather than as a
+         * pinned end entity certificate. A chain consisting of exactly that anchor is trusted
+         * without path building.
          */
         @Test
         void verifyWithSessionTranscript_signerIsTheTrustAnchorItself_passes() throws Exception {
@@ -517,13 +512,13 @@ class MdocVerifierTest {
 
         @Test
         void verifyWithSessionTranscript_isoFallbackWhenMdocNoncePresent() throws Exception {
-            // Build with ISO format, verify should succeed since OID4VP fails and falls back to ISO
+            // The transcript uses the ISO 18013-7 format. The verifier tries OID4VP 1.0 first and
+            // falls back to ISO 18013-7.
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
             CBORItemList transcript =
                     MdocSessionTranscriptBuilder.buildIso18013_7(CLIENT_ID, NONCE, RESPONSE_URI, MDOC_GENERATED_NONCE);
             String token = helper.build(transcript);
 
-            // Verify passes — OID4VP 1.0 is tried first, then falls back to ISO 18013-7
             MdocVerificationResult result = verifier.verifyPresentation(
                     token,
                     TestTrust.ofCertificates(helper.issuerCert),
@@ -546,7 +541,6 @@ class MdocVerifierTest {
             CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
             String token = helper.build(transcript);
 
-            // Should pass — digests computed correctly by helper
             MdocVerificationResult result = verifier.verifyPresentation(
                     token, TestTrust.ofCertificates(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null);
 
@@ -647,8 +641,8 @@ class MdocVerifierTest {
                     .hasMessageContaining("missing the validity information");
         }
 
-        // ISO/IEC 18013-5 makes validUntil mandatory in ValidityInfo: without it the credential
-        // would never expire, so the presentation must be rejected instead of accepted forever.
+        // ISO/IEC 18013-5 makes validUntil mandatory in ValidityInfo. Without it the credential
+        // would never expire. The presentation must be rejected instead of accepted forever.
         @Test
         void verifyPresentation_msoWithoutValidUntil_fails() throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper().withoutValidUntil();
@@ -722,18 +716,18 @@ class MdocVerifierTest {
         }
     }
 
-    // Regression tests for the two mDoc presentation bypasses: an intercepted issuer-signed document
+    // Regression tests for two mDoc presentation bypasses: an intercepted issuer-signed document
     // replayed without holder proof, and fabricated values that escape digest verification.
     @Nested
     class PresentationHardening {
 
-        // Finding 1: the issuer-signed part of an mDoc is static and interceptable, so a presentation
-        // without deviceSigned carries no proof that the holder key was present. It must be rejected,
-        // not silently accepted by skipping device authentication.
+        // The issuer-signed part of an mDoc is static and can be intercepted. A presentation
+        // without deviceSigned carries no proof that the holder key was present, so it must be
+        // rejected rather than accepted by skipping device authentication.
         @Test
         void verifyPresentation_withoutDeviceSigned_isRejected() throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
-            String issuerSignedOnly = helper.build(); // valid issuer signature and digests, but no deviceSigned
+            String issuerSignedOnly = helper.build();
 
             assertThatThrownBy(() -> verifier.verifyPresentation(
                             issuerSignedOnly,
@@ -747,8 +741,8 @@ class MdocVerifierTest {
                     .hasMessageContaining("deviceSigned");
         }
 
-        // Finding 2: data elements outside the signed issuerSigned structure must never become claims,
-        // even when the document also carries a genuine issuerAuth. Claims are read from the same
+        // Data elements outside the signed issuerSigned structure must never become claims, even
+        // when the document also carries a genuine issuerAuth. Claims are read from the same
         // issuer-signed namespaces that digest verification covers.
         @Test
         void verifyIssuerSigned_forgedTopLevelNamespace_isIgnored() throws Exception {
@@ -760,8 +754,8 @@ class MdocVerifierTest {
             assertThat(result.claims()).doesNotContainKey("org.iso.18013.5.1");
         }
 
-        // The same forged document offered as a presentation is rejected outright: its fabricated values
-        // are not digest-covered, and value-digest verification is mandatory for a presentation.
+        // The same forged document offered as a presentation is rejected outright, because its
+        // fabricated values are not digest-covered and a presentation must pass digest verification.
         @Test
         void verifyPresentation_forgedTopLevelNamespace_isRejected() throws Exception {
             String token = buildMdocWithForgedTopLevelNamespace(
@@ -773,7 +767,7 @@ class MdocVerifierTest {
                     .hasMessageContaining("value digests");
         }
 
-        // Finding 2: tampering an issuer-signed element value breaks its MSO digest, so a presentation
+        // Tampering with an issuer-signed element value breaks its MSO digest, and a presentation
         // carrying the altered value is rejected.
         @Test
         void verifyPresentation_tamperedElementValue_isRejected() throws Exception {
@@ -794,9 +788,8 @@ class MdocVerifierTest {
         }
     }
 
-    // Builds a DeviceResponse whose issuerSigned namespaces are empty but which carries fabricated data
-    // elements in a top-level nameSpaces sibling, i.e. values covered by neither the issuer signature nor
-    // the MSO digests.
+    // Builds a DeviceResponse whose issuerSigned namespaces are empty, with fabricated data elements
+    // in a top-level nameSpaces sibling that neither the issuer signature nor the MSO digests cover.
     private String buildMdocWithForgedTopLevelNamespace(String docType, String namespace, String[]... claimPairs)
             throws Exception {
         CBORPairList forged =

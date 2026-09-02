@@ -39,8 +39,6 @@ class Oid4vpIdentityProviderFlowGatingTest {
         assertThat(Oid4vpIdentityProvider.flowOfferedAt(3, 4)).isFalse();
     }
 
-    // A request that names no level carries NO_LOA, which is below every non-negative ceiling, so
-    // configuring a ceiling never suppresses logins that request no level.
     @Test
     void requestWithoutALevelPassesEveryNonNegativeCeiling() {
         assertThat(Oid4vpIdentityProvider.flowOfferedAt(0, Constants.NO_LOA)).isTrue();

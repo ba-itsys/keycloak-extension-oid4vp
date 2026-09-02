@@ -22,15 +22,14 @@ import org.keycloak.crypto.JavaAlgorithm;
 import org.keycloak.jose.jws.crypto.HashUtils;
 
 /**
- * Fingerprints of certificates, used to key caches by the trust material a cached document was
- * verified against. Two sets of trust material that differ produce different keys, so a document
- * cached for one of them is never served for the other.
+ * Keys caches by the trust material a cached document was verified against, so that a document
+ * cached under one set of certificates is never served under another.
  */
 public final class CertificateFingerprints {
 
     private CertificateFingerprints() {}
 
-    /** The SHA-256 fingerprints of the given certificates, sorted so their order does not matter. */
+    /** Returns the SHA-256 fingerprints in sorted order, so that the same certificates in any order key the same. */
     public static List<String> of(List<X509Certificate> certificates) {
         if (certificates == null || certificates.isEmpty()) {
             return List.of();

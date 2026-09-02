@@ -53,9 +53,9 @@ import org.keycloak.testframework.server.KeycloakUrls;
 import org.keycloak.util.JsonSerialization;
 
 /**
- * Base class for the OID4VP verifier conformance modules. Each subclass targets one module and
- * runs it across every spec relevant variant combination the provider supports. Keycloak is
- * reconfigured per variant before the module runs.
+ * Base class for the OID4VP verifier conformance modules. Each subclass targets one module and runs
+ * it across every variant combination the provider supports, with Keycloak reconfigured for the
+ * variant before the module starts.
  */
 public abstract class AbstractVerifierConformanceTest extends AbstractConformanceTest {
 
@@ -71,15 +71,14 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
     @InjectKeycloakUrls
     protected KeycloakUrls keycloakUrls;
 
-    // Suite declared variant dimension values. The provider supports only the x509 client
-    // identifier prefixes, so redirect_uri is excluded as a provider capability. Every other
-    // combination is enumerated and the suite decides applicability during discovery.
+    // The variant dimension values the suite declares. Only the x509 client identifier prefixes are
+    // listed because the provider supports no others; every remaining combination is enumerated and
+    // the suite decides during discovery which ones apply.
     private static final List<String> CREDENTIAL_FORMATS = List.of("sd_jwt_vc", "iso_mdl");
     private static final List<String> CLIENT_ID_PREFIXES = List.of("x509_san_dns", "x509_hash");
     private static final List<String> REQUEST_METHODS = List.of("url_query", "request_uri_signed");
     private static final List<String> RESPONSE_MODES = List.of("direct_post", "direct_post.jwt");
 
-    // Modules and their variants discovered from the suite, keyed by plan + plan variant
     private static final Map<PlanVariant, List<ConformanceApiClient.DiscoveredModule>> DISCOVERED =
             new ConcurrentHashMap<>();
     private static volatile boolean discovered;
@@ -87,15 +86,10 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
     private record PlanVariant(String plan, Map<String, String> variant) {}
 
     /**
-     * Discovers every module and module variant the suite offers for one module name across all
-     * enumerated plan variants. Combinations are not fabricated: the suite reports which modules
-     * and variants apply, and inapplicable plan variants yield nothing.
-     */
-    /**
-     * A negative module in both answers to a rejection. Under {@code error} the suite reads the
-     * refusal from the 4xx status; under {@code redirect} it cannot, so it asks for verification
-     * evidence and finishes REVIEW, which counts as the expected result once the evidence is
-     * uploaded. Both are permitted by OID4VP 1.0 §8.2, so both have to keep the module happy.
+     * Runs a negative module with both answers to a rejection, which OID4VP 1.0 §8.2 permits alike.
+     * Under {@code error} the suite reads the refusal from the 4xx status. Under {@code redirect} it
+     * cannot, so it asks for verification evidence and finishes as REVIEW, which counts as the
+     * expected result once that evidence is uploaded.
      */
     protected Stream<ConformanceModuleVariant> negativeVerifierModuleVariants(String moduleName) {
         return verifierModuleVariants(moduleName, ConformanceResult.PASSED)
@@ -104,6 +98,11 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
                         variant.withRejectionResponse(Oid4vpRejectionResponse.REDIRECT)));
     }
 
+    /**
+     * Returns every module and module variant the suite offers for one module name across all
+     * enumerated plan variants. The combinations are not fabricated here: the suite reports which
+     * modules and variants apply, and a plan variant that does not apply yields nothing.
+     */
     protected Stream<ConformanceModuleVariant> verifierModuleVariants(
             String moduleName, ConformanceResult expectedResult) {
         ensureDiscovered();
@@ -128,11 +127,11 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
     }
 
     /**
-     * Non-HAIP profile: the final verifier plan run with vp_profile=plain_vp (the suite defaults
-     * vp_profile to haip, which would exclude the unencrypted direct_post response mode the
-     * provider also supports). Crosses every verifier identification and response delivery
-     * dimension; the suite filters the combinations it does not support, such as url_query with an
-     * x509 client identifier prefix.
+     * Runs the final verifier plan with vp_profile=plain_vp, because the suite otherwise defaults to
+     * haip and that default excludes the unencrypted direct_post response mode the provider supports
+     * as well. Every verifier identification and response delivery dimension is crossed, and the suite
+     * filters out the combinations it does not support, such as url_query with an x509 client
+     * identifier prefix.
      */
     private static void discoverNonHaipProfile(ConformanceApiClient client) {
         for (String format : CREDENTIAL_FORMATS) {
@@ -153,9 +152,8 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
     }
 
     /**
-     * HAIP profile: the dedicated HAIP verifier plan, which pins the x509_hash client identifier
-     * prefix, signed requests and the haip profile. Only the credential format and response mode
-     * vary.
+     * Runs the dedicated HAIP verifier plan, which pins the x509_hash client identifier prefix, signed
+     * requests and the haip profile, so only the credential format and the response mode vary.
      */
     private static void discoverHaipProfile(ConformanceApiClient client) {
         for (String format : CREDENTIAL_FORMATS) {
@@ -227,8 +225,8 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
 
     private static JsonNode suiteConfigFor(VerifierScenario scenario) {
         VerifierSigningMaterial material = signingMaterial();
-        // The verifier strips the self-signed trust anchor from the x5c chain per HAIP, so the
-        // suite is given the trust anchor out of band to validate the request object chain.
+        // The verifier strips the self-signed trust anchor from the x5c chain as HAIP requires, so the
+        // suite gets that anchor out of band to validate the request object chain.
         return VerifierSuiteConfig.create(
                         "keycloak-oid4vp-" + UUID.randomUUID(),
                         rawClientId(scenario),
@@ -263,9 +261,9 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
         if (scenario.profile().includeMdlIssuer()) {
             trustedCertificates.add(CredentialProfile.MDL_ISSUER_CERTIFICATE_PEM);
         }
-        // One list per credential profile: the profiles of a class differ in their certificate set,
-        // and a republish under a shared URL would race the in-flight verification of the previous
-        // module, which refetches the list on every use.
+        // One list per credential profile, since the profiles of a class differ in their certificate
+        // set. The previous module may still be verifying and refetches the list on every use, so a
+        // republish under a shared URL would race that verification.
         String trustListUrl = TrustListServer.instance()
                 .publish(
                         "trustlist-" + getClass().getSimpleName() + "-"
@@ -281,7 +279,7 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
         Map<String, String> config = new LinkedHashMap<>();
         config.put(EtsiTrustListIdentityProviderConfig.TRUST_LIST_URL, trustListUrl);
         config.put(EtsiTrustListIdentityProviderConfig.TRUST_LIST_LOTE_TYPE, TrustListServer.PID_LOTE_TYPE);
-        // Nothing is advertised by default, so the conformance suite's wallet is driven without a
+        // Nothing is advertised, because the conformance suite's wallet is driven without a
         // trusted_authorities constraint.
         idp.setConfig(config);
         return idp;
@@ -325,7 +323,7 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
         @Override
         public KeycloakServerConfigBuilder configure(KeycloakServerConfigBuilder config) {
             return config.dependency("de.arbeitsagentur.opdt", "keycloak-extension-oid4vp", true)
-                    // Runtime dependency of the provider, shaded into the provider jar for production
+                    // Runtime dependency of the provider, which the production jar shades in.
                     .dependency("com.authlete", "cbor")
                     .features(Profile.Feature.TRANSIENT_USERS)
                     .option("hostname", OpenIdConformanceSuite.KEYCLOAK_BASE_URI.toString());

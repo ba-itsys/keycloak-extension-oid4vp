@@ -35,9 +35,9 @@ class Oid4vpIdentityKeyTest {
 
     @Test
     void everySubjectlessLoginWouldReachTheSameIdentity() {
-        // Which is why no caller may derive a key from a blank subject: the verifier rejects a
-        // presentation without a principal claim, and generates one when it is allowed to be
-        // missing. Deriving here instead would put every such login on one shared account.
+        // The verifier rejects a presentation without a principal claim, and generates a subject
+        // when the claim may be missing. Deriving a key from a blank subject here instead would put
+        // every such login on one shared account.
         assertThat(Oid4vpIdentityKey.of(null)).isEqualTo(Oid4vpIdentityKey.of(""));
         assertThat(Oid4vpIdentityKey.of("   ")).isEqualTo(Oid4vpIdentityKey.of(""));
         assertThat(Oid4vpIdentityKey.of(null))

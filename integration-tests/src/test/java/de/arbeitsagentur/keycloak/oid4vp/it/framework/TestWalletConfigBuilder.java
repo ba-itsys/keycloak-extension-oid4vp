@@ -27,13 +27,6 @@ import org.testcontainers.containers.BindMode;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 
-/**
- * Builder for the wallet container backing a {@link TestWallet}.
- *
- * <p>The wallet advertises {@code localhost} URLs on a fixed port (HTTPS on port + 1), so only
- * one wallet runs at a time. When a test class requests a wallet with a different configuration,
- * the test framework replaces the running wallet automatically.
- */
 public final class TestWalletConfigBuilder {
 
     private static final String WALLET_STATE_CONTAINER_DIR = "/home/app/.eudi-dev";
@@ -43,16 +36,16 @@ public final class TestWalletConfigBuilder {
      * wallet container before the wallet starts.
      *
      * <p>{@link EudiWalletContainer#withHostAccess()} adds a {@code <gateway> localhost} entry via
-     * {@code --add-host}, but Docker always writes the built-in {@code 127.0.0.1 localhost} (and
-     * {@code ::1 localhost}) lines first, and the wallet's Go HTTP client uses the first match, so it
-     * would dial its own loopback. We strip the loopback {@code localhost} lines (requires root),
-     * leaving only the gateway entry, then drop back to the unprivileged {@code app} user and exec
-     * the original wallet command (passed through as {@code "$*"}, which is space-safe because every
-     * serve flag value is a single token).
+     * {@code --add-host}, but Docker writes the built-in {@code 127.0.0.1 localhost} and
+     * {@code ::1 localhost} lines first, and the wallet's Go HTTP client takes the first match and
+     * dials its own loopback. The wrapper therefore runs as root to strip the loopback
+     * {@code localhost} lines, leaving only the gateway entry, then drops back to the unprivileged
+     * {@code app} user and execs the original wallet command. Passing that command through as
+     * {@code "$*"} is safe because every serve flag value is a single token.
      *
      * <p>Without this the wallet cannot fetch the {@code request_uri} or POST to the
-     * {@code response_uri} back to Keycloak running on the host, which fails on Linux CI (it happens
-     * to limp along on Docker Desktop via gateway fallthrough).
+     * {@code response_uri} of Keycloak running on the host. That fails on Linux CI, while on Docker
+     * Desktop it happens to work through gateway fallthrough.
      */
     private static final String LOCALHOST_TO_HOST_GATEWAY_ENTRYPOINT =
             "grep -vE '^(127\\.0\\.0\\.1|::1)[[:space:]]+localhost([[:space:]]|$)' /etc/hosts > /tmp/hosts "
@@ -64,25 +57,22 @@ public final class TestWalletConfigBuilder {
     private String sessionTranscript;
     private final List<UnaryOperator<EudiWalletContainer>> customizers = new ArrayList<>();
 
-    // Whether the wallet embeds status list references in generated credentials (default on)
     public TestWalletConfigBuilder statusList(boolean statusList) {
         this.statusList = statusList;
         return this;
     }
 
-    // Requires verifiers to encrypt OID4VP request objects
     public TestWalletConfigBuilder requireEncryptedRequest() {
         this.requireEncryptedRequest = true;
         return this;
     }
 
-    // The mDoc session transcript mode: oid4vp (default) or iso
+    // Sets the mdoc session transcript mode, either oid4vp (the default) or iso.
     public TestWalletConfigBuilder sessionTranscript(String mode) {
         this.sessionTranscript = mode;
         return this;
     }
 
-    // Escape hatch for container settings not covered by this builder
     public TestWalletConfigBuilder customize(UnaryOperator<EudiWalletContainer> customizer) {
         customizers.add(customizer);
         return this;
@@ -100,8 +90,6 @@ public final class TestWalletConfigBuilder {
                             .withPortBindings(
                                     new PortBinding(Ports.Binding.bindPort(port), ExposedPort.tcp(port)),
                                     new PortBinding(Ports.Binding.bindPort(tlsPort), ExposedPort.tcp(tlsPort)));
-                    // Relocate the wallet's HTTP port (HTTPS is always served on the next port)
-                    // away from the default so the tests do not collide with a locally running wallet
                     String[] command = cmd.getCmd();
                     if (command != null) {
                         for (int i = 0; i < command.length - 1; i++) {
@@ -111,8 +99,9 @@ public final class TestWalletConfigBuilder {
                         }
                         cmd.withCmd(command);
                     }
-                    // Run as root so the entrypoint can rewrite /etc/hosts (Docker bind mount,
-                    // editable in place only), then the wrapper drops back to the 'app' user.
+                    // Runs as root so the entrypoint can rewrite /etc/hosts, which is a Docker bind
+                    // mount and can only be edited in place. The wrapper drops back to the 'app' user
+                    // afterwards.
                     cmd.withUser("0");
                     cmd.withEntrypoint("/bin/sh", "-c", LOCALHOST_TO_HOST_GATEWAY_ENTRYPOINT, "sh");
                 });

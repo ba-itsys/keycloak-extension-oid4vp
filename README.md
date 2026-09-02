@@ -31,9 +31,9 @@ Supported capabilities:
 
 ## How It Works
 
-At login time, Keycloak allocates a `state` for each enabled browser flow and renders either a same-device deep link, a cross-device QR code, or both. The `state` is carried in the `request_uri`. The wallet fetches the `request_uri`, Keycloak generates a signed request object for that fetch, and the wallet posts the resulting presentation (echoing the `state`) to the verifier endpoint. After successful verification, Keycloak generates a single-use `response_code` and the browser completes the login through `/complete-auth?state=...&response_code=...`. The browser presents that `response_code`, and the request is bound to the original Keycloak authentication session, so the public `state` alone cannot drive completion.
+At login time, Keycloak allocates a `state` for each enabled browser flow. It renders a same-device deep link, a cross-device QR code, or both. The `state` is carried in the `request_uri`. The wallet fetches the `request_uri`. Keycloak generates a signed request object for that fetch. The wallet posts the resulting presentation to the verifier endpoint and echoes the `state`. After successful verification, Keycloak generates a single-use `response_code`. The browser completes the login through `/complete-auth?state=...&response_code=...`. The browser presents that `response_code`. The request is also bound to the original Keycloak authentication session. The public `state` alone cannot drive completion.
 
-For SD-JWT VC, the verifier prefers `x5c`-based issuer verification. Without a usable `x5c` chain it uses the issuer keys published by the credential's trust domain. Only when the identity provider references no trust material providers at all does it resolve the issuer signing key from JWT VC issuer metadata at `/.well-known/jwt-vc-issuer`, including `jwks_uri` documents, using the JOSE `kid`. With trust material providers configured, a credential type none of them serves is rejected.
+For SD-JWT VC, the verifier prefers `x5c`-based issuer verification. Without a usable `x5c` chain it uses the issuer keys published by the credential's trust domain. The verifier falls back to JWT VC issuer metadata only when the identity provider references no trust material providers at all. It then resolves the issuer signing key from `/.well-known/jwt-vc-issuer`, including `jwks_uri` documents, using the JOSE `kid`. With trust material providers configured, a credential type none of them serves is rejected.
 
 For the full flow, security model, and request/state lifecycle, see [docs/request-flow.md](docs/request-flow.md).
 
@@ -67,11 +67,11 @@ For more details on local wallet setup, sandbox setup, and script usage, see [do
 
 ### Common Commands
 
-- **Formatting**: `mvn spotless:apply` (Ensures consistent code style).
-- **Verification**: `mvn verify` (Runs the unit tests and builds the project; integration and conformance tests are skipped by default).
+- **Formatting**: `mvn spotless:apply` applies the code style.
+- **Verification**: `mvn verify` runs the unit tests and builds the project. Integration and conformance tests are skipped by default.
 - **Run only unit tests:** `mvn test`
-- **Run integration/E2E tests:** skipped by default. Enable with the `integration-tests` profile: `mvn verify -pl integration-tests -am -Pintegration-tests`. A single test class can be selected with `-Dit.test='KeycloakOid4vpLoginE2eIT'`.
-- **Run conformance tests:** skipped by default. Enable with the `conformance-tests` profile: `mvn verify -pl conformance-tests -am -Pconformance-tests`
+- **Run integration/E2E tests:** `mvn verify -pl integration-tests -am -Pintegration-tests`. These tests are skipped by default and run with the `integration-tests` profile. A single test class can be selected with `-Dit.test='KeycloakOid4vpLoginE2eIT'`.
+- **Run conformance tests:** `mvn verify -pl conformance-tests -am -Pconformance-tests`. These tests are skipped by default and run with the `conformance-tests` profile.
 
 ### Important Local Files
 

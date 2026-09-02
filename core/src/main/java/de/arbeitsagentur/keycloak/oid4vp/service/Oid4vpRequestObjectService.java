@@ -33,7 +33,6 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.utils.StringUtil;
 
-// Signs request objects on demand from the request context allocated at login-page render.
 public class Oid4vpRequestObjectService {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpRequestObjectService.class);
@@ -108,10 +107,10 @@ public class Oid4vpRequestObjectService {
     }
 
     /**
-     * The request object as the wallet is served it: encrypted to the key its {@code wallet_metadata}
-     * names, or the signed request object itself. A wallet posts its metadata to advertise what it
-     * supports and names encryption keys only when it requires the request object encrypted
-     * (OID4VP 1.0 §5.10), so metadata without them is answered with the signed request object.
+     * Returns the request object encrypted to the key the wallet's {@code wallet_metadata} names, or
+     * the signed request object itself. A wallet names encryption keys only when it requires the
+     * request object encrypted (OID4VP 1.0 §5.10), so metadata without them is answered with the
+     * signed request object.
      */
     private String maybeEncryptRequestObject(String responseJwt, String walletMetadataJson) {
         if (StringUtil.isBlank(walletMetadataJson)) {

@@ -31,13 +31,10 @@ import org.keycloak.protocol.oid4vc.model.VerifiableCredential;
 import org.keycloak.provider.ProviderConfigProperty;
 
 /**
- * Writes the subject and the reference credential binding of an OID4VP login into the credential
- * this Keycloak issues. The subject is what the next presentation is recognised by; the reference
- * credential binding says which credentials it was issued alongside.
- *
- * <p>The {@code oid4vp-subject-binding} authenticator records both on the entitlement while the user
- * signs in. The issuance runs in a session of its own, so this mapper reads them back from the
- * entitlement of the credential scope it belongs to.
+ * Writes the subject and the reference credential binding of an OID4VP login into the credential this
+ * Keycloak issues. The {@code oid4vp-subject-binding} authenticator records both on the entitlement
+ * while the user signs in, and since the issuance runs in a session of its own, this mapper reads them
+ * back from the entitlement of the credential scope it belongs to.
  */
 public class Oid4vpBoundSubjectMapper extends OID4VCMapper {
 
@@ -88,8 +85,8 @@ public class Oid4vpBoundSubjectMapper extends OID4VCMapper {
     }
 
     /**
-     * The entitlement of the credential scope this mapper belongs to. The scope is found through the
-     * mapper itself, so nothing has to be configured twice.
+     * Finds the entitlement of the credential scope this mapper belongs to. The scope is found through
+     * the mapper itself, so nothing has to be configured twice.
      */
     private UserVerifiableCredentialModel entitlementOf(UserSessionModel userSession) {
         UserModel user = userSession.getUser();
@@ -120,7 +117,7 @@ public class Oid4vpBoundSubjectMapper extends OID4VCMapper {
 
     @Override
     public void setClaim(VerifiableCredential verifiableCredential, UserSessionModel userSession) {
-        // The W3C credential model of Keycloak is not used by this extension, which issues SD-JWT.
+        // This extension issues SD-JWT. It does not use the W3C credential model of Keycloak.
     }
 
     @Override

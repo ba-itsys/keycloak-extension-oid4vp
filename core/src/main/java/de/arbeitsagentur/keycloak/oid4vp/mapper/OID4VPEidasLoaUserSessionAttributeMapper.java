@@ -32,10 +32,8 @@ import org.keycloak.provider.ProviderConfigurationBuilder;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Writes an eIDAS level of assurance into a user session attribute, chosen by whether the
- * presentation finished in the same-device or the cross-device flow, so it can be surfaced in
- * tokens through the user session note protocol mappers. The attribute name and the two level
- * values are configurable; the levels default to STORK QAA levels.
+ * Writes an eIDAS level of assurance into a user session attribute, choosing the value by whether
+ * the presentation finished in the same-device or the cross-device flow.
  */
 public class OID4VPEidasLoaUserSessionAttributeMapper extends AbstractIdentityProviderMapper {
 
@@ -117,9 +115,9 @@ public class OID4VPEidasLoaUserSessionAttributeMapper extends AbstractIdentityPr
     }
 
     /**
-     * The note is per login state, so it is also set during preprocessing, which runs for every
-     * login. The user centric hooks below never run for an existing user whose effective sync
-     * mode is IMPORT.
+     * The note is per login state, so preprocessing sets it too because it runs for every login,
+     * while the user centric hooks below never run for an existing user whose effective sync mode
+     * is IMPORT.
      */
     @Override
     public void preprocessFederatedIdentity(

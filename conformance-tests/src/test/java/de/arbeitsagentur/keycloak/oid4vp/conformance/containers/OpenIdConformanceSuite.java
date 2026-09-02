@@ -31,21 +31,22 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * The OpenID Foundation conformance suite running locally in containers (MongoDB, suite server and
- * nginx). Keycloak runs on the Docker host and is reached by the suite at
+ * The OpenID Foundation conformance suite running locally in containers: MongoDB, the suite server
+ * and nginx. Keycloak runs on the Docker host, where the suite reaches it at
  * {@link #KEYCLOAK_BASE_URI}.
  */
 public final class OpenIdConformanceSuite implements AutoCloseable {
 
     public static final String IMAGE_TAG_PROPERTY = "conformance.suite.imageTag";
 
-    // The suite URL within the container network, used in URLs the suite hands to Keycloak
+    // The suite URL within the container network, which the suite puts into the URLs it hands to
+    // Keycloak.
     public static final URI INTERNAL_BASE_URI = URI.create("https://nginx:8443");
 
-    // The URL at which the suite containers reach Keycloak, set as the Keycloak hostname option
+    // The URL at which the suite containers reach Keycloak, set as the Keycloak hostname option.
     public static final URI KEYCLOAK_BASE_URI = URI.create("https://host.testcontainers.internal:8443");
 
-    // Fallback for running outside Maven, where the default is set by the pom property of the same name
+    // Fallback for running outside Maven, where the pom property of the same name sets the tag.
     private static final String DEFAULT_IMAGE_TAG = "release-v5.2.4";
     private static final String NGINX_CERTIFICATE_PATH = "/etc/ssl/certs/nginx-selfsigned.crt";
 
@@ -74,12 +75,13 @@ public final class OpenIdConformanceSuite implements AutoCloseable {
     }
 
     /**
-     * The suite is a singleton as it is also used to discover plan modules while tests are
-     * collected, before the test framework injects it.
+     * The suite is a singleton because plan modules are discovered while tests are collected, before
+     * the test framework injects it.
      */
     public static synchronized OpenIdConformanceSuite instance() {
         if (instance == null) {
-            // Must be exposed before the containers start so they can reach Keycloak on the Docker host
+            // The port has to be exposed before the containers start, or they cannot reach Keycloak on
+            // the Docker host.
             Testcontainers.exposeHostPorts(KEYCLOAK_BASE_URI.getPort());
             instance = start();
         }
@@ -141,12 +143,11 @@ public final class OpenIdConformanceSuite implements AutoCloseable {
         return client;
     }
 
-    // The base URI at which the test JVM reaches the suite
     public URI baseUri() {
         return baseUri;
     }
 
-    // Rewrites a suite-internal URI ({@link #INTERNAL_BASE_URI}) to one reachable from the test JVM
+    // Rewrites a suite-internal URI to one the test JVM can reach.
     public URI externalUri(URI internalUri) {
         if (INTERNAL_BASE_URI.getHost().equals(internalUri.getHost())) {
             return baseUri.resolve(internalUri.getRawPath()

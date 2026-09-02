@@ -18,8 +18,8 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
 import java.util.List;
 
 /**
- * A DCQL query generated from the IdP mappers, together with the requested-claims model used to
- * validate the wallet's presentation against what was requested.
+ * A DCQL query generated from the identity provider mappers. It carries the requested credentials
+ * and credential sets along, because the wallet's presentation is validated against them.
  */
 public record PreparedDcqlQuery(
         String dcqlQuery, List<RequestedCredential> requestedCredentials, List<CredentialSet> credentialSets) {

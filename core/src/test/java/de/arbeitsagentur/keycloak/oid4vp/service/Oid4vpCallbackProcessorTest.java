@@ -47,7 +47,7 @@ import org.keycloak.common.crypto.CryptoIntegration;
 
 /**
  * Covers subject resolution, allow-list enforcement, and requested-claims validation with a real
- * configuration and canned verification results; the verification pipeline itself is covered by
+ * configuration and canned verification results. The verification pipeline itself is covered by
  * its own tests and the end-to-end suite.
  */
 class Oid4vpCallbackProcessorTest {
@@ -146,7 +146,8 @@ class Oid4vpCallbackProcessorTest {
     }
 
     // The allow-list must reject a disallowed issuer wherever it appears, not only on the first
-    // credential: every presented credential's claims reach the mappers in a multi-credential response.
+    // credential. In a multi-credential response the claims of every presented credential reach
+    // the mappers.
     @Test
     void process_multiCredentialWithDisallowedSecondIssuer_throws() {
         config.setAllowedIssuers("https://issuer.example");
@@ -230,9 +231,9 @@ class Oid4vpCallbackProcessorTest {
 
     @Test
     void process_mdocSubjectIsNotTakenFromANamespaceTheQueryDidNotAskFor() {
-        // The elements of an mDoc are issuer signed, but which namespace they live in is not the
-        // verifier's choice. Reading the subject out of any namespace that happens to carry it lets
-        // a credential answer with an identity out of a namespace this verifier never asked for.
+        // The elements of an mDoc are issuer signed, so which namespace they live in is not the
+        // verifier's choice. Reading the subject out of any namespace that happens to carry it would
+        // let a credential answer with an identity out of a namespace this verifier never asked for.
         config.setPrincipalAttributes("cred-1:sub");
         VerifiedCredential mdoc = new VerifiedCredential(
                 "cred-1",
@@ -257,7 +258,7 @@ class Oid4vpCallbackProcessorTest {
 
     @Test
     void process_namedMdocSubjectClaimAddressesItsNamespaceItself() {
-        // Named principal credentials carry the path from the root of the presentation, so the
+        // Named principal credentials carry the path from the root of the presentation. The
         // namespace is spelled out and nothing about it is inferred.
         config.setPrincipalAttributes("cred-1:com\\.example\\.vendor.sub");
         VerifiedCredential mdoc = new VerifiedCredential(
@@ -410,8 +411,8 @@ class Oid4vpCallbackProcessorTest {
 
     @Test
     void process_subjectCredentialMissing_generatesASubject() {
-        // The subject credential is issued by this Keycloak, so a first presentation legitimately
-        // arrives without it and the login that follows establishes which user it belongs to.
+        // This Keycloak issues the subject credential. A first presentation legitimately arrives
+        // without it. The login that follows establishes which user it belongs to.
         config.setPrincipalAttributes("kc:sub");
         config.setAllowMissingSubjectCredential(true);
         RequestedCredential pid = new RequestedCredential(
@@ -443,8 +444,8 @@ class Oid4vpCallbackProcessorTest {
 
     @Test
     void process_subjectCredentialOfAnotherPresentation_isNotAcceptedAsTheSubject() {
-        // The credential was issued alongside somebody else's credentials, so it identifies nobody
-        // here and the login continues on the PID alone, as if it had not been presented.
+        // The credential belongs to somebody else's presentation and identifies nobody here, so the
+        // login continues on the PID alone, as if it had not been presented.
         config.setPrincipalAttributes("cred-1:sub");
         config.setAllowMissingSubjectCredential(true);
 
@@ -457,7 +458,7 @@ class Oid4vpCallbackProcessorTest {
 
     @Test
     void process_subjectCredentialOfAnotherPresentation_isNotMappedEither() {
-        // A credential this verifier refuses must not reach the mappers, otherwise the claims of
+        // A credential this verifier refuses must not reach the mappers. Otherwise the claims of
         // somebody else's credential would be written onto the account that signs in afterwards.
         config.setPrincipalAttributes("cred-1:sub");
         config.setAllowMissingSubjectCredential(true);
@@ -482,10 +483,10 @@ class Oid4vpCallbackProcessorTest {
     @Test
     void process_subjectCredentialWithheldBinding_fallsBackToAFreshSubject() {
         // A subject credential this realm issues alongside bindable credentials is always bound to
-        // them. One presented next to such credentials but carrying no binding claim (for example
-        // because the binding claim was left out of the issued credential's visible claims, or because
-        // it was combined with another holder's PID) has had its binding withheld, so it does not
-        // identify a returning user: the login falls back to a fresh subject, as on a first login.
+        // them. One presented next to such credentials but carrying no binding claim has its binding
+        // withheld, which happens when the binding claim is left out of the issued credential's
+        // visible claims, or when the credential is combined with another holder's PID. It does not
+        // identify a returning user, so the login falls back to a fresh subject.
         config.setPrincipalAttributes("cred-1:sub");
         config.setAllowMissingSubjectCredential(true);
         VerifiedCredential subjectCredential = sdJwtCredential(Map.of("sub", "user1"));
@@ -507,8 +508,8 @@ class Oid4vpCallbackProcessorTest {
 
     @Test
     void process_subjectCredentialWithheldBinding_withoutFallbackSetting_fails() {
-        // Without allowMissingSubjectCredential the presentation is required to carry a usable subject
-        // credential, so a withheld binding leaves nothing to identify the user and the login fails.
+        // Without allowMissingSubjectCredential the presentation has to carry a usable subject
+        // credential, and a withheld binding leaves nothing to identify the user.
         config.setPrincipalAttributes("cred-1:sub");
         VerifiedCredential subjectCredential = sdJwtCredential(Map.of("sub", "user1"));
         VerifiedCredential otherHoldersPid = new VerifiedCredential(
@@ -525,7 +526,6 @@ class Oid4vpCallbackProcessorTest {
                 .hasMessageContaining("None of the credentials carrying the subject");
     }
 
-    /** The presentation this scenario is built for: a PID, next to a credential bound elsewhere. */
     private static VpTokenResult pidAndCredentialBoundElsewhere() {
         VerifiedCredential pid = new VerifiedCredential(
                 "pid",
@@ -571,7 +571,6 @@ class Oid4vpCallbackProcessorTest {
                         null);
         String generatedSubject = (String) firstLogin.getContextData().get(Oid4vpMapperUtils.CONTEXT_SUBJECT_KEY);
 
-        // The next login presents the issued credential, which carries the generated subject
         config.setPrincipalAttributes("cred-1:sub");
         BrokeredIdentityContext secondLogin = processor(resultOf(sdJwtCredential(Map.of("sub", generatedSubject))))
                 .process(requestContext("state-2", "nonce-2"), "vp-token", null);
@@ -580,8 +579,6 @@ class Oid4vpCallbackProcessorTest {
                 .as("the brokered identity of both logins has to be the same user")
                 .isEqualTo(firstLogin.getId());
     }
-
-    // ===== Helper Methods =====
 
     private Oid4vpCallbackProcessor processor(VpTokenResult verificationResult) {
         return processor(verificationResult, ISSUED_FOR_THIS_PRESENTATION);
@@ -593,7 +590,6 @@ class Oid4vpCallbackProcessorTest {
         return new Oid4vpCallbackProcessor(config, config, null, verifier, referenceBindingCheck);
     }
 
-    /** Reference binding check double with fixed answers, so tests control both of its questions. */
     private record FixedReferenceBindingCheck(boolean bound, boolean bindsToOthers) implements ReferenceBindingCheck {
         @Override
         public boolean boundToPresentation(
@@ -607,11 +603,9 @@ class Oid4vpCallbackProcessorTest {
         }
     }
 
-    /** Accepts the presented credential, which was issued for a presentation like this one. */
     private static final ReferenceBindingCheck ISSUED_FOR_THIS_PRESENTATION =
             new FixedReferenceBindingCheck(true, false);
 
-    /** Refuses the presented credential, which was issued for another presentation. */
     private static final ReferenceBindingCheck ISSUED_FOR_ANOTHER_PRESENTATION =
             new FixedReferenceBindingCheck(false, false);
 

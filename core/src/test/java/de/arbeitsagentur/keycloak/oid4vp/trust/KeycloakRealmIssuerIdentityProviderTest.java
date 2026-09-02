@@ -123,7 +123,6 @@ class KeycloakRealmIssuerIdentityProviderTest {
         return jwk;
     }
 
-    /** Realm key material double, standing in for what the session exposes for the issuing realm. */
     private record FixedRealmKeyMaterial(String issuer, List<JWK> signatureKeys, List<X509Certificate> certificates)
             implements RealmKeyMaterial {}
 }

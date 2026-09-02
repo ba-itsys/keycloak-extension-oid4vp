@@ -52,7 +52,6 @@ public final class Oid4vpTestKeycloakSetup {
 
     private Oid4vpTestKeycloakSetup() {}
 
-    // Default ETSI trust list identity provider serving the wallet's trust list
     public static IdentityProviderRepresentation defaultTrustListIdentityProvider(String trustListUrl) {
         IdentityProviderRepresentation idp = new IdentityProviderRepresentation();
         idp.setAlias(TRUST_IDP_ALIAS);
@@ -62,13 +61,12 @@ public final class Oid4vpTestKeycloakSetup {
 
         Map<String, String> config = new LinkedHashMap<>();
         config.put(EtsiTrustListIdentityProviderConfig.TRUST_LIST_URL, trustListUrl);
-        // Nothing is advertised by default, so most tests drive the wallet without a
-        // trusted_authorities constraint. The tests that cover it configure the advertised type.
+        // No authority type is advertised by default, so most tests drive the wallet without a
+        // trusted_authorities constraint. The tests that cover it configure the type themselves.
         idp.setConfig(config);
         return idp;
     }
 
-    // Default OID4VP identity provider used to provision the test realm
     public static IdentityProviderRepresentation defaultIdentityProvider(String x509CertPem) {
         IdentityProviderRepresentation idp = new IdentityProviderRepresentation();
         idp.setAlias(IDP_ALIAS);
@@ -92,42 +90,40 @@ public final class Oid4vpTestKeycloakSetup {
         config.put(
                 Oid4vpIdentityProviderConfig.CREDENTIAL_SETS,
                 alternativeCredentialSets(SD_JWT_PID_CREDENTIAL_ID, MDOC_PID_CREDENTIAL_ID));
-        // The PID answers in either format, so both are named and both read the same claim
+        // The PID answers in either format, so both are named and both read the same claim.
         config.put(Oid4vpIdentityProviderConfig.PRINCIPAL_ATTRIBUTES, defaultPrincipalAttributeIds());
         idp.setConfig(config);
         return idp;
     }
 
-    /**
-     * The subject read from whichever format of the PID a wallet answers with. An mDoc path names
-     * the namespace before the element, so the dots of the doctype namespace are escaped.
-     */
     public static String defaultPrincipalAttributeIds() {
         return principalAttributesFor(SD_JWT_PID_CREDENTIAL_ID, MDOC_PID_CREDENTIAL_ID);
     }
 
     /**
-     * The claim the test realm reads its subject from, in both PID formats. The PID rulebook's
-     * administrative number identifies the person, and its value makes a valid Keycloak username,
-     * unlike the rulebook example's family name "'t Hart".
+     * The claim the test realm reads its subject from, in both PID formats. The rulebook's
+     * administrative number identifies the person and its value makes a valid Keycloak username,
+     * which the rulebook example's family name "'t Hart" does not.
      */
     public static final String PRINCIPAL_CLAIM = "personal_administrative_number";
 
-    /** The principal credential entries for the given credential ids, reading the principal claim. */
     public static String principalAttributesFor(String... credentialIds) {
         return Arrays.stream(credentialIds)
                 .map(credentialId -> credentialId + ":" + principalClaimPathOf(credentialId))
                 .collect(Collectors.joining(", "));
     }
 
-    /** The path the principal claim resolves under, from the root of what the credential presents. */
+    /**
+     * Returns the path of the principal claim from the root of what the credential presents. An mDoc
+     * path names the namespace before the element, with the dots of the doctype namespace escaped.
+     */
     private static String principalClaimPathOf(String credentialId) {
         return MDOC_PID_CREDENTIAL_ID.equals(credentialId)
                 ? MDOC_PID_DOCTYPE.replace(".", "\\.") + "." + PRINCIPAL_CLAIM
                 : PRINCIPAL_CLAIM;
     }
 
-    /** A credential set that accepts any one of the given credentials, each as its own option. */
+    /** Builds a credential set that accepts any one of the given credentials, each as its own option. */
     public static String alternativeCredentialSets(String... credentialIds) {
         String options = Arrays.stream(credentialIds)
                 .map(credentialId -> "[\"" + credentialId + "\"]")
@@ -135,7 +131,6 @@ public final class Oid4vpTestKeycloakSetup {
         return "[{\"options\": [" + options + "]}]";
     }
 
-    /** The distinct credential ids the given mappers contribute to, in query order. */
     public static List<String> credentialIdsOf(List<IdentityProviderMapperRepresentation> mappers) {
         return mappers.stream()
                 .map(Oid4vpTestKeycloakSetup::credentialIdOf)
@@ -149,7 +144,7 @@ public final class Oid4vpTestKeycloakSetup {
         if (configured != null && !configured.isBlank()) {
             return configured;
         }
-        // Mirrors the extension: the default id derives from the first of the mapper's types.
+        // Mirrors the extension's rule that the default id derives from the first of the mapper's types.
         return CredentialId.defaultFor(
                 formatOf(mapper),
                 CredentialTypeSpec.parseTypes(mapper.getConfig().get(AbstractOID4VPClaimMapper.CREDENTIAL_TYPE))
@@ -163,8 +158,8 @@ public final class Oid4vpTestKeycloakSetup {
         return mdoc ? Oid4vpConstants.FORMAT_MSO_MDOC : Oid4vpConstants.FORMAT_SD_JWT_VC;
     }
 
-    // Maps how the presentation finished to the mapper's default STORK QAA level, stored as a
-    // session note under its default attribute name. Sync mode FORCE, so the note is also set
+    // Maps the flow the presentation finished in to the mapper's default STORK QAA level, stored as
+    // a session note under the mapper's default attribute name. Sync mode FORCE also sets that note
     // when a first wallet login links an existing account.
     public static IdentityProviderMapperRepresentation eidasLoaMapper() {
         IdentityProviderMapperRepresentation mapper = new IdentityProviderMapperRepresentation();
@@ -175,8 +170,7 @@ public final class Oid4vpTestKeycloakSetup {
         return mapper;
     }
 
-    // Default identity provider mapper storing the credential's family name as a session note.
-    // No credential type: it applies to any presented SD-JWT credential.
+    // Carries no credential type, so it applies to any presented SD-JWT credential.
     public static IdentityProviderMapperRepresentation defaultSessionNoteMapper() {
         IdentityProviderMapperRepresentation mapper = new IdentityProviderMapperRepresentation();
         mapper.setName("credential-family-name-session");
@@ -189,9 +183,9 @@ public final class Oid4vpTestKeycloakSetup {
     }
 
     /**
-     * Mappers that drive the auto-generated DCQL query: SD-JWT PID and mDoc PID with the claims
-     * the wallet's default credentials carry. The credential sets configured on the identity
-     * provider let the wallet present either credential.
+     * Mappers that drive the generated DCQL query. They name the SD-JWT PID and the mDoc PID with the
+     * claims the wallet's default credentials carry, and the configured credential sets let the
+     * wallet present either one.
      */
     public static List<IdentityProviderMapperRepresentation> defaultDcqlMappers() {
         List<IdentityProviderMapperRepresentation> mappers = new ArrayList<>(sdJwtPidMappers());
@@ -230,7 +224,7 @@ public final class Oid4vpTestKeycloakSetup {
         return mapper;
     }
 
-    // The namespace is omitted: the PID namespace equals the doctype, which is the default.
+    // The namespace is omitted because the PID namespace equals the doctype, which is the default.
     public static IdentityProviderMapperRepresentation mdocSessionMapper(
             String name, String doctype, String element, String attribute) {
         IdentityProviderMapperRepresentation mapper = new IdentityProviderMapperRepresentation();

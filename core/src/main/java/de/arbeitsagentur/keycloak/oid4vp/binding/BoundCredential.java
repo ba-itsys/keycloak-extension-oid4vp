@@ -20,14 +20,10 @@ import java.util.Map;
 import java.util.TreeMap;
 
 /**
- * What one credential of a presentation contributes to a reference credential binding.
- *
- * <p>The credential type is part of it because the same claims out of another credential are
- * another statement. The claims are ordered by key, so the digest over them does not depend on the
- * order a wallet answered in or a provider selected them in.
- *
- * @param credentialType the VCT of an SD-JWT credential, the doctype of an mDoc
- * @param claims the selected claim values, keyed by the claim path that selected them
+ * What one credential of a presentation contributes to a reference credential binding. The credential
+ * type is part of it, because the same claims out of another credential are a different statement, and
+ * the claims are ordered by key so that the digest over them does not depend on the order a wallet
+ * answered in or the order a provider selected them in.
  */
 public record BoundCredential(String credentialType, Map<String, Object> claims) {
 

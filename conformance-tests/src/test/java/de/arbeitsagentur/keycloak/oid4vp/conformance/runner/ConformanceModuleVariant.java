@@ -19,9 +19,9 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpRejectionResponse;
 import java.util.Map;
 
 /**
- * A conformance suite test module to run in one variant combination. The plan variant selects the
- * plan wide variant when the plan is created, while the module variant selects which combination
- * of the module to run, as a plan can contain the same module in several variant combinations.
+ * A conformance suite test module to run in one variant combination. The plan variant is chosen when
+ * the plan is created and applies plan wide, while the module variant picks which combination of the
+ * module to run, since a plan can contain the same module several times.
  */
 public record ConformanceModuleVariant(
         String plan,
@@ -46,23 +46,22 @@ public record ConformanceModuleVariant(
         this(plan, planVariant, name, moduleVariant, expectedResult, false, Oid4vpRejectionResponse.REDIRECT);
     }
 
-    /** A copy of this variant run against a verifier configured to answer rejections this way. */
     public ConformanceModuleVariant withRejectionResponse(Oid4vpRejectionResponse rejectionResponse) {
         return new ConformanceModuleVariant(
                 plan, planVariant, name, moduleVariant, expectedResult, allowSkipped, rejectionResponse);
     }
 
     /**
-     * A copy of this variant that also accepts a suite-initiated SKIPPED result. Only a module
-     * covering a feature the verifier legitimately does not advertise opts in; every other module
-     * fails on an unexpected skip.
+     * Returns a copy of this variant that also accepts a SKIPPED result from the suite. Only a module
+     * covering a feature the verifier does not advertise opts in; every other module fails on an
+     * unexpected skip.
      */
     public ConformanceModuleVariant allowingSkipped() {
         return new ConformanceModuleVariant(
                 plan, planVariant, name, moduleVariant, expectedResult, true, rejectionResponse);
     }
 
-    // Used as the display name when running multiple variants as a parameterized test
+    // Serves as the display name of a parameterized test run.
     @Override
     public String toString() {
         return name + " " + planVariant + " rejection=" + rejectionResponse.configValue();

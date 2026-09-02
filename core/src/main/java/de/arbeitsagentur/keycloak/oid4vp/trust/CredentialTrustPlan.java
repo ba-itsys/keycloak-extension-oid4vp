@@ -15,6 +15,8 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.trust;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.ClaimedTypes;
+import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeHierarchy;
 import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthority;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
@@ -28,21 +30,17 @@ import org.keycloak.utils.StringUtil;
 
 /**
  * The trust material identity providers configured on an OID4VP identity provider, resolved per
- * credential type.
- *
- * <p>A provider serves the credential types it declares. A provider that declares none serves every
- * type, which is what an unscoped configuration means. Credentials of different types therefore see
- * different trust material, so a credential from a trusted list is not accepted under the anchors of
- * an unrelated trust domain, and the other way around.
- *
- * <p>Resolution per type is memoised, because both the request side (one DCQL entry per credential)
- * and the response side (one presented credential per entry) ask repeatedly within a single flow.
+ * credential type. A provider serves the credential types it declares, and one that declares none
+ * serves every type, so credentials of different types can see different trust material. A
+ * credential from one trust domain is never accepted under the anchors of an unrelated trust
+ * domain.
  */
 public class CredentialTrustPlan {
 
     /**
-     * Memo key of the trust serving no particular credential type, which only the providers that
-     * serve every type contribute to. A map key cannot be null, and no credential type is empty.
+     * Memo key for the trust that serves no particular credential type, contributed to only by the
+     * providers that serve every type. It is the empty string because a map key cannot be null and
+     * no credential type is empty.
      */
     private static final String UNSCOPED = "";
 
@@ -55,9 +53,9 @@ public class CredentialTrustPlan {
     }
 
     /**
-     * @param trustDeclared whether the configuration names any trust source. True even when none of
-     *     the named providers could be resolved, so configuration drift rejects credentials instead
-     *     of re-enabling the issuer-metadata fallback.
+     * @param trustDeclared whether the configuration names any trust source. This stays true when
+     *     none of the named providers can be resolved. A broken configuration then rejects
+     *     credentials instead of re-enabling the issuer metadata fallback.
      */
     public CredentialTrustPlan(List<Oid4vpTrustMaterialIdentityProvider<?>> providers, boolean trustDeclared) {
         this.providers = List.copyOf(providers);
@@ -68,49 +66,75 @@ public class CredentialTrustPlan {
         return new CredentialTrustPlan(List.of());
     }
 
-    /** Whether any provider was resolved at all. */
     public boolean hasProviders() {
         return !providers.isEmpty();
     }
 
-    /**
-     * Whether at least one provider restricts itself to certain credential types. While no provider
-     * does, every credential sees the same material and a type without a dedicated provider is not
-     * a configuration problem.
-     */
     public boolean isScopedByCredentialType() {
         return providers.stream()
                 .anyMatch(provider -> !provider.servedCredentialTypes().isEmpty());
     }
 
     /**
-     * The trust material serving the given credential type. Resolved on first use, because pulling
-     * trust material can involve a trust list fetch that must not run while a login page is only
-     * being rendered.
+     * Returns the trust material serving the given credential type, see {@link #servingType}.
+     * Resolution happens on first use, because pulling trust material can involve a trust list
+     * fetch and that fetch must not run while a login page is only being rendered.
      */
     public ResolvedTrust forCredentialType(String credentialType) {
-        String key = StringUtil.isBlank(credentialType) ? UNSCOPED : credentialType;
-        return resolvedByCredentialType.computeIfAbsent(key, this::resolve);
+        if (StringUtil.isBlank(credentialType)) {
+            return resolvedByCredentialType.computeIfAbsent(UNSCOPED, this::resolve);
+        }
+        return forServingType(servingType(credentialType, List.of()));
+    }
+
+    /** Returns the trust material for a presented credential, chosen by {@link #servingType}. */
+    public ResolvedTrust forCredential(ClaimedTypes claimed) {
+        return forServingType(servingType(claimed.type(), claimed.alsoKnownAs()));
+    }
+
+    private ResolvedTrust forServingType(String servingType) {
+        return resolvedByCredentialType.computeIfAbsent(servingType, this::resolve);
     }
 
     /**
-     * The DCQL {@code trusted_authorities} entries the providers serving this credential type
-     * advertise. Only the advertisement is pulled, never the trust anchors, so building the
-     * authorization request stays independent of whether the trust material is currently reachable.
+     * Returns the DCQL {@code trusted_authorities} entries the providers serving this credential
+     * type advertise. Only the advertisement is pulled, never the trust anchors, so building the
+     * authorization request does not depend on whether the trust material is reachable.
      */
     public List<TrustedAuthority> trustedAuthoritiesFor(String credentialType) {
+        String servingType = servingType(credentialType, List.of());
         List<TrustedAuthority> trustedAuthorities = new ArrayList<>();
         for (Oid4vpTrustMaterialIdentityProvider<?> provider : providers) {
-            if (serves(provider, credentialType)) {
+            if (serves(provider, servingType)) {
                 trustedAuthorities.addAll(provider.trustedAuthorities());
             }
         }
         return TrustedAuthority.merge(trustedAuthorities);
     }
 
-    /** Whether any provider serves the given credential type. */
+    /** Returns whether any provider serves the given credential type or a type it derives from. */
     public boolean serves(String credentialType) {
-        return providers.stream().anyMatch(provider -> serves(provider, credentialType));
+        String servingType = servingType(credentialType, List.of());
+        return providers.stream().anyMatch(provider -> serves(provider, servingType));
+    }
+
+    /**
+     * Returns the type whose providers judge a credential. It walks the types the credential is of,
+     * nearest first, and takes the first one a provider declares, so a provider for the derived type
+     * wins over one for the base type while a base type's provider still covers derived types that
+     * have none of their own. Falling back to the type itself leaves the credential to the unscoped
+     * providers.
+     */
+    public String servingType(String credentialType, List<String> alsoKnownAs) {
+        return CredentialTypeHierarchy.typesOf(credentialType, alsoKnownAs).stream()
+                .filter(this::declared)
+                .findFirst()
+                .orElse(credentialType);
+    }
+
+    private boolean declared(String credentialType) {
+        return providers.stream()
+                .anyMatch(provider -> provider.servedCredentialTypes().contains(credentialType));
     }
 
     private ResolvedTrust resolve(String credentialType) {
@@ -138,14 +162,12 @@ public class CredentialTrustPlan {
                 trustedIssuerKeys,
                 List.copyOf(revocationCertificates),
                 TrustedAuthority.merge(trustedAuthorities),
-                // Any configured trust source means trust is declared: a credential type no provider
-                // serves, and a configuration whose providers cannot be resolved at all, resolve to
-                // nothing and are rejected instead of falling back to the issuer's self-published
-                // metadata.
+                // Any configured trust source means trust is declared, so a credential type that no
+                // provider serves and a configuration whose providers cannot be resolved both end in
+                // rejection instead of falling back to the issuer's self-published metadata.
                 trustDeclared);
     }
 
-    /** A provider without declared credential types serves all of them. */
     private static boolean serves(Oid4vpTrustMaterialIdentityProvider<?> provider, String credentialType) {
         List<String> servedCredentialTypes = provider.servedCredentialTypes();
         return servedCredentialTypes.isEmpty()

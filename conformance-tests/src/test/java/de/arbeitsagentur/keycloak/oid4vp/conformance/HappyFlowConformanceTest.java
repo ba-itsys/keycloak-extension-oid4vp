@@ -25,7 +25,6 @@ import org.junit.jupiter.api.Assumptions;
 import org.keycloak.common.util.PemUtils;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
-// Verifier accepts a valid presentation
 @KeycloakIntegrationTest(config = AbstractVerifierConformanceTest.VerifierServerConfig.class)
 class HappyFlowConformanceTest extends AbstractVerifierConformanceTest {
 
@@ -41,12 +40,10 @@ class HappyFlowConformanceTest extends AbstractVerifierConformanceTest {
     }
 
     /**
-     * The suite signs mdoc credentials with a hard-coded mDL issuer certificate (conformance-suite
-     * issue #1663 tracks making that key material configurable). The verifier rightly rejects
-     * presentations from an expired issuer certificate, so mdoc happy-flow modules cannot pass with
-     * an expired suite certificate; the previous one expired 2026-07-30 and the renewed one in
-     * suite release-v5.2.2 is valid until 2027-08-03. The expiry is read from the checked-in copy
-     * of that certificate, so the skip triggers again automatically when it lapses.
+     * The suite signs mdoc credentials with a hard-coded mDL issuer certificate, which conformance
+     * suite issue #1663 tracks making configurable. Since the verifier rejects presentations from an
+     * expired issuer certificate, the mdoc happy flow modules cannot pass once that certificate
+     * lapses, so the expiry is read from the checked-in copy and the skip triggers on its own.
      */
     private static void assumeMdlIssuerCertificateNotExpired(ConformanceModuleVariant moduleVariant) {
         if (!"iso_mdl".equals(moduleVariant.planVariant().get("credential_format"))) {

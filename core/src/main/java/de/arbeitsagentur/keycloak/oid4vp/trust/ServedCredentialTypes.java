@@ -22,15 +22,13 @@ import org.keycloak.utils.StringUtil;
 
 /**
  * The credential types (SD-JWT VCT, mDoc doctype) a trust material identity provider is trusted
- * for, stored as a comma separated value in the configuration of that provider.
+ * for, stored as a comma separated value in the configuration of that provider. An empty value
+ * serves every credential type.
  *
- * <p>The setting belongs to the configured provider instance rather than to the Java contract it
+ * <p>The setting lives on the configured provider instance rather than on the Java contract it
  * implements, so a provider this extension does not own can be scoped as well. Keycloak's
- * {@code default-trust} is the one an OID4VP deployment reaches for when an issuer publishes plain
- * JWKs instead of a trust list, and without this it would be trusted for every credential of every
- * request that references it.
- *
- * <p>An empty value serves every credential type.
+ * {@code default-trust}, the provider for an issuer that publishes plain JWKs instead of a trust
+ * list, would otherwise be trusted for every credential of every request that references it.
  */
 public final class ServedCredentialTypes {
 
@@ -38,7 +36,6 @@ public final class ServedCredentialTypes {
 
     private ServedCredentialTypes() {}
 
-    /** The credential types the given provider configuration declares. */
     public static List<String> of(IdentityProviderModel model) {
         return model == null ? List.of() : parse(model.getConfig().get(CONFIG_KEY));
     }

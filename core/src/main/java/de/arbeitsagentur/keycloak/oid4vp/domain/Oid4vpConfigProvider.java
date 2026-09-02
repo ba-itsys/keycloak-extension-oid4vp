@@ -18,30 +18,25 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
 import java.util.List;
 
 /**
- * Abstraction over OID4VP identity provider configuration settings.
- *
- * <p>Implemented by {@link de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig} and
- * used by services that need configuration without depending on the full Keycloak
- * {@code IdentityProviderModel}. This also allows unit testing with simple stubs.
+ * The OID4VP identity provider configuration as the services read it. They depend on this
+ * interface instead of the Keycloak {@code IdentityProviderModel}, which keeps them testable with
+ * simple stubs.
  */
 public interface Oid4vpConfigProvider {
 
     String getAlias();
 
     /**
-     * Returns whether the verified SD-JWT issuer is allowed.
-     *
-     * <p>This check currently applies only to credentials that expose a canonical issuer string
-     * (for example SD-JWT `iss`). mDoc credentials are not filtered by this allow-list because
-     * mDoc does not define a standard canonical credential-issuer string equivalent to SD-JWT
-     * `iss`.
+     * Returns whether the verified issuer is on the allow list. Only credentials that expose a
+     * canonical issuer string such as the SD-JWT {@code iss} are filtered this way, so mDoc
+     * credentials pass, because mDoc defines no equivalent.
      */
     boolean isIssuerAllowed(String issuer);
 
     /**
-     * The credentials the subject may be read from, each with the claim of it that carries the
-     * subject, in the order they are tried. Empty only when the subject comes from a transient
-     * user, because nothing else says which claim identifies the user.
+     * Returns the credentials the subject may be read from, each with the claim that carries it,
+     * in the order they are tried. Nothing else in the configuration says which claim identifies
+     * the user, so the list is empty only when the subject comes from a transient user.
      */
     List<PrincipalAttribute> getPrincipalAttributes();
 
@@ -54,8 +49,8 @@ public interface Oid4vpConfigProvider {
     int getCrossDeviceCompleteTtlSeconds();
 
     /**
-     * Whether a presentation without the subject credential is expected, so the verifier generates a
-     * pseudonymous subject instead of failing the login.
+     * Returns whether a presentation without the subject credential is expected. The verifier then
+     * generates a pseudonymous subject instead of failing the login.
      */
     boolean isAllowMissingSubjectCredential();
 

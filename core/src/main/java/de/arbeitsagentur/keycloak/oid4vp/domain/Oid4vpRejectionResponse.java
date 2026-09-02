@@ -19,27 +19,26 @@ import org.jboss.logging.Logger;
 import org.keycloak.utils.StringUtil;
 
 /**
- * How the response URI answers a presentation this verifier rejected. OID4VP 1.0 §8.2 ties HTTP 200
- * to the Response URI having "successfully processed" the response without defining the term, so
- * both answers are conformant and the OID4VP conformance suite accepts either.
+ * How the response URI answers a presentation this verifier rejected. OID4VP 1.0 §8.2 ties HTTP
+ * 200 to the response URI having "successfully processed" the response without defining that
+ * term, so both answers are conformant.
  *
- * <p>A wallet-reported error response (§8.5) is not covered by this: the response URI processed it
- * whatever the wallet reported, so it is always answered like a completed login.
+ * <p>This does not cover an error response the wallet reports (§8.5). The response URI processed
+ * that whatever the wallet reported, so it is always answered like a completed login.
  */
 public enum Oid4vpRejectionResponse {
 
     /**
-     * HTTP 200 and the {@code redirect_uri} that hands the End-User back, the way a completed login
-     * is answered. A wallet reads the status before the body, so this is what makes it follow the
-     * redirect instead of showing an error of its own and stranding the End-User.
+     * HTTP 200 and the {@code redirect_uri} that hands the End-User back, the same answer a
+     * completed login gets. A wallet reads the status before the body, so this makes it follow the
+     * redirect rather than show an error of its own and strand the End-User.
      */
     REDIRECT("redirect"),
 
     /**
-     * HTTP 400 with {@code error} and {@code error_description} beside the {@code redirect_uri}.
-     * The rejection is visible to the wallet, and the OID4VP conformance suite's negative verifier
-     * modules finish PASSED rather than REVIEW, at the cost of wallets that abort on a non-2xx
-     * status never following the redirect.
+     * HTTP 400 with {@code error} and {@code error_description} beside the {@code redirect_uri},
+     * so that the wallet sees the rejection. A wallet that aborts on a non-2xx status never
+     * follows the redirect.
      */
     ERROR("error");
 
@@ -59,7 +58,6 @@ public enum Oid4vpRejectionResponse {
         return this == ERROR;
     }
 
-    /** The configured answer, defaulting to {@link #REDIRECT}. */
     public static Oid4vpRejectionResponse resolve(String rawValue) {
         if (StringUtil.isBlank(rawValue)) {
             return REDIRECT;

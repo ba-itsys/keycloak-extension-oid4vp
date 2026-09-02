@@ -20,9 +20,9 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * A map with an upper bound on its size that drops the entry least recently used once the bound is
- * reached. The caches of this extension are keyed by values credentials and configuration bring
- * with them, so their key space is not the verifier's to choose and needs a bound.
+ * Bounds the caches of this extension, which are keyed by values that credentials and configuration
+ * bring with them. Since the verifier does not control that key space, an unbounded map would grow
+ * with whatever a wallet presents.
  */
 public final class BoundedLruMap {
 

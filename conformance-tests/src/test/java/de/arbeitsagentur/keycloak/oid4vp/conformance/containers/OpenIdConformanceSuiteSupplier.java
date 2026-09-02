@@ -30,7 +30,7 @@ public class OpenIdConformanceSuiteSupplier implements Supplier<OpenIdConformanc
     @Override
     public OpenIdConformanceSuite getValue(
             InstanceContext<OpenIdConformanceSuite, InjectConformanceSuite> instanceContext) {
-        // The KeycloakServer dependency ensures Keycloak is running before the suite containers connect to it
+        // The KeycloakServer dependency makes sure Keycloak runs before the suite containers connect.
         KeycloakServer server = instanceContext.getDependency(KeycloakServer.class);
         URI serverUri = URI.create(server.getBaseUrl());
         if (serverUri.getPort() != OpenIdConformanceSuite.KEYCLOAK_BASE_URI.getPort()) {

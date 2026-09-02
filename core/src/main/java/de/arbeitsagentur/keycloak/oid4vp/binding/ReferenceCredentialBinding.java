@@ -33,27 +33,21 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.util.JsonSerialization;
 
 /**
- * Values that tie a credential this Keycloak issues to the login it was issued for.
+ * Values that tie a credential this Keycloak issues to the login it was issued for. The subject is what
+ * the account is recognised by, the reference credential binding is what the credential was issued
+ * alongside, and a credential presented next to the credentials of somebody else is not accepted as the
+ * subject of a login. This is not the holder binding of OID4VC, which ties a credential to a wallet key.
  *
- * <p>The subject is what the account is recognised by. The reference credential binding is what the
- * credential was issued alongside, so a credential presented next to the credentials of somebody
- * else is not accepted as the subject of a login. This is not the holder binding of OID4VC, which
- * ties a credential to a wallet key. It ties a credential to the other credentials of a
- * presentation.
- *
- * <p>Both are keyed HMACs over a realm secret. The values travel in a credential the wallet shows
- * to other verifiers, and a plain hash of a name and a date of birth is recovered from a candidate
- * list in seconds.
+ * <p>Both are keyed HMACs over a realm secret rather than plain hashes, because the values travel in a
+ * credential the wallet shows to other verifiers and a plain hash of a name and a date of birth is
+ * recovered from a candidate list in seconds.
  */
 public final class ReferenceCredentialBinding {
 
-    /** Claim of the issued credential carrying the reference credential binding. */
     public static final String REFERENCE_BINDING_CLAIM = "oid4vp_reference_binding";
 
-    /** Entitlement attribute the authenticator records the subject under. */
     public static final String SUBJECT_ATTRIBUTE = "oid4vp.subject";
 
-    /** Entitlement attribute the authenticator records the reference credential binding under. */
     public static final String REFERENCE_BINDING_ATTRIBUTE = "oid4vp.reference-binding";
 
     private static final Logger LOG = Logger.getLogger(ReferenceCredentialBinding.class);
@@ -62,17 +56,16 @@ public final class ReferenceCredentialBinding {
     private static final String REFERENCE_CONTEXT = "oid4vp:reference:";
 
     /**
-     * The HMAC secrets of one realm, which is all this needs of a Keycloak session. Replaceable in
-     * tests with a typed double, the way the trust material providers are.
+     * The HMAC secrets of one realm. That is all this class needs of a Keycloak session, so a typed
+     * double can replace it.
      */
     public interface RealmSecrets {
 
-        /** The secret new values are computed with. */
         SecretKey active();
 
         /**
-         * Every secret a value may have been computed with, so a key rotation does not invalidate
-         * the credentials that are already in wallets.
+         * Returns every secret a value may have been computed with, so that a key rotation does not
+         * invalidate the credentials that are already in wallets.
          */
         List<SecretKey> allAccepted();
     }
@@ -85,13 +78,11 @@ public final class ReferenceCredentialBinding {
         this.selection = selection;
     }
 
-    /** The binding of the given realm, reading its secrets and its configured selection. */
     public static ReferenceCredentialBinding of(KeycloakSession session, RealmModel realm) {
         return new ReferenceCredentialBinding(
                 new SessionRealmSecrets(session, realm), session.getProvider(ReferenceCredentialBindingProvider.class));
     }
 
-    /** The check of this realm, which the identity provider hands to the verifier. */
     public static ReferenceBindingCheck checkOf(KeycloakSession session) {
         return new ReferenceBindingCheck() {
             @Override
@@ -110,16 +101,16 @@ public final class ReferenceCredentialBinding {
     }
 
     /**
-     * Whether the presentation carries credentials a reference credential binding would bind to, other
-     * than the subject credential itself. Used to reject a subject credential that should have been
-     * bound to them but carries no binding claim.
+     * Reports whether the presentation carries credentials a reference credential binding would bind to,
+     * other than the subject credential itself, so that a subject credential which should have been
+     * bound to them but carries no binding claim can be rejected.
      */
     public boolean bindsToOtherCredentials(PresentedCredentials credentials, String subjectCredentialId) {
         return material(credentials, subjectCredentialId) != null;
     }
 
     /**
-     * The subject of the credential issued for the given user. It identifies the account without
+     * Derives the subject of the credential issued for the given user. It identifies the account without
      * carrying the Keycloak user id into the wallet, where every verifier the credential is shown to
      * would read it.
      */
@@ -128,9 +119,9 @@ public final class ReferenceCredentialBinding {
     }
 
     /**
-     * The reference credential binding of a presentation, over what the {@link
-     * ReferenceCredentialBindingProvider} selects. Null when it selects nothing, which leaves the
-     * issued credential unbound.
+     * Computes the reference credential binding of a presentation over what the {@link
+     * ReferenceCredentialBindingProvider} selects, and returns null when it selects nothing, in which
+     * case the issued credential is unbound.
      */
     public String referenceBindingOf(PresentedCredentials credentials, String subjectCredentialId) {
         String material = material(credentials, subjectCredentialId);
@@ -138,11 +129,10 @@ public final class ReferenceCredentialBinding {
     }
 
     /**
-     * Whether the presentation is the one the credential was issued for. Passive realm keys are
-     * accepted as well, so a key rotation does not invalidate every issued credential at once.
-     *
-     * <p>A credential carrying no binding is accepted in any presentation, which is what a
-     * credential of another issuer and every credential issued without a binding is.
+     * Reports whether the presentation is the one the credential was issued for. Passive realm keys are
+     * accepted as well, so a key rotation does not invalidate every issued credential at once, and a
+     * credential carrying no binding is accepted in any presentation, which covers a credential of
+     * another issuer and every credential issued without a binding.
      */
     public boolean matches(PresentedCredentials credentials, String subjectCredentialId, String claimedBinding) {
         if (claimedBinding == null || claimedBinding.isBlank()) {
@@ -161,9 +151,9 @@ public final class ReferenceCredentialBinding {
     }
 
     /**
-     * The selected credentials as one deterministic string. Credential ids and claim names are
-     * ordered, so the same claims of the same wallet always yield the same value. Null when nothing
-     * was selected, which is what a presentation of the subject credential alone yields.
+     * Renders the selected credentials as one deterministic string with credential ids and claim names
+     * ordered, so that the same claims of the same wallet always yield the same value. Returns null when
+     * nothing was selected, which is the case for a presentation of the subject credential alone.
      */
     private String material(PresentedCredentials credentials, String subjectCredentialId) {
         Map<String, BoundCredential> selected = selection.bindingMaterial(credentials, subjectCredentialId);
@@ -187,7 +177,6 @@ public final class ReferenceCredentialBinding {
         }
     }
 
-    /** Reads the realm secrets from the session. */
     private record SessionRealmSecrets(KeycloakSession session, RealmModel realm) implements RealmSecrets {
 
         @Override
@@ -206,8 +195,8 @@ public final class ReferenceCredentialBinding {
     }
 
     /**
-     * Every enabled realm key that can key an HMAC, so a rotation does not invalidate what is
-     * issued while a disabled key stops verifying immediately.
+     * Collects every enabled realm key that can key an HMAC, so that a rotation does not invalidate what
+     * is issued while a disabled key stops verifying immediately.
      */
     static List<SecretKey> acceptedSecrets(Stream<KeyWrapper> realmKeys) {
         return realmKeys

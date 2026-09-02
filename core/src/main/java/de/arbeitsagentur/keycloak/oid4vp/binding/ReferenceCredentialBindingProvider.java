@@ -20,26 +20,17 @@ import java.util.Map;
 import org.keycloak.provider.Provider;
 
 /**
- * Selects what a credential this Keycloak issues is bound to, out of the presentation it is issued
- * for.
- *
- * <p>Which claims of which credentials those are is a deployment decision. Claims that identify a
- * person tend to be the ones that change over a lifetime, so a deployment weighs how strongly the
- * issued credential is tied to them against how often a legitimate change forces a new credential.
- *
- * <p>The same selection has to be made when the credential is issued and when it is presented again,
- * by code that cannot share configuration, which is why this is a provider both sides resolve
+ * Selects what a credential this Keycloak issues is bound to, out of the presentation it is issued for.
+ * The same selection has to be made when the credential is issued and when it is presented again, and
+ * the code on both sides cannot share configuration. That is why this is a provider both sides resolve
  * instead of a setting each of them reads.
  */
 public interface ReferenceCredentialBindingProvider extends Provider {
 
     /**
-     * What this presentation is bound by, keyed by credential id. An empty result binds the
-     * credential to nothing, so it is accepted in any presentation.
-     *
-     * @param credentials the verified credentials of the presentation
-     * @param subjectCredentialId the credential carrying the subject, which binds to the others and
-     *     is therefore never part of the material itself
+     * Selects what this presentation is bound by, keyed by credential id. An empty result binds the
+     * credential to nothing, so it is then accepted in any presentation. The subject credential binds to
+     * the others and is never part of the material itself.
      */
     Map<String, BoundCredential> bindingMaterial(PresentedCredentials credentials, String subjectCredentialId);
 

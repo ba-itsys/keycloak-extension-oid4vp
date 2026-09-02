@@ -19,7 +19,6 @@ import de.arbeitsagentur.keycloak.oid4vp.conformance.runner.ConformanceModuleVar
 import java.util.stream.Stream;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
-// Verifier rejects a presentation whose key binding JWT iat is in the future
 @KeycloakIntegrationTest(config = AbstractVerifierConformanceTest.VerifierServerConfig.class)
 class KbJwtIatInFutureConformanceTest extends AbstractVerifierConformanceTest {
 

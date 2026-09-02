@@ -19,7 +19,6 @@ import org.keycloak.provider.Provider;
 import org.keycloak.provider.ProviderFactory;
 import org.keycloak.provider.Spi;
 
-/** Selection of what an issued credential is bound to, shared by issuance and verification. */
 public class ReferenceCredentialBindingSpi implements Spi {
 
     public static final String SPI_NAME = "oid4vp-reference-credential-binding";

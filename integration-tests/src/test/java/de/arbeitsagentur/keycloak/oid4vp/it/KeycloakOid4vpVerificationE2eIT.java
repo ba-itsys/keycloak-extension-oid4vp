@@ -86,9 +86,9 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
         String walletUrl = flow.getSameDeviceWalletUrl();
         var walletResponse = flow.submitToWallet(walletUrl);
 
-        // With the trust list unverifiable, the credential has no trust anchors left: verification
-        // fails with "No trusted keys available for ... signature verification" (or "no trusted
-        // key matched"), which the login event records as the error_description.
+        // The trust list cannot be verified, so the credential has no trust anchors left.
+        // Verification fails with "No trusted keys available for ... signature verification" or
+        // "no trusted key matched". The login event records that message as the error_description.
         assertLoginFailed(walletResponse, "no trusted key");
     }
 
@@ -106,9 +106,8 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
         String walletUrl = flow.getSameDeviceWalletUrl();
         var walletResponse = flow.submitToWallet(walletUrl);
 
-        // The trust material provider rejects the list with "Trust list LoTE type mismatch:
-        // expected ... but got ..." (EtsiTrustListIdentityProvider), which the login event records
-        // as the error_description.
+        // EtsiTrustListIdentityProvider rejects the list with "Trust list LoTE type mismatch:
+        // expected ... but got ...", which the login event records as the error_description.
         assertLoginFailed(walletResponse, "lote type mismatch");
     }
 
@@ -123,10 +122,10 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
     }
 
     /**
-     * A presentation the verifier rejects travelled the back channel, so nothing brings the
-     * End-User back unless the response URI hands them a {@code redirect_uri} to follow. They have
-     * to arrive on the login page knowing the presentation was rejected, and the attempt they were
-     * in the middle of has to be over.
+     * A presentation the verifier rejects travelled the back channel, so nothing brings the End-User
+     * back unless the response URI hands out a {@code redirect_uri} to follow. They have to arrive on
+     * the login page, learn that the presentation was rejected, and find the attempt they were in the
+     * middle of over.
      */
     @Test
     void aRejectedPresentationReturnsTheEndUserToTheLoginPage() throws Exception {
@@ -185,9 +184,9 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
     }
 
     /**
-     * The first failure recorded for a login owns the URL handed out with it. A second presentation
-     * for the same state, which anyone knowing the public state can post, must not leave the
-     * End-User holding a URL that no longer resolves.
+     * The first failure recorded for a login owns the URL handed out with it. Anyone who knows the
+     * public state can post a second presentation for that login, and it must not leave the End-User
+     * holding a URL that no longer resolves.
      */
     @Test
     void aSecondRejectionKeepsTheFirstFailureUrlValid() throws Exception {
@@ -225,8 +224,8 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
     }
 
     /**
-     * The failure record is single-use, so a reload of the page the End-User was handed back to
-     * finds nothing. The browser opened it, so it gets Keycloak's error page rather than JSON.
+     * The failure record is single-use, so a reload of the page the End-User was handed back to finds
+     * nothing. A browser opened it, which means it gets Keycloak's error page rather than JSON.
      */
     @Test
     void revisitingTheFailureUrlRendersTheErrorPage() throws Exception {
@@ -257,7 +256,6 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
         assertThat(flow.isCallbackUrl(page.url())).isFalse();
     }
 
-    /** A browser reaching the failure endpoint without parameters gets the error page too. */
     @Test
     void openingTheFailureUrlWithoutParametersRendersTheErrorPage() {
         page.navigate(responseUri() + "/failed");
@@ -268,8 +266,8 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
 
     /**
      * A deployment can have the rejection reported to the wallet instead, which OID4VP 1.0 §8.2
-     * permits as well. The End-User still reaches the login page, because the error travels beside
-     * the {@code redirect_uri} rather than replacing it.
+     * permits as well. The End-User still reaches the login page, because the error travels beside the
+     * {@code redirect_uri} instead of replacing it.
      */
     @Test
     void configuredRejectionResponseReportsTheErrorToTheWallet() throws Exception {
@@ -294,8 +292,6 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
             String body = Oid4vpLoginFlowHelper.verifierResponseBody(walletResponse.rawBody());
             assertThat(body).contains("invalid_presentation").contains("revoked");
 
-            // The error travels beside the redirect rather than replacing it, so the End-User still
-            // reaches the login page.
             page.navigate(walletResponse.redirectUri());
             page.waitForLoadState();
             assertThat(flow.isCallbackUrl(page.url())).isFalse();
@@ -309,8 +305,8 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
 
     /**
      * A post naming a login the endpoint cannot resolve gets a plain error and no
-     * {@code redirect_uri}: nothing about it proves it came from a wallet, so it must not be able
-     * to hand anyone a front-channel URL that ends a login.
+     * {@code redirect_uri}, because nothing about such a post proves it came from a wallet and it must
+     * not be able to hand anyone a front-channel URL that ends a login.
      */
     @Test
     void aPostForAnUnknownLoginIsRejectedWithoutARedirect() throws Exception {

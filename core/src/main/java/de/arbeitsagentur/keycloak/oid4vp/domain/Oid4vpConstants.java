@@ -19,17 +19,14 @@ import java.net.URI;
 import java.util.List;
 
 /**
- * Protocol constants for the OID4VP 1.0 identity provider extension.
- *
- * <p>Contains parameter names, response modes, credential format identifiers, client ID scheme
- * values, and endpoint flow constants used throughout the OID4VP authorization flow as defined in
+ * Protocol constants of the OID4VP 1.0 identity provider extension. Parameter names, response
+ * modes, credential formats, client id scheme values and flow constants come from
  * <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html">OID4VP 1.0</a>.
  */
 public final class Oid4vpConstants {
 
     private Oid4vpConstants() {}
 
-    // Builds the base URL for the IdP endpoint: {baseUri}/realms/{realm}/broker/{alias}/endpoint
     public static String buildEndpointBaseUrl(URI baseUri, String realmName, String idpAlias) {
         String base = baseUri.toString();
         if (!base.endsWith("/")) {

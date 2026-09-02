@@ -15,7 +15,7 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.conformance.runner;
 
-// Triggers the verifier under test once a conformance module waits for the authorization request
+// Triggers the verifier under test once a conformance module waits for the authorization request.
 @FunctionalInterface
 public interface VerifierInteraction {
 

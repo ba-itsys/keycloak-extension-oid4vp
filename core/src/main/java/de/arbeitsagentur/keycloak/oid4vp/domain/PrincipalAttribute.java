@@ -24,19 +24,16 @@ import org.keycloak.utils.StringUtil;
 
 /**
  * One credential the subject of a login may be read from, and the claim of it that carries the
- * subject. Credentials do not agree on where the subject sits, so the claim belongs to the
- * credential rather than to the identity provider.
+ * subject. The claim belongs to the credential rather than to the identity provider, because
+ * credentials do not agree on where the subject sits.
  *
- * <p>Configured as a comma separated list of {@code credentialId:claimPath} entries. The first
- * entry a wallet presented supplies the subject, so which credential answers is the verifier's
- * decision rather than the wallet's.
+ * <p>The configuration is a comma separated list of {@code credentialId:claimPath} entries, and
+ * the first entry a wallet presented supplies the subject, so the verifier and not the wallet
+ * decides which credential answers.
  *
- * <p>The claim path starts at the root of what the credential presents: {@code employee:sub} for an
- * SD-JWT credential, {@code pid_mdoc:eu\.europa\.ec\.eudi\.pid\.1.family_name} for an mDoc,
- * whose data elements sit inside a namespace and whose dots are therefore escaped.
- *
- * @param credentialId the DCQL credential id, as the mappers produce it
- * @param claimPath the claim of that credential, in the dot notation the mappers use
+ * <p>The claim path starts at the root of what the credential presents, so an SD-JWT entry reads
+ * like {@code employee:sub}. An mDoc keeps its data elements inside a namespace, whose dots are
+ * escaped: {@code pid_mdoc:eu\.europa\.ec\.eudi\.pid\.1.family_name}.
  */
 public record PrincipalAttribute(String credentialId, String claimPath) {
 
@@ -70,8 +67,6 @@ public record PrincipalAttribute(String credentialId, String claimPath) {
                     + " where the subject sits.");
         }
         if (entry.indexOf(CLAIM_SEPARATOR, separator + 1) >= 0) {
-            // A credential id never contains a colon, so a second one means a credential type was
-            // pasted where its DCQL id belongs.
             throw new IllegalArgumentException("principalAttributes entry '" + entry
                     + "' holds more than one ':'. An entry is 'credentialId:claimPath', and the credential id is the"
                     + " DCQL id of a mapper rather than the credential type.");
@@ -99,22 +94,22 @@ public record PrincipalAttribute(String credentialId, String claimPath) {
     }
 
     /**
-     * The mDoc namespace this path names, which is its first step, or null when the path has a
-     * single step. DCQL asks for the namespace and the element separately, so the two halves of the
-     * path are needed apart from each other.
+     * Returns the first step of the path as the mDoc namespace, or null when the path has a single
+     * step. DCQL asks for the namespace and the element separately, so the two halves are needed
+     * apart from each other.
      */
     public String mdocNamespace() {
         int separator = unescapedDot(claimPath);
         return separator < 0 ? null : unescape(claimPath.substring(0, separator));
     }
 
-    /** The path inside {@link #mdocNamespace()}, or the whole path when it names no namespace. */
+    /** Returns the path inside {@link #mdocNamespace()}, or the whole path when it names none. */
     public String mdocElementPath() {
         int separator = unescapedDot(claimPath);
         return separator < 0 ? claimPath : claimPath.substring(separator + 1);
     }
 
-    /** The index of the first dot that separates steps, skipping the escaped ones. */
+    /** Returns the index of the first dot that separates steps, skipping the escaped ones. */
     private static int unescapedDot(String path) {
         for (int i = 0; i < path.length(); i++) {
             char character = path.charAt(i);
@@ -131,7 +126,6 @@ public record PrincipalAttribute(String credentialId, String claimPath) {
         return step.replace("\\", "");
     }
 
-    /** The credential ids of the given entries, in order. */
     public static List<String> credentialIdsOf(List<PrincipalAttribute> principalAttributes) {
         return principalAttributes.stream()
                 .map(PrincipalAttribute::credentialId)

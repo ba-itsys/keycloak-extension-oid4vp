@@ -24,8 +24,8 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
- * The credential set configuration rules. An empty credential map stands for an identity provider
- * without mappers, where only the rules that need no mapper knowledge apply.
+ * An empty credential map stands for an identity provider without mappers, so only the rules that
+ * need no mapper knowledge apply there.
  */
 class Oid4vpCredentialSetsValidatorTest {
 
@@ -33,8 +33,6 @@ class Oid4vpCredentialSetsValidatorTest {
     private static final String MDL = "mdoc_org_iso_18013_5_1_mDL";
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-
-    // --- parsing and shape -------------------------------------------------
 
     @Test
     void parse_preferredThenFallback_readsOptionsInOrder() {
@@ -119,8 +117,6 @@ class Oid4vpCredentialSetsValidatorTest {
         assertThat(problems("  ", PID + ":sub")).isEmpty();
     }
 
-    // --- principal coverage across credential set options ------------------
-
     @Test
     void validate_principalCredentialMissingFromAnOption_isReported() {
         String json = """
@@ -194,8 +190,6 @@ class Oid4vpCredentialSetsValidatorTest {
 
         assertThat(problems(json, MDL + ":sub")).singleElement().asString().contains(MDL);
     }
-
-    // --- rules that need the aggregated credentials ------------------------
 
     @Test
     void validate_danglingCredentialId_isReported() {
@@ -291,7 +285,7 @@ class Oid4vpCredentialSetsValidatorTest {
 
     @Test
     void validate_beforeAnyMapperExists_stillChecksTheCredentialSetsAgainstTheNamedCredentials() {
-        // On create the identity provider has no mappers yet, so the credential sets are the only
+        // On create the identity provider has no mappers yet. The credential sets are the only
         // thing the named subject credentials can be checked against.
         String json = "[{\"options\": [[\"" + PID + "\"], [\"" + MDL + "\"]]}]";
 

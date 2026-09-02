@@ -21,28 +21,26 @@ import java.util.List;
 import org.keycloak.utils.JsonUtils;
 
 /**
- * A path locating claims in the claims JSON of a presented credential, configured in dot notation
- * with optional array selectors: {@code address.locality} selects a nested claim,
+ * A path that locates claims in the claims JSON of a presented credential, configured in dot
+ * notation with optional array selectors: {@code address.locality} selects a nested claim,
  * {@code nationalities[]} selects all array elements, {@code nationalities[0]} selects the first
- * element, and a literal dot in a claim name is escaped as {@code \.}.
+ * one, and a literal dot in a claim name is escaped as {@code \.}.
  *
- * <p>Field and all element steps correspond to the object key (string) and all elements (null)
- * kinds of a DCQL claims path pointer as defined by
+ * <p>Field steps and all element steps correspond to the object key (string) and all elements
+ * (null) kinds of a DCQL claims path pointer as defined by
  * <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-7">
- * OID4VP 1.0, Section 7</a>. The pointer's array index kind is not supported beyond {@code [0]}:
- * the verifier removes undisclosed array elements from the presented payload, so positions from
- * the issued credential do not survive selective disclosure, and an index read against the
+ * OID4VP 1.0, Section 7</a>. The pointer's array index kind is not supported beyond {@code [0]},
+ * because the verifier removes undisclosed array elements from the presented payload, so positions
+ * from the issued credential do not survive selective disclosure and an index read against the
  * compacted array would silently select a different element than the one the position named at
- * issuance. {@code [0]} therefore means the first element of the presentation, which under
- * selective disclosure is the first disclosed element and not necessarily the first issued one.
+ * issuance. {@code [0]} therefore selects the first disclosed element, not necessarily the first
+ * issued one.
  *
  * <p>Kept in sync with the {@code ClaimPath} of upstream Keycloak's OID4VP mappers.
  */
 public class ClaimPath {
 
-    /**
-     * One path step. The field name is set for {@link Kind#FIELD} steps only.
-     */
+    /** One path step. The field name is set for {@link Kind#FIELD} steps only. */
     public record Step(String field, Kind kind) {
 
         public enum Kind {
@@ -58,19 +56,14 @@ public class ClaimPath {
         this.steps = List.copyOf(steps);
     }
 
-    /**
-     * The parsed steps, for consumers that transform the path rather than resolve it.
-     */
     public List<Step> steps() {
         return steps;
     }
 
-    /**
-     * Parses the dot notation path, returning {@code null} if it is not well formed.
-     */
+    /** Parses the dot notation path, returning {@code null} when it is not well formed. */
     public static ClaimPath parse(String path) {
-        // The splitting below would silently drop a trailing separator, so a path ending in a
-        // dot is always malformed, even an escaped one.
+        // The splitting below would silently drop a trailing separator, and a path that ends in a
+        // dot is always malformed, an escaped one included.
         if (path == null || path.endsWith(".")) {
             return null;
         }
@@ -99,8 +92,8 @@ public class ClaimPath {
     }
 
     /**
-     * Selects the claims this path points to. An all elements step fans out into every array
-     * element, so the result may hold several nodes. Null nodes and dead ends select nothing.
+     * Selects the claims this path points to, fanning out into every array element on an all
+     * elements step. Null nodes and dead ends select nothing.
      */
     public List<JsonNode> select(JsonNode claims) {
         List<JsonNode> current = new ArrayList<>();

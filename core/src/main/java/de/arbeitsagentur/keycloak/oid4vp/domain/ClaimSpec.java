@@ -21,25 +21,24 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Specification of a single claim to request within a DCQL credential query.
+ * One claim to request in a DCQL credential query.
  *
- * <p>{@code path} uses the {@link ClaimPath} dot notation shared with the OID4VP mappers
- * ({@code address.locality}, {@code nationalities[]}). For mDoc claims, {@code namespace} names
- * the ISO 18013-5 namespace and the first path step names the data element; deeper steps only
- * address into the element value on the mapper side and are not part of the DCQL query.
+ * <p>{@code path} uses the {@link ClaimPath} dot notation of the OID4VP mappers, for example
+ * {@code address.locality} or {@code nationalities[]}. For an mDoc claim, {@code namespace} names
+ * the ISO 18013-5 namespace and the first path step names the data element. Deeper steps address
+ * into the element value on the mapper side. They are not part of the DCQL query.
  *
- * <p>{@code alternativePaths} names claims that stand in for the path when a credential does not
- * carry it, in preference order: issuers name the same claim differently, so a mapper reading the
- * German PID's {@code birth_family_name} also accepts {@code birth_name}. Every alternative is
- * requested as a claim of its own, and the claim sets ask for exactly one of the path and its
- * alternatives per option. {@link #expand()} turns the spec into those single-path claims.
+ * <p>{@code alternativePaths} are the claims the mapper reads, in that order, when the credential
+ * does not carry {@code path}, because issuers name the same claim differently: the German PID has
+ * {@code birth_name} where the EUDI PID has {@code birth_family_name}. Each alternative becomes a
+ * claim of its own in the DCQL query, and every claim set option asks for exactly one of them.
  *
  * <p>{@code claimSetIds} lists the DCQL claim sets this claim belongs to. A claim without ids is
- * part of every generated claim set and therefore always requested.
+ * part of every generated claim set and is therefore always requested.
  *
- * <p>{@code id} is the DCQL claim id the claim is requested under, derived from the mapper name
- * so that the {@code claim_sets} of a generated query read like the configuration that produced
- * them. It is null for claims added without a mapper, which the query builder numbers instead.
+ * <p>{@code id} is the DCQL claim id and comes from the mapper name, so that the generated
+ * {@code claim_sets} read like the configuration. A claim without a mapper has no id and is
+ * numbered by the query builder.
  *
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.3">OID4VP 1.0 §6.3 — Claims Query</a>
  */
@@ -53,7 +52,6 @@ public record ClaimSpec(
         claimSetIds = claimSetIds != null ? List.copyOf(claimSetIds) : List.of();
     }
 
-    /** A claim of an SD-JWT credential, addressed by a dot notation path over the claims JSON. */
     public static ClaimSpec sdJwt(String path, List<String> claimSetIds) {
         return new ClaimSpec(null, null, path, List.of(), claimSetIds);
     }
@@ -62,7 +60,6 @@ public record ClaimSpec(
         return sdJwt(path, List.of());
     }
 
-    /** A claim of an mDoc credential: a data element of the given namespace. */
     public static ClaimSpec mdoc(String namespace, String path, List<String> claimSetIds) {
         return new ClaimSpec(null, namespace, path, List.of(), claimSetIds);
     }
@@ -71,42 +68,37 @@ public record ClaimSpec(
         return mdoc(namespace, path, List.of());
     }
 
-    /** The same claim requested under the given DCQL claim id. */
     public ClaimSpec withId(String id) {
         return new ClaimSpec(id, namespace, path, alternativePaths, claimSetIds);
     }
 
-    /** The same claim, accepting the given paths in their order when the path is not presented. */
     public ClaimSpec withAlternativePaths(List<String> alternativePaths) {
         return new ClaimSpec(id, namespace, path, alternativePaths, claimSetIds);
     }
 
-    /** Parses the comma-separated claim set ids of a mapper. */
     public static List<String> parseClaimSetIds(String rawClaimSetIds) {
         return ConfigList.parse(rawClaimSetIds);
     }
 
-    /** Parses the comma-separated alternative claim paths of a mapper. */
     public static List<String> parseAlternativePaths(String rawAlternativePaths) {
         return ConfigList.parse(rawAlternativePaths);
     }
 
-    /** The parsed claim path, or {@code null} when the configured path is malformed. */
+    /** Parses the configured path. Returns null when it is malformed, which callers treat as a misconfiguration. */
     public ClaimPath claimPath() {
         return ClaimPath.parse(path);
     }
 
-    /** Whether the path and every alternative path parse. */
     public boolean pathsWellFormed() {
         return claimPath() != null
                 && alternativePaths.stream().allMatch(alternative -> ClaimPath.parse(alternative) != null);
     }
 
     /**
-     * The claims this spec requests: the path first, then every alternative, each without further
-     * alternatives and each a member of the same claim sets. An alternative is requested under the
-     * spec's id followed by the slugged alternative path, so {@code birth_name} of a mapper named
-     * {@code birth-name} reads {@code birth-name-birth_name} in the claim sets.
+     * Expands this spec into one claim per path, because DCQL can only request a single path per
+     * claim. The own path comes first, then each alternative. All of them keep the claim set ids.
+     * An alternative is named after the spec id plus its slugged path, so {@code birth_name} on a
+     * mapper named {@code birth-name} becomes {@code birth-name-birth_name}.
      */
     public List<ClaimSpec> expand() {
         List<ClaimSpec> claims = new ArrayList<>();
@@ -119,9 +111,9 @@ public record ClaimSpec(
     }
 
     /**
-     * Converts this claim to a DCQL {@code claims[].path} pointer. SD-JWT paths map step by step
-     * (field to string, all elements to null, first element to 0). mDoc paths are always
-     * {@code [namespace, element]}: mDoc claims cannot be requested below element level.
+     * Maps the configured path to the DCQL {@code claims[].path} pointer. An mDoc pointer is
+     * always {@code [namespace, element]}, because mDoc claims cannot be requested below element
+     * level.
      */
     public List<Object> toDcqlPath() {
         ClaimPath claimPath = claimPath();

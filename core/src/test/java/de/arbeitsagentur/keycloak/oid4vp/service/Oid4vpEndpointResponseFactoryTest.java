@@ -24,7 +24,6 @@ import java.io.IOException;
 import org.junit.jupiter.api.Test;
 import org.keycloak.util.JsonSerialization;
 
-/** The shapes the response URI answers a wallet with. */
 class Oid4vpEndpointResponseFactoryTest {
 
     private static final String REDIRECT_URI = "https://verifier.example/failed?state=s1&response_code=rc1";
@@ -53,10 +52,7 @@ class Oid4vpEndpointResponseFactoryTest {
         assertThat(response.getEntity()).isEqualTo("{}");
     }
 
-    /**
-     * With the rejection reported to the wallet, the error travels beside the redirect the End-User
-     * follows, which §8.2 permits for Error Responses.
-     */
+    /** §8.2 lets an Error Response carry the redirect the End-User follows beside the error. */
     @Test
     void errorRedirectResponseIsHttp400CarryingTheErrorAndTheRedirectUri() throws IOException {
         Response response = factory.jsonErrorRedirectResponse(
@@ -69,7 +65,6 @@ class Oid4vpEndpointResponseFactoryTest {
         assertThat(body.get("redirect_uri").asText()).isEqualTo(REDIRECT_URI);
     }
 
-    /** The browser of a cross-device flow is on another device, so no redirect is handed out. */
     @Test
     void crossDeviceErrorRedirectResponseCarriesNoRedirectUri() throws IOException {
         Response response = factory.jsonErrorRedirectResponse(
@@ -80,7 +75,6 @@ class Oid4vpEndpointResponseFactoryTest {
         assertThat(body.fieldNames()).toIterable().containsExactly("error", "error_description");
     }
 
-    /** An IdentityBrokerException without a message leaves the description out. */
     @Test
     void errorRedirectResponseOmitsAnAbsentDescription() throws IOException {
         Response response = factory.jsonErrorRedirectResponse("invalid_presentation", null, REDIRECT_URI, false);
@@ -88,7 +82,6 @@ class Oid4vpEndpointResponseFactoryTest {
         assertThat(body(response).fieldNames()).toIterable().containsExactly("error", "redirect_uri");
     }
 
-    /** A post that cannot be tied to a live login gets the caller's status and no redirect. */
     @Test
     void plainErrorResponseKeepsTheCallersStatusAndCarriesNoRedirect() throws IOException {
         Response badRequest =

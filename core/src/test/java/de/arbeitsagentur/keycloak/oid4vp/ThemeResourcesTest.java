@@ -90,7 +90,6 @@ class ThemeResourcesTest {
                 .contains(Oid4vpMessages.PRESENTATION_REJECTED + "=");
     }
 
-    /** Every key the error page renders has to resolve, so each one needs a bundle entry. */
     @Test
     void messageBundleCoversTheErrorPageKeys() throws Exception {
         String messages = loadResource("/theme-resources/messages/messages_en.properties");

@@ -30,10 +30,10 @@ import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
  * End to end coverage of trust material identity providers that declare the credential types they
  * serve.
  *
- * <p>A response can carry credentials of several trust domains, so trust is resolved per credential:
- * a provider scoped to one credential type verifies presentations of that type and advertises its
- * trusted authorities on that credential's DCQL entry, while a credential type no provider serves
- * has no trust material and cannot be verified at all.
+ * <p>A response can carry credentials of several trust domains, and trust is resolved per
+ * credential. A provider scoped to one credential type verifies presentations of that type and
+ * advertises its trusted authorities on that credential's DCQL entry, while a credential type no
+ * provider serves has no trust material at all and cannot be verified.
  */
 @KeycloakIntegrationTest(config = Oid4vpServerConfig.class)
 class KeycloakOid4vpCredentialTrustE2eIT extends AbstractOid4vpE2eTest {
@@ -65,8 +65,8 @@ class KeycloakOid4vpCredentialTrustE2eIT extends AbstractOid4vpE2eTest {
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
 
-        // The trust domain of the realm is responsible for the SD-JWT PID only, so the mDoc PID has
-        // no trust anchors even though the same authority issued it.
+        // The realm's trust domain serves the SD-JWT PID only, so the mDoc PID has no trust anchors
+        // even though the same authority issued it.
         serveOnly(Oid4vpTestKeycloakSetup.SD_JWT_PID_VCT);
         replaceDcqlMappers(Oid4vpTestKeycloakSetup.mdocPidMappers());
 
@@ -74,9 +74,9 @@ class KeycloakOid4vpCredentialTrustE2eIT extends AbstractOid4vpE2eTest {
         flow.clickOid4vpIdpButton();
         Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(flow.getSameDeviceWalletUrl());
 
-        // A credential type no provider serves resolves to empty trust material: verification
-        // fails with "No trusted keys available for mDoc signature verification" (or "no trusted
-        // key matched"), which the endpoint returns as the error_description.
+        // A credential type no provider serves resolves to empty trust material, so verification
+        // fails with "No trusted keys available for mDoc signature verification" or "no trusted key
+        // matched", which the endpoint returns as the error_description.
         assertLoginFailed(walletResponse, "no trusted key");
     }
 
@@ -100,12 +100,10 @@ class KeycloakOid4vpCredentialTrustE2eIT extends AbstractOid4vpE2eTest {
                 .isEmpty();
     }
 
-    /** Restricts the trust material identity provider of the realm to the given credential type. */
     private void serveOnly(String credentialType) {
         setTrustIdpConfig(Map.of(EtsiTrustListIdentityProviderConfig.SERVED_CREDENTIAL_TYPES, credentialType));
     }
 
-    /** The {@code trusted_authorities} types of one credential of the DCQL query. */
     @SuppressWarnings("unchecked")
     private List<String> trustedAuthorityTypesOf(SignedJWT requestJwt, String credentialId) throws Exception {
         Map<String, Object> dcqlQuery = requestJwt.getJWTClaimsSet().getJSONObjectClaim("dcql_query");

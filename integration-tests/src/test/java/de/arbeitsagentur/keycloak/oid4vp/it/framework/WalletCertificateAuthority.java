@@ -24,10 +24,10 @@ import java.security.cert.X509Certificate;
 import java.util.EnumSet;
 
 /**
- * Certificate authority shared by all test wallets. The wallet loads its CA from
- * {@code ~/.eudi-dev/wallet-ca-key.pem} / {@code wallet-ca-cert.pem} if present, so seeding
- * these files gives every wallet container the same, stable CA. The Keycloak test server trusts
- * the CA certificate via {@code truststore-paths}, which stays valid across wallet restarts.
+ * Certificate authority shared by all test wallets. A wallet loads its CA from
+ * {@code ~/.eudi-dev/wallet-ca-key.pem} and {@code wallet-ca-cert.pem} when those files are
+ * present, so seeding them gives every container the same CA and the trust the Keycloak test server
+ * puts in it via {@code truststore-paths} survives wallet restarts.
  */
 final class WalletCertificateAuthority {
 
@@ -56,12 +56,10 @@ final class WalletCertificateAuthority {
         return INSTANCE;
     }
 
-    // Host path of the CA certificate PEM, for the Keycloak server truststore
     Path caCertPemPath() {
         return caCertPemFile;
     }
 
-    // Creates a wallet state directory seeded with the CA, for mounting into a wallet container
     Path createSeededWalletStateDir() {
         try {
             Path stateDir = Files.createTempDirectory("oid4vp-wallet-state-");

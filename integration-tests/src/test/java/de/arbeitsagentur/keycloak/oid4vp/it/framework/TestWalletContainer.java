@@ -19,8 +19,8 @@ import io.github.dominikschlosser.eudi.EudiWalletContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * {@link EudiWalletContainer} that serves the wallet on a custom port instead of the default, so the
- * tests do not collide with a locally running eudi-dev instance.
+ * {@link EudiWalletContainer} that serves the wallet on a custom port instead of the default, with
+ * HTTPS on the next port, so that a test run does not collide with a locally running eudi-dev.
  */
 final class TestWalletContainer extends EudiWalletContainer {
 

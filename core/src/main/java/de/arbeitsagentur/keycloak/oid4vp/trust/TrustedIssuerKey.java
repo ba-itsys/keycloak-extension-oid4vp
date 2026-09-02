@@ -20,26 +20,28 @@ import org.keycloak.utils.StringUtil;
 
 /**
  * A trusted issuer key together with the issuer it is trusted for. Binding the key to an issuer
- * keeps trust domains apart: a key published by one issuer must not verify a credential that claims
- * to come from another.
+ * keeps trust domains apart, so a key published by one issuer must not verify a credential that
+ * claims to come from another.
  *
- * @param issuer the credential {@code iss} this key is trusted for, or null when the provider does
- *               not identify an issuer and the key is trusted for any of them
- * @param jwk    the public key
+ * @param issuer the credential {@code iss} this key is trusted for. Null when the provider does not
+ *               identify an issuer. The key is then trusted for any issuer.
  */
 public record TrustedIssuerKey(String issuer, JWK jwk) {
 
-    /** A key trusted for any issuer, as exposed by providers that only implement the upstream contract. */
+    /** Returns a key trusted for any issuer, as exposed by providers that only implement the upstream contract. */
     public static TrustedIssuerKey ofAnyIssuer(JWK jwk) {
         return new TrustedIssuerKey(null, jwk);
     }
 
-    /** Whether this key may verify a credential issued by the given issuer. */
+    /** Returns whether this key may verify a credential issued by the given issuer. */
     public boolean trustedFor(String credentialIssuer) {
         return StringUtil.isBlank(issuer) || issuer.equals(credentialIssuer);
     }
 
-    /** Whether this key answers the given JOSE {@code kid}; a key without an id answers every kid. */
+    /**
+     * Returns whether this key answers the given JOSE {@code kid}. A key without an id answers every
+     * kid, and a credential without a kid is answered by every key.
+     */
     public boolean matchesKeyId(String keyId) {
         String ownKeyId = jwk != null ? jwk.getKeyId() : null;
         return StringUtil.isBlank(keyId) || StringUtil.isBlank(ownKeyId) || ownKeyId.equals(keyId);

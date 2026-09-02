@@ -27,7 +27,7 @@ import org.keycloak.util.JsonSerialization;
 
 /**
  * The request context is stored as JSON between rendering the login page and processing the
- * wallet's response, so the credential set model the callback enforces has to survive the round
+ * wallet's response. The credential set model the callback enforces has to survive the round
  * trip. A credential set that does not deserialize would only surface as a failed login.
  */
 class Oid4vpRequestContextEntrySerializationTest {

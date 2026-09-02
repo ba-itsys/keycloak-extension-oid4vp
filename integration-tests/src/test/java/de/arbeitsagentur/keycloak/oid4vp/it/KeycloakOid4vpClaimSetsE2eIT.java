@@ -29,9 +29,9 @@ import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
 /**
- * End-to-end tests for DCQL claim_sets generated from mapper claim set ids: the wallet discloses
- * the most-preferred satisfiable claim set, and the verifier accepts only presentations that
- * satisfy one of the requested claim sets.
+ * End to end tests for DCQL claim_sets generated from mapper claim set ids. The wallet discloses the
+ * most preferred claim set it can satisfy, and the verifier accepts only presentations that satisfy
+ * one of the requested sets.
  */
 @KeycloakIntegrationTest(config = Oid4vpServerConfig.class)
 class KeycloakOid4vpClaimSetsE2eIT extends AbstractOid4vpE2eTest {
@@ -50,8 +50,9 @@ class KeycloakOid4vpClaimSetsE2eIT extends AbstractOid4vpE2eTest {
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
 
-        // Options: 1-full = family_name, given_name, birthdate; 2-min = family_name, birthdate.
-        // The wallet's PID carries all claims, so the preferred option must be disclosed.
+        // Option 1-full asks for family_name, given_name and birthdate, option 2-min only for
+        // family_name and birthdate. The wallet's PID carries all of them, so it has to disclose the
+        // preferred option.
         replaceDcqlMappers(List.of(
                 sdJwtAttributeMapper("cs-family-name", SD_JWT_PID_VCT, "family_name", "lastName", null),
                 sdJwtAttributeMapper("cs-given-name", SD_JWT_PID_VCT, "given_name", "firstName", "1-full"),
@@ -74,8 +75,9 @@ class KeycloakOid4vpClaimSetsE2eIT extends AbstractOid4vpE2eTest {
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
 
-        // Options: 1-full = family_name, email, given_name; 2-min = family_name, given_name.
-        // The wallet's PID has no email claim, so only the fallback option is satisfiable.
+        // Option 1-full asks for family_name, email and given_name, option 2-min only for
+        // family_name and given_name. The wallet's PID has no email claim, so only the fallback
+        // option can be satisfied.
         replaceDcqlMappers(List.of(
                 sdJwtAttributeMapper("cs-family-name", SD_JWT_PID_VCT, "family_name", "lastName", null),
                 sdJwtAttributeMapper("cs-email", SD_JWT_PID_VCT, "email", "email", "1-full"),
@@ -89,8 +91,8 @@ class KeycloakOid4vpClaimSetsE2eIT extends AbstractOid4vpE2eTest {
                 .as("given_name from the fallback claim set must be disclosed and mapped")
                 .isEqualTo(walletPidClaim("given_name"));
         assertThat(user.getLastName()).isEqualTo(walletPidClaim("family_name"));
-        // The first-broker-login form fills the email field only when the mappers left it empty,
-        // so a form-generated address proves no email claim was disclosed by the wallet.
+        // The first-broker-login form fills the email field only when the mappers left it empty, so a
+        // form-generated address proves the wallet disclosed no email claim.
         assertThat(user.getEmail())
                 .as("email is not part of the satisfied claim set and must not come from the credential")
                 .startsWith("claimset-fallback-user");
@@ -102,11 +104,11 @@ class KeycloakOid4vpClaimSetsE2eIT extends AbstractOid4vpE2eTest {
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
 
-        // The German PID rulebook names the birth name birth_name, the EUDI PID rulebook
-        // birth_family_name. The wallet's PID follows the latter, so the mapper reading birth_name
-        // with birth_family_name as its alternative only gets an answer under the alternative.
-        // Combined with the claim set ids of the email mapper, the generated claim_sets offer four
-        // options; the wallet can satisfy only the two asking for the alternative without email.
+        // The German PID rulebook calls the birth name birth_name while the EUDI rulebook, which the
+        // wallet's PID follows, calls it birth_family_name. The mapper reads birth_name with
+        // birth_family_name as its alternative, so only the alternative gets an answer. Together with
+        // the claim set ids of the email mapper that makes four generated options, of which the
+        // wallet can satisfy only the two that ask for the alternative without email.
         IdentityProviderMapperRepresentation birthName =
                 sdJwtAttributeMapper("cs-birth-name", SD_JWT_PID_VCT, "birth_name", "lastName", null);
         birthName.getConfig().put("claim.alternatives", "birth_family_name");

@@ -56,7 +56,6 @@ class MdocSessionTranscriptBuilderTest {
                 MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, thumbprint);
         CBORItemList withoutThumbprint = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
 
-        // Different thumbprints should produce different hashes
         CBORItemList handoverWith = (CBORItemList) withThumbprint.getItems().get(2);
         CBORItemList handoverWithout =
                 (CBORItemList) withoutThumbprint.getItems().get(2);

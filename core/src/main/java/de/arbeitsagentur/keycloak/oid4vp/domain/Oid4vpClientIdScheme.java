@@ -32,7 +32,7 @@ import org.keycloak.crypto.JavaAlgorithm;
 import org.keycloak.jose.jws.crypto.HashUtils;
 import org.keycloak.utils.StringUtil;
 
-/** Models the OID4VP {@code client_id_scheme} values and their client ID prefixes. */
+/** The OID4VP {@code client_id_scheme} values and their client id prefixes. */
 public enum Oid4vpClientIdScheme {
     PLAIN("plain", ""),
     X509_SAN_DNS("x509_san_dns", "x509_san_dns:"),
@@ -67,11 +67,11 @@ public enum Oid4vpClientIdScheme {
     }
 
     /**
-     * Validates the configured verifier certificate for this scheme. The verifier puts this chain
-     * into the request object and derives its client id from the leaf, so it has to be coherent and
-     * currently valid. Whether a wallet accepts the certificate is the wallet's decision against its
-     * own relying party trust list, so a configuration a wallet is likely to reject is warned about
-     * rather than rejected here.
+     * Validates the configured verifier certificate for this scheme. The chain travels in the
+     * request object and the client id is derived from its leaf, so it has to be coherent and
+     * currently valid. Whether a wallet accepts the certificate is the wallet's own decision
+     * against its relying party trust list, so a configuration a wallet is likely to reject is
+     * only warned about here.
      */
     public void validateCertificateBinding(String pemCertificate) {
         if (!isCertificateBound()) {
@@ -95,9 +95,9 @@ public enum Oid4vpClientIdScheme {
     }
 
     /**
-     * The configured scheme, defaulting to the certificate-bound scheme wallets expect. An
-     * unrecognized value, which only scripted or imported configuration can produce, is warned about
-     * because it silently changes the emitted client_id to the default scheme's.
+     * Resolves the configured scheme, defaulting to the certificate bound scheme wallets expect.
+     * An unrecognized value can only come from scripted or imported configuration, and falling
+     * back to the default silently changes the emitted client id, so it is warned about.
      */
     public static Oid4vpClientIdScheme resolve(String rawValue) {
         if (StringUtil.isBlank(rawValue)) {
@@ -162,9 +162,9 @@ public enum Oid4vpClientIdScheme {
     }
 
     /**
-     * Reports a configuration wallets following the high assurance profile reject, without failing
-     * it: that profile requires the verifier certificate to be CA-issued, while a closed deployment
-     * may well run against wallets that accept a self-signed one.
+     * Warns about a configuration that wallets following the high assurance profile reject,
+     * without failing it. That profile requires a CA issued verifier certificate, but a closed
+     * deployment may run against wallets that accept a self-signed one.
      */
     private static void warnAboutLikelyWalletRejectionOnce(String pemCertificate, List<X509Certificate> certificates) {
         X509Certificate leaf = certificates.get(0);

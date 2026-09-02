@@ -28,10 +28,10 @@ import org.keycloak.testframework.server.KeycloakServerConfigInterceptor;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * Supplies eudi-dev wallet containers. All wallets share one stable certificate authority
- * (seeded into the container, see {@link WalletCertificateAuthority}), which this supplier
- * registers in the Keycloak server's truststore so the server can fetch issuer metadata and
- * status lists from any wallet over HTTPS, including wallets started later.
+ * Supplies eudi-dev wallet containers. Every wallet is seeded with the same stable certificate
+ * authority (see {@link WalletCertificateAuthority}), which this supplier also registers in the
+ * Keycloak server's truststore, so the server can fetch issuer metadata and status lists over HTTPS
+ * from any wallet, including ones started later in the run.
  */
 public class TestWalletSupplier
         implements Supplier<TestWallet, InjectTestWallet>,
@@ -57,8 +57,8 @@ public class TestWalletSupplier
         try {
             return new TestWallet(container, "http://localhost:" + port);
         } catch (RuntimeException e) {
-            // The wallet constructor talks to the container; a failure here must not leak the
-            // started container and its fixed host ports
+            // The wallet constructor talks to the container, and a failure here must not leak the
+            // started container along with its fixed host ports.
             container.stop();
             throw e;
         }

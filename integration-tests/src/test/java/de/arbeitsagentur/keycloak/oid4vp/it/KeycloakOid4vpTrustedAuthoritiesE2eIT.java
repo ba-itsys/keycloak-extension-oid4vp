@@ -33,13 +33,10 @@ import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 /**
  * End to end coverage of the DCQL {@code trusted_authorities} constraint (OID4VP 1.0 §6.1.1).
  *
- * <p>The entries are inherited from the trust material identity providers serving a credential, so
- * every test drives the trust provider rather than the verifier: a provider backed by a trust list
- * advertises its URL as {@code etsi_tl} or the key identifiers of its issuance certificates as
- * {@code aki}, as configured, one entry per trust domain. Coverage is the advertised value per
- * type, a login where the wallet's credential issuer is covered by it, a login where it is not
- * (the provider then serves a trust list of a foreign authority, leaving the wallet without a
- * credential it may present), and the default of advertising nothing.
+ * <p>The entries come from the trust material identity providers serving a credential, one entry per
+ * trust domain, so every test configures the trust provider rather than the verifier. A provider
+ * backed by a trust list advertises either its URL as {@code etsi_tl} or the key identifiers of its
+ * issuance certificates as {@code aki}, and advertises nothing by default.
  */
 @KeycloakIntegrationTest(config = Oid4vpServerConfig.class)
 class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
@@ -47,7 +44,7 @@ class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
     @InjectTestWallet
     TestWallet wallet;
 
-    // A certificate authority the wallet has never issued a credential under
+    // A certificate authority the wallet has no credential from.
     private final X509Certificate foreignAuthority = generateForeignAuthority();
 
     @Override
@@ -105,9 +102,9 @@ class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
 
-        // The wallet's default debug mode would present the credential anyway and only flag the
-        // unmatched trusted authorities in its consent dialog. Strict mode makes it refuse like a
-        // production wallet, which is the behavior under test.
+        // In its default debug mode the wallet presents the credential anyway and only flags the
+        // unmatched trusted authorities in its consent dialog. Strict mode makes it refuse the way a
+        // production wallet does, and that refusal is the behavior under test.
         wallet().client().setValidationMode(ValidationMode.STRICT);
         try (TestTrustListServer foreignTrustList = TestTrustListServer.serving(foreignAuthority)) {
             useTrustList(foreignTrustList.url());
@@ -118,12 +115,10 @@ class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
         }
     }
 
-    /** Lets the trust material identity provider advertise the trust list it is backed by. */
     private void advertiseTrustList() {
         setTrustIdpConfig(Map.of(EtsiTrustListIdentityProviderConfig.ADVERTISE_TRUSTED_AUTHORITIES, "etsi_tl"));
     }
 
-    // Points the trust material identity provider at the given trust list and lets it advertise it
     private void useTrustList(String trustListUrl) {
         setTrustIdpConfig(Map.of(
                 EtsiTrustListIdentityProviderConfig.TRUST_LIST_URL,
@@ -135,7 +130,7 @@ class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
     /**
      * Runs a login and asserts that the wallet refused to present because none of its credentials
      * satisfies the query. The advertised entry is checked before the wallet is driven, so a login
-     * that never carried the constraint under test fails here instead of passing as a refusal.
+     * that never carried the constraint under test fails there instead of passing as a refusal.
      */
     @SafeVarargs
     private void assertPresentationIsRefused(Map<String, Object>... expectedTrustedAuthorities) throws Exception {
@@ -146,8 +141,8 @@ class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
         assertThat(trustedAuthoritiesOf(fetchRequestObject(walletUrl))).containsExactly(expectedTrustedAuthorities);
 
         Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
-        // The wallet refuses by posting an Authorization Error Response, so what the login event
-        // records is the wallet's own reason for having nothing to present.
+        // The wallet refuses by posting an Authorization Error Response, and the login event records
+        // its own reason for having nothing to present.
         assertLoginFailed(walletResponse, "no stored credential satisfies the requested query");
     }
 
@@ -155,7 +150,6 @@ class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
         return Map.of("type", type, "values", List.of(value));
     }
 
-    /** The {@code trusted_authorities} entries of the first credential of the DCQL query. */
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> trustedAuthoritiesOf(SignedJWT requestJwt) throws Exception {
         Map<String, Object> dcqlQuery = requestJwt.getJWTClaimsSet().getJSONObjectClaim("dcql_query");
@@ -163,7 +157,6 @@ class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
         return (List<Map<String, Object>>) credential.get("trusted_authorities");
     }
 
-    // The identifier the wallet's credentials carry as their authority key identifier
     private String walletAuthorityKeyIdentifier() {
         return TestCertificates.subjectKeyIdentifierBase64Url(
                 TestCertificates.parseCertificate(wallet().client().getCaCertificatePem()));

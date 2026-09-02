@@ -27,7 +27,6 @@ import java.util.Map;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.util.JsonSerialization;
 
-/** Brokered identity contexts carrying a single presented credential, as the callback builds them. */
 final class MapperTestContexts {
 
     private MapperTestContexts() {}
@@ -37,7 +36,6 @@ final class MapperTestContexts {
         return context(presentationType, credentialIdOf(presentationType, credentialType), credentialType, claimsJson);
     }
 
-    /** A context whose single credential was answered under the given credential id. */
     static BrokeredIdentityContext context(
             PresentationType presentationType, String credentialId, String credentialType, String claimsJson)
             throws Exception {

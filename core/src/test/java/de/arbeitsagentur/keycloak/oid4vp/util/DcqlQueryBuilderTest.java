@@ -410,8 +410,6 @@ class DcqlQueryBuilderTest {
                 .isEmpty();
     }
 
-    // --- several credential types per entry -----------------------------------
-
     @Test
     void build_mapperNamingSeveralVcts_requestsThemAsOneEntry() throws Exception {
         Map<String, CredentialTypeSpec> credentials = aggregate(
@@ -625,8 +623,6 @@ class DcqlQueryBuilderTest {
 
         assertThat(firstCredential(builder.build()).get("id")).isEqualTo("sdjwt_urn_eudi_pid_1");
     }
-
-    // --- alternative claims and claim ids ---------------------------------
 
     @Test
     void build_alternativeClaims_areRequestedAsClaimsOfTheirOwnWithOneOptionPerPath() throws Exception {

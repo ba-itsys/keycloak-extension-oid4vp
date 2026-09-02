@@ -29,19 +29,16 @@ import org.keycloak.services.resources.IdentityBrokerService;
 
 /**
  * Resolves trust material identity providers by alias into a {@link CredentialTrustPlan} for the
- * OID4VP verifier.
- *
- * <p>Counterpart of the upstream {@code TrustMaterialResolver}: providers are looked up by alias
- * from the realm, disabled or missing providers are skipped. Providers that only implement the
- * upstream {@code TrustMaterialIdentityProvider} contract (for example Keycloak's
- * {@code default-trust}) are adapted to the extension contract at lookup time, so the plan works
- * uniformly on {@link Oid4vpTrustMaterialIdentityProvider}.
+ * OID4VP verifier, the counterpart of the upstream {@code TrustMaterialResolver}. Providers that
+ * only implement the upstream {@code TrustMaterialIdentityProvider} contract, for example
+ * Keycloak's {@code default-trust}, are adapted at lookup time so that the plan works uniformly on
+ * {@link Oid4vpTrustMaterialIdentityProvider}.
  */
 public class Oid4vpTrustMaterialResolver {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpTrustMaterialResolver.class);
 
-    /** Provider lookup indirection, replaceable in tests with a typed double. */
+    /** Provider lookup seam, replaced by a typed double in tests. */
     public interface ProviderLookup {
         Oid4vpTrustMaterialIdentityProvider<?> byAlias(KeycloakSession session, String alias);
     }
@@ -58,9 +55,9 @@ public class Oid4vpTrustMaterialResolver {
 
     /**
      * Resolves the trust material identity providers referenced by the comma separated alias list
-     * into a plan that answers per credential type. Unknown or disabled aliases are skipped with a
-     * warning, but a non-blank alias list always declares a trust source: when none of the aliases
-     * resolve, the plan rejects every credential instead of falling back to issuer-published
+     * into a plan that answers per credential type, skipping unknown or disabled aliases with a
+     * warning. A non-blank alias list always declares a trust source, so when none of the aliases
+     * resolve the plan rejects every credential instead of falling back to issuer published
      * metadata.
      */
     public CredentialTrustPlan resolvePlan(KeycloakSession session, String aliases) {
@@ -119,9 +116,9 @@ public class Oid4vpTrustMaterialResolver {
     /**
      * Adapts a provider that only implements the upstream contract, for example Keycloak's
      * {@code default-trust}, which publishes the JWKs of an issuer that has no trust list. Its keys
-     * are consumed and trusted for any issuer, because the upstream contract does not bind them to
-     * one. The credential types it serves are read from its configuration, so such a provider can be
-     * scoped like the providers of this extension.
+     * are trusted for any issuer, because the upstream contract does not bind them to one. Reading
+     * the served credential types from its configuration lets such a provider be scoped like the
+     * providers of this extension.
      */
     record UpstreamTrustMaterialAdapter(TrustMaterialIdentityProvider<?> delegate)
             implements Oid4vpTrustMaterialIdentityProvider<IdentityProviderModel> {

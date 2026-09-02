@@ -24,7 +24,6 @@ import org.keycloak.testframework.realm.ClientBuilder;
 import org.keycloak.testframework.realm.RealmBuilder;
 import org.keycloak.testframework.realm.RealmConfig;
 
-// The realm the end-to-end tests log in to with the public PKCE test client
 public class Oid4vpRealmConfig implements RealmConfig {
 
     public static final String REALM = "wallet-demo";
@@ -33,8 +32,8 @@ public class Oid4vpRealmConfig implements RealmConfig {
     @Override
     public RealmBuilder configure(RealmBuilder realm) {
         return realm.name(REALM)
-                // The rejection cause reaches neither the wallet nor the login page, so tests read
-                // it from the login event.
+                // The rejection cause reaches neither the wallet nor the login page, so tests read it
+                // from the login event.
                 .eventsEnabled(true)
                 .clients(ClientBuilder.create(CLIENT_ID)
                         .publicClient(true)
@@ -43,8 +42,8 @@ public class Oid4vpRealmConfig implements RealmConfig {
                         .redirectUris("*")
                         .webOrigins("*")
                         .attribute("pkce.code.challenge.method", "S256")
-                        // The ACR-to-LoA mapping the level-of-authentication tests request
-                        // levels through; other tests send no acr_values, so it stays inert.
+                        // The level of authentication tests request levels through this ACR to LoA
+                        // mapping. Other tests send no acr_values, so it stays inert for them.
                         .attribute(Constants.ACR_LOA_MAP, "{\"STORK-QAA-Level-3\":3,\"STORK-QAA-Level-4\":4}")
                         .protocolMappers(
                                 credentialFamilyNameIdTokenMapper(),
@@ -60,12 +59,11 @@ public class Oid4vpRealmConfig implements RealmConfig {
                                         "eidas_loa")));
     }
 
-    // Maps the credentialFamilyName session note set by the IdP session mapper into the id token
     private static ProtocolMapperRepresentation credentialFamilyNameIdTokenMapper() {
         return sessionNoteIdTokenMapper("credential-family-name", "credentialFamilyName", "credential_family_name");
     }
 
-    // Maps a session note set by an IdP session mapper into the id token, so a test can observe
+    // Maps a session note set by an IdP session mapper into the id token, so that a test can observe
     // which credential a claim was imported from.
     private static ProtocolMapperRepresentation sessionNoteIdTokenMapper(
             String name, String sessionNote, String claimName) {

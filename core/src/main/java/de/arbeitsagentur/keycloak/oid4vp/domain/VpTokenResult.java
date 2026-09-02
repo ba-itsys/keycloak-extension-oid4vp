@@ -18,10 +18,7 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
 import java.util.Map;
 
 /**
- * The fully verified result of processing a {@code vp_token} from the wallet.
- *
- * <p>Contains all verified credentials, keyed by credential ID from the DCQL query. Produced by
- * {@link de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor}.
+ * The verified credentials of a {@code vp_token}, keyed by the credential id of the DCQL query.
  *
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1">OID4VP 1.0 §8.1 — VP Token</a>
  */

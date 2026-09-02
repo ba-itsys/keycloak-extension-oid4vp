@@ -25,8 +25,7 @@ import java.util.Set;
 /**
  * Builds {@link ResolvedTrust} aggregates for tests the way the ETSI trust list identity provider
  * partitions its certificates: CA certificates become PKIX trust anchors, only end entity
- * certificates are directly trusted issuer certificates, and the whole set serves revocation
- * checks.
+ * certificates are directly trusted issuer certificates, and the whole set serves revocation checks.
  */
 public final class TestTrust {
 
@@ -48,7 +47,6 @@ public final class TestTrust {
                 issuanceTrust, anyIssuer(endEntityCertificates), List.of(), certificates, List.of(), true);
     }
 
-    /** Certificates the way a trust list contributes them: trusted, but not tied to an issuer. */
     public static List<TrustedIssuerCertificate> anyIssuer(List<X509Certificate> certificates) {
         return certificates.stream().map(TrustedIssuerCertificate::ofAnyIssuer).toList();
     }
@@ -57,12 +55,11 @@ public final class TestTrust {
         return ofCertificates(List.of(certificates));
     }
 
-    /** Trust that identifies the issuer by key instead of by certificate, as a JWKS trust domain does. */
     public static ResolvedTrust ofIssuerKeys(TrustedIssuerKey... issuerKeys) {
         return new ResolvedTrust(List.of(), List.of(), List.of(issuerKeys), List.of(), List.of(), true);
     }
 
-    /** A plan with one provider serving the given credential types, or every type when none are given. */
+    /** Builds a plan with one provider serving the given credential types, or every type when none are given. */
     public static CredentialTrustPlan planOf(ResolvedTrust trust, String... servedCredentialTypes) {
         return new CredentialTrustPlan(
                 List.of(FixedTrustMaterialIdentityProvider.serving(trust, servedCredentialTypes)));

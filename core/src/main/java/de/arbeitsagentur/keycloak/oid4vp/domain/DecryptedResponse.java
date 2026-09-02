@@ -16,17 +16,12 @@
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
 /**
- * Result of decrypting a JWE-encrypted wallet response ({@code direct_post.jwt} response mode).
+ * The decrypted wallet response of the {@code direct_post.jwt} response mode, where the wallet
+ * encrypts its response to the verifier's ephemeral public key from {@code client_metadata}. The
+ * payload carries either a {@code vp_token} or an {@code error} with its
+ * {@code error_description}, so the unused members are {@code null}.
  *
- * <p>With the direct_post.jwt response mode the wallet encrypts its response using the verifier's ephemeral public
- * key from {@code client_metadata}. After decryption the payload contains either a {@code vp_token}
- * or an {@code error}/{@code error_description} pair, along with the response {@code state}.
- *
- * @param vpToken the decrypted VP token string, or {@code null} on error
- * @param state the decrypted response state, or {@code null} if not present
- * @param mdocGeneratedNonce the mDoc session transcript nonce from the JWE APU header, or {@code null}
- * @param error the OAuth error code if the wallet reported an error, or {@code null}
- * @param errorDescription human-readable error description, or {@code null}
+ * @param mdocGeneratedNonce the mDoc session transcript nonce, taken from the JWE APU header
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3.1">OID4VP 1.0 §8.3.1 — Response Mode direct_post.jwt</a>
  */
 public record DecryptedResponse(

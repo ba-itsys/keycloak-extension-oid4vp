@@ -33,10 +33,7 @@ import org.keycloak.common.util.Base64Url;
 import org.keycloak.common.util.PemUtils;
 import org.keycloak.util.JsonSerialization;
 
-/**
- * Serves ETSI trust list JWTs to the Keycloak server under test. Keycloak runs on the host, so
- * the lists are served from a local port.
- */
+/** Serves ETSI trust list JWTs from a local port to the Keycloak server under test, which runs on the host. */
 public final class TrustListServer implements AutoCloseable {
 
     public static final String PID_LOTE_TYPE = "http://uri.etsi.org/19602/LoTEType/EUPIDProvidersList";
@@ -59,13 +56,12 @@ public final class TrustListServer implements AutoCloseable {
             } catch (IOException e) {
                 throw new IllegalStateException("Failed to start trust list server", e);
             }
-            // No test framework supplier owns this server, so the JVM teardown closes it
+            // No test framework supplier owns this server, so the JVM shutdown closes it.
             Runtime.getRuntime().addShutdownHook(new Thread(instance::close, "trust-list-server-shutdown"));
         }
         return instance;
     }
 
-    // Publishes a trust list containing the given certificates and returns its URL
     public String publish(String name, List<String> certificatesPem) {
         String path = "/" + name + ".jwt";
         trustLists.put(path, unsignedTrustListJwt(certificatesPem));
@@ -75,7 +71,7 @@ public final class TrustListServer implements AutoCloseable {
     @Override
     public void close() {
         server.stop(0);
-        // A closed server must never be handed out again, so the next instance() starts a new one
+        // A closed server must never be handed out again, so the next instance() starts a new one.
         synchronized (TrustListServer.class) {
             if (instance == this) {
                 instance = null;
@@ -92,8 +88,8 @@ public final class TrustListServer implements AutoCloseable {
         }
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/jwt");
-        // The certificate set behind a per-class URL changes between publishes, so Keycloak must
-        // never serve a later module from a cached copy of this list
+        // The certificate set behind a per-class URL changes between publishes, so Keycloak must not
+        // serve a later module from a cached copy of this list.
         exchange.getResponseHeaders().add("Cache-Control", "no-store");
         exchange.sendResponseHeaders(200, bytes.length);
         try (OutputStream os = exchange.getResponseBody()) {
@@ -121,10 +117,9 @@ public final class TrustListServer implements AutoCloseable {
             ObjectNode lote = payload.putObject("LoTE");
             ObjectNode listInformation = lote.putObject("ListAndSchemeInformation");
             listInformation.put("LoTEType", PID_LOTE_TYPE);
-            // ETSI TS 119 602 V1.1.1 clause 6.1.3 wants the seconds field written and no decimal
-            // fraction, which is what a second-truncated Instant prints. OffsetDateTime.toString()
-            // leaves the seconds out whenever they are zero, so one publish a minute produced a
-            // list the provider rejected as unparseable and every module using it then failed.
+            // ETSI TS 119 602 V1.1.1 clause 6.1.3 wants the seconds written and no decimal fraction,
+            // which is exactly what a second-truncated Instant prints. OffsetDateTime.toString() drops
+            // the seconds whenever they are zero, and the provider rejects such a list as unparseable.
             listInformation.put(
                     "NextUpdate",
                     Instant.now()

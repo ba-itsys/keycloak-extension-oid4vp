@@ -23,12 +23,13 @@ import org.keycloak.common.VerificationException;
 import org.keycloak.sdjwt.consumer.PresentationRequirements;
 
 /**
- * The claims a DCQL query requests for one credential entry, used to validate that a presentation
- * contains everything the verifier asked for. {@code types} are the credential types the entry
- * accepts, one of which the presented credential has to carry. Claims are addressed like in the mappers: a
- * {@link ClaimPath}, for mDoc claims scoped to a namespace. {@code claimSets} holds the DCQL
- * {@code claim_sets} options as index lists into {@code claims} in preference order; an empty
- * list means every claim is required.
+ * The claims a DCQL query requests for one credential entry, kept so that a presentation can be
+ * validated against everything the verifier asked for. The presented credential has to be of one
+ * of the accepted {@code types}, and its claims are addressed as a {@link ClaimPath}, scoped to a
+ * namespace for mDoc.
+ *
+ * <p>{@code claimSets} holds the DCQL {@code claim_sets} options as index lists into
+ * {@code claims}, in preference order. An empty list means every claim is required.
  *
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.3">OID4VP 1.0 §6.3 — Claims Query</a>
  */
@@ -36,10 +37,9 @@ public record RequestedCredential(
         String id, String format, List<String> types, List<RequestedClaim> claims, List<List<Integer>> claimSets)
         implements PresentationRequirements {
 
-    /** One requested claim: the mDoc namespace (null for SD-JWT) and the claim path. */
+    /** One requested claim, where the namespace is the mDoc namespace and null for SD-JWT. */
     public record RequestedClaim(String namespace, String path) {
 
-        /** Whether the presented claims contain this claim. */
         public boolean presentIn(JsonNode presentedClaims) {
             JsonNode root = namespace == null
                     ? presentedClaims
@@ -59,16 +59,14 @@ public record RequestedCredential(
         claimSets = claimSets != null ? claimSets.stream().map(List::copyOf).toList() : List.of();
     }
 
-    /** A requested credential of a single type. */
     public RequestedCredential(
             String id, String format, String type, List<RequestedClaim> claims, List<List<Integer>> claimSets) {
         this(id, format, List.of(type), claims, claimSets);
     }
 
     /**
-     * Derives the requested claims model for a credential type aggregated from IdP mappers. The
-     * claims are the expanded ones, a mapper's alternative paths among them, so the claim set
-     * indexes address the same list as in the generated query.
+     * Builds the requirements of an aggregated credential entry from its expanded claims, so that
+     * the claim set indexes match the generated query.
      */
     public static RequestedCredential of(String credentialId, CredentialTypeSpec spec) {
         List<RequestedClaim> claims = spec.requestedClaims().stream()
@@ -77,17 +75,16 @@ public record RequestedCredential(
         return new RequestedCredential(credentialId, spec.format(), spec.types(), claims, spec.claimSetOptionIndexes());
     }
 
-    /** Whether a verified credential has this entry's format and one of its types. */
+    /** Returns whether the credential has this format and one of the accepted types, directly or by derivation. */
     public boolean matches(VerifiedCredential credential) {
-        return format.equals(credential.presentationType().dcqlFormat()) && types.contains(credential.credentialType());
+        return format.equals(credential.presentationType().dcqlFormat())
+                && types.stream().anyMatch(credential::isOfType);
     }
 
-    /** The accepted types, for messages. */
     public String describeTypes() {
         return String.join(", ", types);
     }
 
-    /** Rejects presentations that do not contain the requested claims. */
     @Override
     public void checkIfSatisfiedBy(JsonNode disclosedPayload) throws VerificationException {
         List<String> missing = missingClaims(disclosedPayload);
@@ -98,9 +95,9 @@ public record RequestedCredential(
     }
 
     /**
-     * Returns the requested claims the presented claims do not satisfy. Without claim sets, every
-     * claim is required. With claim sets, the presentation must satisfy at least one option; when
-     * none is satisfied, the missing claims of the most-preferred option are returned.
+     * Returns the requested claims the presentation does not satisfy. Without claim sets every
+     * claim is required, otherwise the presentation has to satisfy at least one option, and when
+     * none is satisfied the result names the missing claims of the most preferred option.
      */
     public List<String> missingClaims(JsonNode presentedClaims) {
         if (claimSets.isEmpty()) {

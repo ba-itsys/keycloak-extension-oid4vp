@@ -16,9 +16,8 @@
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
 /**
- * How the presentation reached the verifier: from the wallet on the device the browser session
- * runs on, or from a wallet on another device that scanned the QR code. The flow of a completed
- * login is exposed to the identity provider mappers.
+ * How the presentation reached the verifier, either from a wallet on the device of the browser
+ * session or from a wallet on another device that scanned the QR code.
  */
 public enum Oid4vpPresentationFlow {
     SAME_DEVICE(Oid4vpConstants.FLOW_SAME_DEVICE),
@@ -30,12 +29,10 @@ public enum Oid4vpPresentationFlow {
         this.value = value;
     }
 
-    /** The wire value of the flow, as the request context records it. */
     public String value() {
         return value;
     }
 
-    /** The flow carrying the given wire value, or null for an unknown or absent value. */
     public static Oid4vpPresentationFlow of(String value) {
         for (Oid4vpPresentationFlow flow : values()) {
             if (flow.value.equals(value)) {

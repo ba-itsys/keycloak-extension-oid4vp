@@ -18,8 +18,8 @@ package de.arbeitsagentur.keycloak.oid4vp.verification;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
 
 /**
- * Verifies a {@code vp_token} response. The seam between callback processing and the verification
- * pipeline: {@link VpTokenProcessor} is the production implementation, tests provide canned
+ * Verifies a {@code vp_token} response, the seam between callback processing and the verification
+ * pipeline. {@link VpTokenProcessor} is the production implementation and tests provide canned
  * results.
  */
 @FunctionalInterface

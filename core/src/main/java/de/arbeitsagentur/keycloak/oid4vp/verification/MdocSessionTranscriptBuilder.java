@@ -25,7 +25,7 @@ import org.keycloak.jose.jws.crypto.HashUtils;
 /**
  * Builds mDoc SessionTranscript structures for device authentication verification.
  *
- * <p>Supports two competing handover formats that wallets may use:
+ * <p>Supports two handover formats:
  *
  * <h3>OpenID4VP 1.0 (Appendix B.2.6.1)</h3>
  * <pre>
@@ -64,14 +64,7 @@ final class MdocSessionTranscriptBuilder {
 
     private MdocSessionTranscriptBuilder() {}
 
-    /**
-     * Builds the OID4VP 1.0 SessionTranscript (Appendix B.2.6.1).
-     *
-     * @param clientId the verifier's client_id
-     * @param nonce the authorization request nonce
-     * @param responseUri the response_uri from the request
-     * @param jwkThumbprint optional JWK thumbprint (may be null)
-     */
+    /** Builds the OID4VP 1.0 SessionTranscript (Appendix B.2.6.1). The JWK thumbprint may be null. */
     static CBORItemList buildOid4vp(String clientId, String nonce, String responseUri, byte[] jwkThumbprint) {
         CBORItemList info = new CBORItemList(
                 new CBORString(clientId),
@@ -87,14 +80,7 @@ final class MdocSessionTranscriptBuilder {
         return new CBORItemList(CBORNull.INSTANCE, CBORNull.INSTANCE, handover);
     }
 
-    /**
-     * Builds the ISO 18013-7 Annex B.4.4 SessionTranscript.
-     *
-     * @param clientId the verifier's client_id
-     * @param nonce the authorization request nonce
-     * @param responseUri the response_uri from the request
-     * @param mdocGeneratedNonce the nonce from the JWE {@code apu} header
-     */
+    /** Builds the ISO 18013-7 Annex B.4.4 SessionTranscript. */
     static CBORItemList buildIso18013_7(String clientId, String nonce, String responseUri, String mdocGeneratedNonce) {
         byte[] clientIdHash =
                 sha256(new CBORItemList(new CBORString(clientId), new CBORString(mdocGeneratedNonce)).encode());

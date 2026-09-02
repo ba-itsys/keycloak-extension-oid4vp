@@ -31,6 +31,7 @@ import com.nimbusds.jose.util.Base64URL;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
+import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
 import de.arbeitsagentur.keycloak.oid4vp.trust.CredentialTrustPlan;
 import de.arbeitsagentur.keycloak.oid4vp.trust.FixedTrustMaterialIdentityProvider;
@@ -61,12 +62,13 @@ import org.keycloak.jose.jwk.JWK;
 import org.keycloak.jose.jwk.JWKBuilder;
 
 /**
- * Trust selection per credential: a presentation is verified against the trust material of the
- * providers serving the credential type requested under the id the wallet answered with.
+ * A presentation is verified against the trust material of the providers serving the credential
+ * type requested under the id the wallet answered with.
  */
 class VpTokenProcessorCredentialTrustTest {
 
     private static final String PID_TYPE = "urn:eudi:pid:1";
+    private static final String GERMAN_PID_TYPE = "urn:eudi:pid:de:1";
     private static final String BADGE_TYPE = "https://kc.example/badge";
     private static final String BADGE_ISSUER = "https://kc.example/realms/company";
     private static final String CLIENT_ID = "client-id";
@@ -121,10 +123,15 @@ class VpTokenProcessorCredentialTrustTest {
                 .isInstanceOf(IdentityBrokerException.class);
 
         String underBadgeId = objectMapper.writeValueAsString(Map.of("badge", credential));
-        assertThat(processor
-                        .process(request(underBadgeId, requestedCredentials()))
-                        .credentials())
-                .as("the very same credential verifies under the id whose trust domain issued it")
+        assertThatThrownBy(() -> processor.process(request(underBadgeId, requestedCredentials())))
+                .as("the badge id requests the badge type, which a PID typed credential is not")
+                .isInstanceOf(IdentityBrokerException.class)
+                .hasMessageContaining("none of the requested types");
+
+        String badge = objectMapper.writeValueAsString(
+                Map.of("badge", presentation(badgeIssuerKey, badgeIssuerCert, BADGE_ISSUER, BADGE_TYPE)));
+        assertThat(processor.process(request(badge, requestedCredentials())).credentials())
+                .as("the badge issuer's credential of the badge type verifies under the badge id")
                 .containsOnlyKeys("badge");
     }
 
@@ -187,8 +194,6 @@ class VpTokenProcessorCredentialTrustTest {
                 .isInstanceOf(IdentityBrokerException.class);
     }
 
-    // --- one credential id requested with several types -------------------------
-
     @Test
     void anIdRequestedWithSeveralTypesJudgesThePresentationByTheTrustDomainOfTheTypeItNames() throws Exception {
         VpTokenProcessor processor = processor(twoTrustDomains());
@@ -244,6 +249,80 @@ class VpTokenProcessorCredentialTrustTest {
                 .hasMessageContaining("none of the requested types");
     }
 
+    @Test
+    void aCredentialOfADerivedTypeSatisfiesTheRequestAndIsJudgedByTheBaseTypesTrustDomain() throws Exception {
+        VpTokenProcessor processor = processor(twoTrustDomains());
+        List<RequestedCredential> requested =
+                List.of(new RequestedCredential("pid", "dc+sd-jwt", PID_TYPE, List.of(), List.of()));
+
+        String germanPid = objectMapper.writeValueAsString(
+                Map.of("pid", presentation(pidIssuerKey, pidIssuerCert, "https://pid.example", GERMAN_PID_TYPE)));
+        VerifiedCredential verified =
+                processor.process(request(germanPid, requested)).credentials().get("pid");
+
+        assertThat(verified.credentialType()).isEqualTo(GERMAN_PID_TYPE);
+        assertThat(verified.isOfType(PID_TYPE)).isTrue();
+    }
+
+    @Test
+    void aCredentialNamingTheRequestedTypeInAkaVctsSatisfiesTheRequest() throws Exception {
+        VpTokenProcessor processor = processor(twoTrustDomains());
+        List<RequestedCredential> requested =
+                List.of(new RequestedCredential("pid", "dc+sd-jwt", PID_TYPE, List.of(), List.of()));
+
+        String nationalPid = objectMapper.writeValueAsString(Map.of(
+                "pid",
+                presentation(
+                        pidIssuerKey,
+                        pidIssuerCert,
+                        "https://pid.example",
+                        "urn:example:national-pid:1",
+                        null,
+                        List.of(PID_TYPE))));
+        VerifiedCredential verified =
+                processor.process(request(nationalPid, requested)).credentials().get("pid");
+
+        assertThat(verified.alsoKnownAsTypes()).containsExactly(PID_TYPE);
+    }
+
+    @Test
+    void aProviderDeclaredForTheDerivedTypeJudgesItInsteadOfTheBaseTypesProvider() throws Exception {
+        // The badge issuer is the only issuer trusted for the German PID. The PID issuer is only
+        // trusted for the EUDI PID.
+        CredentialTrustPlan plan = new CredentialTrustPlan(List.of(
+                FixedTrustMaterialIdentityProvider.serving(TestTrust.ofCertificates(pidIssuerCert), PID_TYPE),
+                FixedTrustMaterialIdentityProvider.serving(
+                        TestTrust.ofCertificates(badgeIssuerCert), GERMAN_PID_TYPE)));
+        VpTokenProcessor processor = processor(plan);
+        List<RequestedCredential> requested =
+                List.of(new RequestedCredential("pid", "dc+sd-jwt", PID_TYPE, List.of(), List.of()));
+
+        String byBadgeIssuer = objectMapper.writeValueAsString(
+                Map.of("pid", presentation(badgeIssuerKey, badgeIssuerCert, BADGE_ISSUER, GERMAN_PID_TYPE)));
+        assertThat(processor.process(request(byBadgeIssuer, requested)).credentials())
+                .containsOnlyKeys("pid");
+
+        String byPidIssuer = objectMapper.writeValueAsString(
+                Map.of("pid", presentation(pidIssuerKey, pidIssuerCert, "https://pid.example", GERMAN_PID_TYPE)));
+        assertThatThrownBy(() -> processor.process(request(byPidIssuer, requested)))
+                .as("the base type's provider does not serve a derived type that has a provider of its own")
+                .isInstanceOf(IdentityBrokerException.class);
+    }
+
+    @Test
+    void aCredentialOfTheBaseTypeDoesNotSatisfyARequestForTheDerivedType() throws Exception {
+        VpTokenProcessor processor = processor(twoTrustDomains());
+        List<RequestedCredential> requested =
+                List.of(new RequestedCredential("pid", "dc+sd-jwt", GERMAN_PID_TYPE, List.of(), List.of()));
+
+        String eudiPid = objectMapper.writeValueAsString(
+                Map.of("pid", presentation(pidIssuerKey, pidIssuerCert, "https://pid.example", PID_TYPE)));
+
+        assertThatThrownBy(() -> processor.process(request(eudiPid, requested)))
+                .isInstanceOf(IdentityBrokerException.class)
+                .hasMessageContaining("derives from none");
+    }
+
     private CredentialTrustPlan twoTrustDomains() {
         return new CredentialTrustPlan(List.of(
                 FixedTrustMaterialIdentityProvider.serving(TestTrust.ofCertificates(pidIssuerCert), PID_TYPE),
@@ -266,12 +345,26 @@ class VpTokenProcessorCredentialTrustTest {
 
     private String presentation(ECKey issuerKey, X509Certificate issuerCert, String issuer, String credentialType)
             throws Exception {
-        return presentation(issuerKey, issuerCert, issuer, credentialType, null);
+        return presentation(issuerKey, issuerCert, issuer, credentialType, null, List.of());
     }
 
-    /** An SD-JWT VP without disclosures: the issuer signed JWT plus a key binding JWT. */
     private String presentation(
             ECKey issuerKey, X509Certificate issuerCert, String issuer, String credentialType, String keyId)
+            throws Exception {
+        return presentation(issuerKey, issuerCert, issuer, credentialType, keyId, List.of());
+    }
+
+    /**
+     * Builds an SD-JWT VP without disclosures, the issuer signed JWT plus a key binding JWT, naming
+     * the given further types in {@code aka_vcts}.
+     */
+    private String presentation(
+            ECKey issuerKey,
+            X509Certificate issuerCert,
+            String issuer,
+            String credentialType,
+            String keyId,
+            List<String> alsoKnownAs)
             throws Exception {
         JWSHeader.Builder header = new JWSHeader.Builder(JWSAlgorithm.ES256);
         if (issuerCert != null) {
@@ -281,9 +374,12 @@ class VpTokenProcessorCredentialTrustTest {
             header.keyID(keyId);
         }
         Instant now = Instant.now();
-        JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .claim("iss", issuer)
-                .claim("vct", credentialType)
+        JWTClaimsSet.Builder claimsBuilder =
+                new JWTClaimsSet.Builder().claim("iss", issuer).claim("vct", credentialType);
+        if (!alsoKnownAs.isEmpty()) {
+            claimsBuilder.claim("aka_vcts", alsoKnownAs);
+        }
+        JWTClaimsSet claims = claimsBuilder
                 .claim("sub", "user1")
                 .claim("cnf", Map.of("jwk", holderKey.toPublicJWK().toJSONObject()))
                 .issueTime(Date.from(now))

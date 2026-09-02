@@ -75,7 +75,7 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
 
         replaceDcqlMappers(Oid4vpTestKeycloakSetup.sdJwtPidMappers());
         // A transient login reads no claim of the presentation, so the credential carries no
-        // identifier the verifier could bind to
+        // identifier the verifier could bind to.
         setIdpConfig(Map.of(IdentityProviderModel.DO_NOT_STORE_USERS, "true"));
 
         performSameDeviceLogin("transient-wallet-user");
@@ -85,10 +85,10 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
     }
 
     /**
-     * With transient users the subject never comes from the presentation, so the configuration that
-     * names where to read it from is not needed. Leaving {@code principalAttributes} empty must
-     * both save and log in: requiring it would force operators to configure a claim that is then
-     * ignored, and would reject a valid transient-only verifier at save time.
+     * With transient users the subject never comes from the presentation, so the configuration naming
+     * where to read it from is not needed and an empty {@code principalAttributes} has to save and to
+     * log in. Requiring it would make operators configure a claim that is then ignored, and would
+     * reject a valid transient-only verifier at save time.
      */
     @Test
     void transientLoginNeedsNoPrincipalAttributes() throws Exception {
@@ -115,7 +115,6 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
 
-        // The first login creates the brokered user through first-broker-login
         performSameDeviceLogin("subsequent-login-user");
         flow.assertLoginSucceeded();
         assertThat(countOid4vpUsers()).isEqualTo(1);
@@ -123,7 +122,6 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
         testApp().reset();
         flow.clearBrowserSession();
 
-        // The second login resolves the existing brokered user instead of creating another one
         flow.navigateToLoginPage();
         flow.clickOid4vpIdpButton();
         String walletUrl = flow.getSameDeviceWalletUrl();
@@ -164,7 +162,8 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
         testApp().reset();
         flow.clearBrowserSession();
 
-        // The default mappers request SD-JWT PID or mDoc PID as alternative credential set options.
+        // The default mappers offer SD-JWT PID and mDoc PID as alternative credential set options, so
+        // the preferred format decides which one the wallet presents.
         wallet().client().setPreferredFormat(CredentialFormat.MSO_MDOC);
 
         try {
@@ -189,8 +188,8 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
             Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
 
             // OID4VP 1.0 §8.2 lets the response URI answer an Authorization Error Response with a
-            // redirect_uri, and the wallet MUST follow it. Without one the wallet has nowhere to
-            // send the End-User and the login stalls with the browser still on the wallet page.
+            // redirect_uri that the wallet MUST follow. Without one the wallet has nowhere to send the
+            // End-User and the login stalls with the browser still on the wallet page.
             assertThat(Oid4vpLoginFlowHelper.verifierResponseBody(walletResponse.rawBody()))
                     .contains("redirect_uri")
                     .doesNotContain("access_denied");
@@ -200,7 +199,7 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
                     .contains("/failed")
                     .contains("response_code=");
 
-            // The wallet's own error text stays server-side, so a wallet cannot choose what the
+            // The wallet's own error text stays server-side, because a wallet cannot choose what the
             // browser is shown.
             assertThat(walletResponse.redirectUri()).doesNotContain("User denied consent");
 
@@ -274,8 +273,8 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
 
-        // One option naming both credentials, so the wallet presents the SD-JWT PID and the mDoc
-        // PID together. Both carry family_name, so each mapper has to read its own credential.
+        // One option names both credentials, so the wallet presents the SD-JWT PID and the mDoc PID
+        // together. Both carry family_name, which means each mapper has to read its own credential.
         setCredentialSets("[{\"options\": [[\"" + Oid4vpTestKeycloakSetup.SD_JWT_PID_CREDENTIAL_ID + "\", \""
                 + Oid4vpTestKeycloakSetup.MDOC_PID_CREDENTIAL_ID + "\"]]}]");
 
@@ -317,10 +316,10 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
     }
 
     /**
-     * One rendered wallet page hands out two states a wallet can answer, one behind the button and
-     * one behind the QR code, and both stay live until they expire. The login belongs to the
-     * presentation the browser completes, so a presentation answering the other state of the same
-     * authentication session must not become the identity that signs in.
+     * One rendered wallet page hands out two states a wallet can answer, one behind the button and one
+     * behind the QR code, and both stay live until they expire. The login belongs to the presentation
+     * the browser completes, so a presentation answering the other state of the same authentication
+     * session must not become the identity that signs in.
      */
     @Test
     void aPresentationForAnotherStateDoesNotDecideThisAttemptsLogin() throws Exception {
@@ -337,16 +336,14 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
                 .as("Button and QR code are attempts of their own")
                 .isNotEqualTo(qrCodeWalletUrl);
 
-        // Opening the wallet app takes the browser off the page, which is what ends the QR code's
-        // event stream: from here on only the button's own redirect brings the End-User back.
+        // Opening the wallet app takes the browser off the page and ends the QR code's event stream,
+        // so from here on only the button's own redirect brings the End-User back.
         page.navigate("about:blank");
 
         issueSdJwtPidOf("Holder-Of-Record");
         Oid4vpLoginFlowHelper.WalletResponse decidingResponse = flow.submitToWallet(buttonWalletUrl);
         assertThat(decidingResponse.redirectUri()).contains("complete-auth");
 
-        // Only now is the QR code of the same page answered, by a wallet that meanwhile holds
-        // another PID.
         issueSdJwtPidOf("Somebody-Else");
         flow.submitToWallet(qrCodeWalletUrl);
 
@@ -363,9 +360,9 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
     }
 
     /**
-     * A wallet-reported error ends the attempt it belongs to once the End-User has been handed
-     * back to the login page. The abandoned state must stop serving its request object rather than
-     * stay answerable for the rest of the login timeout.
+     * A wallet-reported error ends the attempt it belongs to once the End-User is back on the login
+     * page, so the abandoned state has to stop serving its request object rather than stay answerable
+     * for the rest of the login timeout.
      */
     @Test
     void aDeclinedPresentationEndsTheAttemptItBelongsTo() throws Exception {
@@ -396,8 +393,9 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
     }
 
     /**
-     * Puts a single SD-JWT PID of another person into the wallet, carrying the given family name
-     * and identified by it, as the default PID's administrative number would be the same person.
+     * Puts a single SD-JWT PID of another person into the wallet. The family name doubles as the
+     * principal claim, because the default PID's administrative number would identify the same person
+     * every time.
      */
     private void issueSdJwtPidOf(String familyName) {
         wallet().client().deleteCredentialsByType(Oid4vpTestKeycloakSetup.SD_JWT_PID_VCT);
@@ -410,9 +408,9 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
     }
 
     /**
-     * The response URI answers posts. A wallet that redirected an error to it by itself would
-     * arrive with nothing proving it is the End-User's browser, and with an error nobody
-     * authenticated, so the request must not be answered and the login it names has to survive it.
+     * The response URI answers posts. A GET carries nothing that proves it comes from the End-User's
+     * browser and anybody who knows the state could send one, so it must not be answered and the login
+     * it names has to survive it.
      */
     @Test
     void aGetOnTheResponseUriDoesNotEndTheLogin() throws Exception {
@@ -444,7 +442,6 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
                 .as("Nothing a caller wrote may come back rendered")
                 .doesNotContain(chosenText);
 
-        // The login it named is untouched and still completes.
         Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
         page.navigate(walletResponse.redirectUri());
         page.waitForLoadState();

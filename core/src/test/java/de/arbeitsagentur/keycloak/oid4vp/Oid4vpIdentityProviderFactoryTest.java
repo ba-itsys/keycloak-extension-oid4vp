@@ -50,7 +50,6 @@ class Oid4vpIdentityProviderFactoryTest {
         CryptoIntegration.init(Oid4vpIdentityProviderFactoryTest.class.getClassLoader());
     }
 
-    /** The dropdown a realm admin picks from, and the answer a realm gets without touching it. */
     @Test
     void rejectionResponseProperty_defaultsToRedirectAndOffersBothAnswers() {
         ProviderConfigProperty property = new Oid4vpIdentityProviderFactory()

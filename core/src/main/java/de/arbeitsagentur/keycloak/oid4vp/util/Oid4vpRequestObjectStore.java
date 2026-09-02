@@ -28,20 +28,17 @@ import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Stores a single state → request context index in Keycloak's {@link SingleUseObjectProvider}:
- * the OAuth {@code state} value maps to a serialized {@link RequestContextEntry}. The same
- * {@code state} is allocated when the login page is rendered, carried in the {@code request_uri}
- * path, advertised inside the signed request object, echoed by the wallet in its
- * {@code direct_post}, and used by the browser for SSE polling and {@code /complete-auth}.
+ * Indexes the request context by the OAuth {@code state} in Keycloak's
+ * {@link SingleUseObjectProvider}. The state is allocated when the login page is rendered and
+ * everything that follows carries it: the {@code request_uri} path, the signed request object, the
+ * wallet's {@code direct_post}, and the browser's SSE polling and {@code /complete-auth}.
  *
- * <p>The response-encryption JWK is created with {@code kid == state}, so an encrypted
+ * <p>The response encryption JWK is created with {@code kid == state}, so an encrypted
  * {@code direct_post.jwt} callback that omits the {@code state} form field still resolves through
- * this index via the cleartext JWE header kid.
+ * this index via the cleartext JWE header.
  *
- * <p>The state entry is the authoritative liveness check: while it exists the flow is live, and
- * removing it after a successful callback blocks replay.
- *
- * <p>All entries expire after the configured TTL (typically the Keycloak login timeout).
+ * <p>The entry is the authoritative liveness check: the flow is live while it exists, and removing
+ * it after a successful callback is what blocks replay.
  */
 public class Oid4vpRequestObjectStore {
 
@@ -55,10 +52,9 @@ public class Oid4vpRequestObjectStore {
     }
 
     /**
-     * @param dcqlQuery the DCQL query serialized when the login page was rendered. The wallet is
-     *     served this snapshot, so the query it answers is the one the callback enforcement
-     *     ({@code requestedCredentials}, {@code credentialSets}) was derived from, even when the
-     *     mapper configuration changes mid-flow.
+     * @param dcqlQuery the query snapshot taken when the login page was rendered and served to the
+     *     wallet, so that callback enforcement judges the response against the query the wallet
+     *     actually answered even when the mapper configuration changes mid-flow
      */
     public record RequestContextEntry(
             String state,
@@ -74,7 +70,6 @@ public class Oid4vpRequestObjectStore {
             List<CredentialSet> credentialSets,
             String dcqlQuery) {}
 
-    // Stores a state → request context mapping. Called when the login page is rendered.
     public void storeRequestContext(KeycloakSession session, RequestContextEntry entry) {
         if (entry == null || StringUtil.isBlank(entry.state())) {
             return;
@@ -96,7 +91,7 @@ public class Oid4vpRequestObjectStore {
         session.singleUseObjects().remove(STATE_INDEX_PREFIX + state);
     }
 
-    // Computes the RFC 7638 SHA-256 JWK thumbprint for the public part of an EC JWK.
+    /** Computes the RFC 7638 SHA-256 JWK thumbprint of the public part of an EC JWK. */
     public static String computeEncryptionJwkThumbprint(String jwkJson) {
         try {
             return Oid4vpJwk.computeThumbprint(jwkJson);

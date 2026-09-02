@@ -33,16 +33,16 @@ import org.keycloak.testframework.https.InjectCertificates;
 import org.keycloak.testframework.https.ManagedCertificates;
 
 /**
- * Base class for all conformance areas. Test classes target one conformance module via
- * {@link #moduleVariants()} and assert it finishes with the result expected for that module
- * across every applicable variant combination.
+ * Base class for all conformance areas. A test class targets one conformance module through
+ * {@link #moduleVariants()} and asserts that it finishes with the expected result in every
+ * applicable variant combination.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public abstract class AbstractConformanceTest {
 
     private static final Logger LOGGER = Logger.getLogger(AbstractConformanceTest.class);
 
-    // Not used directly, but required to start the Keycloak server with TLS enabled
+    // Never read, but the Keycloak server only starts with TLS enabled when it is injected.
     @InjectCertificates(config = TlsCertificates.class)
     ManagedCertificates certificates;
 
@@ -53,10 +53,10 @@ public abstract class AbstractConformanceTest {
 
     protected abstract JsonNode suiteConfig(ConformanceModuleVariant moduleVariant);
 
-    // Prepares the system under test for the given variant before the module runs
+    // Prepares the system under test for the given variant before the module runs.
     protected void prepareModule(ConformanceModuleVariant moduleVariant) {}
 
-    // Drives the system under test once the module waits for it
+    // Drives the system under test once the module waits for it.
     protected void interact(ConformanceModuleVariant moduleVariant, ModuleRun moduleRun) {}
 
     @ParameterizedTest

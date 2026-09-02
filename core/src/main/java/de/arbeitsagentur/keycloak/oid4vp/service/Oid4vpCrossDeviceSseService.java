@@ -41,10 +41,9 @@ import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Provides Server-Sent Events (SSE) for cross-device OID4VP login polling.
- *
- * <p>Each SSE subscriber gets its own lightweight virtual thread that polls shared Keycloak state
- * until the flow completes, expires, times out, or the browser disconnects.
+ * Streams the outcome of a cross-device login to the browser. The wallet posts on the back channel,
+ * so nothing reaches the browser's own request thread and each subscriber polls shared Keycloak
+ * state on its own virtual thread instead.
  */
 public class Oid4vpCrossDeviceSseService {
 
@@ -89,11 +88,11 @@ public class Oid4vpCrossDeviceSseService {
         }
 
         // Disabling inheritable thread locals also resets the context class loader to the system
-        // loader ('app'), which cannot see classes from deployed provider jars. Providers that
-        // resolve classes through the context class loader then fail on the polling session: the
-        // Cassandra store builds a JDK proxy for its repository interface and throws
-        // IllegalArgumentException ("not visible from class loader: 'app'"). Carry the request
-        // thread's loader over so the worker resolves providers the same way a request thread does.
+        // loader ('app'), which cannot see classes from deployed provider jars, so providers that
+        // resolve classes through it fail on the polling session. The Cassandra store, for example,
+        // builds a JDK proxy for its repository interface and throws IllegalArgumentException ("not
+        // visible from class loader: 'app'"). Carrying the request thread's loader over lets the
+        // worker resolve providers the way a request thread does.
         ClassLoader requestClassLoader = Thread.currentThread().getContextClassLoader();
         Thread worker = Thread.ofVirtual()
                 .name(WORKER_NAME_PREFIX + state, 0)
@@ -139,9 +138,6 @@ public class Oid4vpCrossDeviceSseService {
                 }
 
                 try {
-                    // This stream is implemented as lightweight polling against shared Keycloak
-                    // state. The sleep keeps idle connections cheap while still reacting quickly
-                    // once the wallet callback stores the completion signal.
                     Thread.sleep(Math.max(10, pollIntervalMs));
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
@@ -167,8 +163,8 @@ public class Oid4vpCrossDeviceSseService {
                 return true;
             }
             case FAILED -> {
-                // Carries a URL like "complete", because the browser must be moved either way: the
-                // failure endpoint returns the End-User to the login page.
+                // A failure carries a redirect URL just like a completion, because the browser must
+                // be moved either way and the failure endpoint returns the End-User to the login page.
                 sendAndClose(
                         connection,
                         "failed",
@@ -236,10 +232,10 @@ public class Oid4vpCrossDeviceSseService {
                     return PollResult.complete(completeAuthUrl);
                 }
 
-                // The presentation ended on the back channel, either because the wallet reported
-                // an error or because the verifier rejected it. Cross-device has no response to
-                // the wallet that could carry the End-User back, so the browser is sent to the
-                // failure URL from here instead of waiting for the stream to time out.
+                // In the cross-device flow no response to the wallet can carry the End-User back,
+                // so a presentation that ended on the back channel, whether the wallet reported an
+                // error or the verifier rejected it, sends the browser to the failure URL instead of
+                // letting the stream time out.
                 Map<String, String> failure = store.get(CROSS_DEVICE_FAILED_PREFIX + connection.state());
                 String failureUrl = failure != null ? failure.get(KEY_FAILURE_URL) : null;
                 if (failureUrl != null) {

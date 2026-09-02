@@ -239,8 +239,6 @@ class VpTokenProcessorTest {
         assertThat(primary.claims()).containsEntry("sub", "user1");
     }
 
-    // ===== Helper Methods =====
-
     private JWSHeader buildHeaderWithX5c() throws Exception {
         return new JWSHeader.Builder(JWSAlgorithm.ES256)
                 .x509CertChain(List.of(Base64.encode(signingCert.getEncoded())))

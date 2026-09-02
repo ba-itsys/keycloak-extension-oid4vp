@@ -24,9 +24,8 @@ import org.keycloak.util.JsonSerialization;
 /**
  * One credential of a verified presentation, as the identity provider mappers see it.
  *
- * @param format the DCQL credential format
- * @param type the credential type identifier: the VCT for SD-JWT, the doctype for mDoc
- * @param claims the claims of this credential alone; mDoc claims stay nested under their namespace
+ * @param type the VCT for SD-JWT and the doctype for mDoc
+ * @param claims the claims of this credential alone. mDoc claims stay nested under their namespace.
  */
 public record PresentedCredential(String format, String type, Map<String, Object> claims) {
 
@@ -34,7 +33,6 @@ public record PresentedCredential(String format, String type, Map<String, Object
         claims = claims != null ? Collections.unmodifiableMap(new LinkedHashMap<>(claims)) : Map.of();
     }
 
-    /** The claims as a JSON tree, which is what a {@code ClaimPath} resolves against. */
     public JsonNode claimsNode() {
         return JsonSerialization.mapper.valueToTree(claims);
     }

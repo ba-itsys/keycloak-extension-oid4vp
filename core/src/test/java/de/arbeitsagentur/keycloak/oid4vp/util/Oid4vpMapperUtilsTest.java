@@ -113,7 +113,7 @@ class Oid4vpMapperUtilsTest {
                 PresentationType.SD_JWT);
 
         // The authentication session stores the context data as JSON and restores it through the
-        // recorded class, so the typed model has to survive the round trip.
+        // recorded class. The typed model has to survive the round trip.
         String serialized = JsonSerialization.writeValueAsString(PresentedCredentials.of(Map.of("pid", credential)));
         PresentedCredentials restored = JsonSerialization.readValue(serialized, PresentedCredentials.class);
 

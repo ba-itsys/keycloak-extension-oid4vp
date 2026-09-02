@@ -44,17 +44,8 @@ import org.keycloak.utils.StringUtil;
 /**
  * Builds OID4VP authorization request claims and wallet redirect URLs.
  *
- * <p>Handles the request-object part of Phase 1 of the OID4VP flow: it assembles request claims,
- * client metadata, verifier info, and response-encryption key material, then delegates compact JWS
- * creation to {@code Oid4vpRequestObjectSigner}. Optional request-object encryption based on
- * wallet metadata happens later in {@code Oid4vpRequestObjectService} via
- * {@code Oid4vpRequestObjectEncryptor}.
- *
- * <p>Supports both Keycloak realm signing keys and external X.509 signing keys,
- * and computes client IDs for {@code x509_san_dns} and {@code x509_hash} schemes.
- *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5">OID4VP 1.0 §5 — Authorization Request</a>
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.8">OID4VP 1.0 §5.8 — aud of a Request Object</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5">OID4VP 1.0 §5, Authorization Request</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.8">OID4VP 1.0 §5.8, aud of a Request Object</a>
  */
 public class Oid4vpRedirectFlowService {
 
@@ -64,7 +55,7 @@ public class Oid4vpRedirectFlowService {
     private final int requestObjectLifespanSeconds;
     private final Oid4vpRequestObjectSigner requestObjectSigner;
 
-    /** The session may be null; it is only required for realm-key signing. */
+    /** Accepts a null session, which is only required for signing with a realm key. */
     public Oid4vpRedirectFlowService(KeycloakSession session, int requestObjectLifespanSeconds) {
         this.session = session;
         this.requestObjectLifespanSeconds = requestObjectLifespanSeconds;
@@ -72,11 +63,10 @@ public class Oid4vpRedirectFlowService {
     }
 
     /**
-     * Builds the wallet authorization URL with {@code client_id} and {@code request_uri} parameters.
-     *
-     * <p>{@code walletScheme} is either a custom URL scheme (e.g. {@code openid4vp://}) or a full
-     * {@code http(s)} wallet authorization endpoint URL (e.g. {@code http://localhost:8085/authorize})
-     * for wallets reachable at a web URL — both forms receive the same query parameters.
+     * Builds the wallet authorization URL. {@code walletScheme} is either a custom URL scheme such
+     * as {@code openid4vp://} or a full {@code http(s)} wallet authorization endpoint URL such as
+     * {@code http://localhost:8085/authorize} for wallets reachable at a web URL, and both forms
+     * receive the same query parameters.
      */
     public URI buildWalletAuthorizationUrl(
             String walletScheme, String clientId, URI requestUri, boolean requestUriMethodPost) {
@@ -97,15 +87,15 @@ public class Oid4vpRedirectFlowService {
                 .append(REQUEST_URI)
                 .append("=")
                 .append(URLEncoder.encode(requestUri.toString(), StandardCharsets.UTF_8));
-        // OID4VP 1.0 §5.10: without request_uri_method the wallet retrieves the request object with GET.
-        // Advertising post lets a conforming wallet POST its wallet_metadata and wallet_nonce.
+        // Without request_uri_method the wallet retrieves the request object with GET (OID4VP 1.0
+        // §5.10). Advertising post lets a conforming wallet POST its wallet_metadata and wallet_nonce.
         if (requestUriMethodPost) {
             url.append("&").append(REQUEST_URI_METHOD).append("=").append(REQUEST_URI_METHOD_POST);
         }
         return URI.create(url.toString());
     }
 
-    /** A wallet target counts as a web URL when it has an http(s) scheme and a host, not just a bare scheme. */
+    /** Returns whether the wallet target is an http(s) URL with a host rather than a bare scheme. */
     private static boolean isWalletEndpointUrl(String walletScheme) {
         String lower = walletScheme.toLowerCase();
         if (lower.startsWith("http://")) {
@@ -118,9 +108,8 @@ public class Oid4vpRedirectFlowService {
     }
 
     /**
-     * Builds request-object claims from the given parameters and signs them as a compact JWS.
-     * When the effective response mode is {@code direct_post.jwt}, also generates or reuses the
-     * ephemeral response-encryption key advertised in {@code client_metadata}.
+     * Signs the request object claims as a compact JWS, advertising the stored ephemeral response
+     * encryption key in {@code client_metadata} when the response mode is {@code direct_post.jwt}.
      */
     public SignedRequestObject buildSignedRequestObject(RequestObjectParams params) {
         KeyWrapper signingKey = resolveSigningKey(params.x509SigningKeyJwk());
@@ -136,8 +125,8 @@ public class Oid4vpRedirectFlowService {
         }
         if (StringUtil.isBlank(params.responseEncryptionKeyJson())) {
             // Advertising a freshly generated key here would invite the wallet to encrypt to a key
-            // this verifier never stored, guaranteeing an undecryptable callback. The key is
-            // generated and stored with the request context when the login page is rendered.
+            // this verifier never stored, leaving the callback undecryptable. The key is generated
+            // and stored with the request context when the login page is rendered.
             throw new IllegalStateException(
                     "No stored response encryption key for this request context; refusing to advertise one the"
                             + " callback could not decrypt");
@@ -171,7 +160,7 @@ public class Oid4vpRedirectFlowService {
             claims.put(WALLET_NONCE, params.walletNonce());
         }
         // client_metadata advertising the supported vp_formats is mandatory in every authorization
-        // request. The response encryption key material is only added for encrypted response modes.
+        // request.
         claims.put(CLIENT_METADATA, buildClientMetadata(responseEncryptionKey));
         addDcqlAndVerifierInfo(claims, params.dcqlQuery(), params.verifierInfo());
         return claims;
@@ -210,7 +199,6 @@ public class Oid4vpRedirectFlowService {
         return resolveRealmSigningKey();
     }
 
-    /** Computes a {@code x509_san_dns:<dns-name>} client ID from the certificate's SAN DNS entry. */
     private KeyWrapper resolveRealmSigningKey() {
         Objects.requireNonNull(session, "Realm-key signing requires a Keycloak session");
         RealmModel realm = session.getContext().getRealm();
@@ -225,8 +213,9 @@ public class Oid4vpRedirectFlowService {
     }
 
     /**
-     * The kid is set to the flow state so an encrypted {@code direct_post.jwt} callback resolves
-     * its request context from the cleartext JWE header alone, without a separate kid index.
+     * Generates the ephemeral response encryption key, using the flow state as its kid so that an
+     * encrypted {@code direct_post.jwt} callback resolves its request context from the cleartext JWE
+     * header alone, without a separate kid index.
      */
     public Oid4vpJwk createResponseEncryptionKey(String kid) {
         try {

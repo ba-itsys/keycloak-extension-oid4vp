@@ -31,7 +31,7 @@ import org.keycloak.models.IdentityProviderMapperModel;
 
 /**
  * Claim extraction is scoped to the credential a mapper is configured for. Credentials of one
- * presentation routinely carry the same claim names, so a mapper that resolved its claim path over
+ * presentation routinely carry the same claim names. A mapper that resolved its claim path over
  * the claims of all presented credentials would import a value from the wrong credential.
  */
 class Oid4vpMultiCredentialMappingTest {

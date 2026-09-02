@@ -15,7 +15,6 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.it.framework;
 
-// Default wallet configuration: auto-accepting wallet with default PID credentials
 public class DefaultTestWalletConfig implements TestWalletConfig {
 
     @Override
