@@ -105,18 +105,25 @@ public final class Oid4vpTestKeycloakSetup {
         return principalAttributesFor(SD_JWT_PID_CREDENTIAL_ID, MDOC_PID_CREDENTIAL_ID);
     }
 
-    /** The principal credential entries for the given credential ids, reading 'family_name'. */
+    /**
+     * The claim the test realm reads its subject from, in both PID formats. The PID rulebook's
+     * administrative number identifies the person, and its value makes a valid Keycloak username,
+     * unlike the rulebook example's family name "'t Hart".
+     */
+    public static final String PRINCIPAL_CLAIM = "personal_administrative_number";
+
+    /** The principal credential entries for the given credential ids, reading the principal claim. */
     public static String principalAttributesFor(String... credentialIds) {
         return Arrays.stream(credentialIds)
                 .map(credentialId -> credentialId + ":" + principalClaimPathOf(credentialId))
                 .collect(Collectors.joining(", "));
     }
 
-    /** The path 'family_name' resolves under, from the root of what the credential presents. */
+    /** The path the principal claim resolves under, from the root of what the credential presents. */
     private static String principalClaimPathOf(String credentialId) {
         return MDOC_PID_CREDENTIAL_ID.equals(credentialId)
-                ? MDOC_PID_DOCTYPE.replace(".", "\\.") + ".family_name"
-                : "family_name";
+                ? MDOC_PID_DOCTYPE.replace(".", "\\.") + "." + PRINCIPAL_CLAIM
+                : PRINCIPAL_CLAIM;
     }
 
     /** A credential set that accepts any one of the given credentials, each as its own option. */

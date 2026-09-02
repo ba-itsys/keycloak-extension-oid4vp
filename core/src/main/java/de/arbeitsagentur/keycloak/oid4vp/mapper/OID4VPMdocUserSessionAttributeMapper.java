@@ -36,6 +36,7 @@ public class OID4VPMdocUserSessionAttributeMapper extends OID4VPSdJwtUserSession
             .property(credentialTypeProperty("Doctype of the mDoc credential this data element is requested from."))
             .property(OID4VPMdocUserAttributeMapper.namespaceProperty())
             .property(claimProperty())
+            .property(claimAlternativesProperty())
             .property()
             .name(ATTRIBUTE)
             .label("User Session Attribute")

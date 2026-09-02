@@ -356,7 +356,7 @@ class DcqlQueryBuilderTest {
         assertThat(type.claimSpecs())
                 .containsExactly(
                         ClaimSpec.mdoc("org.iso.18013.5.1", "family_name"),
-                        ClaimSpec.mdoc("org.iso.18013.5.1", "given_name"));
+                        ClaimSpec.mdoc("org.iso.18013.5.1", "given_name").withId("principal"));
     }
 
     @Test
@@ -542,6 +542,218 @@ class DcqlQueryBuilderTest {
         builder.addCredentialType("dc+sd-jwt", "urn:eudi:pid:1", List.of());
 
         assertThat(firstCredential(builder.build()).get("id")).isEqualTo("sdjwt_urn_eudi_pid_1");
+    }
+
+    // --- alternative claims and claim ids ---------------------------------
+
+    @Test
+    void build_alternativeClaims_areRequestedAsClaimsOfTheirOwnWithOneOptionPerPath() throws Exception {
+        Map<String, Object> credential = buildFromMappers(
+                namedMapper("given-name", "given_name", null, null),
+                namedMapper("birth-name", "birth_family_name", "birth_name", null));
+
+        assertThat(claimIdsAndPaths(credential))
+                .containsExactly(
+                        Map.entry("given-name", List.of("given_name")),
+                        Map.entry("birth-name", List.of("birth_family_name")),
+                        Map.entry("birth-name-birth_name", List.of("birth_name")));
+        assertThat(credential.get("claim_sets"))
+                .as("a mapper with alternatives and no claim set ids still produces claim sets")
+                .isEqualTo(
+                        List.of(List.of("given-name", "birth-name"), List.of("given-name", "birth-name-birth_name")));
+    }
+
+    @Test
+    void build_alternativeClaims_multiplyTheOptionsOfTheClaimSetIds() throws Exception {
+        Map<String, Object> credential = buildFromMappers(
+                namedMapper("given-name", "given_name", null, "1-full"),
+                namedMapper("birth-name", "birth_family_name", "birth_name", "1-full,2-min"),
+                namedMapper("birthdate", "birthdate", null, null));
+
+        assertThat(credential.get("claim_sets"))
+                .isEqualTo(List.of(
+                        List.of("given-name", "birth-name", "birthdate"),
+                        List.of("given-name", "birth-name-birth_name", "birthdate"),
+                        List.of("birth-name", "birthdate"),
+                        List.of("birth-name-birth_name", "birthdate")));
+    }
+
+    @Test
+    void build_severalMappersWithAlternatives_formTheCrossProduct() throws Exception {
+        Map<String, Object> credential = buildFromMappers(
+                namedMapper("birth-name", "birth_family_name", "birth_name", null),
+                namedMapper("birth-place", "place_of_birth", "birth_place", null),
+                namedMapper("birthdate", "birthdate", null, null));
+
+        assertThat(credential.get("claim_sets"))
+                .isEqualTo(List.of(
+                        List.of("birth-name", "birth-place", "birthdate"),
+                        List.of("birth-name", "birth-place-birth_place", "birthdate"),
+                        List.of("birth-name-birth_name", "birth-place", "birthdate"),
+                        List.of("birth-name-birth_name", "birth-place-birth_place", "birthdate")));
+    }
+
+    @Test
+    void build_severalAlternatives_areOfferedInTheirOrder() throws Exception {
+        Map<String, Object> credential =
+                buildFromMappers(namedMapper("birth-name", "birth_family_name", "birth_name, maiden_name", null));
+
+        assertThat(credential.get("claim_sets"))
+                .isEqualTo(List.of(
+                        List.of("birth-name"), List.of("birth-name-birth_name"), List.of("birth-name-maiden_name")));
+    }
+
+    @Test
+    void build_mdocAlternatives_areRequestedInTheNamespace() throws Exception {
+        IdentityProviderMapperModel mapper = mdocMapper("eu.europa.ec.eudi.pid.1", null, "birth_family_name");
+        mapper.setName("birth-name");
+        mapper.getConfig().put(AbstractOID4VPClaimMapper.CLAIM_ALTERNATIVES, "birth_name");
+
+        Map<String, Object> credential = buildFromMappers(mapper);
+
+        assertThat(claimIdsAndPaths(credential))
+                .containsExactly(
+                        Map.entry("birth-name", List.of("eu.europa.ec.eudi.pid.1", "birth_family_name")),
+                        Map.entry("birth-name-birth_name", List.of("eu.europa.ec.eudi.pid.1", "birth_name")));
+        assertThat(credential.get("claim_sets"))
+                .isEqualTo(List.of(List.of("birth-name"), List.of("birth-name-birth_name")));
+    }
+
+    @Test
+    void build_claimIds_areTheMapperNamesSluggedToDcqlCharacters() throws Exception {
+        Map<String, Object> credential = buildFromMappers(
+                namedMapper("PID: given name", "given_name", null, null),
+                namedMapper("family-name", "family_name", null, null));
+
+        assertThat(claimIdsAndPaths(credential))
+                .containsExactly(
+                        Map.entry("PID__given_name", List.of("given_name")),
+                        Map.entry("family-name", List.of("family_name")));
+    }
+
+    @Test
+    void build_mappersRequestingTheSameClaim_shareTheEntryUnderTheFirstMapperName() throws Exception {
+        Map<String, Object> credential = buildFromMappers(
+                namedMapper("last-name", "family_name", null, "1-full"),
+                namedMapper("surname-note", "family_name", null, "2-min"),
+                namedMapper("given-name", "given_name", null, null));
+
+        assertThat(claimIdsAndPaths(credential))
+                .containsExactly(
+                        Map.entry("last-name", List.of("family_name")), Map.entry("given-name", List.of("given_name")));
+        assertThat(credential.get("claim_sets"))
+                .as("the two ids collapse to the same claims, so the option is emitted once")
+                .isEqualTo(List.of(List.of("last-name", "given-name")));
+    }
+
+    @Test
+    void build_mapperNamesSluggingToTheSameId_getANumberedSuffix() throws Exception {
+        Map<String, Object> credential = buildFromMappers(
+                namedMapper("name", "given_name", null, null),
+                namedMapper("name", "family_name", null, null),
+                namedMapper("na me", "birthdate", null, null));
+
+        assertThat(claimIdsAndPaths(credential))
+                .containsExactly(
+                        Map.entry("name", List.of("given_name")),
+                        Map.entry("name-2", List.of("family_name")),
+                        Map.entry("na_me", List.of("birthdate")));
+    }
+
+    @Test
+    void build_alternativeIdCollidingWithAMapperName_getsANumberedSuffix() throws Exception {
+        Map<String, Object> credential = buildFromMappers(
+                namedMapper("birth-name", "birth_family_name", "birth_name", null),
+                namedMapper("birth-name-birth_name", "maiden_name", null, null));
+
+        assertThat(claimIdsAndPaths(credential))
+                .containsExactly(
+                        Map.entry("birth-name", List.of("birth_family_name")),
+                        Map.entry("birth-name-birth_name", List.of("birth_name")),
+                        Map.entry("birth-name-birth_name-2", List.of("maiden_name")));
+    }
+
+    @Test
+    void build_unnamedMappers_getNumberedClaimIds() throws Exception {
+        Map<String, Object> credential = buildFromMappers(
+                sdJwtMapper("urn:eudi:pid:1", "given_name", "1-full"),
+                sdJwtMapper("urn:eudi:pid:1", "family_name", null));
+
+        assertThat(claimIdsAndPaths(credential))
+                .containsExactly(
+                        Map.entry("claim1", List.of("given_name")), Map.entry("claim2", List.of("family_name")));
+    }
+
+    @Test
+    void build_principalClaimAddedForThePrincipalAttribute_isNamedPrincipal() throws Exception {
+        Map<String, CredentialTypeSpec> credentials = aggregate(
+                Stream.of(namedMapper("given-name", "given_name", null, "1-full")),
+                config("oid4vp", false, "sdjwt_urn_eudi_pid_1:sub"));
+        Map<String, Object> credential =
+                firstCredential(DcqlQueryBuilder.fromMapperSpecs(objectMapper, credentials, List.of(), Map.of())
+                        .build());
+
+        assertThat(claimIdsAndPaths(credential))
+                .containsExactly(
+                        Map.entry("given-name", List.of("given_name")), Map.entry("principal", List.of("sub")));
+        assertThat(credential.get("claim_sets")).isEqualTo(List.of(List.of("given-name", "principal")));
+    }
+
+    @Test
+    void aggregateFromMappers_readsAlternativePathsAndTheMapperNameIntoTheClaimSpec() {
+        IdentityProviderMapperModel mapper =
+                namedMapper("birth-name", "birth_family_name", " birth_name , maiden_name ", null);
+
+        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", null));
+
+        assertThat(result.values().iterator().next().claimSpecs())
+                .containsExactly(ClaimSpec.sdJwt("birth_family_name")
+                        .withId("birth-name")
+                        .withAlternativePaths(List.of("birth_name", "maiden_name")));
+    }
+
+    @Test
+    void aggregateFromMappers_alternativeEqualToTheClaimPath_isDropped() {
+        IdentityProviderMapperModel mapper =
+                namedMapper("birth-name", "birth_name", "birth_name, birth_family_name", null);
+
+        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", null));
+
+        assertThat(result.values().iterator().next().claimSpecs().get(0).alternativePaths())
+                .containsExactly("birth_family_name");
+    }
+
+    @Test
+    void aggregateFromMappers_malformedAlternativePath_skipsTheMapper() {
+        IdentityProviderMapperModel mapper = namedMapper("birth-name", "birth_family_name", "birth_name[x]", null);
+
+        assertThat(aggregate(Stream.of(mapper), config("oid4vp", null)))
+                .as("the mapper reads nothing with a malformed alternative, so nothing is requested for it")
+                .isEmpty();
+    }
+
+    private Map<String, Object> buildFromMappers(IdentityProviderMapperModel... mappers) throws Exception {
+        Map<String, CredentialTypeSpec> credentials = aggregate(Stream.of(mappers), config("oid4vp", null));
+        return firstCredential(DcqlQueryBuilder.fromMapperSpecs(objectMapper, credentials, List.of(), Map.of())
+                .build());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map.Entry<String, Object>> claimIdsAndPaths(Map<String, Object> credential) {
+        return ((List<Map<String, Object>>) credential.get("claims"))
+                .stream()
+                        .map(claim -> Map.entry((String) claim.get("id"), claim.get("path")))
+                        .toList();
+    }
+
+    private static IdentityProviderMapperModel namedMapper(
+            String name, String claim, String alternatives, String claimSetIds) {
+        IdentityProviderMapperModel mapper = sdJwtMapper("urn:eudi:pid:1", claim, claimSetIds);
+        mapper.setName(name);
+        if (alternatives != null) {
+            mapper.getConfig().put(AbstractOID4VPClaimMapper.CLAIM_ALTERNATIVES, alternatives);
+        }
+        return mapper;
     }
 
     private static Map<String, CredentialTypeSpec> aggregate(

@@ -395,11 +395,15 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
                 .isEqualTo(404);
     }
 
-    /** Puts a single SD-JWT PID carrying the given family name into the wallet. */
+    /**
+     * Puts a single SD-JWT PID of another person into the wallet, carrying the given family name
+     * and identified by it, as the default PID's administrative number would be the same person.
+     */
     private void issueSdJwtPidOf(String familyName) {
         wallet().client().deleteCredentialsByType(Oid4vpTestKeycloakSetup.SD_JWT_PID_VCT);
         wallet().client()
                 .issueCredential(IssueRequest.pid(CredentialFormat.SD_JWT)
+                        .claim(Oid4vpTestKeycloakSetup.PRINCIPAL_CLAIM, familyName)
                         .claim("family_name", familyName)
                         .claim("given_name", "Erika")
                         .claim("birthdate", "1984-01-26"));

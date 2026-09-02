@@ -40,6 +40,7 @@ public class OID4VPMdocUserAttributeMapper extends OID4VPSdJwtUserAttributeMappe
             .property(credentialTypeProperty("Doctype of the mDoc credential this data element is requested from."))
             .property(namespaceProperty())
             .property(claimProperty())
+            .property(claimAlternativesProperty())
             .property()
             .name(USER_ATTRIBUTE)
             .label("User Attribute Name")

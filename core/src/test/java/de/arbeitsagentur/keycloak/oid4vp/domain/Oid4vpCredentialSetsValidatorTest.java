@@ -315,6 +315,36 @@ class Oid4vpCredentialSetsValidatorTest {
                 .isEmpty();
     }
 
+    @Test
+    void validate_principalClaimWithAlternatives_isReported() {
+        CredentialTypeSpec spec = new CredentialTypeSpec(
+                "dc+sd-jwt",
+                "urn:eudi:pid:1",
+                List.of(
+                        ClaimSpec.sdJwt("sub").withAlternativePaths(List.of("subject")),
+                        ClaimSpec.sdJwt("given_name")));
+
+        assertThat(problems("", PID + ":sub", Map.of(PID, spec)))
+                .as("the alternative forms an option without the principal path, which would present no subject")
+                .singleElement()
+                .asString()
+                .contains("sub", "every claim set option");
+    }
+
+    @Test
+    void validate_principalClaimBesideAClaimWithAlternatives_isValid() {
+        CredentialTypeSpec spec = new CredentialTypeSpec(
+                "dc+sd-jwt",
+                "urn:eudi:pid:1",
+                List.of(
+                        ClaimSpec.sdJwt("sub"),
+                        ClaimSpec.sdJwt("birth_family_name").withAlternativePaths(List.of("birth_name"))));
+
+        assertThat(problems("", PID + ":sub", Map.of(PID, spec)))
+                .as("the principal claim is part of every generated option")
+                .isEmpty();
+    }
+
     private static CredentialTypeSpec pidSpec() {
         return new CredentialTypeSpec(
                 Oid4vpConstants.FORMAT_SD_JWT_VC,

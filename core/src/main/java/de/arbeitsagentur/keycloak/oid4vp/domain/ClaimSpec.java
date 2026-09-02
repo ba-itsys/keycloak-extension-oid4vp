@@ -29,22 +29,35 @@ import org.keycloak.utils.StringUtil;
  * the ISO 18013-5 namespace and the first path step names the data element; deeper steps only
  * address into the element value on the mapper side and are not part of the DCQL query.
  *
+ * <p>{@code alternativePaths} names claims that stand in for the path when a credential does not
+ * carry it, in preference order: issuers name the same claim differently, so a mapper reading the
+ * German PID's {@code birth_family_name} also accepts {@code birth_name}. Every alternative is
+ * requested as a claim of its own, and the claim sets ask for exactly one of the path and its
+ * alternatives per option. {@link #expand()} turns the spec into those single-path claims.
+ *
  * <p>{@code claimSetIds} lists the DCQL claim sets this claim belongs to. A claim without ids is
  * part of every generated claim set and therefore always requested.
  *
+ * <p>{@code id} is the DCQL claim id the claim is requested under, derived from the mapper name
+ * so that the {@code claim_sets} of a generated query read like the configuration that produced
+ * them. It is null for claims added without a mapper, which the query builder numbers instead.
+ *
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.3">OID4VP 1.0 §6.3 — Claims Query</a>
  */
-public record ClaimSpec(String namespace, String path, List<String> claimSetIds) {
+public record ClaimSpec(
+        String id, String namespace, String path, List<String> alternativePaths, List<String> claimSetIds) {
 
-    private static final String CLAIM_SET_ID_SEPARATOR = ",";
+    private static final String LIST_SEPARATOR = ",";
+    private static final String ALTERNATIVE_ID_SEPARATOR = "-";
 
     public ClaimSpec {
+        alternativePaths = alternativePaths != null ? List.copyOf(alternativePaths) : List.of();
         claimSetIds = claimSetIds != null ? List.copyOf(claimSetIds) : List.of();
     }
 
     /** A claim of an SD-JWT credential, addressed by a dot notation path over the claims JSON. */
     public static ClaimSpec sdJwt(String path, List<String> claimSetIds) {
-        return new ClaimSpec(null, path, claimSetIds);
+        return new ClaimSpec(null, null, path, List.of(), claimSetIds);
     }
 
     public static ClaimSpec sdJwt(String path) {
@@ -53,19 +66,38 @@ public record ClaimSpec(String namespace, String path, List<String> claimSetIds)
 
     /** A claim of an mDoc credential: a data element of the given namespace. */
     public static ClaimSpec mdoc(String namespace, String path, List<String> claimSetIds) {
-        return new ClaimSpec(namespace, path, claimSetIds);
+        return new ClaimSpec(null, namespace, path, List.of(), claimSetIds);
     }
 
     public static ClaimSpec mdoc(String namespace, String path) {
         return mdoc(namespace, path, List.of());
     }
 
+    /** The same claim requested under the given DCQL claim id. */
+    public ClaimSpec withId(String id) {
+        return new ClaimSpec(id, namespace, path, alternativePaths, claimSetIds);
+    }
+
+    /** The same claim, accepting the given paths in their order when the path is not presented. */
+    public ClaimSpec withAlternativePaths(List<String> alternativePaths) {
+        return new ClaimSpec(id, namespace, path, alternativePaths, claimSetIds);
+    }
+
     /** Parses a comma-separated mapper config value into a list of claim set ids. */
     public static List<String> parseClaimSetIds(String rawClaimSetIds) {
-        if (StringUtil.isBlank(rawClaimSetIds)) {
+        return parseList(rawClaimSetIds);
+    }
+
+    /** Parses a comma-separated mapper config value into a list of claim paths. */
+    public static List<String> parseAlternativePaths(String rawAlternativePaths) {
+        return parseList(rawAlternativePaths);
+    }
+
+    private static List<String> parseList(String rawList) {
+        if (StringUtil.isBlank(rawList)) {
             return List.of();
         }
-        return Arrays.stream(rawClaimSetIds.split(CLAIM_SET_ID_SEPARATOR))
+        return Arrays.stream(rawList.split(LIST_SEPARATOR))
                 .map(String::trim)
                 .filter(StringUtil::isNotBlank)
                 .distinct()
@@ -75,6 +107,28 @@ public record ClaimSpec(String namespace, String path, List<String> claimSetIds)
     /** The parsed claim path, or {@code null} when the configured path is malformed. */
     public ClaimPath claimPath() {
         return ClaimPath.parse(path);
+    }
+
+    /** Whether the path and every alternative path parse. */
+    public boolean pathsWellFormed() {
+        return claimPath() != null
+                && alternativePaths.stream().allMatch(alternative -> ClaimPath.parse(alternative) != null);
+    }
+
+    /**
+     * The claims this spec requests: the path first, then every alternative, each without further
+     * alternatives and each a member of the same claim sets. An alternative is requested under the
+     * spec's id followed by the slugged alternative path, so {@code birth_name} of a mapper named
+     * {@code birth-name} reads {@code birth-name-birth_name} in the claim sets.
+     */
+    public List<ClaimSpec> expand() {
+        List<ClaimSpec> claims = new ArrayList<>();
+        claims.add(new ClaimSpec(id, namespace, path, List.of(), claimSetIds));
+        for (String alternative : alternativePaths) {
+            String alternativeId = id == null ? null : id + ALTERNATIVE_ID_SEPARATOR + DcqlId.slug(alternative);
+            claims.add(new ClaimSpec(alternativeId, namespace, alternative, List.of(), claimSetIds));
+        }
+        return claims;
     }
 
     /**

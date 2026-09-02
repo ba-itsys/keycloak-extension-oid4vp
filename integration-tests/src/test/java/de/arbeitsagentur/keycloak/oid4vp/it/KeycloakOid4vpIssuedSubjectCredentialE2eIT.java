@@ -186,6 +186,7 @@ class KeycloakOid4vpIssuedSubjectCredentialE2eIT extends AbstractOid4vpE2eTest {
         wallet().client().deleteCredentialsByType(Oid4vpTestKeycloakSetup.SD_JWT_PID_VCT);
         wallet().client()
                 .issueCredential(IssueRequest.pid(CredentialFormat.SD_JWT)
+                        .claim(Oid4vpTestKeycloakSetup.PRINCIPAL_CLAIM, "987654321")
                         .claim("given_name", "Max")
                         .claim("family_name", "Andersson")
                         .claim("birthdate", "1979-03-04"));

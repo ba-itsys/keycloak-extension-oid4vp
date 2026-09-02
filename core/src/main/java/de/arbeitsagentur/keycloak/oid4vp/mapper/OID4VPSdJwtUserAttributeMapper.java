@@ -50,6 +50,7 @@ public class OID4VPSdJwtUserAttributeMapper extends AbstractOID4VPClaimMapper {
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES = ProviderConfigurationBuilder.create()
             .property(credentialTypeProperty("VCT of the SD-JWT credential this claim is requested from."))
             .property(claimProperty())
+            .property(claimAlternativesProperty())
             .property()
             .name(USER_ATTRIBUTE)
             .label("User Attribute Name")

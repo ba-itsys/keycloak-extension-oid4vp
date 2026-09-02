@@ -385,6 +385,8 @@ Each mapper declares a credential type (VCT or doctype) and a claim path. The cl
 
 mDoc mappers additionally declare the ISO 18013-5 `namespace` of the data element, defaulting to the credential type (doctype). The claim path addresses the element within that namespace; deeper path steps select into structured element values on the mapper side only. Element values holding serialized JSON objects or arrays become nested structures in the claims JSON, so they follow the same path rules as SD-JWT claims.
 
+The `Alternative Claims` mapper option names claims that stand in for the claim path when the credential does not present it, as a comma-separated list of paths in the same notation. Issuers name the same claim differently: the German PID rulebook calls the birth name `birth_name`, while credentials in circulation carry `birth_family_name`. A single mapper with the claim `birth_family_name` and the alternative `birth_name` covers both. The mapper reads the claim path first and the alternatives after it in their order, and the first one the presentation carries a value for is imported. Every alternative is requested as a claim of its own, and the [claim sets](#claim-sets) are generated so that the wallet presents exactly one of them.
+
 ### Presentation Flow
 
 Every completed login stores the flow it finished in as the user session note `oid4vp_presentation_flow`, holding `same_device` or `cross_device`. Custom identity provider mappers read the same value from the brokered identity context through `Oid4vpMapperUtils.presentationFlow`.
@@ -406,7 +408,13 @@ The `Claim Set IDs` mapper option controls the DCQL `claim_sets` for a credentia
 
 Example: three mappers for `given_name` (ids `1-full`), `family_name` (ids `1-full,2-min`), and `birthdate` (no ids) produce two claim set options: `given_name, family_name, birthdate` preferred, `family_name, birthdate` as fallback.
 
-The verifier validates the wallet's response against the request: a presented credential must contain every requested claim, or, when claim sets are defined, all claims of at least one claim set option. Presentations that satisfy no option are rejected.
+Alternative claims multiply these options. Every option is repeated once per combination of the path choices of its members, so that each option asks for exactly one of a claim and its alternatives. The combinations keep the claim paths themselves first and vary the alternatives of the last member fastest: the first option asks for every claim under its own path, the last one for every claim under its last alternative. A mapper with alternatives and no claim set ids still produces claim sets, one option per path. The number of options is the product of the path counts of all members of an option, on top of the options the claim set ids define, so three mappers with one alternative each and two claim set ids already produce sixteen options. Keep alternatives to the claims that need them.
+
+The DCQL claim ids are derived from the mapper names, reduced to the letters, digits, `_` and `-` DCQL allows, so the generated `claim_sets` read like the configuration: a mapper `birth-name` requests its claim as `birth-name`, and its alternative `birth_name` as `birth-name-birth_name`. Mappers requesting the same claim share one entry under the name of the first mapper, a second mapper name that slugs to an already used id receives a numeric suffix, and the subject claim added for a principal attribute is named `principal`.
+
+Example: the mappers `given-name` (`given_name`, ids `1-full`) and `birth-name` (`birth_family_name`, alternative `birth_name`, no ids) produce the claims `given-name`, `birth-name`, `birth-name-birth_name` and the claim sets `[given-name, birth-name]`, `[given-name, birth-name-birth_name]`.
+
+The verifier validates the wallet's response against the request: a presented credential must contain every requested claim, or, when claim sets are defined, all claims of at least one claim set option. Presentations that satisfy no option are rejected. A principal attribute has to be read under a claim path in every option, so a mapper for the subject claim cannot carry alternatives.
 
 ## Multi-Node Behavior
 
