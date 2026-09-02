@@ -325,6 +325,35 @@ class OID4VPSdJwtUserAttributeMapperTest {
         assertThat(context.getUserAttribute("birthName")).isEqualTo("Gabler");
     }
 
+    // --- several credential types ---------------------------------------------
+
+    @Test
+    void mapperNamingSeveralTypesReadsTheCredentialAnsweredUnderTheIdOfItsFirstType() throws Exception {
+        // The German PID was presented under the entry whose id derives from the EUDI PID type.
+        BrokeredIdentityContext context =
+                MapperTestContexts.context(PresentationType.SD_JWT, "sdjwt_urn_eudi_pid_1", "urn:eudi:pid:de:1", """
+                {"birth_name": "GABLER"}""");
+        IdentityProviderMapperModel model = model("birth_name", "birthName", "urn:eudi:pid:1, urn:eudi:pid:de:1");
+
+        mapper.preprocessFederatedIdentity(null, null, model, context);
+
+        assertThat(context.getUserAttribute("birthName")).isEqualTo("GABLER");
+    }
+
+    @Test
+    void mapperNamingSeveralTypesIgnoresACredentialAnsweredUnderAnotherId() throws Exception {
+        BrokeredIdentityContext context = MapperTestContexts.context(
+                PresentationType.SD_JWT, "sdjwt_urn_eudi_pid_de_1", "urn:eudi:pid:de:1", """
+                {"birth_name": "GABLER"}""");
+        IdentityProviderMapperModel model = model("birth_name", "birthName", "urn:eudi:pid:1, urn:eudi:pid:de:1");
+
+        mapper.preprocessFederatedIdentity(null, null, model, context);
+
+        assertThat(context.getUserAttribute("birthName"))
+                .as("the entry of a mapper is addressed by its id, derived from the first type")
+                .isNull();
+    }
+
     @Test
     void supportsAllSyncModes() {
         for (IdentityProviderSyncMode syncMode : IdentityProviderSyncMode.values()) {

@@ -80,6 +80,19 @@ public class MdocVerifier {
     }
 
     /**
+     * The {@code docType} the document of a DeviceResponse claims, read without any verification;
+     * null when the token does not parse or names none. It only ever selects among the doctypes the
+     * verifier requested, so nothing is trusted from it.
+     */
+    public String peekDocType(String deviceResponseToken) {
+        try {
+            return str(parseDocument(decodeBase64(deviceResponseToken)), "docType");
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
      * Verifies only the issuer signature (and its value digests when the MSO carries them) of an mDoc.
      *
      * <p>This is not a wallet-presentation check: it performs no device authentication and does not bind

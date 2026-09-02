@@ -19,7 +19,6 @@ import de.arbeitsagentur.keycloak.oid4vp.mapper.ClaimPath;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import org.keycloak.utils.StringUtil;
 
 /**
  * Specification of a single claim to request within a DCQL credential query.
@@ -47,7 +46,6 @@ import org.keycloak.utils.StringUtil;
 public record ClaimSpec(
         String id, String namespace, String path, List<String> alternativePaths, List<String> claimSetIds) {
 
-    private static final String LIST_SEPARATOR = ",";
     private static final String ALTERNATIVE_ID_SEPARATOR = "-";
 
     public ClaimSpec {
@@ -83,25 +81,14 @@ public record ClaimSpec(
         return new ClaimSpec(id, namespace, path, alternativePaths, claimSetIds);
     }
 
-    /** Parses a comma-separated mapper config value into a list of claim set ids. */
+    /** Parses the comma-separated claim set ids of a mapper. */
     public static List<String> parseClaimSetIds(String rawClaimSetIds) {
-        return parseList(rawClaimSetIds);
+        return ConfigList.parse(rawClaimSetIds);
     }
 
-    /** Parses a comma-separated mapper config value into a list of claim paths. */
+    /** Parses the comma-separated alternative claim paths of a mapper. */
     public static List<String> parseAlternativePaths(String rawAlternativePaths) {
-        return parseList(rawAlternativePaths);
-    }
-
-    private static List<String> parseList(String rawList) {
-        if (StringUtil.isBlank(rawList)) {
-            return List.of();
-        }
-        return Arrays.stream(rawList.split(LIST_SEPARATOR))
-                .map(String::trim)
-                .filter(StringUtil::isNotBlank)
-                .distinct()
-                .toList();
+        return ConfigList.parse(rawAlternativePaths);
     }
 
     /** The parsed claim path, or {@code null} when the configured path is malformed. */

@@ -47,7 +47,7 @@ class Oid4vpRequestContextEntrySerializationTest {
                 List.of(new RequestedCredential(
                         "pid",
                         Oid4vpConstants.FORMAT_SD_JWT_VC,
-                        "urn:eudi:pid:1",
+                        List.of("urn:eudi:pid:1", "urn:eudi:pid:de:1"),
                         List.of(new RequestedClaim(null, "sub"), new RequestedClaim(null, "given_name")),
                         List.of(List.of(0, 1), List.of(0)))),
                 List.of(
@@ -64,6 +64,8 @@ class Oid4vpRequestContextEntrySerializationTest {
         assertThat(restored.credentialSets().get(0).purpose()).isEqualTo("Login");
         assertThat(restored.credentialSets().get(1).required()).isFalse();
         assertThat(restored.requestedCredentials().get(0).id()).isEqualTo("pid");
+        assertThat(restored.requestedCredentials().get(0).types())
+                .containsExactly("urn:eudi:pid:1", "urn:eudi:pid:de:1");
         assertThat(restored.requestedCredentials().get(0).claimSets()).containsExactly(List.of(0, 1), List.of(0));
     }
 }

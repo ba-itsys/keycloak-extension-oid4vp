@@ -43,7 +43,7 @@ The DCQL query is generated from the configured OID4VP mappers. The mapper type 
 | `credentialSets` | DCQL `credential_sets` constraints in specification syntax, referencing credential ids. Empty requires every configured credential. | *(none)* |
 | `requestObjectLifespanSeconds` | Lifespan of the signed request object JWT used by the wallet fetch. | `10` |
 
-Each mapper contributes to the credential named by its `credential.id`. Mappers sharing an id form one credential entry, so the same credential type can be requested twice with different claims. An empty `credential.id` derives the id from format and credential type: `sdjwt_urn_eudi_pid_1`, `mdoc_org_iso_18013_5_1_mDL`. DCQL restricts ids to letters, digits, `_` and `-`.
+Each mapper contributes to the credential named by its `credential.id`. Mappers sharing an id form one credential entry that accepts every credential type any of them names, so the same credential type can be requested twice with different claims, and one entry can accept several VCTs. An empty `credential.id` derives the id from the format and the first credential type: `sdjwt_urn_eudi_pid_1`, `mdoc_org_iso_18013_5_1_mDL`. DCQL restricts ids to letters, digits, `_` and `-`.
 
 `credentialSets` lists alternative credential combinations in preference order. To request a PID together with an mDL but accept the PID alone:
 
@@ -290,7 +290,7 @@ Every trust material identity provider declares the credential types it serves i
 
 `servedCredentialTypes` is read from the configuration of the referenced provider, not from the provider type. A trust material provider that knows nothing of this extension is scoped the same way, by adding that key to its configuration.
 
-Selection uses the credential type that was **requested** under the DCQL credential id the wallet answered with, taken from the request context. The type inside the presented credential is checked afterwards against the same entry, so a wallet cannot choose the trust domain its credential is judged by. A credential id that was not requested is rejected before any signature is verified.
+Selection uses the credential type that was **requested** under the DCQL credential id the wallet answered with, taken from the request context. The type inside the presented credential is checked afterwards against the same entry, so a wallet cannot choose the trust domain its credential is judged by. A credential id that was not requested is rejected before any signature is verified. When an entry was requested with several types, the type the presentation names selects among them: a presentation naming a type the entry did not request is rejected before verification, and the entry advertises the `trusted_authorities` of all its types.
 
 ### Trust Cases
 
@@ -381,7 +381,7 @@ The extension provides format-specific mapper types, following the mapper design
 - `mDoc User Session Attribute Importer` (`oid4vp-mdoc-user-session-attribute-idp-mapper`)
 - `eIDAS LoA User Session Attribute` (`oid4vp-eidas-loa-user-session-attribute-idp-mapper`)
 
-Each mapper declares a credential type (VCT or doctype) and a claim path. The claim path uses dot notation: `address.locality` selects a nested claim, `nationalities[]` selects all array elements, `nationalities[0]` selects the first presented element, and a literal dot is escaped as `\.`. Arrays import as multivalued attributes, object values as their JSON representation; session attribute mappers join multiple values with commas.
+Each mapper declares a credential type (VCT or doctype) and a claim path. An SD-JWT mapper may declare several VCTs as a comma-separated list, for example `urn:eudi:pid:1, urn:eudi:pid:de:1` for the EUDI PID and the German PID. They form one credential entry whose `vct_values` lists all of them, so the wallet presents a credential of any of these types, and mappers sharing a credential id accept every VCT any of them names. The default credential id is derived from the first type. An mDoc mapper declares exactly one doctype, as DCQL defines `doctype_value` as a single string; request several doctypes under credential ids of their own. The claim path uses dot notation: `address.locality` selects a nested claim, `nationalities[]` selects all array elements, `nationalities[0]` selects the first presented element, and a literal dot is escaped as `\.`. Arrays import as multivalued attributes, object values as their JSON representation; session attribute mappers join multiple values with commas.
 
 mDoc mappers additionally declare the ISO 18013-5 `namespace` of the data element, defaulting to the credential type (doctype). The claim path addresses the element within that namespace; deeper path steps select into structured element values on the mapper side only. Element values holding serialized JSON objects or arrays become nested structures in the claims JSON, so they follow the same path rules as SD-JWT claims.
 

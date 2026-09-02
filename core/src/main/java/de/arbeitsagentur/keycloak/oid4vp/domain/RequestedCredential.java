@@ -24,7 +24,8 @@ import org.keycloak.sdjwt.consumer.PresentationRequirements;
 
 /**
  * The claims a DCQL query requests for one credential entry, used to validate that a presentation
- * contains everything the verifier asked for. Claims are addressed like in the mappers: a
+ * contains everything the verifier asked for. {@code types} are the credential types the entry
+ * accepts, one of which the presented credential has to carry. Claims are addressed like in the mappers: a
  * {@link ClaimPath}, for mDoc claims scoped to a namespace. {@code claimSets} holds the DCQL
  * {@code claim_sets} options as index lists into {@code claims} in preference order; an empty
  * list means every claim is required.
@@ -32,7 +33,7 @@ import org.keycloak.sdjwt.consumer.PresentationRequirements;
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.3">OID4VP 1.0 §6.3 — Claims Query</a>
  */
 public record RequestedCredential(
-        String id, String format, String type, List<RequestedClaim> claims, List<List<Integer>> claimSets)
+        String id, String format, List<String> types, List<RequestedClaim> claims, List<List<Integer>> claimSets)
         implements PresentationRequirements {
 
     /** One requested claim: the mDoc namespace (null for SD-JWT) and the claim path. */
@@ -53,8 +54,15 @@ public record RequestedCredential(
     }
 
     public RequestedCredential {
+        types = types != null ? List.copyOf(types) : List.of();
         claims = claims != null ? List.copyOf(claims) : List.of();
         claimSets = claimSets != null ? claimSets.stream().map(List::copyOf).toList() : List.of();
+    }
+
+    /** A requested credential of a single type. */
+    public RequestedCredential(
+            String id, String format, String type, List<RequestedClaim> claims, List<List<Integer>> claimSets) {
+        this(id, format, List.of(type), claims, claimSets);
     }
 
     /**
@@ -66,12 +74,17 @@ public record RequestedCredential(
         List<RequestedClaim> claims = spec.requestedClaims().stream()
                 .map(claimSpec -> new RequestedClaim(claimSpec.namespace(), claimSpec.path()))
                 .toList();
-        return new RequestedCredential(credentialId, spec.format(), spec.type(), claims, spec.claimSetOptionIndexes());
+        return new RequestedCredential(credentialId, spec.format(), spec.types(), claims, spec.claimSetOptionIndexes());
     }
 
-    /** Whether this requested credential entry matches a verified credential's format and type. */
+    /** Whether a verified credential has this entry's format and one of its types. */
     public boolean matches(VerifiedCredential credential) {
-        return format.equals(credential.presentationType().dcqlFormat()) && type.equals(credential.credentialType());
+        return format.equals(credential.presentationType().dcqlFormat()) && types.contains(credential.credentialType());
+    }
+
+    /** The accepted types, for messages. */
+    public String describeTypes() {
+        return String.join(", ", types);
     }
 
     /** Rejects presentations that do not contain the requested claims. */
@@ -79,7 +92,7 @@ public record RequestedCredential(
     public void checkIfSatisfiedBy(JsonNode disclosedPayload) throws VerificationException {
         List<String> missing = missingClaims(disclosedPayload);
         if (!missing.isEmpty()) {
-            throw new VerificationException("Presentation for credential type '" + type
+            throw new VerificationException("Presentation for credential type '" + describeTypes()
                     + "' does not contain all requested claims. Missing: " + String.join(", ", missing));
         }
     }

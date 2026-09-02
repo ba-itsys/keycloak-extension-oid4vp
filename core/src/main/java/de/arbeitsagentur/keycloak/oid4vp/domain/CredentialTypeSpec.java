@@ -22,17 +22,44 @@ import java.util.TreeSet;
 import java.util.stream.IntStream;
 
 /**
- * Specification of a credential type to request, used when building DCQL queries from IdP mappers.
+ * Specification of one credential entry of a DCQL query: its format, the credential types it
+ * accepts and the claims it requests, aggregated from the identity provider mappers.
+ *
+ * <p>An SD-JWT entry may accept several credential types, which DCQL requests as one
+ * {@code vct_values} array: a wallet answers with a credential of any of them. That covers
+ * credentials whose type identifier differs per country or rulebook version, such as the EUDI PID
+ * {@code urn:eudi:pid:1} and the German PID {@code urn:eudi:pid:de:1}. An mDoc entry names exactly
+ * one doctype, as DCQL defines {@code doctype_value} as a single string.
  *
  * @param format the credential format ({@code dc+sd-jwt} or {@code mso_mdoc})
- * @param type the credential type identifier (VCT for SD-JWT, doctype for mDoc)
+ * @param types the accepted credential type identifiers (VCTs for SD-JWT, the doctype for mDoc), in
+ *     the order they are requested
  * @param claimSpecs the claims to request within this credential, one per mapper
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6">OID4VP 1.0 §6 — DCQL Query</a>
  */
-public record CredentialTypeSpec(String format, String type, List<ClaimSpec> claimSpecs) {
+public record CredentialTypeSpec(String format, List<String> types, List<ClaimSpec> claimSpecs) {
 
     public CredentialTypeSpec {
+        types = List.copyOf(types);
+        if (types.isEmpty()) {
+            throw new IllegalArgumentException("A credential needs at least one credential type");
+        }
         claimSpecs = List.copyOf(claimSpecs);
+    }
+
+    /** A credential of a single type. */
+    public CredentialTypeSpec(String format, String type, List<ClaimSpec> claimSpecs) {
+        this(format, List.of(type), claimSpecs);
+    }
+
+    /** The first accepted type, which derives the default credential id. */
+    public String firstType() {
+        return types.get(0);
+    }
+
+    /** Parses the comma-separated credential types of a mapper. */
+    public static List<String> parseTypes(String rawTypes) {
+        return ConfigList.parse(rawTypes);
     }
 
     /**

@@ -186,7 +186,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
     private VerifiedCredential verifyCredential(
             String credentialId, String credential, Request request, CredentialTrustSelection trustSelection) {
 
-        ResolvedTrust trust = trustSelection.forCredentialId(credentialId);
+        ResolvedTrust trust = trustSelection.forCredentialId(credentialId, claimedType(credential));
         LOG.debugf(
                 "Credential '%s' is verified against %d trust anchor sets, %d direct issuer certificates and %d issuer keys",
                 credentialId,
@@ -217,6 +217,19 @@ public class VpTokenProcessor implements VpTokenVerifier {
         }
 
         return null;
+    }
+
+    /**
+     * The credential type a presentation names before anything about it is verified: the SD-JWT
+     * {@code vct} or the mDoc {@code docType}. It only chooses among the types requested under the
+     * credential id, and the verified type is compared against the request afterwards, so a wallet
+     * cannot have a credential judged by the trust domain of a type it does not carry.
+     */
+    private String claimedType(String credential) {
+        if (sdJwtVerifier.isSdJwt(credential)) {
+            return sdJwtVerifier.peekVct(credential);
+        }
+        return mdocVerifier.isMdoc(credential) ? mdocVerifier.peekDocType(credential) : null;
     }
 
     private byte[] decodeJwkThumbprint(String encoded) {
@@ -253,32 +266,42 @@ public class VpTokenProcessor implements VpTokenVerifier {
     /**
      * Resolves the trust material of one response, keyed by the credential id the wallet answered
      * under. An id that was not requested is rejected before any signature is verified, so an
-     * unknown id can never borrow the trust of a requested credential.
+     * unknown id can never borrow the trust of a requested credential. An id requested with several
+     * types is judged by the trust domain of the type the presentation claims, provided that type
+     * was requested under the id.
      */
     private static class CredentialTrustSelection {
 
         private final CredentialTrustPlan trustPlan;
-        private final Map<String, String> credentialTypeById;
+        private final Map<String, List<String>> credentialTypesById;
 
         CredentialTrustSelection(CredentialTrustPlan trustPlan, List<RequestedCredential> requestedCredentials) {
             this.trustPlan = trustPlan;
-            Map<String, String> credentialTypeById = new LinkedHashMap<>();
-            requestedCredentials.forEach(requested -> credentialTypeById.put(requested.id(), requested.type()));
-            this.credentialTypeById = Map.copyOf(credentialTypeById);
+            Map<String, List<String>> credentialTypesById = new LinkedHashMap<>();
+            requestedCredentials.forEach(requested -> credentialTypesById.put(requested.id(), requested.types()));
+            this.credentialTypesById = Map.copyOf(credentialTypesById);
         }
 
-        ResolvedTrust forCredentialId(String credentialId) {
-            if (credentialTypeById.isEmpty()) {
+        ResolvedTrust forCredentialId(String credentialId, String claimedType) {
+            if (credentialTypesById.isEmpty()) {
                 // A request that carries no DCQL query binds no id to a type, so only the providers
                 // serving every credential type can judge the response.
                 return trustPlan.forCredentialType(null);
             }
-            String credentialType = credentialTypeById.get(credentialId);
-            if (credentialType == null) {
+            List<String> credentialTypes = credentialTypesById.get(credentialId);
+            if (credentialTypes == null) {
                 throw new IdentityBrokerException(
                         "VP token contains the credential id '" + credentialId + "', which was not requested");
             }
-            return trustPlan.forCredentialType(credentialType);
+            if (credentialTypes.size() == 1) {
+                return trustPlan.forCredentialType(credentialTypes.get(0));
+            }
+            if (claimedType == null || !credentialTypes.contains(claimedType)) {
+                throw new IdentityBrokerException("The credential presented under the id '" + credentialId
+                        + "' names the type '" + claimedType + "', which is none of the requested types "
+                        + credentialTypes);
+            }
+            return trustPlan.forCredentialType(claimedType);
         }
 
         /**
@@ -288,14 +311,14 @@ public class VpTokenProcessor implements VpTokenVerifier {
          * and the presentation is rejected.
          */
         String singleCredentialId() {
-            if (credentialTypeById.size() == 1) {
-                return credentialTypeById.keySet().iterator().next();
+            if (credentialTypesById.size() == 1) {
+                return credentialTypesById.keySet().iterator().next();
             }
-            if (credentialTypeById.size() > 1) {
+            if (credentialTypesById.size() > 1) {
                 LOG.warnf(
                         "VP token is a bare credential, but %d credentials were requested, so it cannot be attributed "
                                 + "to a credential id and is rejected.",
-                        credentialTypeById.size());
+                        credentialTypesById.size());
             }
             return UNATTRIBUTED_CREDENTIAL_ID;
         }

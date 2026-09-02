@@ -15,6 +15,7 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SdJwtVerificationResult;
 import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
 import java.util.List;
@@ -36,6 +37,8 @@ import org.keycloak.sdjwt.vp.SdJwtVP;
  */
 public class SdJwtVerifier {
 
+    private static final String VCT_CLAIM = "vct";
+
     private static final Logger LOG = Logger.getLogger(SdJwtVerifier.class);
 
     private final int clockSkewSeconds;
@@ -56,6 +59,20 @@ public class SdJwtVerifier {
 
     public boolean isSdJwt(String token) {
         return token != null && token.contains("~");
+    }
+
+    /**
+     * The {@code vct} the issuer-signed JWT of an SD-JWT presentation claims, read without any
+     * verification; null when the token does not parse or names none. It only ever selects among
+     * the types the verifier requested, so nothing is trusted from it.
+     */
+    public String peekVct(String sdJwt) {
+        try {
+            JsonNode vct = SdJwtVP.of(sdJwt).getIssuerSignedJWT().getPayload().get(VCT_CLAIM);
+            return vct != null && vct.isTextual() ? vct.asText() : null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**

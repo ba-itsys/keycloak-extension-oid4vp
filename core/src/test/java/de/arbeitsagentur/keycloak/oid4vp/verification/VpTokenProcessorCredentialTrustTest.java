@@ -187,6 +187,63 @@ class VpTokenProcessorCredentialTrustTest {
                 .isInstanceOf(IdentityBrokerException.class);
     }
 
+    // --- one credential id requested with several types -------------------------
+
+    @Test
+    void anIdRequestedWithSeveralTypesJudgesThePresentationByTheTrustDomainOfTheTypeItNames() throws Exception {
+        VpTokenProcessor processor = processor(twoTrustDomains());
+        List<RequestedCredential> requested = List.of(
+                new RequestedCredential("any", "dc+sd-jwt", List.of(PID_TYPE, BADGE_TYPE), List.of(), List.of()));
+
+        String badge = objectMapper.writeValueAsString(
+                Map.of("any", presentation(badgeIssuerKey, badgeIssuerCert, BADGE_ISSUER, BADGE_TYPE)));
+        assertThat(processor
+                        .process(request(badge, requested))
+                        .credentials()
+                        .get("any")
+                        .credentialType())
+                .isEqualTo(BADGE_TYPE);
+
+        String pid = objectMapper.writeValueAsString(
+                Map.of("any", presentation(pidIssuerKey, pidIssuerCert, "https://pid.example", PID_TYPE)));
+        assertThat(processor
+                        .process(request(pid, requested))
+                        .credentials()
+                        .get("any")
+                        .credentialType())
+                .isEqualTo(PID_TYPE);
+    }
+
+    @Test
+    void anIdRequestedWithSeveralTypesDoesNotLendOneTypeTheTrustDomainOfAnother() throws Exception {
+        VpTokenProcessor processor = processor(twoTrustDomains());
+        List<RequestedCredential> requested = List.of(
+                new RequestedCredential("any", "dc+sd-jwt", List.of(PID_TYPE, BADGE_TYPE), List.of(), List.of()));
+
+        // The badge issuer signs a credential claiming to be a PID.
+        String vpToken = objectMapper.writeValueAsString(
+                Map.of("any", presentation(badgeIssuerKey, badgeIssuerCert, BADGE_ISSUER, PID_TYPE)));
+
+        assertThatThrownBy(() -> processor.process(request(vpToken, requested)))
+                .as("the PID type selects the PID trust domain, which does not know the badge issuer")
+                .isInstanceOf(IdentityBrokerException.class);
+    }
+
+    @Test
+    void aTypeNotRequestedUnderTheIdIsRejectedBeforeVerification() throws Exception {
+        VpTokenProcessor processor = processor(twoTrustDomains());
+        List<RequestedCredential> requested = List.of(
+                new RequestedCredential("any", "dc+sd-jwt", List.of(PID_TYPE, BADGE_TYPE), List.of(), List.of()));
+
+        String vpToken = objectMapper.writeValueAsString(
+                Map.of("any", presentation(pidIssuerKey, pidIssuerCert, "https://pid.example", "urn:eudi:diploma:1")));
+
+        assertThatThrownBy(() -> processor.process(request(vpToken, requested)))
+                .isInstanceOf(IdentityBrokerException.class)
+                .hasMessageContaining("urn:eudi:diploma:1")
+                .hasMessageContaining("none of the requested types");
+    }
+
     private CredentialTrustPlan twoTrustDomains() {
         return new CredentialTrustPlan(List.of(
                 FixedTrustMaterialIdentityProvider.serving(TestTrust.ofCertificates(pidIssuerCert), PID_TYPE),
