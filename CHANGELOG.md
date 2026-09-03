@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.13.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.12.0...v0.13.0) (2026-09-03)
+
+
+### Features
+
+* accept credentials of derived types ([7e6d1ad](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/7e6d1ad8cc20081b44bd67d9d274c4d529bffbe7))
+* accept several VCTs per DCQL credential entry with type-scoped trust selection ([642f179](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/642f17937a7bef8191bb5c23c7036414f0713b07))
+* alternative claim paths with generated claim sets, readable DCQL claim ids, eudi-dev 2.3.2 ([d3145fa](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/d3145faf575ce4aecc2fce72a49ca21a6ed8597e))
+
 ## [0.12.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.11.1...v0.12.0) (2026-08-27)
 
 
