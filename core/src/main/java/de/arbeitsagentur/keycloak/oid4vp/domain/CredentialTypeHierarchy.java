@@ -66,19 +66,21 @@ public final class CredentialTypeHierarchy {
 
     /**
      * Lists every type this credential counts as, so a request can be matched against all of them.
-     * The type itself comes first, then its {@code aka_vcts} types, then the URN base types of
-     * each, nearest first.
+     * The type itself comes first with its URN base types, nearest first. The {@code aka_vcts}
+     * types follow, each with its base types. Trust selection takes the first declared type, so
+     * the type the issuer signed as the credential's own comes before what it claims to also be.
      */
     public static List<String> typesOf(String type, List<String> alsoKnownAs) {
         Set<String> types = new LinkedHashSet<>();
         if (type != null) {
             types.add(type);
+            types.addAll(urnAncestors(type));
         }
         if (alsoKnownAs != null) {
-            alsoKnownAs.stream().filter(aka -> aka != null && !aka.isBlank()).forEach(types::add);
-        }
-        for (String named : List.copyOf(types)) {
-            types.addAll(urnAncestors(named));
+            alsoKnownAs.stream().filter(aka -> aka != null && !aka.isBlank()).forEach(aka -> {
+                types.add(aka);
+                types.addAll(urnAncestors(aka));
+            });
         }
         return List.copyOf(types);
     }

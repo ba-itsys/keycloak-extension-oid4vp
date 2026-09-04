@@ -108,7 +108,8 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
         RealmModel realm = session.getContext().getRealm();
         int loginTimeoutSeconds = realm != null ? realm.getAccessCodeLifespanLogin() : DEFAULT_LOGIN_TIMEOUT_SECONDS;
-        this.requestObjectStore = new Oid4vpRequestObjectStore(Duration.ofSeconds(loginTimeoutSeconds));
+        this.requestObjectStore =
+                new Oid4vpRequestObjectStore(Duration.ofSeconds(loginTimeoutSeconds), config.getAlias());
     }
 
     public Oid4vpRedirectFlowService getRedirectFlowService() {

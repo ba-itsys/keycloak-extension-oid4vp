@@ -111,6 +111,22 @@ class StatusListVerifierTest {
     }
 
     @Test
+    void statusListUriMustBeHttps() {
+        StatusListVerifier verifier = new StatusListVerifier() {
+            @Override
+            String fetchStatusListJwt(String uri) {
+                throw new AssertionError("a plain http status list must not be fetched");
+            }
+        };
+        Map<String, Object> payload =
+                Map.of("status", Map.of("status_list", Map.of("uri", "http://issuer.example/status/abc", "idx", 1)));
+
+        assertThatThrownBy(() -> verifier.checkRevocationStatus(payload))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("https");
+    }
+
+    @Test
     void revocationCheckFailureCarriesStatusListUri() {
         StatusListVerifier failingVerifier = new StatusListVerifier() {
             @Override

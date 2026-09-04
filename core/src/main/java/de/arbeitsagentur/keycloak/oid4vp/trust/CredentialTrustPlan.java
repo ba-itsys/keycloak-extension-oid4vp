@@ -122,8 +122,9 @@ public class CredentialTrustPlan {
      * Returns the type whose providers judge a credential. It walks the types the credential is of,
      * nearest first, and takes the first one a provider declares, so a provider for the derived type
      * wins over one for the base type while a base type's provider still covers derived types that
-     * have none of their own. Falling back to the type itself leaves the credential to the unscoped
-     * providers.
+     * have none of their own. A type named in {@code aka_vcts} only counts when no provider declares
+     * the credential's own type or one of its base types. Falling back to the type itself leaves the
+     * credential to the unscoped providers.
      */
     public String servingType(String credentialType, List<String> alsoKnownAs) {
         return CredentialTypeHierarchy.typesOf(credentialType, alsoKnownAs).stream()

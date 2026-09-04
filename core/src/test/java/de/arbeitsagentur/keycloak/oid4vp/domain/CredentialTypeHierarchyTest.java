@@ -45,9 +45,10 @@ class CredentialTypeHierarchyTest {
     }
 
     @Test
-    void typesOf_listTheTypeThenAlsoKnownAsThenAncestorsOfEach() {
+    void typesOf_listTheTypeWithItsAncestorsThenAlsoKnownAsWithTheirs() {
         assertThat(CredentialTypeHierarchy.typesOf("urn:example:pid:at:2", List.of(GERMAN_PID)))
-                .containsExactly("urn:example:pid:at:2", GERMAN_PID, "urn:example:pid:2", PID);
+                .as("the credential's own type and its base types come before anything aka_vcts adds")
+                .containsExactly("urn:example:pid:at:2", "urn:example:pid:2", GERMAN_PID, PID);
         assertThat(CredentialTypeHierarchy.typesOf(PID, null)).containsExactly(PID);
         assertThat(CredentialTypeHierarchy.typesOf(PID, List.of(PID, " ")))
                 .as("duplicates and blanks are dropped")

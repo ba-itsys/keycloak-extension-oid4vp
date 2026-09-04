@@ -112,6 +112,20 @@ class VpTokenProcessorCredentialTrustTest {
     }
 
     @Test
+    void aCredentialWithoutAnIssuerIsRejectedBeforeAnyKeyIsResolved() throws Exception {
+        VpTokenProcessor processor = processor(twoTrustDomains());
+
+        // Without an iss there is nothing to bind a pinned certificate or a chain to, and nothing
+        // for the issuer allow-list to judge, so the PID issuer's own signature is not enough.
+        String vpToken = objectMapper.writeValueAsString(
+                Map.of("pid", presentation(pidIssuerKey, pidIssuerCert, null, PID_TYPE)));
+
+        assertThatThrownBy(() -> processor.process(request(vpToken, requestedCredentials())))
+                .isInstanceOf(IdentityBrokerException.class)
+                .hasMessageContaining("iss");
+    }
+
+    @Test
     void aCredentialOfOneTrustDomainIsNotAcceptedUnderTheIdOfAnother() throws Exception {
         VpTokenProcessor processor = processor(twoTrustDomains());
 

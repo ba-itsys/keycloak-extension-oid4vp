@@ -71,6 +71,7 @@ public class Oid4vpDirectPostService {
     static final String KEY_ORIGIN = "origin";
     static final String KEY_ERROR = "error";
     static final String KEY_ERROR_DESCRIPTION = "error_description";
+    static final String KEY_IDP_ALIAS = "idp_alias";
 
     private static final int RESPONSE_CODE_BYTES = 32;
 
@@ -100,9 +101,16 @@ public class Oid4vpDirectPostService {
         this.crossDeviceCompleteTtlSeconds = config.getCrossDeviceCompleteTtlSeconds();
     }
 
+    /**
+     * @param endpointBaseUrl the endpoint base the browser reached when the login page was rendered,
+     *     from the request context. The browser opens the URL handed out here, so it is built from
+     *     that base and not from the wallet's request, whose host the poster chooses when Keycloak
+     *     resolves its hostname dynamically.
+     */
     public Response storeAndSignal(
             AuthenticationSessionModel authSession,
             String state,
+            String endpointBaseUrl,
             BrokeredIdentityContext context,
             boolean isCrossDevice) {
 
@@ -112,11 +120,11 @@ public class Oid4vpDirectPostService {
         // the first wallet established. Only a successfully verified presentation reaches this
         // method, so a wallet can still retry its own direct_post and a failed presentation never
         // locks the flow.
-        Map<String, String> existing = session.singleUseObjects().get(DEFERRED_AUTH_PREFIX + state);
+        Map<String, String> existing = ownSignal(DEFERRED_AUTH_PREFIX + state);
         if (existing != null && StringUtil.isNotBlank(existing.get(KEY_RESPONSE_CODE))) {
             LOG.debugf("Ignoring repeated direct_post for already-completed state=%s", state);
             return responseFactory.jsonRedirectResponse(
-                    buildCompleteAuthUrl(state, existing.get(KEY_RESPONSE_CODE)), isCrossDevice);
+                    buildCompleteAuthUrl(endpointBaseUrl, state, existing.get(KEY_RESPONSE_CODE)), isCrossDevice);
         }
 
         String rootSessionId = authSession.getParentSession() != null
@@ -142,7 +150,7 @@ public class Oid4vpDirectPostService {
         // present back at /complete-auth, so the public state alone is not enough to drive
         // completion (OID4VP 1.0 §8.2 response_code).
         String responseCode = Base64Url.encode(SecretGenerator.getInstance().randomBytes(RESPONSE_CODE_BYTES));
-        String completeAuthUrl = buildCompleteAuthUrl(state, responseCode);
+        String completeAuthUrl = buildCompleteAuthUrl(endpointBaseUrl, state, responseCode);
         session.singleUseObjects()
                 .put(
                         DEFERRED_AUTH_PREFIX + state,
@@ -153,7 +161,9 @@ public class Oid4vpDirectPostService {
                                 KEY_TAB_ID,
                                 tabId != null ? tabId : "",
                                 KEY_RESPONSE_CODE,
-                                responseCode));
+                                responseCode,
+                                KEY_IDP_ALIAS,
+                                aliasOrEmpty()));
         if (isCrossDevice) {
             session.singleUseObjects()
                     .put(
@@ -173,7 +183,7 @@ public class Oid4vpDirectPostService {
 
         // The response_code is verified before anything is consumed. The state is public, so a
         // wrong code must neither complete the flow nor burn the legitimate user's single-use signal.
-        Map<String, String> deferredSignal = session.singleUseObjects().get(DEFERRED_AUTH_PREFIX + state);
+        Map<String, String> deferredSignal = ownSignal(DEFERRED_AUTH_PREFIX + state);
         if (deferredSignal == null || !responseCodeMatches(deferredSignal.get(KEY_RESPONSE_CODE), responseCode)) {
             return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, Oid4vpMessages.INVALID_LOGIN_RESPONSE);
         }
@@ -183,18 +193,12 @@ public class Oid4vpDirectPostService {
             return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, Oid4vpMessages.LOGIN_EXPIRED);
         }
 
-        AuthenticationSessionModel currentBrowserSession =
-                authSessionResolver.resolveCurrentBrowserSession(storedAuthSession);
-        if (!authSessionResolver.sameAuthenticationSession(currentBrowserSession, storedAuthSession)) {
-            return ErrorPage.error(
-                    session,
-                    currentBrowserSession,
-                    Response.Status.BAD_REQUEST,
-                    Oid4vpMessages.BROWSER_SESSION_MISMATCH);
+        // The broker callback runs on the browser's own session. The stored session only serves
+        // to recover the deferred broker state serialized earlier.
+        AuthenticationSessionModel activeAuthSession = authSessionResolver.sameBrowserSession(storedAuthSession);
+        if (activeAuthSession == null) {
+            return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, Oid4vpMessages.BROWSER_SESSION_MISMATCH);
         }
-        // The broker callback runs on the current request-bound browser session. The stored session
-        // only serves to recover the deferred broker state serialized earlier.
-        AuthenticationSessionModel activeAuthSession = currentBrowserSession;
 
         session.singleUseObjects().remove(CROSS_DEVICE_COMPLETE_PREFIX + state);
         Map<String, String> consumedSignal = session.singleUseObjects().remove(DEFERRED_AUTH_PREFIX + state);
@@ -266,7 +270,7 @@ public class Oid4vpDirectPostService {
     }
 
     public AuthenticationSessionModel resolveExpectedAuthSession(String state) {
-        Map<String, String> signal = session.singleUseObjects().get(DEFERRED_AUTH_PREFIX + state);
+        Map<String, String> signal = ownSignal(DEFERRED_AUTH_PREFIX + state);
         if (signal != null) {
             AuthenticationSessionModel authSession =
                     authSessionResolver.resolveFromTokenEntry(signal.get(KEY_ROOT_SESSION_ID), signal.get(KEY_TAB_ID));
@@ -293,22 +297,23 @@ public class Oid4vpDirectPostService {
      * cross-device flow the wallet runs on another device, so the same URL is also published under
      * {@link #CROSS_DEVICE_FAILED_PREFIX} for the browser's SSE stream.
      */
-    public String signalFailure(String state, LoginFailure failure, boolean isCrossDevice) {
+    public String signalFailure(String state, String endpointBaseUrl, LoginFailure failure, boolean isCrossDevice) {
         // The first failure recorded for a state owns the URL handed out with it, as on the
         // verified path. Recording a second one would generate a fresh response code and leave the
         // End-User holding a URL that resolves to nothing, which anyone who knows the public state
         // could cause by posting again.
-        Map<String, String> existing = session.singleUseObjects().get(FAILURE_PREFIX + state);
+        Map<String, String> existing = ownSignal(FAILURE_PREFIX + state);
         if (existing != null && StringUtil.isNotBlank(existing.get(KEY_RESPONSE_CODE))) {
             LOG.debugf("Ignoring repeated failure for already-failed state=%s", state);
-            return buildFailureUrl(state, existing.get(KEY_RESPONSE_CODE));
+            return buildFailureUrl(endpointBaseUrl, state, existing.get(KEY_RESPONSE_CODE));
         }
 
         String responseCode = Base64Url.encode(SecretGenerator.getInstance().randomBytes(RESPONSE_CODE_BYTES));
-        String failureUrl = buildFailureUrl(state, responseCode);
+        String failureUrl = buildFailureUrl(endpointBaseUrl, state, responseCode);
 
         Map<String, String> entry = new HashMap<>();
         entry.put(KEY_RESPONSE_CODE, responseCode);
+        entry.put(KEY_IDP_ALIAS, aliasOrEmpty());
         entry.put(KEY_ORIGIN, failure.origin().name());
         entry.put(KEY_ERROR, failure.error() != null ? failure.error() : "");
         entry.put(KEY_ERROR_DESCRIPTION, failure.errorDescription() != null ? failure.errorDescription() : "");
@@ -331,7 +336,7 @@ public class Oid4vpDirectPostService {
      * calling this, because the request context it resolves through is dropped here.
      */
     public LoginFailure consumeFailure(String state, String responseCode) {
-        Map<String, String> entry = session.singleUseObjects().get(FAILURE_PREFIX + state);
+        Map<String, String> entry = ownSignal(FAILURE_PREFIX + state);
         if (entry == null || !responseCodeMatches(entry.get(KEY_RESPONSE_CODE), responseCode)) {
             return null;
         }
@@ -373,18 +378,38 @@ public class Oid4vpDirectPostService {
         }
     }
 
-    public String buildFailureUrl(String state, String responseCode) {
-        return Oid4vpConstants.buildEndpointBaseUrl(
-                        session.getContext().getUri().getBaseUri(), realm.getName(), config.getAlias())
+    /**
+     * Reads a signal this identity provider wrote. The single-use store is shared by every identity
+     * provider of the realm, and a signal another one recorded is not this one's to act on.
+     */
+    private Map<String, String> ownSignal(String key) {
+        Map<String, String> signal = session.singleUseObjects().get(key);
+        if (signal == null) {
+            return null;
+        }
+        if (!aliasOrEmpty().equals(signal.get(KEY_IDP_ALIAS))) {
+            LOG.warnf(
+                    "Signal %s belongs to identity provider '%s', not '%s'",
+                    key, signal.get(KEY_IDP_ALIAS), config.getAlias());
+            return null;
+        }
+        return signal;
+    }
+
+    private String aliasOrEmpty() {
+        return config.getAlias() != null ? config.getAlias() : "";
+    }
+
+    private static String buildFailureUrl(String endpointBaseUrl, String state, String responseCode) {
+        return endpointBaseUrl
                 + "/failed?"
                 + Oid4vpConstants.PARAM_STATE + "=" + URLEncoder.encode(state, StandardCharsets.UTF_8)
                 + "&"
                 + Oid4vpConstants.PARAM_RESPONSE_CODE + "=" + URLEncoder.encode(responseCode, StandardCharsets.UTF_8);
     }
 
-    public String buildCompleteAuthUrl(String state, String responseCode) {
-        return Oid4vpConstants.buildEndpointBaseUrl(
-                        session.getContext().getUri().getBaseUri(), realm.getName(), config.getAlias())
+    private static String buildCompleteAuthUrl(String endpointBaseUrl, String state, String responseCode) {
+        return endpointBaseUrl
                 + "/complete-auth?"
                 + Oid4vpConstants.PARAM_STATE + "=" + URLEncoder.encode(state, StandardCharsets.UTF_8)
                 + "&"

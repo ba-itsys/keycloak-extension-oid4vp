@@ -54,6 +54,30 @@ class PidReferenceBindingProviderTest {
     }
 
     @Test
+    void aPidOfADerivedTypeBindsLikeThePidItDerivesFrom() {
+        Map<String, Object> claims = new LinkedHashMap<>();
+        claims.put("given_name", "Erika");
+        claims.put("family_name", "Mustermann");
+        claims.put("birthdate", "1964-08-12");
+
+        Map<String, BoundCredential> germanPid = DEFAULTS.bindingMaterial(
+                new PresentedCredentials(
+                        Map.of(PID, new PresentedCredential("dc+sd-jwt", "urn:eudi:pid:de:1", claims))),
+                EMPLOYEE);
+        assertThat(germanPid)
+                .as("the German PID answers a request for the EUDI PID, so it binds under the default type too")
+                .containsOnlyKeys(PID);
+
+        Map<String, BoundCredential> alsoKnownAsPid = DEFAULTS.bindingMaterial(
+                new PresentedCredentials(Map.of(
+                        PID,
+                        new PresentedCredential(
+                                "dc+sd-jwt", "https://national.example/pid", claims, List.of(PID_VCT)))),
+                EMPLOYEE);
+        assertThat(alsoKnownAsPid).as("aka_vcts names the PID type as well").containsOnlyKeys(PID);
+    }
+
+    @Test
     void bindsToTheCredentialTypeTheClaimsWereReadFrom() {
         // The same name and date of birth out of another credential is another statement. A
         // credential of another type must not produce the same binding, even when the provider

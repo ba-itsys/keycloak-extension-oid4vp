@@ -140,7 +140,7 @@ public class Oid4vpIdentityProviderEndpoint {
                 return handleWalletError(
                         submission.error(),
                         submission.errorDescription(),
-                        resolvedRequest.state(),
+                        resolvedRequest.requestContext(),
                         FLOW_CROSS_DEVICE.equals(
                                 resolvedRequest.requestContext().flow()));
             }
@@ -320,9 +320,7 @@ public class Oid4vpIdentityProviderEndpoint {
         if (expectedAuthSession == null) {
             throw stopSseReconnects();
         }
-        AuthenticationSessionModel currentBrowserSession =
-                authSessionResolver.resolveCurrentBrowserSession(expectedAuthSession);
-        if (!authSessionResolver.sameAuthenticationSession(currentBrowserSession, expectedAuthSession)) {
+        if (authSessionResolver.sameBrowserSession(expectedAuthSession) == null) {
             throw stopSseReconnects();
         }
         sseService.subscribe(state, eventSink, sse, expectedAuthSession);
@@ -354,9 +352,10 @@ public class Oid4vpIdentityProviderEndpoint {
      * another authentication method.
      *
      * <p>The error code and description come from the server-side record rather than from query
-     * parameters, so whoever opens this URL cannot choose them, and the response code proves that
-     * the caller is the End-User of the wallet that posted, which someone who only learned the
-     * state cannot pass. Both values only reach the login event, because §8.5 covers everything
+     * parameters, so whoever opens this URL cannot choose them. The response code proves that the
+     * caller received the answer to the wallet's post, and the auth session cookie proves that the
+     * browser is the one that started the attempt, as at {@code /complete-auth}. Both values only
+     * reach the login event, because §8.5 covers everything
      * from a declined presentation to a request the wallet could not parse without authenticating
      * which of them happened, and a rejection reason is an internal verification message an
      * End-User cannot act on.
@@ -371,7 +370,13 @@ public class Oid4vpIdentityProviderEndpoint {
             return browserError(Oid4vpMessages.INVALID_LOGIN_RESPONSE);
         }
 
-        AuthenticationSessionModel authSession = authSessionResolver.resolveFromStore(state);
+        // The browser has to be the one that started the attempt, as at /complete-auth. Checked
+        // before the record is consumed, so another browser cannot burn it.
+        AuthenticationSessionModel storedAuthSession = authSessionResolver.resolveFromStore(state);
+        AuthenticationSessionModel authSession = authSessionResolver.sameBrowserSession(storedAuthSession);
+        if (storedAuthSession != null && authSession == null) {
+            return browserError(Oid4vpMessages.BROWSER_SESSION_MISMATCH);
+        }
         Oid4vpDirectPostService.LoginFailure failure = directPostService.consumeFailure(state, responseCode);
         if (failure == null) {
             LOG.warnf("No failure recorded for state=%s, or the response code did not match", state);
@@ -410,12 +415,13 @@ public class Oid4vpIdentityProviderEndpoint {
         try {
             context = provider.getCallbackProcessor().process(requestContext, vpToken, mdocGeneratedNonce);
         } catch (IdentityBrokerException e) {
-            return handleVerificationFailure(e.getMessage(), state, isCrossDeviceFlow);
+            return handleVerificationFailure(e.getMessage(), requestContext, isCrossDeviceFlow);
         } catch (Exception e) {
             LOG.errorf(e, "Failed to process VP token: %s", e.getMessage());
-            return handleServerFailure(e.getMessage(), state, isCrossDeviceFlow);
+            return handleServerFailure(e.getMessage(), requestContext, isCrossDeviceFlow);
         }
-        return directPostService.storeAndSignal(authSession, requestContext.state(), context, isCrossDeviceFlow);
+        return directPostService.storeAndSignal(
+                authSession, requestContext.state(), requestContext.responseUri(), context, isCrossDeviceFlow);
     }
 
     /**
@@ -437,11 +443,15 @@ public class Oid4vpIdentityProviderEndpoint {
      * Answers a wallet-reported error response (OID4VP 1.0 §8.5). Whatever the wallet reported,
      * the response URI processed the post successfully.
      */
-    private Response handleWalletError(String error, String errorDescription, String state, boolean isCrossDevice) {
+    private Response handleWalletError(
+            String error,
+            String errorDescription,
+            Oid4vpRequestObjectStore.RequestContextEntry requestContext,
+            boolean isCrossDevice) {
         return handleFailure(
                 new Oid4vpDirectPostService.LoginFailure(
                         Oid4vpDirectPostService.LoginFailure.Origin.WALLET, error, errorDescription),
-                state,
+                requestContext,
                 isCrossDevice);
     }
 
@@ -452,11 +462,14 @@ public class Oid4vpIdentityProviderEndpoint {
      * page says that the verification failed instead of blaming what the wallet presented.
      * {@code rejectionResponse} does not apply, because there is no rejection to report.
      */
-    private Response handleServerFailure(String errorDescription, String state, boolean isCrossDevice) {
+    private Response handleServerFailure(
+            String errorDescription,
+            Oid4vpRequestObjectStore.RequestContextEntry requestContext,
+            boolean isCrossDevice) {
         return handleFailure(
                 new Oid4vpDirectPostService.LoginFailure(
                         Oid4vpDirectPostService.LoginFailure.Origin.SERVER, "server_error", errorDescription),
-                state,
+                requestContext,
                 isCrossDevice);
     }
 
@@ -466,31 +479,33 @@ public class Oid4vpIdentityProviderEndpoint {
      * answered this way, while the transport level failures {@link #handlePost} catches get a plain
      * error, because a post that never proved it came from the wallet must not end the attempt.
      */
-    private Response handleVerificationFailure(String errorDescription, String state, boolean isCrossDevice) {
+    private Response handleVerificationFailure(
+            String errorDescription,
+            Oid4vpRequestObjectStore.RequestContextEntry requestContext,
+            boolean isCrossDevice) {
         return handleFailure(
                 new Oid4vpDirectPostService.LoginFailure(
                         Oid4vpDirectPostService.LoginFailure.Origin.VERIFIER, "invalid_presentation", errorDescription),
-                state,
+                requestContext,
                 isCrossDevice);
     }
 
     /**
      * Records the failure and answers the wallet like a completed login, handing it the
      * {@code redirect_uri} that leads to {@link #handleFailureRedirect}, or an empty object in a
-     * cross-device flow. Without a state there is nothing to record and nowhere to send the
-     * End-User, so the response falls back to a plain error.
+     * cross-device flow.
      */
-    private Response handleFailure(Oid4vpDirectPostService.LoginFailure failure, String state, boolean isCrossDevice) {
+    private Response handleFailure(
+            Oid4vpDirectPostService.LoginFailure failure,
+            Oid4vpRequestObjectStore.RequestContextEntry requestContext,
+            boolean isCrossDevice) {
         event.event(EventType.LOGIN_ERROR)
                 .detail(OAuth2Constants.ERROR, failure.error())
                 .detail(OAuth2Constants.ERROR_DESCRIPTION, failure.errorDescription())
                 .error(Errors.IDENTITY_PROVIDER_ERROR);
 
-        if (StringUtil.isBlank(state)) {
-            return responseFactory.jsonErrorResponse(
-                    Response.Status.BAD_REQUEST, failure.error(), failure.errorDescription());
-        }
-        String failureUrl = directPostService.signalFailure(state, failure, isCrossDevice);
+        String failureUrl = directPostService.signalFailure(
+                requestContext.state(), requestContext.responseUri(), failure, isCrossDevice);
         if (failure.origin() == Oid4vpDirectPostService.LoginFailure.Origin.VERIFIER
                 && provider.getConfig().getRejectionResponse().isError()) {
             return responseFactory.jsonErrorRedirectResponse(
