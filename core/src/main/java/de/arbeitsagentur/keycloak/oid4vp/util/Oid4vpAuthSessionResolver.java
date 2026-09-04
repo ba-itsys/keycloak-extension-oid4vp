@@ -103,6 +103,16 @@ public class Oid4vpAuthSessionResolver {
         }
     }
 
+    /**
+     * Returns the browser's own authentication session when it is the expected one, or null when
+     * the browser holds no cookie for it. The endpoints a browser opens all require this, so that a
+     * URL naming a public state only works in the browser that started the attempt.
+     */
+    public AuthenticationSessionModel sameBrowserSession(AuthenticationSessionModel expectedAuthSession) {
+        AuthenticationSessionModel current = resolveCurrentBrowserSession(expectedAuthSession);
+        return sameAuthenticationSession(current, expectedAuthSession) ? current : null;
+    }
+
     public boolean sameAuthenticationSession(AuthenticationSessionModel first, AuthenticationSessionModel second) {
         if (first == null || second == null) {
             return false;

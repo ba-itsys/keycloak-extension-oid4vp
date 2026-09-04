@@ -86,6 +86,10 @@ public class StatusListVerifier {
             return;
         }
 
+        // The status list draft requires an https uri. Nothing but TLS says who answers there.
+        if (!ref.uri.regionMatches(true, 0, "https://", 0, 8)) {
+            throw new IllegalStateException("Status list URI '" + ref.uri + "' is not an https URL");
+        }
         LOG.infof("Checking revocation status: uri=%s, idx=%d", ref.uri, ref.idx);
 
         try {

@@ -42,7 +42,10 @@ public record PresentedCredentials(Map<String, PresentedCredential> byCredential
         verifiedCredentials.forEach((credentialId, credential) -> credentials.put(
                 credentialId,
                 new PresentedCredential(
-                        credential.presentationType().dcqlFormat(), credential.credentialType(), credential.claims())));
+                        credential.presentationType().dcqlFormat(),
+                        credential.credentialType(),
+                        credential.claims(),
+                        credential.alsoKnownAsTypes())));
         return new PresentedCredentials(credentials);
     }
 

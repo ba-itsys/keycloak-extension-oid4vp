@@ -45,10 +45,19 @@ public class Oid4vpRequestObjectStore {
     private static final Logger LOG = Logger.getLogger(Oid4vpRequestObjectStore.class);
     private static final String STATE_INDEX_PREFIX = "oid4vp_state:";
     private static final String KEY_JSON = "json";
+    private static final String KEY_IDP_ALIAS = "idp_alias";
     private final Duration ttl;
+    private final String idpAlias;
 
-    public Oid4vpRequestObjectStore(Duration ttl) {
+    /**
+     * @param idpAlias the identity provider this store serves. The state index is shared by every
+     *     identity provider of the realm. An entry records the alias that created it and resolves
+     *     for that alias only, so a presentation posted to another OID4VP identity provider of the
+     *     realm cannot complete this one's login under that provider's policy.
+     */
+    public Oid4vpRequestObjectStore(Duration ttl, String idpAlias) {
         this.ttl = ttl;
+        this.idpAlias = idpAlias;
     }
 
     /**
@@ -75,7 +84,10 @@ public class Oid4vpRequestObjectStore {
             return;
         }
         session.singleUseObjects()
-                .put(STATE_INDEX_PREFIX + entry.state(), ttl.toSeconds(), Map.of(KEY_JSON, serializeEntry(entry)));
+                .put(
+                        STATE_INDEX_PREFIX + entry.state(),
+                        ttl.toSeconds(),
+                        Map.of(KEY_JSON, serializeEntry(entry), KEY_IDP_ALIAS, aliasOrEmpty()));
         LOG.debugf("Stored request context: state=%s", entry.state());
     }
 
@@ -83,7 +95,17 @@ public class Oid4vpRequestObjectStore {
         if (StringUtil.isBlank(state)) return null;
         Map<String, String> entry = session.singleUseObjects().get(STATE_INDEX_PREFIX + state);
         if (entry == null) return null;
+        if (!aliasOrEmpty().equals(entry.get(KEY_IDP_ALIAS))) {
+            LOG.warnf(
+                    "Request context for state=%s belongs to identity provider '%s', not '%s'",
+                    state, entry.get(KEY_IDP_ALIAS), idpAlias);
+            return null;
+        }
         return deserializeEntry(entry.get(KEY_JSON), RequestContextEntry.class);
+    }
+
+    private String aliasOrEmpty() {
+        return idpAlias != null ? idpAlias : "";
     }
 
     public void removeRequestContext(KeycloakSession session, String state) {

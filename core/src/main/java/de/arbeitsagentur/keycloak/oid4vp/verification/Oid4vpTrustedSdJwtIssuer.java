@@ -15,6 +15,7 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
 import de.arbeitsagentur.keycloak.oid4vp.trust.TrustedIssuerKey;
 import de.arbeitsagentur.keycloak.oid4vp.trust.X509CertificateChainValidator;
@@ -66,6 +67,15 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
     @Override
     public List<SignatureVerifierContext> resolveIssuerVerifyingKeys(IssuerSignedJWT issuerSignedJWT)
             throws VerificationException {
+        // Every route below binds the key it accepts to the credential's iss. Without one any pinned
+        // certificate would match and the issuer allow-list would not apply, so the claim SD-JWT VC
+        // requires is checked first.
+        JsonNode issuerClaim = issuerSignedJWT.getPayload().get("iss");
+        if (issuerClaim == null
+                || !issuerClaim.isTextual()
+                || issuerClaim.asText().isBlank()) {
+            throw new VerificationException("The SD-JWT VC carries no iss claim");
+        }
         IllegalStateException x5cFailure = null;
         try {
             List<SignatureVerifierContext> x5cVerifiers = resolveIssuerVerifiersFromX5c(issuerSignedJWT);

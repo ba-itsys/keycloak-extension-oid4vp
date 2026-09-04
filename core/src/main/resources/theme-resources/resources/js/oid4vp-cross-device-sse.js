@@ -20,6 +20,17 @@
         return config.statusUrl + "?state=" + encodeURIComponent(config.state);
     }
 
+    // The server builds the redirect from the base this page was loaded from. A URL on another
+    // origin did not come from it.
+    function sameOriginUrl(value) {
+        try {
+            var url = new URL(value, window.location.href);
+            return url.origin === window.location.origin ? url.href : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
     function initOid4vpCrossDeviceSse(config) {
         if (!config || !config.statusUrl || !config.state) {
             return null;
@@ -49,8 +60,11 @@
                 stop();
                 try {
                     var data = JSON.parse(event.data);
-                    if (data.redirect_uri) {
-                        window.location.href = data.redirect_uri;
+                    var target = sameOriginUrl(data.redirect_uri);
+                    if (target) {
+                        window.location.href = target;
+                    } else {
+                        console.error("OID4VP: Ignoring redirect to another origin");
                     }
                 } catch (error) {
                     console.error("OID4VP: Failed to parse completion event", error);
@@ -62,8 +76,11 @@
                 stop();
                 try {
                     var data = JSON.parse(event.data);
-                    if (data.redirect_uri) {
-                        window.location.href = data.redirect_uri;
+                    var target = sameOriginUrl(data.redirect_uri);
+                    if (target) {
+                        window.location.href = target;
+                    } else {
+                        console.error("OID4VP: Ignoring redirect to another origin");
                     }
                 } catch (error) {
                     console.error("OID4VP: Failed to parse failure event", error);

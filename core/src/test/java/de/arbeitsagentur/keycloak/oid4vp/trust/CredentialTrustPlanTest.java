@@ -79,6 +79,16 @@ class CredentialTrustPlanTest {
                 .isEqualTo(PID);
         assertThat(baseOnly.serves("urn:eudi:pid:de:1")).isTrue();
 
+        FixedTrustMaterialIdentityProvider nationalPidProvider =
+                FixedTrustMaterialIdentityProvider.serving(TestTrust.ofCertificates(), "urn:example:national-pid:1");
+        CredentialTrustPlan ownTypeDeclared = new CredentialTrustPlan(List.of(pidProvider, nationalPidProvider));
+        assertThat(ownTypeDeclared.servingType("urn:example:national-pid:1", List.of(PID)))
+                .as("the credential's own type takes precedence over what aka_vcts names")
+                .isEqualTo("urn:example:national-pid:1");
+        assertThat(ownTypeDeclared.servingType("urn:example:national-pid:de:1", List.of(PID)))
+                .as("a base type of the credential's own type comes before aka_vcts as well")
+                .isEqualTo("urn:example:national-pid:1");
+
         CredentialTrustPlan both = new CredentialTrustPlan(List.of(pidProvider, germanPidProvider));
         assertThat(both.servingType("urn:eudi:pid:de:1", List.of()))
                 .as("a provider declared for the derived type takes precedence")

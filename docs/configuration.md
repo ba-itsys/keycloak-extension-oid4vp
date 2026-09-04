@@ -166,7 +166,7 @@ sequenceDiagram
     end
 ```
 
-Both logins reach the same account because both derive the same brokered identity. The identity is `Base64Url(SHA-256(subject))` over the trimmed and lowercased subject. Neither the issuer nor the credential format is part of it. Keycloak scopes it to the identity provider alias on its own.
+Both logins reach the same account because both derive the same brokered identity. The identity is `Base64Url(SHA-256(subject))` over the trimmed and lowercased subject. Neither the issuer nor the credential format is part of it. Keycloak scopes it to the identity provider alias on its own. Every credential named in `principalAttributes` therefore has to come from an issuer that assigns the subject. A credential whose holder chooses the subject claim at issuance can name the subject of another credential and reach that account. The credential this Keycloak issues carries a subject derived from the user id and the reference credential binding described below, so it identifies one account and one person.
 
 That identity is stored in the Keycloak federated identity link of this identity provider. The first broker login flow writes the link when it finishes. Nothing is written to a user attribute. The user id is never stored, not even inside the link.
 
@@ -299,7 +299,9 @@ A credential of a derived type satisfies a request for the type it derives from.
 - The `aka_vcts` claim of an SD-JWT VC lists further types the credential is of (SD-JWT VC, section 2.2.2.2).
 - A URN type whose qualifier segments sit between its name and its numeric version derives from the type without them. `urn:eudi:pid:de:1` derives from `urn:eudi:pid:1`, and `urn:eudi:pid:de:bavaria:1` derives from both. This is how the ARF forms domestic PID types. Type metadata is not consulted. The PID types are URNs with no document to retrieve.
 
-Inheritance says what a credential is, not who may issue it. Trust material is selected by the nearest type a provider declares in `servedCredentialTypes`. A provider declared for `urn:eudi:pid:de:1` judges the German PID. Without one, the provider declared for `urn:eudi:pid:1` does. A base type's provider serves every derived type that has no provider of its own. The reverse never happens. The same rule decides which `trusted_authorities` a requested type advertises.
+Inheritance says what a credential is, not who may issue it. Trust material is selected by the nearest type a provider declares in `servedCredentialTypes`. The credential's own type is tried first, then its base types. The types `aka_vcts` names are tried after that, each with its base types, and only when no provider declares the credential's own type or one of its base types. A provider declared for `urn:eudi:pid:de:1` judges the German PID. Without one, the provider declared for `urn:eudi:pid:1` does. A base type's provider serves every derived type that has no provider of its own. The reverse never happens. The same rule decides which `trusted_authorities` a requested type advertises.
+
+An issuer is trusted for what its credentials say about themselves. A credential of one type that names a second type in `aka_vcts` satisfies a request for the second type, verified by the trust material of the first. Reference only issuers whose credentials may stand for every type they name.
 
 ### Trust Cases
 
@@ -379,6 +381,8 @@ Trust lists are cached until the earliest of ETSI `ListAndSchemeInformation.Next
 | `sseTimeoutSeconds` | Maximum SSE connection lifetime before timeout. | `120` |
 | `ssePingIntervalSeconds` | Keep-alive ping interval. | `10` |
 | `crossDeviceCompleteTtlSeconds` | Lifetime of the cross-device completion marker. The deferred auth record itself uses the realm login timeout. | `300` |
+
+Every open SSE connection polls from a virtual thread of its own for up to `sseTimeoutSeconds`. The extension sets no limit on how many connections a node holds. The HTTP connection limit of the server bounds them. Set `quarkus.http.limits.max-connections` in `conf/quarkus.properties` to cap concurrent connections on a node. The limit counts every HTTP connection, not only SSE streams.
 
 ## IdP Mappers
 
