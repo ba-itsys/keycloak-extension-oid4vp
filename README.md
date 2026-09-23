@@ -1,18 +1,22 @@
 # keycloak-extension-oid4vp
 
-A Keycloak identity provider extension that enables login with EUDI-compatible digital identity wallets via [OpenID for Verifiable Presentations (OID4VP) 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html).
+A Keycloak identity provider extension that enables login with EUDI-compatible digital identity wallets
+via [OpenID for Verifiable Presentations (OID4VP) 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html).
 
-> This extension is under active development and is not production-ready. APIs, configuration keys, and behavior may change without notice.
+> This extension is under active development and is not production-ready. APIs, configuration keys, and behavior may
+> change without notice.
 
 ## Overview
 
-The extension lets Keycloak act as an OID4VP verifier. It renders a wallet login page, generates request objects on demand, verifies the returned presentation, and completes the Keycloak login flow.
+The extension lets Keycloak act as an OID4VP verifier. It renders a wallet login page, generates request objects on
+demand, verifies the returned presentation, and completes the Keycloak login flow.
 
 Supported capabilities:
 
 - same-device and cross-device wallet login flows
 - SD-JWT VC and mDoc (`mso_mdoc`) verification
-- SD-JWT issuer verification with `x5c` first, then the issuer keys of the credential's trust domain, then JWT VC issuer metadata (`kid`)
+- SD-JWT issuer verification with `x5c` first, then the issuer keys of the credential's trust domain, then JWT VC issuer
+  metadata (`kid`)
 - DCQL-based credential requests
 - `direct_post` and `direct_post.jwt` response modes
 - Verifier configuration for the high assurance profile, including encrypted wallet responses
@@ -31,9 +35,19 @@ Supported capabilities:
 
 ## How It Works
 
-At login time, Keycloak allocates a `state` for each enabled browser flow. It renders a same-device deep link, a cross-device QR code, or both. The `state` is carried in the `request_uri`. The wallet fetches the `request_uri`. Keycloak generates a signed request object for that fetch. The wallet posts the resulting presentation to the verifier endpoint and echoes the `state`. After successful verification, Keycloak generates a single-use `response_code`. The browser completes the login through `/complete-auth?state=...&response_code=...`. The browser presents that `response_code`. The request is also bound to the original Keycloak authentication session. The public `state` alone cannot drive completion.
+At login time, Keycloak allocates a `state` for each enabled browser flow. It renders a same-device deep link, a
+cross-device QR code, or both. The `state` is carried in the `request_uri`. The wallet fetches the `request_uri`.
+Keycloak generates a signed request object for that fetch. The wallet posts the resulting presentation to the verifier
+endpoint and echoes the `state`. After successful verification, Keycloak generates a single-use `response_code`. The
+browser completes the login through `/complete-auth?state=...&response_code=...`. The browser presents that
+`response_code`. The request is also bound to the original Keycloak authentication session. The public `state` alone
+cannot drive completion.
 
-For SD-JWT VC, the verifier prefers `x5c`-based issuer verification. Without a usable `x5c` chain it uses the issuer keys published by the credential's trust domain. The verifier falls back to JWT VC issuer metadata only when the identity provider references no trust material providers at all. It then resolves the issuer signing key from `/.well-known/jwt-vc-issuer`, including `jwks_uri` documents, using the JOSE `kid`. With trust material providers configured, a credential type none of them serves is rejected.
+For SD-JWT VC, the verifier prefers `x5c`-based issuer verification. Without a usable `x5c` chain it uses the issuer
+keys published by the credential's trust domain. The verifier falls back to JWT VC issuer metadata only when the
+identity provider references no trust material providers at all. It then resolves the issuer signing key from
+`/.well-known/jwt-vc-issuer`, including `jwks_uri` documents, using the JOSE `kid`. With trust material providers
+configured, a credential type none of them serves is rejected.
 
 For the full flow, security model, and request/state lifecycle, see [docs/request-flow.md](docs/request-flow.md).
 
@@ -68,10 +82,14 @@ For more details on local wallet setup, sandbox setup, and script usage, see [do
 ### Common Commands
 
 - **Formatting**: `mvn spotless:apply` applies the code style.
-- **Verification**: `mvn verify` runs the unit tests and builds the project. Integration and conformance tests are skipped by default.
+- **Verification**: `mvn verify` runs the unit tests and builds the project. Integration and conformance tests are
+  skipped by default.
 - **Run only unit tests:** `mvn test`
-- **Run integration/E2E tests:** `mvn verify -pl integration-tests -am -Pintegration-tests`. These tests are skipped by default and run with the `integration-tests` profile. A single test class can be selected with `-Dit.test='KeycloakOid4vpLoginE2eIT'`.
-- **Run conformance tests:** `mvn verify -pl conformance-tests -am -Pconformance-tests`. These tests are skipped by default and run with the `conformance-tests` profile.
+- **Run integration/E2E tests:** `mvn verify -pl integration-tests -am -Pintegration-tests`. These tests are skipped by
+  default and run with the `integration-tests` profile. A single test class can be selected with
+  `-Dit.test='KeycloakOid4vpLoginE2eIT'`.
+- **Run conformance tests:** `mvn verify -pl conformance-tests -am -Pconformance-tests`. These tests are skipped by
+  default and run with the `conformance-tests` profile.
 
 ### Important Local Files
 
@@ -81,3 +99,20 @@ For more details on local wallet setup, sandbox setup, and script usage, see [do
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).
+
+## Contributing
+
+Contributions are welcome! For detailed instructions, please refer to our
+central [Contributing Guide](https://github.com/ba-itsys/.github/blob/main/CONTRIBUTING.md).
+
+In short:
+
+- **Commit Guidelines**: We strictly follow [Conventional Commits](https://www.conventionalcommits.org/) — the commit
+  type (e.g., `feat`, `fix`, `docs`) drives our automated versioning and changelog generation. All commits must be
+  signed off with `git commit -s` (DCO).
+- **Pull Request Process**: Fork the repository, create a feature branch from `main`, and open a Pull Request against
+  `main` (rebased on the latest `main`). Every bug fix or new feature should include corresponding tests.
+- **Release Process**: Releases are automated with [release-please](https://github.com/googleapis/release-please), which
+  parses the conventional commits from the merged history to create version bumps, changelogs, and releases. See
+  the [Release Process documentation](https://github.com/ba-itsys/.github/blob/main/docs/release-process.md) for details
+  on commit types, validation, and the full release flow.
