@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.13.1](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.13.0...v0.13.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* multiple security review fixes ([2fca089](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/2fca08921ff32877e003afc6bbac6a0f37e29725))
+
+
+### Dependencies
+
+* **deps-dev:** bump net.bytebuddy:byte-buddy-agent ([#180](https://github.com/ba-itsys/keycloak-extension-oid4vp/issues/180)) ([1dcc704](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/1dcc70450fa769c7407097d245c8ec41e77f9ac0))
+* **deps-dev:** bump org.apache.httpcomponents.client5:httpclient5 ([#179](https://github.com/ba-itsys/keycloak-extension-oid4vp/issues/179)) ([eec4cbb](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/eec4cbba1f31c1abb94f41cb414e81ebdd98385d))
+* **deps:** bump keycloak.version from 26.7.1 to 26.7.3 ([#166](https://github.com/ba-itsys/keycloak-extension-oid4vp/issues/166)) ([4b23355](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/4b233559e975e372a5a41e775353e6245cef3817))
+* **deps:** bump org.keycloak.testframework:keycloak-test-framework-bom ([#167](https://github.com/ba-itsys/keycloak-extension-oid4vp/issues/167)) ([65566b3](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/65566b34087770c538e98934f5bfd66a4c340372))
+
+
+### Documentation
+
+* add contributing guidelines to README ([92673f4](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/92673f49b0469046d2528c0e2ce220dc11133e54))
+
 ## [0.13.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.12.0...v0.13.0) (2026-09-03)
 
 
