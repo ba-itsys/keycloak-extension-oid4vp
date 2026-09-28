@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.2](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.13.1...v0.13.2) (2026-09-28)
+
+
+### Bug Fixes
+
+* make SAN-&gt;iss match check optional (as it does not work with real wallets) ([d7690bd](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/d7690bd2ada4e30deb54d1f7cac4f6c5c98a3511))
+
 ## [0.13.1](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.13.0...v0.13.1) (2026-09-25)
 
 
