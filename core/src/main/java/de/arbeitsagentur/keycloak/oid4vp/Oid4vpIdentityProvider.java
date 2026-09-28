@@ -103,7 +103,8 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                                 config.getStatusListMaxCacheTtl(),
                                 config.getIssuerMetadataMaxCacheTtl(),
                                 config.getClockSkewSeconds(),
-                                config.getKbJwtMaxAgeSeconds())),
+                                config.getKbJwtMaxAgeSeconds(),
+                                config.isRequireIssuerSanMatch())),
                 ReferenceCredentialBinding.checkOf(session));
 
         RealmModel realm = session.getContext().getRealm();

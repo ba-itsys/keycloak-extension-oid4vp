@@ -69,7 +69,8 @@ public class VpTokenProcessor implements VpTokenVerifier {
             Duration statusListMaxCacheTtl,
             Duration issuerMetadataMaxCacheTtl,
             int clockSkewSeconds,
-            int kbJwtMaxAgeSeconds) {}
+            int kbJwtMaxAgeSeconds,
+            boolean requireIssuerSanMatch) {}
 
     public record Request(
             String vpToken,
@@ -89,7 +90,8 @@ public class VpTokenProcessor implements VpTokenVerifier {
         this.sdJwtVerifier = new SdJwtVerifier(
                 config.clockSkewSeconds(),
                 config.kbJwtMaxAgeSeconds(),
-                new JwtVcIssuerMetadataResolver(config.session(), config.issuerMetadataMaxCacheTtl()));
+                new JwtVcIssuerMetadataResolver(config.session(), config.issuerMetadataMaxCacheTtl()),
+                config.requireIssuerSanMatch());
         this.mdocVerifier = new MdocVerifier(config.clockSkewSeconds());
         this.trustPlanSupplier = config.trustPlanSupplier();
         this.statusListVerifier = new StatusListVerifier(config.session(), config.statusListMaxCacheTtl());

@@ -164,6 +164,7 @@ public final class X5cChainValidator {
 
         for (X509Certificate cert : trustedCerts) {
             try {
+                cert.checkValidity();
                 verifyJwtSignature(jwt, cert.getPublicKey());
                 LOG.debug("JWT signature verified with trusted key");
                 return;

@@ -43,6 +43,7 @@ public class SdJwtVerifier {
 
     private final int clockSkewSeconds;
     private final int kbJwtMaxAgeSeconds;
+    private final boolean requireIssuerSanMatch;
     private final JwtVcIssuerMetadataResolver issuerMetadataResolver;
     private final SdJwtPresentationConsumer presentationConsumer = new SdJwtPresentationConsumer();
 
@@ -52,6 +53,15 @@ public class SdJwtVerifier {
 
     public SdJwtVerifier(
             int clockSkewSeconds, int kbJwtMaxAgeSeconds, JwtVcIssuerMetadataResolver issuerMetadataResolver) {
+        this(clockSkewSeconds, kbJwtMaxAgeSeconds, issuerMetadataResolver, false);
+    }
+
+    public SdJwtVerifier(
+            int clockSkewSeconds,
+            int kbJwtMaxAgeSeconds,
+            JwtVcIssuerMetadataResolver issuerMetadataResolver,
+            boolean requireIssuerSanMatch) {
+        this.requireIssuerSanMatch = requireIssuerSanMatch;
         this.clockSkewSeconds = clockSkewSeconds;
         this.kbJwtMaxAgeSeconds = kbJwtMaxAgeSeconds;
         this.issuerMetadataResolver = issuerMetadataResolver;
@@ -116,7 +126,7 @@ public class SdJwtVerifier {
             presentationConsumer.verifySdJwtPresentation(
                     sdJwtVP,
                     requirements,
-                    List.of(new Oid4vpTrustedSdJwtIssuer(trust, issuerMetadataResolver)),
+                    List.of(new Oid4vpTrustedSdJwtIssuer(trust, issuerMetadataResolver, requireIssuerSanMatch)),
                     issuerOpts,
                     kbOptsBuilder.build());
 

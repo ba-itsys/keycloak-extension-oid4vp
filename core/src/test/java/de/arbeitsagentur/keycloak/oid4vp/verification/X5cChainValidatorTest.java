@@ -17,11 +17,17 @@ package de.arbeitsagentur.keycloak.oid4vp.verification;
 
 import static org.assertj.core.api.Assertions.*;
 
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.ECDSASigner;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
 import java.math.BigInteger;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PublicKey;
 import java.security.cert.X509Certificate;
+import java.security.interfaces.ECPrivateKey;
 import java.security.spec.ECGenParameterSpec;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -39,6 +45,8 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.keycloak.common.crypto.CryptoIntegration;
 
 class X5cChainValidatorTest {
@@ -249,6 +257,44 @@ class X5cChainValidatorTest {
 
         PublicKey result = X5cChainValidator.validateChain(encode(leafCert, intermediateCa), List.of(intermediateCa));
         assertThat(result).isEqualTo(leafCert.getPublicKey());
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "-2, -1, false, false",
+        "-2, -1, true, false",
+        "1, 2, false, false",
+        "1, 2, true, false",
+        "-1, 1, false, true",
+        "-1, 1, true, true"
+    })
+    void verifyJwtSignature_enforcesPinnedCertificateValidity(
+            int notBeforeDays, int notAfterDays, boolean includeChain, boolean valid) throws Exception {
+        KeyPair signer = generateKeyPair();
+        X509Certificate certificate = generateCert(
+                signer,
+                caKeyPair,
+                "CN=Status Signer",
+                "CN=Test CA",
+                Instant.now().plus(notBeforeDays, ChronoUnit.DAYS),
+                Instant.now().plus(notAfterDays, ChronoUnit.DAYS),
+                false);
+        JWSHeader.Builder header = new JWSHeader.Builder(JWSAlgorithm.ES256);
+        if (includeChain) {
+            header.x509CertChain(List.of(com.nimbusds.jose.util.Base64.encode(certificate.getEncoded())));
+        }
+        SignedJWT jwt = new SignedJWT(
+                header.build(),
+                new JWTClaimsSet.Builder().subject("status-list").build());
+        jwt.sign(new ECDSASigner((ECPrivateKey) signer.getPrivate()));
+
+        if (valid) {
+            X5cChainValidator.verifyJwtSignature(jwt.serialize(), List.of(certificate));
+        } else {
+            assertThatThrownBy(() -> X5cChainValidator.verifyJwtSignature(jwt.serialize(), List.of(certificate)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("no trusted key matched");
+        }
     }
 
     private static List<String> encode(X509Certificate... certificates) throws Exception {
