@@ -277,6 +277,7 @@ Multi-line values stay usable in single-line sources such as environment variabl
 |-----|-------------|---------|
 | `trustMaterialIdps` | Comma-separated aliases of trust material identity providers (see below). Each referenced provider contributes trust anchors, directly trusted issuer certificates, issuer keys, and revocation trust for the credential types it serves. | *(none)* |
 | `allowedIssuers` | Comma-separated list of allowed SD-JWT issuer (`iss`) values, or `*`. mDoc credentials are not checked against this list. mDoc does not define a standard canonical credential-issuer string equivalent to SD-JWT `iss`. | `*` |
+| `requireIssuerSanMatch` | Require the SD-JWT `iss` value to match a URI SAN of the validated `x5c` leaf certificate, or its HTTPS hostname to match a DNS SAN. Applies to CA chains and directly trusted leaf certificates. | `false` |
 | `clockSkewSeconds` | Clock skew tolerance for credential verification. | `60` |
 | `kbJwtMaxAgeSeconds` | Maximum accepted age of the SD-JWT KB-JWT `iat` claim. | `300` |
 
@@ -325,7 +326,11 @@ An issuer that publishes plain JWKs instead of a trust list is trusted through K
 
 A dedicated identity provider type carries the trust material. It never authenticates users and is hidden from login pages. OID4VP identity providers reference it through `trustMaterialIdps`. Trust anchors come from an ETSI TS 119 602 trust list URL, from a pasted PEM certificate bundle, or both. The trust list is fetched, cached, and refreshed automatically. CA certificates become X.509 trust anchors for credential certificate chains. End entity certificates are trusted directly (pinned leaf or chainless credentials).
 
-A directly trusted end entity certificate verifies the credentials of the types its provider serves, regardless of the credential's `iss`. A certificate chain validated against the CA anchors additionally requires the `iss` to match a subject alternative name of the leaf certificate.
+A directly trusted end entity certificate verifies the credentials of the types its provider serves. For a certificate chain validated against the CA anchors, the signer is identified by the subject of the validated leaf certificate. See [SD-JWT VC draft 13, section 3.5](https://www.ietf.org/archive/id/draft-ietf-oauth-sd-jwt-vc-13.html#section-3.5) (6 November 2025), [HAIP 1.0 Final, section 6.1.1](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0.html#section-6.1.1) (24 December 2025), and the PID signing-certificate profile in [ETSI TS 119 412-6 V1.2.1, clause 4](https://www.etsi.org/deliver/etsi_ts/119400_119499/11941206/01.02.01_60/ts_11941206v010201p.pdf) (April 2026).
+
+The **Require Issuer SAN Match** option (`requireIssuerSanMatch`) checks the issuer name when validating an SD-JWT `x5c` chain. The check succeeds if a URI SAN equals the complete `iss` value or a DNS SAN equals its HTTPS hostname. DNS names are compared without regard to case. The names are matched literally. When enabled, the check rejects credentials whose leaf certificate has no matching SAN. The default is `false`. Verification using configured issuer keys follows the issuer restrictions attached to those keys.
+
+`allowedIssuers` filters the signed `iss` claim. With an ETSI trust list, every accepted signer for the credential type is trusted to assert that value. Configure trust material scoped to the intended issuers and credential types. Providers that explicitly bind keys or pinned certificates to an issuer, such as `keycloak-realm-issuer`, enforce that binding during verification.
 
 | Key | Description | Default |
 |-----|-------------|---------|
@@ -353,7 +358,7 @@ A realm key certificate issued by an external CA works the same way. The signing
 
 For SD-JWT VC verification, the verifier tries issuer-key resolution in this order:
 
-1. `x5c` certificate-chain validation. Either a pinned trusted leaf certificate bound to the credential's `iss`, or a PKIX path to the trust anchors with the `iss` matching a subject alternative name of the leaf certificate
+1. `x5c` certificate-chain validation. Either a pinned trusted leaf certificate satisfying any configured issuer binding, or a PKIX path to the trust anchors that authenticates the leaf certificate's subject. With `requireIssuerSanMatch` enabled, the validated leaf must also satisfy the issuer SAN check
 2. The issuer keys the credential's trust domain publishes, matched on the credential's `iss` and JOSE `kid`
 3. JWT VC issuer metadata lookup via `iss` + `kid` from `/.well-known/jwt-vc-issuer`, including `jwks_uri`. This route is used only when the identity provider references no trust material providers at all. With trust material providers configured, a credential type none of them serves is rejected. A credential whose declared trust domain resolves to nothing is rejected as well.
 

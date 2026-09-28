@@ -20,13 +20,17 @@ import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
 import de.arbeitsagentur.keycloak.oid4vp.trust.TrustedIssuerKey;
 import de.arbeitsagentur.keycloak.oid4vp.trust.X509CertificateChainValidator;
 import de.arbeitsagentur.keycloak.oid4vp.verification.JwtVcIssuerMetadataResolver.ResolvedIssuerKey;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.security.PublicKey;
 import java.security.cert.CertificateExpiredException;
 import java.security.cert.CertificateNotYetValidException;
+import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
 import java.security.interfaces.ECPublicKey;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import org.jboss.logging.Logger;
 import org.keycloak.common.VerificationException;
@@ -42,8 +46,8 @@ import org.keycloak.sdjwt.consumer.TrustedSdJwtIssuer;
 import org.keycloak.util.KeyWrapperUtil;
 
 /**
- * Keycloak SD-JWT issuer resolution strategy for this OID4VP extension, working on the trust
- * material resolved from the configured trust material identity providers.
+ * Resolves the keys used to verify an SD-JWT credential. The keys and certificates come from
+ * the trust material identity providers configured for that credential type.
  *
  * <p>Policy:
  * <ol>
@@ -54,12 +58,18 @@ import org.keycloak.util.KeyWrapperUtil;
  */
 public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
 
+    private static final int DNS_SUBJECT_ALT_NAME = 2;
+    private static final int URI_SUBJECT_ALT_NAME = 6;
+
     private static final Logger LOG = Logger.getLogger(Oid4vpTrustedSdJwtIssuer.class);
 
     private final ResolvedTrust trust;
+    private final boolean requireIssuerSanMatch;
     private final JwtVcIssuerMetadataResolver issuerMetadataResolver;
 
-    public Oid4vpTrustedSdJwtIssuer(ResolvedTrust trust, JwtVcIssuerMetadataResolver issuerMetadataResolver) {
+    public Oid4vpTrustedSdJwtIssuer(
+            ResolvedTrust trust, JwtVcIssuerMetadataResolver issuerMetadataResolver, boolean requireIssuerSanMatch) {
+        this.requireIssuerSanMatch = requireIssuerSanMatch;
         this.trust = trust != null ? trust : ResolvedTrust.empty();
         this.issuerMetadataResolver = issuerMetadataResolver;
     }
@@ -67,9 +77,8 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
     @Override
     public List<SignatureVerifierContext> resolveIssuerVerifyingKeys(IssuerSignedJWT issuerSignedJWT)
             throws VerificationException {
-        // Every route below binds the key it accepts to the credential's iss. Without one any pinned
-        // certificate would match and the issuer allow-list would not apply, so the claim SD-JWT VC
-        // requires is checked first.
+        // The iss claim is used by the allowedIssuers filter and by trust material
+        // configured for a specific issuer.
         JsonNode issuerClaim = issuerSignedJWT.getPayload().get("iss");
         if (issuerClaim == null
                 || !issuerClaim.isTextual()
@@ -90,18 +99,17 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
             LOG.debugf("x5c-based SD-JWT verification unavailable, trying fallback mechanisms: %s", e.getMessage());
         }
 
-        // Issuer keys configured for this credential are the deliberate alternative to a chain, so
-        // they take precedence over discovering keys from wherever the credential points to.
+        // Use the configured issuer keys before consulting issuer metadata. These keys
+        // come from the trust providers selected for this credential type.
         List<SignatureVerifierContext> directVerifiers = directTrustVerifiers(issuerSignedJWT);
         if (!directVerifiers.isEmpty()) {
             LOG.debug("Using configured trusted issuer keys for signature verification");
             return directVerifiers;
         }
 
-        // Discovery from the credential's own issuer metadata is only a route when the verifier
-        // declares no trust source for this credential type. A declared source that resolves to
-        // nothing, an unreachable trust list for instance, fails verification here rather than
-        // silently trusting the keys the issuer publishes about itself.
+        // Issuer metadata is used only when no trust source is configured for this credential.
+        // If a configured trust list is unavailable, verification fails instead of trusting
+        // keys advertised by the credential issuer.
         if (issuerMetadataResolver != null && !trust.hasIssuerKeyTrust() && !trust.hasDeclaredTrustSource()) {
             try {
                 ResolvedIssuerKey issuerKey = resolveIssuerKeyFromMetadata(issuerSignedJWT);
@@ -122,16 +130,16 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
     }
 
     /**
-     * Returns whether a certificate chain is mandatory for this credential, which it is when the
-     * trust material serving the credential can only validate chains. Pinned issuer certificates
-     * and published issuer keys make a chainless credential a configured case instead, for example
-     * one signed with a key whose certificate is trusted directly.
+     * A certificate chain is required when the trust material contains only CA certificates.
+     * Pinned certificates and published issuer keys also allow verification of credentials
+     * that carry no certificate chain.
      */
     private boolean requiresCertificateChain() {
         return trust.hasCertificateChainAnchors() && !trust.hasChainlessIssuerTrust();
     }
 
-    private List<SignatureVerifierContext> resolveIssuerVerifiersFromX5c(IssuerSignedJWT issuerSignedJWT) {
+    private List<SignatureVerifierContext> resolveIssuerVerifiersFromX5c(IssuerSignedJWT issuerSignedJWT)
+            throws VerificationException {
         JWSHeader header = issuerSignedJWT.getJwsHeader();
         List<String> x5c = header != null ? header.getX5c() : null;
         if (x5c == null || x5c.isEmpty()) {
@@ -143,20 +151,58 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
             return null;
         }
         if (!trust.hasX509Trust()) {
-            // The trust domain of this credential identifies its issuer by key, so the presented
-            // chain is not the route to validate it.
             return null;
         }
         String issuer = issuerSignedJWT.getPayload().path("iss").asText(null);
+        List<X509Certificate> chain;
+        PublicKey leafKey;
         try {
-            List<X509Certificate> chain = X509CertificateChainValidator.decodeCertificateChain(x5c);
-            // The chain is bound to the credential's issuer, so a pinned certificate trusted for one
-            // issuer cannot validate a credential that claims to come from another.
-            PublicKey leafKey = trust.validateIssuerChain(chain, issuer);
-            LOG.debug("SD-JWT x5c chain validated against trust material, using leaf certificate key");
-            return List.of(toVerifierContext(leafKey));
+            chain = X509CertificateChainValidator.decodeCertificateChain(x5c);
+            leafKey = trust.validateIssuerChain(chain, issuer);
         } catch (Exception e) {
             throw new IllegalStateException("SD-JWT x5c validation failed: " + e.getMessage(), e);
+        }
+        // A SAN mismatch must reject the credential. VerificationException lets that failure
+        // reach the caller without trying another trusted key through the fallback path.
+        if (requireIssuerSanMatch) {
+            requireIssuerMatchesLeafSan(chain.get(0), issuer);
+        }
+        LOG.debug("SD-JWT x5c chain validated against trust material, using leaf certificate key");
+        return List.of(toVerifierContext(leafKey));
+    }
+
+    private static void requireIssuerMatchesLeafSan(X509Certificate leaf, String issuer) throws VerificationException {
+        Collection<List<?>> subjectAlternativeNames;
+        try {
+            subjectAlternativeNames = leaf.getSubjectAlternativeNames();
+        } catch (CertificateParsingException e) {
+            throw new VerificationException("The leaf certificate's subject alternative names are unreadable", e);
+        }
+        if (subjectAlternativeNames != null) {
+            String issuerHost = hostOfHttpsUri(issuer);
+            for (List<?> entry : subjectAlternativeNames) {
+                if (entry.size() < 2 || !(entry.get(1) instanceof String name)) {
+                    continue;
+                }
+                int type = entry.get(0) instanceof Integer i ? i : -1;
+                if (type == URI_SUBJECT_ALT_NAME && name.equals(issuer)) {
+                    return;
+                }
+                if (type == DNS_SUBJECT_ALT_NAME && issuerHost != null && name.equalsIgnoreCase(issuerHost)) {
+                    return;
+                }
+            }
+        }
+        throw new VerificationException("The credential issuer '" + issuer
+                + "' does not match any subject alternative name of the validated leaf certificate");
+    }
+
+    private static String hostOfHttpsUri(String issuer) {
+        try {
+            URI uri = new URI(issuer);
+            return "https".equalsIgnoreCase(uri.getScheme()) ? uri.getHost() : null;
+        } catch (URISyntaxException e) {
+            return null;
         }
     }
 
@@ -192,11 +238,9 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
     }
 
     /**
-     * Builds the verifiers for a credential that identifies its issuer key directly: the pinned
-     * issuer certificates trusted for this credential's {@code iss}, and the trusted issuer keys
-     * published for that {@code iss} that answer its {@code kid}. Binding them to the issuer keeps
-     * trust domains apart, so a key published by one issuer cannot verify a credential claiming to
-     * come from another.
+     * Selects pinned certificates and issuer keys for the credential's iss value. Issuer keys
+     * are also selected by the kid header. A certificate or key configured for one issuer
+     * cannot verify a credential that claims to come from another issuer.
      */
     private List<SignatureVerifierContext> directTrustVerifiers(IssuerSignedJWT issuerSignedJWT) {
         JWSHeader header = issuerSignedJWT.getJwsHeader();

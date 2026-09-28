@@ -20,6 +20,7 @@ import de.arbeitsagentur.keycloak.oid4vp.util.BoundedLruMap;
 import de.arbeitsagentur.keycloak.oid4vp.util.CertificateFingerprints;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.time.Instant;
@@ -86,7 +87,6 @@ public class StatusListVerifier {
             return;
         }
 
-        // The status list draft requires an https uri. Nothing but TLS says who answers there.
         if (!ref.uri.regionMatches(true, 0, "https://", 0, 8)) {
             throw new IllegalStateException("Status list URI '" + ref.uri + "' is not an https URL");
         }
@@ -111,7 +111,6 @@ public class StatusListVerifier {
         }
     }
 
-    @SuppressWarnings("unchecked")
     StatusReference extractStatusReference(Map<String, Object> claims) {
         if (claims == null) return null;
 
@@ -120,18 +119,25 @@ public class StatusListVerifier {
             statusObj = findNestedStatusClaim(claims);
         }
 
-        if (!(statusObj instanceof Map<?, ?> statusMap)) return null;
+        if (statusObj == null) return null;
+        if (!(statusObj instanceof Map<?, ?> statusMap)) {
+            throw new IllegalStateException("Credential status claim must be an object");
+        }
 
         Object statusListObj = statusMap.get("status_list");
-        if (!(statusListObj instanceof Map<?, ?> statusListMap)) return null;
+        if (!statusMap.containsKey("status_list")) return null;
+        if (!(statusListObj instanceof Map<?, ?> statusListMap)) {
+            throw new IllegalStateException("Credential status_list must be an object");
+        }
 
         Object uriObj = statusListMap.get("uri");
         Object idxObj = statusListMap.get("idx");
-        if (uriObj == null || idxObj == null) return null;
-
         String uri = stringValue(uriObj);
         Integer idx = integerValue(idxObj);
-        if (uri == null || idx == null) return null;
+        if (uri == null || uri.isBlank() || idx == null || idx < 0) {
+            throw new IllegalStateException(
+                    "Credential status_list requires a URI and a non-negative integer index within the supported range");
+        }
         return new StatusReference(uri, idx);
     }
 
@@ -302,17 +308,17 @@ public class StatusListVerifier {
             throw new IllegalStateException("Empty status list");
         }
         validateBitsPerStatus(bitsPerStatus);
-        int bitOffset = idx * bitsPerStatus;
-        int byteIndex = bitOffset / 8;
-        int bitIndex = bitOffset % 8;
+        long bitOffset = (long) idx * bitsPerStatus;
+        long byteIndex = bitOffset / 8;
+        int bitIndex = (int) (bitOffset % 8);
 
-        if (byteIndex >= statusBits.length) {
+        if (idx < 0 || byteIndex >= statusBits.length) {
             throw new IllegalStateException("Status index " + idx + " out of range (list has "
-                    + (statusBits.length * 8 / bitsPerStatus) + " entries)");
+                    + (statusBits.length * 8L / bitsPerStatus) + " entries)");
         }
 
         int mask = ((1 << bitsPerStatus) - 1);
-        int byteValue = Byte.toUnsignedInt(statusBits[byteIndex]);
+        int byteValue = Byte.toUnsignedInt(statusBits[(int) byteIndex]);
         return (byteValue >>> bitIndex) & mask;
     }
 
@@ -372,16 +378,16 @@ public class StatusListVerifier {
     }
 
     private Integer integerValue(Object value) {
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        Long longValue = longValue(value);
-        if (longValue == null) {
+        if (value == null) {
             return null;
         }
+        if (value instanceof JsonNode node) {
+            if (!node.isIntegralNumber() && !node.isTextual()) return null;
+            value = node.asText();
+        }
         try {
-            return Math.toIntExact(longValue);
-        } catch (ArithmeticException e) {
+            return new BigDecimal(value.toString()).intValueExact();
+        } catch (ArithmeticException | NumberFormatException e) {
             return null;
         }
     }

@@ -139,7 +139,7 @@ This:
 - Calls `VpTokenProcessor.process` with the `vp_token`, the `clientId`, `nonce`, `responseUri` and `encryptionJwkThumbprint` of the request context, the `mdocGeneratedNonce` of the callback, and the requested credentials:
   - SD-JWT: `SdJwtVerifier.verify()` delegates to Keycloak's `SdJwtVP.verify()`, which performs:
     1. **Issuer signature verification**: validates the SD-JWT's JWS signature using the issuer's public key. The key is resolved in this order:
-       - `x5c` certificate-chain validation against the resolved trust material. Either a pinned trusted leaf certificate bound to the credential's `iss`, or a PKIX path to the trust anchors with `iss` matching a subject alternative name of the leaf (`ResolvedTrust.validateIssuerChain`)
+       - `x5c` certificate-chain validation against the resolved trust material. Either a pinned trusted leaf certificate satisfying any configured issuer binding, or a PKIX path to the trust anchors that authenticates the leaf certificate's subject (`ResolvedTrust.validateIssuerChain`). With `requireIssuerSanMatch` enabled, `Oid4vpTrustedSdJwtIssuer` also checks the issuer against the validated leaf's SANs
        - the issuer keys the credential's trust domain publishes, matched on `iss` and JOSE `kid`
        - when no trust material providers are configured at all: JWT VC issuer metadata lookup via `iss` + `kid` (`JwtVcIssuerMetadataResolver`), including `jwks_uri`
     2. **Issuer JWT time checks**: `exp` (must not be expired) and `nbf` (must be valid now), both with configurable clock skew (default 60s). There is no `iat` freshness check on the issuer JWT. Old credentials are valid as long as `exp` holds

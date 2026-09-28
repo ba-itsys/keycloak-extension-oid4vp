@@ -82,6 +82,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final String ALLOW_MISSING_SUBJECT_CREDENTIAL = "allowMissingSubjectCredential";
 
     public static final String ALLOWED_ISSUERS = "allowedIssuers";
+    public static final String REQUIRE_ISSUER_SAN_MATCH = "requireIssuerSanMatch";
 
     public static final String STATUS_LIST_MAX_CACHE_TTL_SECONDS = "statusListMaxCacheTtlSeconds";
     public static final String ISSUER_METADATA_MAX_CACHE_TTL_SECONDS = "issuerMetadataMaxCacheTtlSeconds";
@@ -333,6 +334,14 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public void setTransientUsersEnabled(boolean enabled) {
         setTransientUsers(Boolean.valueOf(enabled));
+    }
+
+    public boolean isRequireIssuerSanMatch() {
+        return getBoolConfig(REQUIRE_ISSUER_SAN_MATCH, false);
+    }
+
+    public void setRequireIssuerSanMatch(boolean required) {
+        getConfig().put(REQUIRE_ISSUER_SAN_MATCH, String.valueOf(required));
     }
 
     public String getAllowedIssuers() {

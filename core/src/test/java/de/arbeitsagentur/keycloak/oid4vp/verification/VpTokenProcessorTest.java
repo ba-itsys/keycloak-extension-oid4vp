@@ -29,6 +29,7 @@ import com.nimbusds.jose.util.Base64;
 import com.nimbusds.jose.util.Base64URL;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
+import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentationType;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
@@ -53,6 +54,9 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.keycloak.broker.provider.IdentityBrokerException;
 import org.keycloak.common.crypto.CryptoIntegration;
 
@@ -76,6 +80,47 @@ class VpTokenProcessorTest {
         signingCert = generateSelfSignedCert(signingKey);
         processor = new VpTokenProcessor(
                 objectMapper, new StatusListVerifier(), () -> TestTrust.planOf(TestTrust.ofCertificates(signingCert)));
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"false", "true"})
+    void process_issuerSanPolicyFromConfiguration(String configuredValue) throws Exception {
+        Oid4vpIdentityProviderConfig config = new Oid4vpIdentityProviderConfig();
+        if (configuredValue != null) {
+            config.getConfig().put("requireIssuerSanMatch", configuredValue);
+        }
+        processor = new VpTokenProcessor(
+                objectMapper,
+                new VpTokenProcessor.Config(
+                        null,
+                        () -> TestTrust.planOf(TestTrust.ofCertificates(signingCert)),
+                        config.getStatusListMaxCacheTtl(),
+                        config.getIssuerMetadataMaxCacheTtl(),
+                        config.getClockSkewSeconds(),
+                        config.getKbJwtMaxAgeSeconds(),
+                        config.isRequireIssuerSanMatch()));
+        assertThat(signingCert.getSubjectAlternativeNames()).isNull();
+        String credJwt = buildSdJwt(Map.of(
+                "iss",
+                "https://issuer.example",
+                "vct",
+                "IdentityCredential",
+                "sub",
+                "user1",
+                "cnf",
+                Map.of("jwk", holderKey.toPublicJWK().toJSONObject())));
+        String sdJwt = buildSdJwtVpWithKbJwt(credJwt, "client-id", "nonce");
+
+        if ("true".equals(configuredValue)) {
+            assertThatThrownBy(() -> processor.process(request(sdJwt, "client-id", "nonce", null)))
+                    .hasMessageContaining("does not match any subject alternative name");
+        } else {
+            assertThat(processor
+                            .process(request(sdJwt, "client-id", "nonce", null))
+                            .credentials())
+                    .hasSize(1);
+        }
     }
 
     @Test

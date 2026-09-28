@@ -36,16 +36,29 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import java.util.zip.Deflater;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.keycloak.common.crypto.CryptoIntegration;
 
 class StatusListVerifierTest {
 
     private final StatusListVerifier verifier = new StatusListVerifier();
+
+    @BeforeAll
+    static void initCrypto() {
+        CryptoIntegration.init(StatusListVerifierTest.class.getClassLoader());
+    }
 
     @AfterEach
     void clearCaches() {
@@ -66,22 +79,70 @@ class StatusListVerifierTest {
     @Test
     void returnsNullForMissingStatusClaim() {
         assertThat(verifier.extractStatusReference(Map.of())).isNull();
-        assertThat(verifier.extractStatusReference(Map.of("status", "not-a-map")))
-                .isNull();
         assertThat(verifier.extractStatusReference(null)).isNull();
     }
 
     @Test
-    void returnsNullForMalformedStatusList() {
-        Map<String, Object> payload = Map.of("status", Map.of("status_list", Map.of("uri", "https://example.com")));
-        assertThat(verifier.extractStatusReference(payload)).isNull();
+    void rejectsMalformedStatusClaim() {
+        assertThatThrownBy(() -> verifier.extractStatusReference(Map.of("status", "not-a-map")))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @ParameterizedTest
+    @MethodSource("malformedStatusLists")
+    void rejectsMalformedStatusListBeforeFetching(Object statusList) {
+        StatusListVerifier verifier = new StatusListVerifier() {
+            @Override
+            String fetchStatusListJwt(String uri) {
+                throw new AssertionError("Malformed references must be rejected before fetching");
+            }
+        };
+        Map<String, Object> payload = Map.of("status", Collections.singletonMap("status_list", statusList));
+
+        assertThatThrownBy(() -> verifier.checkRevocationStatus(payload))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("status_list");
+    }
+
+    private static Stream<Arguments> malformedStatusLists() {
+        return Stream.of(
+                Arguments.of((Object) null),
+                Arguments.of("not-an-object"),
+                Arguments.of(Map.of()),
+                Arguments.of(Map.of("uri", "https://example.com")),
+                Arguments.of(Map.of("idx", 0)),
+                Arguments.of(Map.of("uri", " ", "idx", 0)));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"abc", "-1", "4294967296"})
+    void rejectsInvalidStringStatusIndex(String index) {
+        Map<String, Object> payload =
+                Map.of("status", Map.of("status_list", Map.of("uri", "https://example.com", "idx", index)));
+        assertThatThrownBy(() -> verifier.extractStatusReference(payload)).isInstanceOf(IllegalStateException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {-1L, 4294967296L})
+    void rejectsOutOfRangeNumericStatusIndex(long index) {
+        Map<String, Object> payload =
+                Map.of("status", Map.of("status_list", Map.of("uri", "https://example.com", "idx", index)));
+        assertThatThrownBy(() -> verifier.extractStatusReference(payload)).isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    void returnsNullForNonNumericStatusIndex() {
+    void rejectsFractionalStatusIndex() {
         Map<String, Object> payload =
-                Map.of("status", Map.of("status_list", Map.of("uri", "https://example.com", "idx", "abc")));
-        assertThat(verifier.extractStatusReference(payload)).isNull();
+                Map.of("status", Map.of("status_list", Map.of("uri", "https://example.com", "idx", 0.5)));
+        assertThatThrownBy(() -> verifier.extractStatusReference(payload)).isInstanceOf(IllegalStateException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {-1, 536870912})
+    void getStatusAtIndexRejectsNegativeAndOverflowingIndices(int index) {
+        assertThatThrownBy(() -> StatusListVerifier.getStatusAtIndex(new byte[] {0}, index, 8))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("out of range");
     }
 
     @Test

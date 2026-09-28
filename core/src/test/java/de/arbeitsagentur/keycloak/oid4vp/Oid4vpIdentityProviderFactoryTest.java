@@ -66,6 +66,18 @@ class Oid4vpIdentityProviderFactoryTest {
     }
 
     @Test
+    void issuerSanMatchProperty_isAnOptInBoolean() {
+        ProviderConfigProperty property = new Oid4vpIdentityProviderFactory()
+                .getConfigProperties().stream()
+                        .filter(candidate -> "requireIssuerSanMatch".equals(candidate.getName()))
+                        .findFirst()
+                        .orElseThrow();
+
+        assertThat(property.getType()).isEqualTo(ProviderConfigProperty.BOOLEAN_TYPE);
+        assertThat(property.getDefaultValue()).isEqualTo("false");
+    }
+
+    @Test
     void metadataAndConfigProperties_areExposed() {
         Oid4vpIdentityProviderFactory factory = new Oid4vpIdentityProviderFactory();
 

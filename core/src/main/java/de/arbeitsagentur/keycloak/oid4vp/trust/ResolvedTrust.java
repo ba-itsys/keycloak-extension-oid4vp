@@ -16,14 +16,10 @@
 package de.arbeitsagentur.keycloak.oid4vp.trust;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthority;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.security.PublicKey;
 import java.security.cert.CertificateExpiredException;
 import java.security.cert.CertificateNotYetValidException;
-import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
-import java.util.Collection;
 import java.util.List;
 import org.keycloak.common.VerificationException;
 
@@ -140,19 +136,16 @@ public record ResolvedTrust(
      * Validates a credential issuer certificate chain for a credential of the given issuer and
      * returns the leaf key.
      *
-     * <p>A non-null {@code issuer} comes from formats that name their issuer, such as SD-JWT. Only
-     * directly trusted certificates bound to that issuer satisfy the pinned fast path. A chain built
-     * to the PKIX anchors is bound to the issuer as well, through the subject alternative names of
-     * the leaf certificate. A certificate trusted for one issuer can therefore not validate a
-     * credential claiming another.
+     * <p>For SD-JWT, {@code issuer} is the credential's iss value. A pinned certificate configured
+     * for a specific issuer is eligible only when that value matches. A chain validated against
+     * CA certificates identifies its signer through the subject of the leaf certificate
+     * (SD-JWT VC draft 13, section 3.5).
      *
-     * <p>A null {@code issuer} comes from formats without an issuer identifier, such as mDoc. Every
-     * pinned certificate is then eligible, and the credential type scope of the trust material is
-     * what keeps the trust domains apart. A chain whose leaf is itself one of the configured trust
-     * anchors is complete without path building: the trust source pins that exact certificate, so
-     * only its validity window is checked, and path building could never accept it anyway because a
-     * leaf must be an end entity certificate. An mDoc signed directly by a trust listed self-signed
-     * document signer certificate validates this way.
+     * <p>Formats without an issuer identifier, such as mDoc, pass null. Any pinned certificate
+     * in the trust material for that credential type is then eligible. A leaf that is itself a
+     * configured trust anchor is accepted after checking its validity period. The trust source
+     * already trusts that exact certificate, so a path to another CA is unnecessary. This includes
+     * self signed mDoc document signer certificates on a trust list.
      */
     public PublicKey validateIssuerChain(List<X509Certificate> chain, String issuer) throws VerificationException {
         if (chain.isEmpty()) {
@@ -177,9 +170,6 @@ public record ResolvedTrust(
             try {
                 X509CertificateChainValidator.validateCertificateChain(
                         chain, material.trustAnchors(), material.requiredExtendedKeyUsages());
-                if (issuer != null) {
-                    requireIssuerMatchesLeafSan(leaf, issuer);
-                }
                 return leaf.getPublicKey();
             } catch (VerificationException e) {
                 if (firstFailure == null) {
@@ -193,47 +183,5 @@ public record ResolvedTrust(
     private boolean isTrustAnchor(X509Certificate certificate) {
         return issuanceTrust.stream()
                 .anyMatch(material -> material.trustAnchors().contains(certificate));
-    }
-
-    /**
-     * Binds the credential's {@code iss} to the validated leaf certificate. The value must appear
-     * as a uniformResourceIdentifier subject alternative name of the leaf. For an HTTPS issuer its
-     * host may appear as a dNSName entry instead. SD-JWT VC (draft-ietf-oauth-sd-jwt-vc-13,
-     * section 3.5) identifies the issuer of an x5c credential by the end entity certificate. This
-     * check holds that certificate and the {@code iss} claim together.
-     */
-    private static void requireIssuerMatchesLeafSan(X509Certificate leaf, String issuer) throws VerificationException {
-        Collection<List<?>> subjectAlternativeNames;
-        try {
-            subjectAlternativeNames = leaf.getSubjectAlternativeNames();
-        } catch (CertificateParsingException e) {
-            throw new VerificationException("The leaf certificate's subject alternative names are unreadable", e);
-        }
-        if (subjectAlternativeNames != null) {
-            String issuerHost = hostOfHttpsUri(issuer);
-            for (List<?> entry : subjectAlternativeNames) {
-                if (entry.size() < 2 || !(entry.get(1) instanceof String name)) {
-                    continue;
-                }
-                int type = entry.get(0) instanceof Integer i ? i : -1;
-                if (type == 6 && name.equals(issuer)) {
-                    return;
-                }
-                if (type == 2 && issuerHost != null && name.equalsIgnoreCase(issuerHost)) {
-                    return;
-                }
-            }
-        }
-        throw new VerificationException("The credential issuer '" + issuer
-                + "' does not match any subject alternative name of the validated leaf certificate");
-    }
-
-    private static String hostOfHttpsUri(String issuer) {
-        try {
-            URI uri = new URI(issuer);
-            return "https".equalsIgnoreCase(uri.getScheme()) ? uri.getHost() : null;
-        } catch (URISyntaxException e) {
-            return null;
-        }
     }
 }

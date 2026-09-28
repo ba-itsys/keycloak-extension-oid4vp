@@ -217,6 +217,15 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
+                .name(Oid4vpIdentityProviderConfig.REQUIRE_ISSUER_SAN_MATCH)
+                .label("Require Issuer SAN Match")
+                .helpText("When validating an SD-JWT credential's x5c chain, require its iss value to match a URI "
+                        + "subject alternative name of the leaf certificate, or its HTTPS hostname to match a DNS "
+                        + "subject alternative name. Applies to CA chains and directly trusted leaf certificates.")
+                .type(ProviderConfigProperty.BOOLEAN_TYPE)
+                .defaultValue("false")
+                .add()
+                .property()
                 .name(Oid4vpIdentityProviderConfig.ISSUER_METADATA_MAX_CACHE_TTL_SECONDS)
                 .label("Issuer Metadata Cache TTL (seconds)")
                 .helpText("Maximum time to cache JWT VC Issuer Metadata and resolved issuer JWKS. "
