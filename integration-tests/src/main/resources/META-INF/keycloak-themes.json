@@ -1,0 +1,7 @@
+{
+  "themes": [
+    { "name": "oid4vp-standalone", "types": ["login"] },
+    { "name": "oid4vp-custom-v2", "types": ["login"] },
+    { "name": "oid4vp-misplaced", "types": ["login"] }
+  ]
+}
