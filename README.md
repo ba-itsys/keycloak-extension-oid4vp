@@ -27,6 +27,7 @@ Supported capabilities:
 ## Documentation
 
 - [Configuration](docs/configuration.md)
+- [Customizing the Wallet Login Page](docs/themes.md)
 - [Diagrams](docs/diagrams.md)
 - [Request Flow Walkthrough](docs/request-flow.md)
 - [Development](docs/development.md)
