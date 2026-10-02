@@ -24,9 +24,16 @@ import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestTrustListServer;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.trust.EtsiTrustListIdentityProviderConfig;
 import io.github.dominikschlosser.eudi.ValidationMode;
+import java.io.ByteArrayInputStream;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.List;
 import java.util.Map;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.Test;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
@@ -70,8 +77,14 @@ class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
 
         setTrustIdpConfig(Map.of(EtsiTrustListIdentityProviderConfig.ADVERTISE_TRUSTED_AUTHORITIES, "aki"));
 
+        List<String> authorityKeyIdentifiers =
+                List.of(walletPidAuthorityKeyIdentifier("NL"), walletPidAuthorityKeyIdentifier("DE"));
         assertThat(trustedAuthoritiesOf(fetchCurrentRequestObject()))
-                .containsExactly(trustedAuthority("aki", walletAuthorityKeyIdentifier()));
+                .singleElement()
+                .satisfies(authority -> assertThat(authority)
+                        .containsEntry("type", "aki")
+                        .extractingByKey("values", InstanceOfAssertFactories.LIST)
+                        .containsExactlyInAnyOrderElementsOf(authorityKeyIdentifiers));
     }
 
     @Test
@@ -94,6 +107,35 @@ class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
 
         performSameDeviceLogin("trusted-authority-user");
         flow.assertLoginSucceeded();
+    }
+
+    @Test
+    void acceptsTheCredentialOfTheAdvertisedAuthorityKeyIdentifier() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        deleteAllOid4vpUsers();
+
+        setTrustIdpConfig(Map.of(EtsiTrustListIdentityProviderConfig.ADVERTISE_TRUSTED_AUTHORITIES, "aki"));
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        String walletUrl = flow.getSameDeviceWalletUrl();
+        assertThat(trustedAuthoritiesOf(fetchRequestObject(walletUrl)))
+                .singleElement()
+                .satisfies(authority -> assertThat(authority)
+                        .containsEntry("type", "aki")
+                        .extractingByKey("values", InstanceOfAssertFactories.LIST)
+                        .isNotEmpty());
+
+        wallet().client().setValidationMode(ValidationMode.STRICT);
+        try {
+            Oid4vpLoginFlowHelper.WalletResponse response = flow.submitToWallet(walletUrl);
+            flow.waitForLoginCompletion(response);
+            flow.completeFirstBrokerLoginIfNeeded("trusted-key-identifier-user");
+            flow.assertLoginSucceeded();
+        } finally {
+            wallet().client().resetConformance();
+        }
     }
 
     @Test
@@ -157,9 +199,24 @@ class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
         return (List<Map<String, Object>>) credential.get("trusted_authorities");
     }
 
-    private String walletAuthorityKeyIdentifier() {
-        return TestCertificates.subjectKeyIdentifierBase64Url(
-                TestCertificates.parseCertificate(wallet().client().getCaCertificatePem()));
+    private String walletPidAuthorityKeyIdentifier(String country) throws Exception {
+        HttpResponse<byte[]> response = HttpClient.newHttpClient()
+                .send(
+                        HttpRequest.newBuilder()
+                                .uri(URI.create(
+                                        wallet().baseUrl() + "/api/certificates/providers/pid/" + country + ".der"))
+                                .GET()
+                                .build(),
+                        HttpResponse.BodyHandlers.ofByteArray());
+        assertThat(response.statusCode())
+                .as("Fetching the wallet's %s PID provider CA", country)
+                .isEqualTo(200);
+        X509Certificate certificate = (X509Certificate)
+                CertificateFactory.getInstance("X.509").generateCertificate(new ByteArrayInputStream(response.body()));
+        assertThat(certificate.getBasicConstraints())
+                .as("PID provider certificate is a CA")
+                .isGreaterThanOrEqualTo(0);
+        return TestCertificates.subjectKeyIdentifierBase64Url(certificate);
     }
 
     private static X509Certificate generateForeignAuthority() {
