@@ -50,11 +50,11 @@ public class Oid4vpResponseDecryptor {
         try {
             kid = extractHeader(encryptedResponse).getKeyId();
         } catch (Exception e) {
-            LOG.warn("Failed to extract KID from JWE");
+            LOG.warnf("Failed to read the kid header of the wallet response JWE: %s", FailureDetails.causeChain(e));
             return null;
         }
         if (kid == null) {
-            LOG.warn("Failed to extract KID from JWE");
+            LOG.warn("The wallet response JWE carries no kid header");
         }
         return kid;
     }
@@ -90,7 +90,21 @@ public class Oid4vpResponseDecryptor {
 
             return new DecryptedResponse(vpToken, state, mdocGeneratedNonce, null, null);
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to decrypt response: " + e.getMessage(), e);
+            throw new IllegalStateException(
+                    "Failed to decrypt response: " + FailureDetails.causeChain(e) + " ("
+                            + describeHeader(encryptedResponse) + ", decryption key kid="
+                            + (decryptionKey != null ? decryptionKey.keyId() : null) + ")",
+                    e);
+        }
+    }
+
+    private static String describeHeader(String compactJwe) {
+        try {
+            JWEHeader header = extractHeader(compactJwe);
+            return FailureDetails.singleLine("alg=" + header.getAlgorithm() + ", enc=" + header.getEncryptionAlgorithm()
+                    + ", kid=" + header.getKeyId());
+        } catch (Exception e) {
+            return "unreadable JWE header";
         }
     }
 

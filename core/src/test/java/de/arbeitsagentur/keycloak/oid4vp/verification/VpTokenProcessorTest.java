@@ -114,6 +114,7 @@ class VpTokenProcessorTest {
 
         if ("true".equals(configuredValue)) {
             assertThatThrownBy(() -> processor.process(request(sdJwt, "client-id", "nonce", null)))
+                    .hasMessageContaining("Credential 'cred1' failed verification")
                     .hasMessageContaining("does not match any subject alternative name");
         } else {
             assertThat(processor

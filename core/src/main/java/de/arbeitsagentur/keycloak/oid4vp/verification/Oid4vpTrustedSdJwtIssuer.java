@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
 import de.arbeitsagentur.keycloak.oid4vp.trust.TrustedIssuerKey;
 import de.arbeitsagentur.keycloak.oid4vp.trust.X509CertificateChainValidator;
+import de.arbeitsagentur.keycloak.oid4vp.util.FailureDetails;
 import de.arbeitsagentur.keycloak.oid4vp.verification.JwtVcIssuerMetadataResolver.ResolvedIssuerKey;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -32,6 +33,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import org.jboss.logging.Logger;
 import org.keycloak.common.VerificationException;
 import org.keycloak.crypto.KeyType;
@@ -62,6 +65,7 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
     private static final int URI_SUBJECT_ALT_NAME = 6;
 
     private static final Logger LOG = Logger.getLogger(Oid4vpTrustedSdJwtIssuer.class);
+    private static final Set<X509Certificate> WARNED_INVALID_ISSUER_CERTIFICATES = ConcurrentHashMap.newKeySet();
 
     private final ResolvedTrust trust;
     private final boolean requireIssuerSanMatch;
@@ -116,7 +120,9 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
                 LOG.debug("SD-JWT issuer key resolved via issuer metadata fallback");
                 return List.of(toVerifierContext(issuerKey.publicKey()));
             } catch (IllegalStateException e) {
-                LOG.debugf("Issuer metadata fallback failed: %s", e.getMessage());
+                LOG.warnf(
+                        "SD-JWT issuer key for iss=%s could not be resolved from issuer metadata: %s",
+                        FailureDetails.singleLine(issuerClaim.asText()), FailureDetails.causeChain(e));
                 if (x5cFailure == null) {
                     x5cFailure = e;
                 }
@@ -160,7 +166,8 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
             chain = X509CertificateChainValidator.decodeCertificateChain(x5c);
             leafKey = trust.validateIssuerChain(chain, issuer);
         } catch (Exception e) {
-            throw new IllegalStateException("SD-JWT x5c validation failed: " + e.getMessage(), e);
+            throw new IllegalStateException(
+                    "SD-JWT x5c validation failed for iss=" + issuer + ": " + FailureDetails.causeChain(e), e);
         }
         // A SAN mismatch must reject the credential. VerificationException lets that failure
         // reach the caller without trying another trusted key through the fallback path.
@@ -252,7 +259,11 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
             try {
                 certificate.checkValidity();
             } catch (CertificateExpiredException | CertificateNotYetValidException e) {
-                LOG.debugf("Skipping directly trusted issuer certificate outside its validity: %s", e.getMessage());
+                if (WARNED_INVALID_ISSUER_CERTIFICATES.add(certificate)) {
+                    LOG.warnf(
+                            "Skipping trusted issuer certificate outside its validity: %s %s",
+                            e.getMessage(), FailureDetails.certificate(certificate));
+                }
                 continue;
             }
             verifiers.add(toVerifierContext(certificate.getPublicKey()));
@@ -262,7 +273,9 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
             try {
                 verifiers.add(JwkParsingUtils.convertJwkToVerifierContext(jwk));
             } catch (Exception e) {
-                LOG.debugf("Skipping unusable trusted issuer JWK '%s': %s", jwk.getKeyId(), e.getMessage());
+                LOG.warnf(
+                        "Skipping unusable trusted issuer JWK '%s' for iss=%s: %s",
+                        jwk.getKeyId(), FailureDetails.singleLine(issuer), FailureDetails.causeChain(e));
             }
         }
         return verifiers;

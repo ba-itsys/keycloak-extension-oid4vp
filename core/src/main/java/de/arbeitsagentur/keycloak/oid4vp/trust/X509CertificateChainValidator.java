@@ -16,6 +16,7 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.trust;
 
+import de.arbeitsagentur.keycloak.oid4vp.util.FailureDetails;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.security.PublicKey;
@@ -114,7 +115,12 @@ public final class X509CertificateChainValidator {
             throw e;
         } catch (Exception e) {
             throw new VerificationException(
-                    "Failed to validate the x5c certificate chain against the configured trust anchors", e);
+                    "Failed to validate the x5c certificate chain against the configured trust anchors: "
+                            + FailureDetails.causeChain(e) + " (chain="
+                            + FailureDetails.certificates(certificateChain) + ", "
+                            + (trustAnchors != null ? trustAnchors.size() : 0)
+                            + " trust anchors)",
+                    e);
         }
     }
 

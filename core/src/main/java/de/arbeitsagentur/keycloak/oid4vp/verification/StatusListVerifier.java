@@ -18,6 +18,7 @@ package de.arbeitsagentur.keycloak.oid4vp.verification;
 import com.fasterxml.jackson.databind.JsonNode;
 import de.arbeitsagentur.keycloak.oid4vp.util.BoundedLruMap;
 import de.arbeitsagentur.keycloak.oid4vp.util.CertificateFingerprints;
+import de.arbeitsagentur.keycloak.oid4vp.util.FailureDetails;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -90,24 +91,31 @@ public class StatusListVerifier {
         if (!ref.uri.regionMatches(true, 0, "https://", 0, 8)) {
             throw new IllegalStateException("Status list URI '" + ref.uri + "' is not an https URL");
         }
-        LOG.infof("Checking revocation status: uri=%s, idx=%d", ref.uri, ref.idx);
+        LOG.infof("Checking revocation status: uri=%s, idx=%d", FailureDetails.singleLine(ref.uri), ref.idx);
 
         try {
             DecodedStatusList statusList = fetchAndDecodeStatusList(ref.uri, revocationCertificates);
             int status = getStatusAtIndex(statusList.statusBits, ref.idx, statusList.bitsPerStatus);
 
             if (status != 0) {
-                throw new IllegalStateException(
-                        "Credential has been revoked (status=" + status + " at index " + ref.idx + ")");
+                throw new IllegalStateException("Credential has been revoked (status=" + status + " at index " + ref.idx
+                        + " of status list " + ref.uri + ")");
             }
 
             LOG.infof("Revocation check passed: status=%d at index %d", status, ref.idx);
         } catch (IllegalStateException e) {
             throw e;
         } catch (Exception e) {
-            LOG.warnf(e, "Failed to check revocation status from %s", ref.uri);
+            LOG.warnf(
+                    e,
+                    "Failed to check revocation status from %s (idx=%d): %s",
+                    FailureDetails.singleLine(ref.uri),
+                    ref.idx,
+                    FailureDetails.causeChain(e));
             throw new IllegalStateException(
-                    "Unable to verify credential revocation status from " + ref.uri + ": " + e.getMessage(), e);
+                    "Unable to verify credential revocation status from " + ref.uri + ": "
+                            + FailureDetails.causeChain(e),
+                    e);
         }
     }
 
@@ -166,9 +174,15 @@ public class StatusListVerifier {
         JWSInput signedJwt = X5cChainValidator.parseJwt(jwt);
         Map<String, Object> claims = X5cChainValidator.parseClaims(signedJwt);
 
-        verifyStatusListJwtSignature(jwt, claims, revocationCertificates);
+        verifyStatusListJwtSignature(jwt, claims, revocationCertificates, uri);
 
-        validateStatusListToken(headerType(signedJwt), stringClaim(claims, "sub"), instantClaim(claims, "exp"), uri);
+        validateStatusListToken(
+                headerType(signedJwt),
+                stringClaim(claims, "sub"),
+                instantClaim(claims, "iat"),
+                instantClaim(claims, "exp"),
+                claims.get("ttl"),
+                uri);
         Map<String, Object> statusListClaim = jsonObjectClaim(claims, "status_list");
         if (statusListClaim == null) {
             throw new IllegalStateException("Status list JWT missing status_list claim");
@@ -201,7 +215,7 @@ public class StatusListVerifier {
     }
 
     private void verifyStatusListJwtSignature(
-            String compactJwt, Map<String, Object> claims, List<X509Certificate> revocationCertificates)
+            String compactJwt, Map<String, Object> claims, List<X509Certificate> revocationCertificates, String uri)
             throws Exception {
         List<X509Certificate> trustedCerts = revocationCertificates != null ? revocationCertificates : List.of();
         if (trustedCerts.isEmpty()) {
@@ -211,17 +225,28 @@ public class StatusListVerifier {
             return;
         }
 
-        X5cChainValidator.verifyJwtSignature(compactJwt, trustedCerts);
+        try {
+            X5cChainValidator.verifyJwtSignature(compactJwt, trustedCerts);
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "Status list JWT from " + uri + " (iss=" + stringClaim(claims, "iss")
+                            + ") failed signature verification: " + FailureDetails.causeChain(e),
+                    e);
+        }
+    }
+
+    void validateStatusListToken(String typ, String sub, Instant exp, String expectedUri) {
+        validateStatusListToken(typ, sub, null, exp, null, expectedUri);
     }
 
     /**
      * Validates the Status List Token header and claims per draft-ietf-oauth-status-list Section 5.1
      * and Section 8.3.
      */
-    void validateStatusListToken(String typ, String sub, Instant exp, String expectedUri) {
+    void validateStatusListToken(String typ, String sub, Instant iat, Instant exp, Object ttl, String expectedUri) {
         if (!"statuslist+jwt".equals(typ)) {
-            throw new IllegalStateException(
-                    "Status list JWT has invalid typ header: expected 'statuslist+jwt', got '" + typ + "'");
+            throw new IllegalStateException("Status list JWT from " + expectedUri
+                    + " has invalid typ header: expected 'statuslist+jwt', got '" + typ + "'");
         }
 
         if (!expectedUri.equals(sub)) {
@@ -230,7 +255,10 @@ public class StatusListVerifier {
         }
 
         if (exp != null && exp.isBefore(Instant.now())) {
-            throw new IllegalStateException("Status list JWT has expired");
+            // iat tells a list that was served long after it was signed from one rejected by clock skew.
+            throw new IllegalStateException("Status list JWT from " + expectedUri + " has expired: exp="
+                    + FailureDetails.relativeToNow(exp) + ", iat=" + FailureDetails.relativeToNow(iat)
+                    + ", ttl=" + (ttl != null ? ttl + "s" : "<unset>") + ", local time " + Instant.now());
         }
     }
 
@@ -266,8 +294,8 @@ public class StatusListVerifier {
                     .header("Accept", "application/statuslist+jwt")
                     .asResponse()) {
                 if (response.getStatus() / 100 != 2) {
-                    throw new IllegalStateException(
-                            "HTTP " + response.getStatus() + " fetching status list from " + uri);
+                    throw new IllegalStateException("HTTP " + response.getStatus() + " fetching status list from " + uri
+                            + " (" + FailureDetails.httpResponse(response) + ")");
                 }
                 return response.asString();
             }

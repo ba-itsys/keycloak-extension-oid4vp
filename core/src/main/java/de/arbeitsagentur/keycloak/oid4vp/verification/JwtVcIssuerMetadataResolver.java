@@ -17,6 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp.verification;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import de.arbeitsagentur.keycloak.oid4vp.util.BoundedLruMap;
+import de.arbeitsagentur.keycloak.oid4vp.util.FailureDetails;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URI;
@@ -90,8 +91,9 @@ public class JwtVcIssuerMetadataResolver {
 
         ResolvedIssuerKey key = refreshed.find(kid);
         if (key == null) {
-            throw new IllegalStateException(
-                    "Issuer metadata for " + normalizedIssuer + " does not contain a signing key for kid " + kid);
+            throw new IllegalStateException("Issuer metadata for " + normalizedIssuer
+                    + " does not contain a signing key for kid " + kid + " (published kids: "
+                    + refreshed.describeKeys() + ")");
         }
         return key;
     }
@@ -102,7 +104,8 @@ public class JwtVcIssuerMetadataResolver {
                 try (SimpleHttp.Response response =
                         SimpleHttp.doGet(url, session).acceptJson().asResponse()) {
                     if (response.getStatus() != 200) {
-                        throw new IllegalStateException("Unexpected HTTP " + response.getStatus() + " fetching " + url);
+                        throw new IllegalStateException("Unexpected HTTP " + response.getStatus() + " fetching " + url
+                                + " (" + FailureDetails.httpResponse(response) + ")");
                     }
                     return new FetchResult(
                             response.asJson(),
@@ -117,7 +120,10 @@ public class JwtVcIssuerMetadataResolver {
                     .build();
             HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() != 200) {
-                throw new IllegalStateException("Unexpected HTTP " + response.statusCode() + " fetching " + url);
+                throw new IllegalStateException("Unexpected HTTP " + response.statusCode() + " fetching " + url
+                        + " (Content-Type: "
+                        + response.headers().firstValue("Content-Type").orElse(null)
+                        + ", body: " + FailureDetails.bodySnippet(response.body()) + ")");
             }
             return new FetchResult(
                     JsonSerialization.mapper.readTree(response.body()),
@@ -135,7 +141,8 @@ public class JwtVcIssuerMetadataResolver {
 
             String metadataIssuer = metadata.path("issuer").textValue();
             if (metadataIssuer == null || !issuer.equals(metadataIssuer)) {
-                throw new IllegalStateException("Issuer metadata issuer does not match SD-JWT issuer");
+                throw new IllegalStateException("Issuer metadata issuer '" + metadataIssuer
+                        + "' does not match SD-JWT issuer '" + issuer + "'");
             }
 
             FetchResult jwksResult = metadataResult;
@@ -145,8 +152,13 @@ public class JwtVcIssuerMetadataResolver {
             if (jwksNode != null && !jwksNode.isMissingNode() && !jwksNode.isNull()) {
                 jwks = parseJsonWebKeySet(jwksNode);
             } else if (jwksUri != null) {
-                jwksResult = fetchJson(jwksUri);
-                jwks = parseJsonWebKeySet(jwksResult.json());
+                try {
+                    jwksResult = fetchJson(jwksUri);
+                    jwks = parseJsonWebKeySet(jwksResult.json());
+                } catch (IllegalStateException e) {
+                    throw new IllegalStateException(
+                            "Failed to load jwks_uri " + jwksUri + ": " + FailureDetails.causeChain(e), e);
+                }
             } else {
                 throw new IllegalStateException("Issuer metadata does not contain jwks or jwks_uri");
             }
@@ -378,6 +390,17 @@ public class JwtVcIssuerMetadataResolver {
     private record CachedIssuerKeys(List<ResolvedIssuerKey> keys, Instant expiresAt) {
         boolean isValid() {
             return expiresAt != null && Instant.now().isBefore(expiresAt);
+        }
+
+        String describeKeys() {
+            Instant now = Instant.now();
+            return keys.stream()
+                    .map(key -> key.kid()
+                            + (key.expiresAt() != null && !now.isBefore(key.expiresAt())
+                                    ? " (expired " + key.expiresAt() + ")"
+                                    : ""))
+                    .toList()
+                    .toString();
         }
 
         ResolvedIssuerKey find(String kid) {

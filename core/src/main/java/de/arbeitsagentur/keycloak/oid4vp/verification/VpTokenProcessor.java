@@ -165,14 +165,14 @@ public class VpTokenProcessor implements VpTokenVerifier {
             }
 
             if (credentials.isEmpty()) {
-                throw new IdentityBrokerException("No valid credentials found in multi-credential VP token");
+                throw new IdentityBrokerException("VP token contains no credential in a supported format");
             }
 
             return new VpTokenResult(credentials);
         } catch (IdentityBrokerException e) {
             throw e;
         } catch (Exception e) {
-            throw new IdentityBrokerException("Failed to process multi-credential VP token: " + e.getMessage(), e);
+            throw new IdentityBrokerException("VP token processing failed: " + e.getMessage(), e);
         }
     }
 
@@ -197,31 +197,37 @@ public class VpTokenProcessor implements VpTokenVerifier {
                 trust.directIssuerCertificates().size(),
                 trust.trustedIssuerKeys().size());
 
-        if (sdJwtVerifier.isSdJwt(credential)) {
-            SdJwtVerificationResult result = verifySdJwtWithFallback(
-                    credential, request.clientId(), request.expectedNonce(), trust, request.alternateResponseUri());
-            statusListVerifier.checkRevocationStatus(result.claims(), trust.revocationCertificates());
-            return new VerifiedCredential(
-                    credentialId,
-                    result.issuer(),
-                    result.credentialType(),
-                    result.claims(),
-                    PresentationType.SD_JWT,
-                    result.alsoKnownAsTypes());
-        }
+        try {
+            if (sdJwtVerifier.isSdJwt(credential)) {
+                SdJwtVerificationResult result = verifySdJwtWithFallback(
+                        credential, request.clientId(), request.expectedNonce(), trust, request.alternateResponseUri());
+                statusListVerifier.checkRevocationStatus(result.claims(), trust.revocationCertificates());
+                return new VerifiedCredential(
+                        credentialId,
+                        result.issuer(),
+                        result.credentialType(),
+                        result.claims(),
+                        PresentationType.SD_JWT,
+                        result.alsoKnownAsTypes());
+            }
 
-        if (mdocVerifier.isMdoc(credential)) {
-            byte[] jwkThumbprintBytes = decodeJwkThumbprint(request.encryptionJwkThumbprint());
-            MdocVerificationResult result = mdocVerifier.verifyPresentation(
-                    credential,
-                    trust,
-                    request.clientId(),
-                    request.expectedNonce(),
-                    request.alternateResponseUri(),
-                    request.mdocGeneratedNonce(),
-                    jwkThumbprintBytes);
-            statusListVerifier.checkRevocationStatus(result.claims(), trust.revocationCertificates());
-            return new VerifiedCredential(credentialId, null, result.docType(), result.claims(), PresentationType.MDOC);
+            if (mdocVerifier.isMdoc(credential)) {
+                byte[] jwkThumbprintBytes = decodeJwkThumbprint(request.encryptionJwkThumbprint());
+                MdocVerificationResult result = mdocVerifier.verifyPresentation(
+                        credential,
+                        trust,
+                        request.clientId(),
+                        request.expectedNonce(),
+                        request.alternateResponseUri(),
+                        request.mdocGeneratedNonce(),
+                        jwkThumbprintBytes);
+                statusListVerifier.checkRevocationStatus(result.claims(), trust.revocationCertificates());
+                return new VerifiedCredential(
+                        credentialId, null, result.docType(), result.claims(), PresentationType.MDOC);
+            }
+        } catch (RuntimeException e) {
+            throw new IdentityBrokerException(
+                    "Credential '" + credentialId + "' failed verification: " + e.getMessage(), e);
         }
 
         return null;
