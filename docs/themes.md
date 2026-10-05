@@ -60,27 +60,3 @@ For cross-device login, preserve `#oid4vp-cross-device-sse-config`, its `data-st
 and `data-state` attributes, and the `js/oid4vp-cross-device-sse.js` script. Keycloak
 serves the extension's fallback scripts through `${url.resourcesPath}` for the selected
 theme as well. Preserve the script nonce `${cspNonce!}`.
-
-## When the Original Template Still Appears
-
-Check the **built artifact**, since resource-copying steps may overwrite the edited
-source or omit it. For example:
-
-```bash
-jar tf your-theme.jar
-unzip -p your-theme.jar theme/ourtheme/login/login-oid4vp-idp.ftl
-unzip -p your-theme.jar META-INF/keycloak-themes.json
-```
-
-Verify the exact path and file contents, the descriptor's `login` type, and the effective
-realm/client login theme. Also check for multiple deployed JARs defining the same theme
-name, and deploy the updated artifact to every Keycloak instance serving the application.
-
-While developing, disable theme and template caches:
-
-```bash
-bin/kc.sh start-dev \
-  --spi-theme--static-max-age=-1 \
-  --spi-theme--cache-themes=false \
-  --spi-theme--cache-templates=false
-```

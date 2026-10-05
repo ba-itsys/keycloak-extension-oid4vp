@@ -16,11 +16,13 @@
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
 import de.arbeitsagentur.keycloak.oid4vp.trust.X509CertificateChainValidator;
+import de.arbeitsagentur.keycloak.oid4vp.util.FailureDetails;
 import java.nio.charset.StandardCharsets;
 import java.security.PublicKey;
 import java.security.cert.CertificateExpiredException;
 import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.jboss.logging.Logger;
@@ -151,6 +153,7 @@ public final class X5cChainValidator {
         if (x5c == null) {
             x5c = List.of();
         }
+        String x5cFailure = null;
         if (!x5c.isEmpty()) {
             try {
                 PublicKey leafKey = validateChain(x5c, trustedCerts);
@@ -158,21 +161,47 @@ public final class X5cChainValidator {
                 LOG.debug("JWT signature verified via x5c chain");
                 return;
             } catch (Exception e) {
-                LOG.debugf("JWT x5c chain validation failed: %s", e.getMessage());
+                x5cFailure = FailureDetails.causeChain(e);
+                LOG.debugf("JWT x5c chain validation failed: %s", x5cFailure);
             }
         }
 
+        List<String> skippedCertificates = new ArrayList<>();
         for (X509Certificate cert : trustedCerts) {
             try {
                 cert.checkValidity();
+            } catch (Exception e) {
+                skippedCertificates.add(FailureDetails.certificate(cert));
+                continue;
+            }
+            try {
                 verifyJwtSignature(jwt, cert.getPublicKey());
                 LOG.debug("JWT signature verified with trusted key");
                 return;
             } catch (Exception e) {
+                // Another trusted certificate may hold the signing key.
             }
         }
 
-        throw new IllegalStateException("JWT signature verification failed: no trusted key matched");
+        throw new IllegalStateException("JWT signature verification failed: no trusted key matched (alg="
+                + jwt.getHeader().getRawAlgorithm() + ", kid=" + jwt.getHeader().getKeyId()
+                + ", x5c leaf=" + describeLeaf(x5c)
+                + (x5cFailure != null ? ", x5c chain rejected: " + x5cFailure : "")
+                + ", " + trustedCerts.size() + " trusted certificates"
+                + (skippedCertificates.isEmpty() ? "" : ", skipped outside their validity: " + skippedCertificates)
+                + ")");
+    }
+
+    private static String describeLeaf(List<String> x5c) {
+        if (x5c.isEmpty()) {
+            return "<none>";
+        }
+        try {
+            return FailureDetails.certificate(
+                    X509CertificateChainValidator.decodeCertificateChain(x5c).get(0));
+        } catch (Exception e) {
+            return "<undecodable: " + e.getMessage() + ">";
+        }
     }
 
     private static String resolveKeyType(PublicKey publicKey) {

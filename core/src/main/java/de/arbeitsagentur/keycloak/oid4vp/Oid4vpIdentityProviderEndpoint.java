@@ -24,6 +24,7 @@ import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpCrossDeviceSseService;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpEndpointResponseFactory;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpRequestObjectService;
+import de.arbeitsagentur.keycloak.oid4vp.util.FailureDetails;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpResponseDecryptor;
@@ -75,6 +76,7 @@ public class Oid4vpIdentityProviderEndpoint {
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProviderEndpoint.class);
     private static final int REQUEST_CONTEXT_LOOKUP_MAX_ATTEMPTS = 5;
     private static final long REQUEST_CONTEXT_LOOKUP_RETRY_DELAY_MILLIS = 25;
+    private static final String WALLET_REJECTION_DESCRIPTION = "The presentation was rejected by the verifier";
 
     private final KeycloakSession session;
     private final RealmModel realm;
@@ -153,6 +155,9 @@ public class Oid4vpIdentityProviderEndpoint {
                     submission.mdocGeneratedNonce(),
                     FLOW_CROSS_DEVICE.equals(resolvedRequest.requestContext().flow()));
         } catch (IdentityBrokerException e) {
+            LOG.warnf(
+                    "OID4VP IdP '%s': rejected wallet response for state=%s before verification: %s",
+                    provider.getConfig().getAlias(), FailureDetails.singleLine(state), FailureDetails.causeChain(e));
             return handleError("identity_provider_error", e.getMessage());
         } catch (Exception e) {
             LOG.errorf(e, "Uncaught exception in handlePost: %s", e.getMessage());
@@ -209,7 +214,7 @@ public class Oid4vpIdentityProviderEndpoint {
             String state, String encryptedResponse, Oid4vpRequestObjectStore.RequestContextEntry requestContext) {
         LOG.warnf(
                 "OID4VP callback session resolution failed: state=%s encrypted=%s requestContextPresent=%s",
-                state, StringUtil.isNotBlank(encryptedResponse), requestContext != null);
+                FailureDetails.singleLine(state), StringUtil.isNotBlank(encryptedResponse), requestContext != null);
         event.event(EventType.LOGIN_ERROR).error(Errors.SESSION_EXPIRED);
         return responseFactory.jsonErrorResponse(Response.Status.BAD_REQUEST, "session_expired", null);
     }
@@ -379,11 +384,15 @@ public class Oid4vpIdentityProviderEndpoint {
         }
         Oid4vpDirectPostService.LoginFailure failure = directPostService.consumeFailure(state, responseCode);
         if (failure == null) {
-            LOG.warnf("No failure recorded for state=%s, or the response code did not match", state);
+            LOG.warnf(
+                    "No failure recorded for state=%s, or the response code did not match",
+                    FailureDetails.singleLine(state));
             return browserError(Oid4vpMessages.LOGIN_ENDED);
         }
         if (authSession == null) {
-            LOG.warnf("The failed login for state=%s has no authentication session left to return to", state);
+            LOG.warnf(
+                    "The failed login for state=%s has no authentication session left to return to",
+                    FailureDetails.singleLine(state));
             return browserError(Oid4vpMessages.LOGIN_EXPIRED);
         }
         session.getContext().setAuthenticationSession(authSession);
@@ -415,6 +424,9 @@ public class Oid4vpIdentityProviderEndpoint {
         try {
             context = provider.getCallbackProcessor().process(requestContext, vpToken, mdocGeneratedNonce);
         } catch (IdentityBrokerException e) {
+            LOG.warnf(
+                    "OID4VP IdP '%s': presentation for state=%s rejected: %s",
+                    provider.getConfig().getAlias(), FailureDetails.singleLine(state), FailureDetails.causeChain(e));
             return handleVerificationFailure(e.getMessage(), requestContext, isCrossDeviceFlow);
         } catch (Exception e) {
             LOG.errorf(e, "Failed to process VP token: %s", e.getMessage());
@@ -448,6 +460,12 @@ public class Oid4vpIdentityProviderEndpoint {
             String errorDescription,
             Oid4vpRequestObjectStore.RequestContextEntry requestContext,
             boolean isCrossDevice) {
+        LOG.infof(
+                "OID4VP IdP '%s': wallet answered state=%s with error=%s, error_description=%s",
+                provider.getConfig().getAlias(),
+                requestContext != null ? requestContext.state() : null,
+                FailureDetails.singleLine(error),
+                FailureDetails.singleLine(errorDescription));
         return handleFailure(
                 new Oid4vpDirectPostService.LoginFailure(
                         Oid4vpDirectPostService.LoginFailure.Origin.WALLET, error, errorDescription),
@@ -509,7 +527,7 @@ public class Oid4vpIdentityProviderEndpoint {
         if (failure.origin() == Oid4vpDirectPostService.LoginFailure.Origin.VERIFIER
                 && provider.getConfig().getRejectionResponse().isError()) {
             return responseFactory.jsonErrorRedirectResponse(
-                    failure.error(), failure.errorDescription(), failureUrl, isCrossDevice);
+                    failure.error(), WALLET_REJECTION_DESCRIPTION, failureUrl, isCrossDevice);
         }
         return responseFactory.jsonRedirectResponse(failureUrl, isCrossDevice);
     }

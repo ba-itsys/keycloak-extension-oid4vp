@@ -290,7 +290,10 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
                     .as("Wallet response: %s", walletResponse.rawBody())
                     .isEqualTo(400);
             String body = Oid4vpLoginFlowHelper.verifierResponseBody(walletResponse.rawBody());
-            assertThat(body).contains("invalid_presentation").contains("revoked");
+            assertThat(body)
+                    .contains("invalid_presentation")
+                    .contains("The presentation was rejected by the verifier")
+                    .doesNotContain("revoked");
 
             page.navigate(walletResponse.redirectUri());
             page.waitForLoadState();

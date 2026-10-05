@@ -16,6 +16,7 @@
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
 import de.arbeitsagentur.keycloak.oid4vp.util.CertificateFingerprints;
+import de.arbeitsagentur.keycloak.oid4vp.util.FailureDetails;
 import de.arbeitsagentur.keycloak.oid4vp.verification.trustlist.ServiceDigitalIdentity;
 import de.arbeitsagentur.keycloak.oid4vp.verification.trustlist.TrustListJwt;
 import de.arbeitsagentur.keycloak.oid4vp.verification.trustlist.TrustedEntity;
@@ -159,7 +160,8 @@ public class TrustListProvider {
             currentLoTEType = result.loTEType;
             Instant now = Instant.now();
             if (result.expiresAt != null && !now.isBefore(result.expiresAt)) {
-                throw new IllegalStateException("Trust list is expired at " + formatInstant(result.expiresAt));
+                throw new IllegalStateException("Trust list from " + trustListUrl + " is expired: valid until "
+                        + FailureDetails.relativeToNow(result.expiresAt) + ", local time " + now);
             }
             Instant effectiveExpiry = capExpiry(earliestInstant(result.expiresAt, fetched.httpCacheExpiresAt()));
             CachedTrustList refreshed = new CachedTrustList(
@@ -173,6 +175,12 @@ public class TrustListProvider {
                 CACHE.put(cacheKey, refreshed);
             }
 
+            if (refreshed.certificates.isEmpty()) {
+                LOG.warnf(
+                        "Trust list loaded from %s contains no usable certificates (LoTE type %s), so it trusts "
+                                + "nothing",
+                        trustListUrl, result.loTEType);
+            }
             LOG.infof(
                     "Trust list loaded from %s: %d keys (valid until %s, cache until %s)",
                     trustListUrl,
@@ -188,14 +196,19 @@ public class TrustListProvider {
                 currentLoTEType = cached.loTEType;
                 LOG.warnf(
                         e,
-                        "Failed to refresh trust list from %s — using stale cache (%d keys, fetched %s, expired %s)",
+                        "Failed to refresh trust list from %s: %s. Using stale cache (%d keys, fetched %s, expired %s)",
                         trustListUrl,
+                        FailureDetails.causeChain(e),
                         cached.certificates.size(),
                         cached.fetchedAt,
                         cached.expiresAt);
                 return cached;
             }
-            LOG.warnf(e, "Failed to fetch trust list from %s", trustListUrl);
+            LOG.warnf(
+                    e,
+                    "Failed to fetch trust list from %s: %s. No stale copy is available, so it trusts nothing",
+                    trustListUrl,
+                    FailureDetails.causeChain(e));
             return CachedTrustList.empty();
         }
     }
@@ -246,7 +259,15 @@ public class TrustListProvider {
             return;
         }
 
-        X5cChainValidator.verifyJwtSignature(jwt, signingCertificates);
+        try {
+            X5cChainValidator.verifyJwtSignature(jwt, signingCertificates);
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "Trust list JWT from " + trustListUrl + " failed signature verification against "
+                            + signingCertificates.size() + " configured signing certificates: "
+                            + FailureDetails.causeChain(e),
+                    e);
+        }
     }
 
     private Instant capExpiry(Instant expiry) {
@@ -266,8 +287,8 @@ public class TrustListProvider {
                     .header("Accept", "application/jwt")
                     .asResponse()) {
                 if (response.getStatus() / 100 != 2) {
-                    throw new IllegalStateException(
-                            "HTTP " + response.getStatus() + " fetching trust list from " + trustListUrl);
+                    throw new IllegalStateException("HTTP " + response.getStatus() + " fetching trust list from "
+                            + trustListUrl + " (" + FailureDetails.httpResponse(response) + ")");
                 }
                 return new FetchedTrustList(response.asString(), resolveHttpCacheExpiry(response));
             }

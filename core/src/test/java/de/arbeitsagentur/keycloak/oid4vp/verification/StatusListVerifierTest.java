@@ -518,6 +518,26 @@ class StatusListVerifierTest {
     }
 
     @Test
+    void validateStatusListTokenNamesUriAndTimestampsOfExpiredToken() {
+        Instant iat = Instant.now().minusSeconds(3600);
+        Instant exp = Instant.now().minusSeconds(60);
+
+        assertThatThrownBy(() -> verifier.validateStatusListToken(
+                        "statuslist+jwt",
+                        "https://issuer.example/status/1",
+                        iat,
+                        exp,
+                        30,
+                        "https://issuer.example/status/1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("https://issuer.example/status/1")
+                .hasMessageContaining("exp=" + exp)
+                .hasMessageContaining("iat=" + iat)
+                .hasMessageContaining("ttl=30s")
+                .hasMessageContaining("ago");
+    }
+
+    @Test
     void resolveExpiryUsesTtlClaim() {
         Instant expiry = verifier.resolveExpiry(null, 300);
         assertThat(expiry).isAfter(Instant.now().plusSeconds(290));

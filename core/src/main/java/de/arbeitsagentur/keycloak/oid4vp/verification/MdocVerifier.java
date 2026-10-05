@@ -33,10 +33,12 @@ import com.authlete.cose.COSESign1;
 import com.authlete.cose.COSEVerifier;
 import de.arbeitsagentur.keycloak.oid4vp.domain.MdocVerificationResult;
 import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
+import de.arbeitsagentur.keycloak.oid4vp.util.FailureDetails;
 import java.io.IOException;
 import java.security.PublicKey;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -313,14 +315,27 @@ public class MdocVerifier {
 
             // An mDoc names no issuer, so every pinned certificate is tried and the doctype scope of
             // the trust material is what keeps the trust domains apart here.
-            for (X509Certificate cert : trust.pinnedCertificates()) {
+            List<X509Certificate> pinned = trust.pinnedCertificates();
+            List<String> skippedCertificates = new ArrayList<>();
+            for (X509Certificate cert : pinned) {
                 try {
                     cert.checkValidity();
+                } catch (Exception e) {
+                    skippedCertificates.add(FailureDetails.certificate(cert));
+                    continue;
+                }
+                try {
                     if (new COSEVerifier(cert.getPublicKey()).verify(sign1)) return;
                 } catch (Exception ignored) {
                 }
             }
-            throw new IllegalStateException("No trusted key matched");
+            throw new IllegalStateException("No trusted key matched (x5chain="
+                    + (x5chain != null && !x5chain.isEmpty()
+                            ? FailureDetails.certificates(x5chain) + " validated but its leaf key did not verify"
+                            : "<none>")
+                    + ", " + pinned.size() + " pinned certificates"
+                    + (skippedCertificates.isEmpty() ? "" : ", skipped outside their validity: " + skippedCertificates)
+                    + ")");
         } catch (Exception e) {
             throw wrapIfNeeded(e, "Issuer signature verification failed: ");
         }
@@ -512,12 +527,16 @@ public class MdocVerifier {
 
         Instant validFrom = requireInstant(validityInfo, "validFrom");
         if (validFrom.isAfter(now.plusSeconds(clockSkewSeconds))) {
-            throw new IllegalStateException("Credential not yet valid");
+            throw new IllegalStateException("Credential not yet valid: validFrom="
+                    + FailureDetails.relativeToNow(validFrom) + ", local time " + now + ", clock skew "
+                    + clockSkewSeconds + "s");
         }
 
         Instant validUntil = requireInstant(validityInfo, "validUntil");
         if (validUntil.isBefore(now.minusSeconds(clockSkewSeconds))) {
-            throw new IllegalStateException("Credential expired");
+            throw new IllegalStateException("Credential expired: validUntil="
+                    + FailureDetails.relativeToNow(validUntil) + ", local time " + now + ", clock skew "
+                    + clockSkewSeconds + "s");
         }
     }
 
