@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.3](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.13.2...v0.13.3) (2026-10-05)
+
+
+### Bug Fixes
+
+* improve error logging ([4688e40](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/4688e40b987a0ea55d530356ad06a87f5ea1c78b))
+
 ## [0.13.2](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.13.1...v0.13.2) (2026-09-28)
 
 
