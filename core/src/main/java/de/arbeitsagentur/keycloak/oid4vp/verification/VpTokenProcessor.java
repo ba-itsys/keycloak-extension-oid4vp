@@ -94,7 +94,8 @@ public class VpTokenProcessor implements VpTokenVerifier {
                 config.requireIssuerSanMatch());
         this.mdocVerifier = new MdocVerifier(config.clockSkewSeconds());
         this.trustPlanSupplier = config.trustPlanSupplier();
-        this.statusListVerifier = new StatusListVerifier(config.session(), config.statusListMaxCacheTtl());
+        this.statusListVerifier =
+                new StatusListVerifier(config.session(), config.statusListMaxCacheTtl(), config.clockSkewSeconds());
         this.objectMapper = objectMapper;
     }
 
