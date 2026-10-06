@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.5](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.13.4...v0.13.5) (2026-10-06)
+
+
+### Dependencies
+
+* **deps-dev:** Bump com.microsoft.playwright:playwright ([6f83650](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/6f83650715b799529032be7ba05bf6049c9487fb))
+* **deps:** Bump org.apache.maven.plugins:maven-compiler-plugin ([e9099d8](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/e9099d8ca6fb593ceb08d3ce35f357c65ad8b3ad))
+
 ## [0.13.4](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.13.3...v0.13.4) (2026-10-06)
 
 
