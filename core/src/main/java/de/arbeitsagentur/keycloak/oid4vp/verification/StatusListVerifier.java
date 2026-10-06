@@ -16,6 +16,7 @@
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.util.BoundedLruMap;
 import de.arbeitsagentur.keycloak.oid4vp.util.CertificateFingerprints;
 import de.arbeitsagentur.keycloak.oid4vp.util.FailureDetails;
@@ -57,14 +58,16 @@ public class StatusListVerifier {
 
     private final KeycloakSession session;
     private final Duration maxCacheTtl;
+    private final int clockSkewSeconds;
 
     StatusListVerifier() {
-        this(null, null);
+        this(null, null, Oid4vpIdentityProviderConfig.DEFAULT_CLOCK_SKEW_SECONDS);
     }
 
-    public StatusListVerifier(KeycloakSession session, Duration maxCacheTtl) {
+    public StatusListVerifier(KeycloakSession session, Duration maxCacheTtl, int clockSkewSeconds) {
         this.session = session;
         this.maxCacheTtl = maxCacheTtl;
+        this.clockSkewSeconds = clockSkewSeconds;
     }
 
     /** Checks the revocation status without revocation trust material, leaving the status list JWT unverified. */
@@ -254,11 +257,13 @@ public class StatusListVerifier {
                     "Status list JWT sub claim '" + sub + "' does not match expected URI '" + expectedUri + "'");
         }
 
-        if (exp != null && exp.isBefore(Instant.now())) {
-            // iat tells a list that was served long after it was signed from one rejected by clock skew.
+        // Issuers sign lists that live only seconds beyond their update interval, so a list can
+        // arrive at the edge of its lifetime and the clock skew tolerance applies to exp as well.
+        if (exp != null && exp.isBefore(Instant.now().minusSeconds(clockSkewSeconds))) {
             throw new IllegalStateException("Status list JWT from " + expectedUri + " has expired: exp="
                     + FailureDetails.relativeToNow(exp) + ", iat=" + FailureDetails.relativeToNow(iat)
-                    + ", ttl=" + (ttl != null ? ttl + "s" : "<unset>") + ", local time " + Instant.now());
+                    + ", ttl=" + (ttl != null ? ttl + "s" : "<unset>") + ", local time " + Instant.now()
+                    + ", clock skew " + clockSkewSeconds + "s");
         }
     }
 

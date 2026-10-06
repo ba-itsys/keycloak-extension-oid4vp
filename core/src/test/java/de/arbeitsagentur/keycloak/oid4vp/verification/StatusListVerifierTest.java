@@ -416,6 +416,10 @@ class StatusListVerifierTest {
 
     /** Builds a statuslist+jwt whose single status entry is 0, meaning not revoked. */
     private static String signedStatusListJwt(KeyPair signer, String uri) throws Exception {
+        return signedStatusListJwt(signer, uri, Instant.now().plusSeconds(600));
+    }
+
+    private static String signedStatusListJwt(KeyPair signer, String uri, Instant exp) throws Exception {
         Deflater deflater = new Deflater(Deflater.DEFAULT_COMPRESSION, true);
         deflater.setInput(new byte[] {0x00});
         deflater.finish();
@@ -430,7 +434,7 @@ class StatusListVerifierTest {
                         .build(),
                 new JWTClaimsSet.Builder()
                         .subject(uri)
-                        .expirationTime(Date.from(Instant.now().plusSeconds(600)))
+                        .expirationTime(Date.from(exp))
                         .claim("status_list", Map.of("bits", 1, "lst", lst))
                         .build());
         jwt.sign(new ECDSASigner((ECPrivateKey) signer.getPrivate()));
@@ -511,7 +515,7 @@ class StatusListVerifierTest {
         assertThatThrownBy(() -> verifier.validateStatusListToken(
                         "statuslist+jwt",
                         "https://issuer.example/status/1",
-                        Instant.now().minusSeconds(60),
+                        Instant.now().minusSeconds(120),
                         "https://issuer.example/status/1"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("expired");
@@ -520,7 +524,7 @@ class StatusListVerifierTest {
     @Test
     void validateStatusListTokenNamesUriAndTimestampsOfExpiredToken() {
         Instant iat = Instant.now().minusSeconds(3600);
-        Instant exp = Instant.now().minusSeconds(60);
+        Instant exp = Instant.now().minusSeconds(120);
 
         assertThatThrownBy(() -> verifier.validateStatusListToken(
                         "statuslist+jwt",
@@ -534,7 +538,54 @@ class StatusListVerifierTest {
                 .hasMessageContaining("exp=" + exp)
                 .hasMessageContaining("iat=" + iat)
                 .hasMessageContaining("ttl=30s")
-                .hasMessageContaining("ago");
+                .hasMessageContaining("ago")
+                .hasMessageContaining("clock skew 60s");
+    }
+
+    @Test
+    void validateStatusListTokenAcceptsTokenExpiredWithinClockSkew() {
+        verifier.validateStatusListToken(
+                "statuslist+jwt",
+                "https://issuer.example/status/1",
+                Instant.now().minusSeconds(30),
+                "https://issuer.example/status/1");
+    }
+
+    @Test
+    void validateStatusListTokenAppliesConfiguredClockSkew() {
+        Instant exp = Instant.now().minusSeconds(5);
+
+        new StatusListVerifier(null, null, 10)
+                .validateStatusListToken(
+                        "statuslist+jwt", "https://issuer.example/status/1", exp, "https://issuer.example/status/1");
+        assertThatThrownBy(() -> new StatusListVerifier(null, null, 0)
+                        .validateStatusListToken(
+                                "statuslist+jwt",
+                                "https://issuer.example/status/1",
+                                exp,
+                                "https://issuer.example/status/1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("expired");
+    }
+
+    @Test
+    void statusListExpiredWithinClockSkewIsAcceptedButNotReusedFromCache() throws Exception {
+        String uri = "https://issuer.example/status/edge-of-lifetime";
+        String jwt = signedStatusListJwt(generateEcKeyPair(), uri, Instant.now().minusSeconds(5));
+        int[] fetches = {0};
+        StatusListVerifier verifier = new StatusListVerifier() {
+            @Override
+            String fetchStatusListJwt(String requestedUri) {
+                fetches[0]++;
+                return jwt;
+            }
+        };
+        Map<String, Object> claims = Map.of("status", Map.of("status_list", Map.of("uri", uri, "idx", 0)));
+
+        verifier.checkRevocationStatus(claims);
+        verifier.checkRevocationStatus(claims);
+
+        assertThat(fetches[0]).isEqualTo(2);
     }
 
     @Test
@@ -576,7 +627,7 @@ class StatusListVerifierTest {
 
     @Test
     void resolveExpiryCapsAtMaxCacheTtl() {
-        StatusListVerifier capped = new StatusListVerifier(null, Duration.ofSeconds(60));
+        StatusListVerifier capped = new StatusListVerifier(null, Duration.ofSeconds(60), 0);
         Instant expiry = capped.resolveExpiry(null, 3600);
         assertThat(expiry).isBefore(Instant.now().plusSeconds(65));
         assertThat(expiry).isAfter(Instant.now().plusSeconds(55));
