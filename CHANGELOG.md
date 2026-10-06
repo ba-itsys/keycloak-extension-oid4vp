@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.4](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.13.3...v0.13.4) (2026-10-06)
+
+
+### Bug Fixes
+
+* apply clock skew setting to status list exp ([cf81079](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/cf81079594dc8c7ea82e8721f3435c3789b1c748))
+
 ## [0.13.3](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.13.2...v0.13.3) (2026-10-05)
 
 
