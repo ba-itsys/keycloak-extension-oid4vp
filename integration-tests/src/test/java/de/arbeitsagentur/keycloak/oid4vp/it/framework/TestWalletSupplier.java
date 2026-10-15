@@ -37,7 +37,7 @@ public class TestWalletSupplier
         implements Supplier<TestWallet, InjectTestWallet>,
                 KeycloakServerConfigInterceptor<TestWallet, InjectTestWallet> {
 
-    @ConfigProperty(name = "image", defaultValue = "ghcr.io/dominikschlosser/eudi-dev:v2.5.1")
+    @ConfigProperty(name = "image", defaultValue = "ghcr.io/eudi-dev/eudi-dev:v3.1.4")
     String image;
 
     @ConfigProperty(name = "port", defaultValue = "18085")

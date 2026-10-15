@@ -12,7 +12,7 @@ services:
       retries: 20
 
   oid4vc-dev:
-    image: ghcr.io/dominikschlosser/eudi-dev:v2.5.1
+    image: ghcr.io/eudi-dev/eudi-dev:v3.1.4
     user: "0:0"
     entrypoint:
       - /bin/sh

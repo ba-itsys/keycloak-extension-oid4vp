@@ -77,8 +77,10 @@ class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
 
         setTrustIdpConfig(Map.of(EtsiTrustListIdentityProviderConfig.ADVERTISE_TRUSTED_AUTHORITIES, "aki"));
 
-        List<String> authorityKeyIdentifiers =
-                List.of(walletPidAuthorityKeyIdentifier("NL"), walletPidAuthorityKeyIdentifier("DE"));
+        List<String> authorityKeyIdentifiers = List.of(
+                walletPidAuthorityKeyIdentifier("NL"),
+                walletPidAuthorityKeyIdentifier("DE"),
+                walletPidAuthorityKeyIdentifier("IT"));
         assertThat(trustedAuthoritiesOf(fetchCurrentRequestObject()))
                 .singleElement()
                 .satisfies(authority -> assertThat(authority)
