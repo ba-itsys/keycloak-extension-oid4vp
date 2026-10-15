@@ -15,10 +15,15 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.it;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWalletConfig;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWalletConfigBuilder;
+import io.github.dominikschlosser.eudi.ActivityLogEntry;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
@@ -41,12 +46,47 @@ class KeycloakOid4vpEncryptedRequestE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
-    void loginWithEncryptedRequestObject() throws Exception {
+    void requestObjectFetchedWithPostIsEncryptedForTheWallet() throws Exception {
         testApp().reset();
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
+        wallet.client().clearActivityLog();
+        // OID4VP 1.0 §5.10: the wallet sends its encryption key in wallet_metadata, which only a
+        // POST to the request_uri carries.
+        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.REQUEST_URI_METHOD_POST, "true"));
 
         performSameDeviceLogin("enc-request-user");
         flow.assertLoginSucceeded();
+
+        ActivityLogEntry fetch = requestObjectFetch();
+        assertThat(fetch.details()).containsEntry("method", "POST");
+    }
+
+    @Test
+    void requestObjectFetchedWithGetStaysSigned() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        deleteAllOid4vpUsers();
+        wallet.client().clearActivityLog();
+        // A GET carries no wallet_metadata, so the verifier has no key to encrypt to. A wallet that
+        // does not require encryption accepts the signed request object.
+        wallet.client().setRequireEncryptedRequest(false);
+        try {
+            performSameDeviceLogin("get-request-user");
+            flow.assertLoginSucceeded();
+
+            ActivityLogEntry fetch = requestObjectFetch();
+            assertThat(fetch.details()).containsEntry("method", "GET");
+        } finally {
+            wallet.client().resetConformance();
+        }
+    }
+
+    private ActivityLogEntry requestObjectFetch() {
+        return wallet.client().getActivityLog().stream()
+                .filter(entry ->
+                        "request_object_fetch_response".equals(entry.details().get("event")))
+                .findFirst()
+                .orElseThrow();
     }
 }
