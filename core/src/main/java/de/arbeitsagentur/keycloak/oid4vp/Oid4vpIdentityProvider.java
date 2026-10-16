@@ -142,7 +142,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     }
 
     /** Renders the wallet login page with new request URIs in an authentication session that already showed it. */
-    Response refreshLoginPage(AuthenticationSessionModel authSession) {
+    protected Response refreshLoginPage(AuthenticationSessionModel authSession) {
         LoginContext loginContext = new LoginContext(
                 authSession.getParentSession().getId(),
                 authSession.getTabId(),
@@ -150,7 +150,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         return renderLoginPage(authSession, loginContext);
     }
 
-    Response renderExpiredPage(AuthenticationSessionModel authSession) {
+    protected Response renderExpiredPage(AuthenticationSessionModel authSession) {
         boolean crossDeviceInProgress = !crossDeviceStates(authSession).isEmpty();
         return session.getProvider(LoginFormsProvider.class)
                 .setAuthenticationSession(authSession)
@@ -161,7 +161,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 .createForm("login-oid4vp-expired.ftl");
     }
 
-    private Response renderLoginPage(AuthenticationSessionModel authSession, LoginContext loginContext) {
+    protected Response renderLoginPage(AuthenticationSessionModel authSession, LoginContext loginContext) {
         boolean sameDeviceConfigured = getConfig().isSameDeviceEnabled();
         boolean crossDeviceConfigured = getConfig().isCrossDeviceEnabled();
         int requestedLoa = requestedLevelOfAuthentication(authSession);
@@ -351,7 +351,8 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         return maxLoa == null || requestedLoa <= maxLoa;
     }
 
-    private LoginContext initializeLoginContext(AuthenticationRequest request, AuthenticationSessionModel authSession) {
+    protected LoginContext initializeLoginContext(
+            AuthenticationRequest request, AuthenticationSessionModel authSession) {
         String effectiveClientId = computeEffectiveClientId(computeBaseClientId());
 
         var uriInfo = request.getUriInfo();
@@ -372,7 +373,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         return new LoginContext(rootSessionId, flowTabId, effectiveClientId);
     }
 
-    private RedirectFlowData buildRedirectFlowData(
+    protected RedirectFlowData buildRedirectFlowData(
             LoginContext loginContext, boolean sameDeviceEnabled, boolean crossDeviceEnabled) {
         if (!sameDeviceEnabled && !crossDeviceEnabled) {
             return RedirectFlowData.EMPTY;
@@ -403,7 +404,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         return new RedirectFlowData(sameDeviceFlow, crossDeviceFlow, qrCodeBase64);
     }
 
-    private FlowEntry createFlowEntry(LoginContext loginContext, String flow, int requestUriLifetimeSeconds) {
+    protected FlowEntry createFlowEntry(LoginContext loginContext, String flow, int requestUriLifetimeSeconds) {
         String state = StringUtil.isBlank(loginContext.flowTabId())
                 ? UUID.randomUUID().toString()
                 : loginContext.flowTabId() + "." + UUID.randomUUID();
@@ -450,12 +451,12 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         return new FlowEntry(state, walletUrl, requestUriExpiresAtEpochSeconds);
     }
 
-    private String computeEffectiveClientId(String clientId) {
+    protected String computeEffectiveClientId(String clientId) {
         Oid4vpClientIdScheme clientIdScheme = getConfig().getResolvedClientIdScheme();
         return clientIdScheme.computeClientId(clientId, getConfig().getX509CertificatePem());
     }
 
-    private Response buildLoginFormResponse(
+    protected Response buildLoginFormResponse(
             AuthenticationSessionModel authSession,
             RedirectFlowData redirectFlowData,
             boolean sameDeviceEnabled,
@@ -493,7 +494,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
      * Counts down to the first request URI on the page to expire, or to the end of the
      * authentication session when that comes first.
      */
-    private long requestUriExpiresInSeconds(AuthenticationSessionModel authSession, FlowEntry... flows) {
+    protected long requestUriExpiresInSeconds(AuthenticationSessionModel authSession, FlowEntry... flows) {
         long authSessionExpiresAt = SessionExpiration.getAuthSessionExpiration(
                 session.getContext().getRealm(), authSession.getParentSession().getTimestamp());
         long expiresAt = Stream.of(flows)
@@ -560,14 +561,14 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 .toString();
     }
 
-    private String computeVerifierResponseUri() {
+    protected String computeVerifierResponseUri() {
         return Oid4vpConstants.buildEndpointBaseUrl(
                 session.getContext().getUri().getBaseUri(),
                 session.getContext().getRealm().getName(),
                 getConfig().getAlias());
     }
 
-    private String computeBaseClientId() {
+    protected String computeBaseClientId() {
         URI realmBase = session.getContext()
                 .getUri()
                 .getBaseUriBuilder()
@@ -578,11 +579,11 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         return value.endsWith("/") ? value : value + "/";
     }
 
-    record LoginContext(String rootSessionId, String flowTabId, String effectiveClientId) {}
+    protected record LoginContext(String rootSessionId, String flowTabId, String effectiveClientId) {}
 
-    record FlowEntry(String state, String walletUrl, long requestUriExpiresAtEpochSeconds) {}
+    protected record FlowEntry(String state, String walletUrl, long requestUriExpiresAtEpochSeconds) {}
 
-    record RedirectFlowData(FlowEntry sameDeviceFlow, FlowEntry crossDeviceFlow, String qrCodeBase64) {
+    protected record RedirectFlowData(FlowEntry sameDeviceFlow, FlowEntry crossDeviceFlow, String qrCodeBase64) {
         static final RedirectFlowData EMPTY = new RedirectFlowData(null, null, null);
     }
 }

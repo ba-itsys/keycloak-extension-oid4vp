@@ -395,7 +395,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         getConfig().put(ISSUER_METADATA_MAX_CACHE_TTL_SECONDS, String.valueOf(seconds));
     }
 
-    private Duration parseDurationSeconds(String configKey) {
+    protected Duration parseDurationSeconds(String configKey) {
         String value = getConfig().get(configKey);
         if (StringUtil.isBlank(value)) {
             return null;
@@ -492,7 +492,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
      * settings are ceilings and dropping a mistyped one would offer a flow at a level the
      * configuration forbids.
      */
-    private Integer getOptionalIntConfig(String key) {
+    protected Integer getOptionalIntConfig(String key) {
         String value = getConfig().get(key);
         if (StringUtil.isBlank(value)) {
             return null;
@@ -504,7 +504,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         }
     }
 
-    private int getIntConfig(String key, int defaultValue) {
+    protected int getIntConfig(String key, int defaultValue) {
         String value = getConfig().get(key);
         if (StringUtil.isBlank(value)) {
             return defaultValue;
@@ -516,7 +516,7 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         }
     }
 
-    private boolean getBoolConfig(String key, boolean defaultValue) {
+    protected boolean getBoolConfig(String key, boolean defaultValue) {
         String value = getConfig().get(key);
         if (StringUtil.isBlank(value)) {
             return defaultValue;

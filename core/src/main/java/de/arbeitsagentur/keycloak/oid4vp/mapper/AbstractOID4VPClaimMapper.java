@@ -154,7 +154,7 @@ public abstract class AbstractOID4VPClaimMapper extends AbstractIdentityProvider
      * Resolves the credential id this mapper reads under, mirroring how the DCQL query generation
      * derives it.
      */
-    private String credentialId(IdentityProviderMapperModel mapperModel, String firstCredentialType) {
+    protected String credentialId(IdentityProviderMapperModel mapperModel, String firstCredentialType) {
         return CredentialId.resolve(
                 mapperModel.getConfig().get(CREDENTIAL_ID), credentialFormat(), firstCredentialType);
     }
@@ -213,7 +213,7 @@ public abstract class AbstractOID4VPClaimMapper extends AbstractIdentityProvider
      * malformed. One broken alternative makes the whole mapper misconfigured, which is also why the
      * DCQL generation skips it.
      */
-    private List<ClaimPath> claimPaths(IdentityProviderMapperModel mapperModel) {
+    protected List<ClaimPath> claimPaths(IdentityProviderMapperModel mapperModel) {
         String claimPath = mapperModel.getConfig().get(CLAIM);
         if (StringUtil.isBlank(claimPath)) {
             logger.warnf("No claim configured for mapper %s", mapperModel.getName());

@@ -63,11 +63,11 @@ public class PidReferenceBindingProvider implements ReferenceCredentialBindingPr
     }
 
     /** Selects by type hierarchy, so the German PID binds under the EUDI PID type it derives from. */
-    private boolean isSelected(PresentedCredential credential) {
+    protected boolean isSelected(PresentedCredential credential) {
         return credentialTypes.isEmpty() || credentialTypes.stream().anyMatch(credential::isOfType);
     }
 
-    private BoundCredential select(PresentedCredential credential) {
+    protected BoundCredential select(PresentedCredential credential) {
         JsonNode claimsRoot = ClaimSelection.claimsRoot(credential, null);
         if (claimsRoot == null) {
             return new BoundCredential(credential.type(), Map.of());
