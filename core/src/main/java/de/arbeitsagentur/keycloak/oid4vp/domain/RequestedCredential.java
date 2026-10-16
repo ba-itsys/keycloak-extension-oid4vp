@@ -16,9 +16,9 @@
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import de.arbeitsagentur.keycloak.oid4vp.mapper.ClaimPath;
 import java.util.ArrayList;
 import java.util.List;
+import org.keycloak.broker.oid4vp.mappers.ClaimPath;
 import org.keycloak.common.VerificationException;
 import org.keycloak.sdjwt.consumer.PresentationRequirements;
 

@@ -18,13 +18,13 @@ package de.arbeitsagentur.keycloak.oid4vp.binding;
 import com.fasterxml.jackson.databind.JsonNode;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredentials;
-import de.arbeitsagentur.keycloak.oid4vp.mapper.ClaimPath;
 import de.arbeitsagentur.keycloak.oid4vp.mapper.ClaimSelection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.jboss.logging.Logger;
+import org.keycloak.broker.oid4vp.mappers.ClaimPath;
 
 /**
  * Binds an issued credential to the person a PID names, by the claims that identify them. Claims are

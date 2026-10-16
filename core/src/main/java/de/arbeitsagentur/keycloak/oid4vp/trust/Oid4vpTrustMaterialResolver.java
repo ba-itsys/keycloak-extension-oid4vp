@@ -22,6 +22,7 @@ import java.util.stream.Stream;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.TrustMaterialIdentityProvider;
 import org.keycloak.broker.provider.TrustMaterialRequest;
+import org.keycloak.broker.provider.X509TrustMaterial;
 import org.keycloak.jose.jwk.JWK;
 import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.models.KeycloakSession;
@@ -115,10 +116,10 @@ public class Oid4vpTrustMaterialResolver {
 
     /**
      * Adapts a provider that only implements the upstream contract, for example Keycloak's
-     * {@code default-trust}, which publishes the JWKs of an issuer that has no trust list. Its keys
-     * are trusted for any issuer, because the upstream contract does not bind them to one. Reading
-     * the served credential types from its configuration lets such a provider be scoped like the
-     * providers of this extension.
+     * {@code default-trust}, which publishes the JWKs or X.509 roots of an issuer that has no trust
+     * list. Its keys are trusted for any issuer, because the upstream contract does not bind them to
+     * one. Reading the served credential types from its configuration lets such a provider be scoped
+     * like the providers of this extension.
      */
     record UpstreamTrustMaterialAdapter(TrustMaterialIdentityProvider<?> delegate)
             implements Oid4vpTrustMaterialIdentityProvider<IdentityProviderModel> {
@@ -136,6 +137,11 @@ public class Oid4vpTrustMaterialResolver {
         @Override
         public Stream<JWK> resolveKeys(TrustMaterialRequest request) {
             return delegate.resolveKeys(request);
+        }
+
+        @Override
+        public Stream<X509TrustMaterial> resolveX509Trust(TrustMaterialRequest request) {
+            return delegate.resolveX509Trust(request);
         }
 
         @Override

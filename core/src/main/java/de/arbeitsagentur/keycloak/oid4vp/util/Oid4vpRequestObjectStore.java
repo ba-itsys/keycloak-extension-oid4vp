@@ -15,13 +15,14 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.jboss.logging.Logger;
+import org.keycloak.broker.oid4vp.EphemeralKey;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.SingleUseObjectProvider;
 import org.keycloak.util.JsonSerialization;
@@ -65,6 +66,8 @@ public class Oid4vpRequestObjectStore {
      *     wallet, so that callback enforcement judges the response against the query the wallet
      *     actually answered even when the mapper configuration changes mid-flow
      */
+    // Entries outlive a deployment, so fields a previous version stored must not fail the lookup.
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record RequestContextEntry(
             String state,
             String rootSessionId,
@@ -73,8 +76,7 @@ public class Oid4vpRequestObjectStore {
             String responseUri,
             String flow,
             String nonce,
-            String encryptionKeyJson,
-            String encryptionJwkThumbprint,
+            EphemeralKey encryptionKey,
             List<RequestedCredential> requestedCredentials,
             List<CredentialSet> credentialSets,
             String dcqlQuery,
@@ -118,15 +120,6 @@ public class Oid4vpRequestObjectStore {
     public void removeRequestContext(KeycloakSession session, String state) {
         if (StringUtil.isBlank(state)) return;
         session.singleUseObjects().remove(STATE_INDEX_PREFIX + state);
-    }
-
-    /** Computes the RFC 7638 SHA-256 JWK thumbprint of the public part of an EC JWK. */
-    public static String computeEncryptionJwkThumbprint(String jwkJson) {
-        try {
-            return Oid4vpJwk.computeThumbprint(jwkJson);
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Failed to compute JWK thumbprint", e);
-        }
     }
 
     private static String serializeEntry(Object entry) {

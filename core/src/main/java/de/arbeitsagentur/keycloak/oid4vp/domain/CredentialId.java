@@ -15,6 +15,8 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
+import org.keycloak.OID4VCConstants;
+
 /**
  * The identifier of a credential entry in a DCQL query. It names the credential in the
  * {@code credential_sets} constraints and is the key under which the wallet returns the matching
@@ -52,7 +54,7 @@ public final class CredentialId {
     }
 
     private static String formatPrefix(String format) {
-        if (Oid4vpConstants.FORMAT_SD_JWT_VC.equals(format)) {
+        if (OID4VCConstants.FORMAT_SD_JWT_VC.equals(format)) {
             return SD_JWT_PREFIX;
         }
         if (Oid4vpConstants.FORMAT_MSO_MDOC.equals(format)) {

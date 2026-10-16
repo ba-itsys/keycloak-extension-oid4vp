@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.keycloak.OID4VCConstants;
 
 class CredentialTypeSpecTest {
 
@@ -160,18 +161,18 @@ class CredentialTypeSpecTest {
     @Test
     void types_holdEveryAcceptedTypeWithTheFirstDerivingTheId() {
         CredentialTypeSpec spec = new CredentialTypeSpec(
-                Oid4vpConstants.FORMAT_SD_JWT_VC, List.of(PID, "urn:eudi:pid:de:1"), List.of(ClaimSpec.sdJwt("sub")));
+                OID4VCConstants.FORMAT_SD_JWT_VC, List.of(PID, "urn:eudi:pid:de:1"), List.of(ClaimSpec.sdJwt("sub")));
 
         assertThat(spec.types()).containsExactly(PID, "urn:eudi:pid:de:1");
         assertThat(spec.firstType()).isEqualTo(PID);
-        assertThat(new CredentialTypeSpec(Oid4vpConstants.FORMAT_SD_JWT_VC, PID, List.of()).types())
+        assertThat(new CredentialTypeSpec(OID4VCConstants.FORMAT_SD_JWT_VC, PID, List.of()).types())
                 .containsExactly(PID);
     }
 
     @Test
     void types_mustNotBeEmpty() {
         org.assertj.core.api.Assertions.assertThatThrownBy(
-                        () -> new CredentialTypeSpec(Oid4vpConstants.FORMAT_SD_JWT_VC, List.of(), List.of()))
+                        () -> new CredentialTypeSpec(OID4VCConstants.FORMAT_SD_JWT_VC, List.of(), List.of()))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -184,6 +185,6 @@ class CredentialTypeSpecTest {
     }
 
     private static CredentialTypeSpec sdJwt(ClaimSpec... claimSpecs) {
-        return new CredentialTypeSpec(Oid4vpConstants.FORMAT_SD_JWT_VC, PID, List.of(claimSpecs));
+        return new CredentialTypeSpec(OID4VCConstants.FORMAT_SD_JWT_VC, PID, List.of(claimSpecs));
     }
 }

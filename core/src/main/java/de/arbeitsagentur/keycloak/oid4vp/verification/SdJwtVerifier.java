@@ -21,11 +21,15 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeHierarchy;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SdJwtVerificationResult;
 import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
 import java.util.List;
+import java.util.Map;
 import org.jboss.logging.Logger;
+import org.keycloak.OID4VCConstants;
 import org.keycloak.sdjwt.IssuerSignedJwtVerificationOpts;
 import org.keycloak.sdjwt.consumer.SdJwtPresentationConsumer;
 import org.keycloak.sdjwt.vp.KeyBindingJwtVerificationOpts;
 import org.keycloak.sdjwt.vp.SdJwtVP;
+import org.keycloak.sdjwt.vp.SdJwtVpVerificationResult;
+import org.keycloak.util.JsonSerialization;
 
 /**
  * Verifies SD-JWT Verifiable Credentials presented in a VP token. This is a thin facade over
@@ -36,8 +40,6 @@ import org.keycloak.sdjwt.vp.SdJwtVP;
  * @see <a href="https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-13">draft-ietf-oauth-sd-jwt-vc-13, SD-JWT VC</a>
  */
 public class SdJwtVerifier {
-
-    private static final String VCT_CLAIM = "vct";
 
     private static final Logger LOG = Logger.getLogger(SdJwtVerifier.class);
 
@@ -79,7 +81,7 @@ public class SdJwtVerifier {
     public ClaimedTypes peekTypes(String sdJwt) {
         try {
             JsonNode payload = SdJwtVP.of(sdJwt).getIssuerSignedJWT().getPayload();
-            JsonNode vct = payload.get(VCT_CLAIM);
+            JsonNode vct = payload.get(OID4VCConstants.CLAIM_NAME_VCT);
             if (vct == null || !vct.isTextual()) {
                 return null;
             }
@@ -99,7 +101,6 @@ public class SdJwtVerifier {
 
         try {
             SdJwtVP sdJwtVP = SdJwtVP.of(sdJwt);
-            Oid4vpPresentationRequirements requirements = new Oid4vpPresentationRequirements();
 
             // The ClaimVerifier.Builder constructor adds an IatLifetimeCheck with the KB-JWT default
             // maxAge of 300 seconds to every builder, including the issuer options. It is removed for
@@ -123,14 +124,19 @@ public class SdJwtVerifier {
                 kbOptsBuilder.withAudCheck(expectedAudience).withNonceCheck(expectedNonce);
             }
 
-            presentationConsumer.verifySdJwtPresentation(
+            SdJwtVpVerificationResult result = presentationConsumer.verifySdJwtPresentation(
                     sdJwtVP,
-                    requirements,
+                    disclosedPayload -> {},
                     List.of(new Oid4vpTrustedSdJwtIssuer(trust, issuerMetadataResolver, requireIssuerSanMatch)),
                     issuerOpts,
                     kbOptsBuilder.build());
 
-            return requirements.getVerifiedResult();
+            JsonNode claims = result.getClaims();
+            return new SdJwtVerificationResult(
+                    JsonSerialization.mapper.convertValue(claims, Map.class),
+                    result.getIssuer(),
+                    result.getCredentialType(),
+                    CredentialTypeHierarchy.alsoKnownAsTypes(claims));
         } catch (Exception e) {
             throw new IllegalStateException("SD-JWT verification failed: " + e.getMessage(), e);
         }

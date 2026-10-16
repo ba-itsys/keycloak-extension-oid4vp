@@ -18,7 +18,6 @@ package de.arbeitsagentur.keycloak.oid4vp.verification;
 import com.fasterxml.jackson.databind.JsonNode;
 import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
 import de.arbeitsagentur.keycloak.oid4vp.trust.TrustedIssuerKey;
-import de.arbeitsagentur.keycloak.oid4vp.trust.X509CertificateChainValidator;
 import de.arbeitsagentur.keycloak.oid4vp.util.FailureDetails;
 import de.arbeitsagentur.keycloak.oid4vp.verification.JwtVcIssuerMetadataResolver.ResolvedIssuerKey;
 import java.net.URI;
@@ -36,11 +35,13 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.jboss.logging.Logger;
+import org.keycloak.OID4VCConstants;
 import org.keycloak.common.VerificationException;
 import org.keycloak.crypto.KeyType;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.crypto.SignatureVerifierContext;
+import org.keycloak.crypto.X509CertificateChainValidator;
 import org.keycloak.jose.jwk.JWK;
 import org.keycloak.jose.jws.JWSHeader;
 import org.keycloak.sdjwt.IssuerSignedJWT;
@@ -54,7 +55,7 @@ import org.keycloak.util.KeyWrapperUtil;
  *
  * <p>Policy:
  * <ol>
- *   <li>Prefer x5c validation: a pinned trusted leaf or a PKIX path to the issuance trust anchors</li>
+ *   <li>Prefer x5c validation: a pinned trusted leaf or a PKIX path to the issuer trust anchors</li>
  *   <li>Then the issuer keys the credential's trust domain publishes, matched on iss and kid</li>
  *   <li>Finally, when no trust source is declared for the credential, fall back to JWT VC issuer metadata</li>
  * </ol>
@@ -83,7 +84,7 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
             throws VerificationException {
         // The iss claim is used by the allowedIssuers filter and by trust material
         // configured for a specific issuer.
-        JsonNode issuerClaim = issuerSignedJWT.getPayload().get("iss");
+        JsonNode issuerClaim = issuerSignedJWT.getPayload().get(OID4VCConstants.CLAIM_NAME_ISSUER);
         if (issuerClaim == null
                 || !issuerClaim.isTextual()
                 || issuerClaim.asText().isBlank()) {
@@ -159,7 +160,10 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
         if (!trust.hasX509Trust()) {
             return null;
         }
-        String issuer = issuerSignedJWT.getPayload().path("iss").asText(null);
+        String issuer = issuerSignedJWT
+                .getPayload()
+                .path(OID4VCConstants.CLAIM_NAME_ISSUER)
+                .asText(null);
         List<X509Certificate> chain;
         PublicKey leafKey;
         try {
@@ -214,7 +218,10 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
     }
 
     private ResolvedIssuerKey resolveIssuerKeyFromMetadata(IssuerSignedJWT issuerSignedJWT) {
-        String issuer = issuerSignedJWT.getPayload().path("iss").asText(null);
+        String issuer = issuerSignedJWT
+                .getPayload()
+                .path(OID4VCConstants.CLAIM_NAME_ISSUER)
+                .asText(null);
         JWSHeader header = issuerSignedJWT.getJwsHeader();
         String kid = header != null ? header.getKeyId() : null;
 
@@ -224,7 +231,8 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
     }
 
     private void validateResolvedKeyTrust(ResolvedIssuerKey issuerKey) {
-        if (trust.issuanceTrust().isEmpty() && trust.directIssuerCertificates().isEmpty()) {
+        if (trust.issuerTrustAnchors().isEmpty()
+                && trust.directIssuerCertificates().isEmpty()) {
             return;
         }
         List<X509Certificate> chain = issuerKey.certificateChain();
@@ -251,7 +259,10 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
      */
     private List<SignatureVerifierContext> directTrustVerifiers(IssuerSignedJWT issuerSignedJWT) {
         JWSHeader header = issuerSignedJWT.getJwsHeader();
-        String issuer = issuerSignedJWT.getPayload().path("iss").asText(null);
+        String issuer = issuerSignedJWT
+                .getPayload()
+                .path(OID4VCConstants.CLAIM_NAME_ISSUER)
+                .asText(null);
         String keyId = header != null ? header.getKeyId() : null;
 
         List<SignatureVerifierContext> verifiers = new ArrayList<>();

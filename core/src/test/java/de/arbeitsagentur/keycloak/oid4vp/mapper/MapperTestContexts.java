@@ -24,6 +24,7 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredentials;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import java.util.Map;
+import org.keycloak.OID4VCConstants;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.util.JsonSerialization;
 
@@ -57,7 +58,7 @@ final class MapperTestContexts {
     private static String credentialIdOf(PresentationType presentationType, String credentialType) {
         String format = presentationType == PresentationType.MDOC
                 ? Oid4vpConstants.FORMAT_MSO_MDOC
-                : Oid4vpConstants.FORMAT_SD_JWT_VC;
+                : OID4VCConstants.FORMAT_SD_JWT_VC;
         return CredentialId.defaultFor(format, credentialType);
     }
 }

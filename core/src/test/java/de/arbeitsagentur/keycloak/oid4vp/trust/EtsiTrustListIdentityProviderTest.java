@@ -69,8 +69,7 @@ class EtsiTrustListIdentityProviderTest {
         config.setAdvertisedTrustedAuthorityType("aki");
         EtsiTrustListIdentityProvider provider = new EtsiTrustListIdentityProvider(null, config);
 
-        List<X509TrustMaterial> materials =
-                provider.resolveX509Trust(EMPTY_REQUEST).toList();
+        List<IssuerTrustAnchors> materials = provider.issuerTrustAnchors();
         assertThat(materials).hasSize(1);
         assertThat(materials.get(0).trustAnchors()).containsExactly(ca);
         assertThat(materials.get(0).requiredExtendedKeyUsages()).containsExactly("1.0.18013.5.1.2");
@@ -86,7 +85,7 @@ class EtsiTrustListIdentityProviderTest {
     }
 
     @Test
-    void endEntityOnlyBundleExposesNoX509TrustMaterial() throws Exception {
+    void endEntityOnlyBundleExposesNoIssuerTrustAnchors() throws Exception {
         KeyPair caKp = generateKeyPair();
         KeyPair eeKp = generateKeyPair();
         X509Certificate endEntity = generateCert(eeKp, caKp, "CN=Pinned Issuer", "CN=External CA", false);
@@ -95,7 +94,7 @@ class EtsiTrustListIdentityProviderTest {
         config.setTrustedCertificates(toPem(endEntity));
         EtsiTrustListIdentityProvider provider = new EtsiTrustListIdentityProvider(null, config);
 
-        assertThat(provider.resolveX509Trust(EMPTY_REQUEST)).isEmpty();
+        assertThat(provider.issuerTrustAnchors()).isEmpty();
         assertThat(provider.directIssuerCertificates()).containsExactly(endEntity);
     }
 
@@ -110,7 +109,7 @@ class EtsiTrustListIdentityProviderTest {
         EtsiTrustListIdentityProvider provider = new EtsiTrustListIdentityProvider(
                 config, new FixedTrustListProvider(List.of(ca), "http://uri.etsi.org/19602/LoTEType/Other"), null);
 
-        assertThatThrownBy(() -> provider.resolveX509Trust(EMPTY_REQUEST))
+        assertThatThrownBy(() -> provider.issuerTrustAnchors())
                 .isInstanceOf(IdentityBrokerException.class)
                 .hasMessageContaining("LoTE type mismatch");
     }
@@ -128,8 +127,7 @@ class EtsiTrustListIdentityProviderTest {
         EtsiTrustListIdentityProvider provider =
                 new EtsiTrustListIdentityProvider(config, new FixedTrustListProvider(List.of(ca), expected), null);
 
-        List<X509TrustMaterial> materials =
-                provider.resolveX509Trust(EMPTY_REQUEST).toList();
+        List<IssuerTrustAnchors> materials = provider.issuerTrustAnchors();
         assertThat(materials).hasSize(1);
         assertThat(materials.get(0).trustAnchors()).containsExactly(ca);
         assertThat(provider.trustedAuthorities())
@@ -167,8 +165,7 @@ class EtsiTrustListIdentityProviderTest {
         EtsiTrustListIdentityProvider provider = new EtsiTrustListIdentityProvider(
                 config, new FixedTrustListProvider(List.of(tlCa), null), new TrustListProvider(List.of(staticCa)));
 
-        List<X509TrustMaterial> materials =
-                provider.resolveX509Trust(EMPTY_REQUEST).toList();
+        List<IssuerTrustAnchors> materials = provider.issuerTrustAnchors();
         assertThat(materials).hasSize(1);
         assertThat(materials.get(0).trustAnchors()).containsExactlyInAnyOrder(tlCa, staticCa);
         assertThat(provider.revocationCertificates()).containsExactly(tlCa, staticCa);
@@ -315,7 +312,7 @@ class EtsiTrustListIdentityProviderTest {
     }
 
     private static void resolveAllTrustMaterial(EtsiTrustListIdentityProvider provider) {
-        provider.resolveX509Trust(EMPTY_REQUEST).toList();
+        provider.issuerTrustAnchors();
         provider.directIssuerCertificates();
         provider.revocationCertificates();
         provider.trustedAuthorities();

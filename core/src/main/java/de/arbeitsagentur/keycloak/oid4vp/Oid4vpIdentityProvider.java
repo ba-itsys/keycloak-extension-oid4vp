@@ -24,7 +24,6 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpClientIdScheme;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpCredentialSetsValidator;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpMessages;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpPresentationFlow;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PreparedDcqlQuery;
@@ -52,6 +51,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.jboss.logging.Logger;
+import org.keycloak.broker.oid4vp.EphemeralKey;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.broker.provider.AuthenticationRequest;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
@@ -411,13 +411,10 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         String responseUri = computeVerifierResponseUri();
 
         String nonce = UUID.randomUUID().toString();
-        String encryptionKeyJson = null;
-        String encryptionJwkThumbprint = null;
-        if (getConfig().getResolvedResponseMode().requiresEncryption()) {
-            Oid4vpJwk responseEncryptionKey = redirectFlowService.createResponseEncryptionKey(state);
-            encryptionKeyJson = responseEncryptionKey.toJson();
-            encryptionJwkThumbprint = Oid4vpRequestObjectStore.computeEncryptionJwkThumbprint(encryptionKeyJson);
-        }
+        // The flow state is the key id, so an encrypted direct_post.jwt callback resolves its request
+        // context from the cleartext JWE header alone.
+        EphemeralKey encryptionKey =
+                getConfig().getResolvedResponseMode().requiresEncryption() ? EphemeralKey.generate(state) : null;
         PreparedDcqlQuery preparedDcqlQuery = prepareDcqlQueryFromConfig();
         long requestUriExpiresAtEpochSeconds = (long) Time.currentTime() + requestUriLifetimeSeconds;
 
@@ -429,8 +426,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 responseUri,
                 flow,
                 nonce,
-                encryptionKeyJson,
-                encryptionJwkThumbprint,
+                encryptionKey,
                 preparedDcqlQuery.requestedCredentials(),
                 preparedDcqlQuery.credentialSets(),
                 preparedDcqlQuery.dcqlQuery(),

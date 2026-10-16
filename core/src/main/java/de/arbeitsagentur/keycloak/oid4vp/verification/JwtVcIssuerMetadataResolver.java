@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import org.jboss.logging.Logger;
+import org.keycloak.OID4VCConstants;
 import org.keycloak.broker.provider.util.SimpleHttp;
 import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.jose.jwk.JSONWebKeySet;
@@ -52,7 +53,6 @@ import org.keycloak.util.JsonSerialization;
 public class JwtVcIssuerMetadataResolver {
 
     private static final Logger LOG = Logger.getLogger(JwtVcIssuerMetadataResolver.class);
-    private static final String WELL_KNOWN_PATH = "/.well-known/jwt-vc-issuer";
     private static final HttpClient HTTP_CLIENT =
             HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build();
     private static final int MAX_CACHE_ENTRIES = 256;
@@ -147,7 +147,7 @@ public class JwtVcIssuerMetadataResolver {
 
             FetchResult jwksResult = metadataResult;
             JSONWebKeySet jwks;
-            JsonNode jwksNode = metadata.get("jwks");
+            JsonNode jwksNode = metadata.get(OID4VCConstants.JWKS);
             String jwksUri = metadata.path("jwks_uri").textValue();
             if (jwksNode != null && !jwksNode.isMissingNode() && !jwksNode.isNull()) {
                 jwks = parseJsonWebKeySet(jwksNode);
@@ -283,7 +283,7 @@ public class JwtVcIssuerMetadataResolver {
                             issuerUri.getUserInfo(),
                             issuerUri.getHost(),
                             issuerUri.getPort(),
-                            WELL_KNOWN_PATH + path,
+                            OID4VCConstants.JWT_VC_ISSUER_END_POINT + path,
                             null,
                             null)
                     .toString();

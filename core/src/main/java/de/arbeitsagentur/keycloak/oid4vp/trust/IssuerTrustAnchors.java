@@ -21,26 +21,26 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * X.509 trust material and validation policy exposed by a trust material identity provider.
+ * CA certificates and extended key usage policy that validate credential issuer certificate chains
+ * of one trust domain.
  *
- * <p>Mirror of {@code org.keycloak.broker.provider.X509TrustMaterial} from Keycloak main. Delete
- * this copy and switch imports once the extension builds against a Keycloak release that ships it.
- * It deviates from upstream in that anchors must be CA certificates but need not be self-issued
- * roots, because ETSI trust lists commonly list the issuing (intermediate) CA of a trust domain.
+ * <p>Relaxed variant of {@link org.keycloak.broker.provider.X509TrustMaterial}: anchors must be CA
+ * certificates but need not be self-issued roots, because ETSI trust lists commonly list the
+ * issuing (intermediate) CA of a trust domain. Upstream still mandates self-signed roots.
  *
  * @param trustAnchors              CA certificates anchoring one trust domain
  * @param requiredExtendedKeyUsages extended key usage OIDs. The end entity certificate must contain
  *                                  at least one of them, and an empty list imposes no restriction.
  */
-public record X509TrustMaterial(Set<X509Certificate> trustAnchors, List<String> requiredExtendedKeyUsages) {
+public record IssuerTrustAnchors(Set<X509Certificate> trustAnchors, List<String> requiredExtendedKeyUsages) {
 
-    public X509TrustMaterial {
+    public IssuerTrustAnchors {
         trustAnchors = Set.copyOf(trustAnchors);
         requiredExtendedKeyUsages = List.copyOf(requiredExtendedKeyUsages);
         if (trustAnchors.isEmpty()) {
             throw new IllegalArgumentException("At least one X.509 trust anchor is required");
         }
-        trustAnchors.forEach(X509TrustMaterial::validateTrustAnchor);
+        trustAnchors.forEach(IssuerTrustAnchors::validateTrustAnchor);
     }
 
     private static void validateTrustAnchor(X509Certificate certificate) {

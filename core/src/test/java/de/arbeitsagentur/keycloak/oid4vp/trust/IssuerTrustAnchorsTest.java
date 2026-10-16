@@ -38,14 +38,14 @@ import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.junit.jupiter.api.Test;
 
-class X509TrustMaterialTest {
+class IssuerTrustAnchorsTest {
 
     @Test
     void acceptsSelfSignedRootCaAnchor() throws Exception {
         KeyPair rootKp = generateKeyPair();
         X509Certificate root = generateCert(rootKp, rootKp, "CN=Root CA", "CN=Root CA", true, null);
 
-        X509TrustMaterial material = new X509TrustMaterial(Set.of(root), List.of());
+        IssuerTrustAnchors material = new IssuerTrustAnchors(Set.of(root), List.of());
 
         assertThat(material.trustAnchors()).containsExactly(root);
     }
@@ -58,7 +58,7 @@ class X509TrustMaterialTest {
         KeyPair intermediateKp = generateKeyPair();
         X509Certificate intermediate = generateCert(intermediateKp, rootKp, "CN=Issuing CA", "CN=Root CA", true, null);
 
-        X509TrustMaterial material = new X509TrustMaterial(Set.of(intermediate), List.of());
+        IssuerTrustAnchors material = new IssuerTrustAnchors(Set.of(intermediate), List.of());
 
         assertThat(material.trustAnchors()).containsExactly(intermediate);
     }
@@ -69,7 +69,7 @@ class X509TrustMaterialTest {
         KeyPair leafKp = generateKeyPair();
         X509Certificate leaf = generateCert(leafKp, rootKp, "CN=Leaf", "CN=Root CA", false, null);
 
-        assertThatThrownBy(() -> new X509TrustMaterial(Set.of(leaf), List.of()))
+        assertThatThrownBy(() -> new IssuerTrustAnchors(Set.of(leaf), List.of()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("CA certificates");
     }
@@ -80,14 +80,14 @@ class X509TrustMaterialTest {
         X509Certificate root =
                 generateCert(rootKp, rootKp, "CN=Root CA", "CN=Root CA", true, new KeyUsage(KeyUsage.digitalSignature));
 
-        assertThatThrownBy(() -> new X509TrustMaterial(Set.of(root), List.of()))
+        assertThatThrownBy(() -> new IssuerTrustAnchors(Set.of(root), List.of()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("certificate signing");
     }
 
     @Test
     void rejectsEmptyAnchors() {
-        assertThatThrownBy(() -> new X509TrustMaterial(Set.of(), List.of()))
+        assertThatThrownBy(() -> new IssuerTrustAnchors(Set.of(), List.of()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("At least one");
     }

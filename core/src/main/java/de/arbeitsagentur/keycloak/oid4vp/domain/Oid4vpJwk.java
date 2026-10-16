@@ -37,10 +37,9 @@ import org.keycloak.jose.jwk.JWK;
 import org.keycloak.jose.jwk.JWKBuilder;
 import org.keycloak.jose.jwk.JWKParser;
 import org.keycloak.jose.jwk.JWKUtil;
-import org.keycloak.util.JWKSUtils;
 import org.keycloak.util.JsonSerialization;
 
-/** An EC JWK that can carry its private key. Response encryption keys need that. */
+/** An EC JWK that can carry its private key, as signing keys and wallet encryption keys do. */
 public class Oid4vpJwk extends ECPublicJWK {
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
@@ -110,10 +109,6 @@ public class Oid4vpJwk extends ECPublicJWK {
         Oid4vpJwk jwk = JsonSerialization.mapper.convertValue(map, Oid4vpJwk.class);
         validateEcKeyType(jwk);
         return jwk;
-    }
-
-    public static String computeThumbprint(String jwkJson) {
-        return computeThumbprint(JWKParser.create().parse(jwkJson).getJwk());
     }
 
     public String curve() {
@@ -218,14 +213,5 @@ public class Oid4vpJwk extends ECPublicJWK {
 
     private static BigInteger base64UrlUInt(String value) {
         return new BigInteger(1, Base64Url.decode(value));
-    }
-
-    private static String computeThumbprint(JWK jwk) {
-        validateEcKeyType(jwk);
-        String thumbprint = JWKSUtils.computeThumbprint(jwk);
-        if (thumbprint == null) {
-            throw new IllegalStateException("Failed to compute JWK thumbprint");
-        }
-        return thumbprint;
     }
 }

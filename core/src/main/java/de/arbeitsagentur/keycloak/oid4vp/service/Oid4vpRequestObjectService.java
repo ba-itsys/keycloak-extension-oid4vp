@@ -15,7 +15,7 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.service;
 
-import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.REQUEST_OBJECT_CONTENT_TYPE;
+import static org.keycloak.OID4VCConstants.REQUEST_OBJECT_MEDIA_TYPE;
 
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProvider;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
@@ -99,12 +99,12 @@ public class Oid4vpRequestObjectService {
                             requestContext.nonce(),
                             config.getX509CertificatePem(),
                             config.getX509SigningKeyJwk(),
-                            requestContext.encryptionKeyJson(),
+                            requestContext.encryptionKey(),
                             walletNonce,
                             responseMode));
 
             String responseJwt = maybeEncryptRequestObject(signedRequest.jwt(), walletMetadataJson);
-            return Response.ok(responseJwt).type(REQUEST_OBJECT_CONTENT_TYPE).build();
+            return Response.ok(responseJwt).type(REQUEST_OBJECT_MEDIA_TYPE).build();
         } catch (IllegalArgumentException e) {
             return responseFactory.jsonErrorResponse(Response.Status.BAD_REQUEST, "invalid_request", e.getMessage());
         } catch (Exception e) {

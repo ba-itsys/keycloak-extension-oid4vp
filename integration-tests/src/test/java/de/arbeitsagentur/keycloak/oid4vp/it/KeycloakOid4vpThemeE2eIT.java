@@ -57,7 +57,7 @@ class KeycloakOid4vpThemeE2eIT extends AbstractOid4vpE2eTest {
         openWalletLoginWithTheme("oid4vp-misplaced");
 
         assertThat(page.locator("#custom-oid4vp-page").count()).isZero();
-        assertThat(page.locator("#kc-page-title").textContent()).contains("Sign in with Wallet");
+        assertThat(page.locator("#kc-page-title").textContent()).contains("Sign in with your wallet");
         assertThat(flow.getSameDeviceWalletUrl()).contains("request_uri=");
         assertThat(page.locator("#oid4vp-cross-device-sse-config").count()).isEqualTo(1);
     }

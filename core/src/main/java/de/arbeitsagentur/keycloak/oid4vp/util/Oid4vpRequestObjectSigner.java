@@ -15,7 +15,7 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
-import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.REQUEST_OBJECT_TYP;
+import static org.keycloak.OID4VCConstants.REQUEST_OBJECT_TYPE;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpClientIdScheme;
 import java.security.cert.X509Certificate;
@@ -23,13 +23,11 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import org.keycloak.common.util.PemUtils;
-import org.keycloak.crypto.AsymmetricSignatureSignerContext;
-import org.keycloak.crypto.ECDSASignatureSignerContext;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
-import org.keycloak.crypto.SignatureSignerContext;
 import org.keycloak.jose.jwk.JWKBuilder;
 import org.keycloak.jose.jws.JWSBuilder;
+import org.keycloak.util.KeyWrapperUtil;
 import org.keycloak.utils.StringUtil;
 
 public final class Oid4vpRequestObjectSigner {
@@ -39,7 +37,7 @@ public final class Oid4vpRequestObjectSigner {
             Oid4vpClientIdScheme clientIdScheme,
             String x509CertPem,
             LinkedHashMap<String, Object> claims) {
-        JWSBuilder builder = new JWSBuilder().type(REQUEST_OBJECT_TYP).kid(signingKey.getKid());
+        JWSBuilder builder = new JWSBuilder().type(REQUEST_OBJECT_TYPE).kid(signingKey.getKid());
 
         if (signingKey.getCertificateChain() != null
                 && !signingKey.getCertificateChain().isEmpty()) {
@@ -50,7 +48,7 @@ public final class Oid4vpRequestObjectSigner {
             builder = addPublicJwkHeader(builder, signingKey);
         }
 
-        return builder.jsonContent(claims).sign(createSignerContext(signingKey));
+        return builder.jsonContent(claims).sign(KeyWrapperUtil.createSignatureSignerContext(signingKey));
     }
 
     public KeyWrapper parseSigningKey(String jwkJson) {
@@ -100,16 +98,5 @@ public final class Oid4vpRequestObjectSigner {
             return builder.jwk(jwkBuilder.ec(key.getPublicKey(), KeyUse.SIG));
         }
         throw new IllegalStateException("Unsupported signing key algorithm: " + publicKeyAlgorithm);
-    }
-
-    private static SignatureSignerContext createSignerContext(KeyWrapper signingKey) {
-        try {
-            if ("EC".equalsIgnoreCase(signingKey.getType())) {
-                return new ECDSASignatureSignerContext(signingKey);
-            }
-            return new AsymmetricSignatureSignerContext(signingKey);
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to create signer context", e);
-        }
     }
 }

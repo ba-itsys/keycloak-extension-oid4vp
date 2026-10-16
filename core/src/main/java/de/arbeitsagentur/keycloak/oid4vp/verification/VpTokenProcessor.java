@@ -194,7 +194,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
         LOG.debugf(
                 "Credential '%s' is verified against %d trust anchor sets, %d direct issuer certificates and %d issuer keys",
                 credentialId,
-                trust.issuanceTrust().size(),
+                trust.issuerTrustAnchors().size(),
                 trust.directIssuerCertificates().size(),
                 trust.trustedIssuerKeys().size());
 

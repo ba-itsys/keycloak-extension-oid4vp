@@ -28,7 +28,6 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.PrincipalAttribute;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
-import de.arbeitsagentur.keycloak.oid4vp.mapper.ClaimPath;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor;
@@ -40,11 +39,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.jboss.logging.Logger;
+import org.keycloak.broker.oid4vp.mappers.ClaimPath;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.broker.provider.IdentityBrokerException;
 import org.keycloak.broker.provider.UserAuthenticationIdentityProvider;
 import org.keycloak.common.VerificationException;
 import org.keycloak.models.IdentityProviderModel;
+import org.keycloak.util.JWKSUtils;
 import org.keycloak.utils.StringUtil;
 
 /**
@@ -101,7 +102,10 @@ public class Oid4vpCallbackProcessor {
                 requestContext.nonce(),
                 requestContext.responseUri(),
                 mdocGeneratedNonce,
-                requestContext.encryptionJwkThumbprint(),
+                requestContext.encryptionKey() != null
+                        ? JWKSUtils.computeThumbprint(
+                                requestContext.encryptionKey().publicJwk())
+                        : null,
                 requestContext.requestedCredentials()));
 
         VpTokenResult vpResult = credentialsOfThisPresentation(verified);
