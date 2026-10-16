@@ -15,13 +15,15 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
+import org.keycloak.OID4VCConstants;
+
 /**
  * The credential format of a presentation in a {@code vp_token}.
  *
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1">OID4VP 1.0 §8.1 — VP Token</a>
  */
 public enum PresentationType {
-    SD_JWT(Oid4vpConstants.FORMAT_SD_JWT_VC),
+    SD_JWT(OID4VCConstants.FORMAT_SD_JWT_VC),
     MDOC(Oid4vpConstants.FORMAT_MSO_MDOC);
 
     private final String dcqlFormat;

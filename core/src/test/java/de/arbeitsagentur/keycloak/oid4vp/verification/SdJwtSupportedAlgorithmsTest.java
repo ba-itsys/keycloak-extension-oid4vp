@@ -15,10 +15,6 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
-import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.JWS_ALG_ES256;
-import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.JWS_ALG_ES384;
-import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.JWS_ALG_ES512;
-import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.JWS_ALG_RS256;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.nimbusds.jose.JOSEException;
@@ -61,6 +57,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.keycloak.common.crypto.CryptoIntegration;
+import org.keycloak.crypto.Algorithm;
 
 class SdJwtSupportedAlgorithmsTest {
 
@@ -191,17 +188,17 @@ class SdJwtSupportedAlgorithmsTest {
 
     record JwtAlgorithmSpec(String name, JWSAlgorithm jwsAlgorithm) {
 
-        static final JwtAlgorithmSpec ES256 = new JwtAlgorithmSpec(JWS_ALG_ES256, JWSAlgorithm.ES256);
-        static final JwtAlgorithmSpec ES384 = new JwtAlgorithmSpec(JWS_ALG_ES384, JWSAlgorithm.ES384);
-        static final JwtAlgorithmSpec ES512 = new JwtAlgorithmSpec(JWS_ALG_ES512, JWSAlgorithm.ES512);
-        static final JwtAlgorithmSpec RS256 = new JwtAlgorithmSpec(JWS_ALG_RS256, JWSAlgorithm.RS256);
+        static final JwtAlgorithmSpec ES256 = new JwtAlgorithmSpec(Algorithm.ES256, JWSAlgorithm.ES256);
+        static final JwtAlgorithmSpec ES384 = new JwtAlgorithmSpec(Algorithm.ES384, JWSAlgorithm.ES384);
+        static final JwtAlgorithmSpec ES512 = new JwtAlgorithmSpec(Algorithm.ES512, JWSAlgorithm.ES512);
+        static final JwtAlgorithmSpec RS256 = new JwtAlgorithmSpec(Algorithm.RS256, JWSAlgorithm.RS256);
 
         JwtKeyMaterial generateKeyMaterial() throws Exception {
             return switch (name) {
-                case JWS_ALG_ES256 -> ec(Curve.P_256, jwsAlgorithm, "SHA256withECDSA");
-                case JWS_ALG_ES384 -> ec(Curve.P_384, jwsAlgorithm, "SHA384withECDSA");
-                case JWS_ALG_ES512 -> ec(Curve.P_521, jwsAlgorithm, "SHA512withECDSA");
-                case JWS_ALG_RS256 -> rsa(2048, jwsAlgorithm, "SHA256withRSA");
+                case Algorithm.ES256 -> ec(Curve.P_256, jwsAlgorithm, "SHA256withECDSA");
+                case Algorithm.ES384 -> ec(Curve.P_384, jwsAlgorithm, "SHA384withECDSA");
+                case Algorithm.ES512 -> ec(Curve.P_521, jwsAlgorithm, "SHA512withECDSA");
+                case Algorithm.RS256 -> rsa(2048, jwsAlgorithm, "SHA256withRSA");
                 default -> throw new IllegalStateException("Unsupported algorithm " + name);
             };
         }

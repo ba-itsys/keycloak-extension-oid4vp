@@ -18,6 +18,7 @@ package de.arbeitsagentur.keycloak.oid4vp.trust;
 import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthority;
 import java.security.cert.X509Certificate;
 import java.util.List;
+import org.keycloak.broker.provider.TrustMaterialIdentityProvider;
 import org.keycloak.broker.provider.TrustMaterialRequest;
 import org.keycloak.models.IdentityProviderModel;
 
@@ -29,7 +30,18 @@ import org.keycloak.models.IdentityProviderModel;
  * provider implements only the surfaces it serves, as upstream does.
  */
 public interface Oid4vpTrustMaterialIdentityProvider<C extends IdentityProviderModel>
-        extends X509TrustMaterialIdentityProvider<C> {
+        extends TrustMaterialIdentityProvider<C> {
+
+    /**
+     * Returns the PKIX trust anchors and policy for issuer certificate chains. The default adapts
+     * the upstream {@code resolveX509Trust} method. Providers whose anchors may be intermediate CAs
+     * override this instead, because the upstream record only accepts self-signed roots.
+     */
+    default List<IssuerTrustAnchors> issuerTrustAnchors() {
+        return resolveX509Trust(TrustMaterialRequest.builder().build())
+                .map(material -> new IssuerTrustAnchors(material.trustAnchors(), material.requiredExtendedKeyUsages()))
+                .toList();
+    }
 
     /**
      * Returns the end entity certificates listed as issuance services. Their keys are trusted
@@ -64,7 +76,7 @@ public interface Oid4vpTrustMaterialIdentityProvider<C extends IdentityProviderM
 
     /**
      * Returns the trusted issuer keys together with the issuer they belong to. Providers that
-     * publish keys instead of X.509 anchors implement this instead of {@link #resolveX509Trust}.
+     * publish keys instead of X.509 anchors implement this instead of {@link #issuerTrustAnchors}.
      * The default adapts the upstream {@code resolveKeys} method, whose keys carry no issuer and
      * are therefore trusted for any issuer.
      */

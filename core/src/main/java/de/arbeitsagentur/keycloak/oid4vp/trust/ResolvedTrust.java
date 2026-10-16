@@ -16,17 +16,20 @@
 package de.arbeitsagentur.keycloak.oid4vp.trust;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthority;
+import de.arbeitsagentur.keycloak.oid4vp.util.FailureDetails;
 import java.security.PublicKey;
 import java.security.cert.CertificateExpiredException;
 import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.X509Certificate;
 import java.util.List;
 import org.keycloak.common.VerificationException;
+import org.keycloak.common.util.PemUtils;
+import org.keycloak.crypto.X509CertificateChainValidator;
 
 /**
  * Trust material aggregated from the trust material identity providers that serve one credential.
  *
- * @param issuanceTrust             X.509 trust anchors and policy for credential issuer chains
+ * @param issuerTrustAnchors        X.509 trust anchors and policy for credential issuer chains
  *                                  (SD-JWT x5c, mDoc x5chain)
  * @param directIssuerCertificates  end entity certificates listed as issuance services. Their keys
  *                                  are trusted directly when a credential carries no chain. Each is
@@ -42,7 +45,7 @@ import org.keycloak.common.VerificationException;
  *                                  metadata.
  */
 public record ResolvedTrust(
-        List<X509TrustMaterial> issuanceTrust,
+        List<IssuerTrustAnchors> issuerTrustAnchors,
         List<TrustedIssuerCertificate> directIssuerCertificates,
         List<TrustedIssuerKey> trustedIssuerKeys,
         List<X509Certificate> revocationCertificates,
@@ -50,7 +53,7 @@ public record ResolvedTrust(
         boolean hasDeclaredTrustSource) {
 
     public ResolvedTrust {
-        issuanceTrust = List.copyOf(issuanceTrust);
+        issuerTrustAnchors = List.copyOf(issuerTrustAnchors);
         directIssuerCertificates = List.copyOf(directIssuerCertificates);
         trustedIssuerKeys = List.copyOf(trustedIssuerKeys);
         revocationCertificates = List.copyOf(revocationCertificates);
@@ -67,11 +70,11 @@ public record ResolvedTrust(
 
     /** Returns whether a presented certificate chain can be validated against this trust material. */
     public boolean hasX509Trust() {
-        return !issuanceTrust.isEmpty() || !directIssuerCertificates.isEmpty();
+        return !issuerTrustAnchors.isEmpty() || !directIssuerCertificates.isEmpty();
     }
 
     public boolean hasCertificateChainAnchors() {
-        return !issuanceTrust.isEmpty();
+        return !issuerTrustAnchors.isEmpty();
     }
 
     /**
@@ -125,8 +128,8 @@ public record ResolvedTrust(
     /**
      * Validates a credential issuer certificate chain and returns the leaf key. A chain whose leaf
      * is a directly trusted issuer certificate is accepted after a validity check. Otherwise the
-     * chain must build a PKIX path to the anchors of one of the issuance trust materials. That
-     * material's extended key usage policy applies.
+     * chain must build a PKIX path to one of the issuer trust anchor sets, and that set's extended
+     * key usage policy applies.
      */
     public PublicKey validateIssuerChain(List<X509Certificate> chain) throws VerificationException {
         return validateIssuerChain(chain, null);
@@ -162,14 +165,15 @@ public record ResolvedTrust(
             return leaf.getPublicKey();
         }
 
-        if (issuanceTrust.isEmpty()) {
+        if (issuerTrustAnchors.isEmpty()) {
             throw new VerificationException("No X.509 trust anchors available for certificate chain validation");
         }
+        List<String> x5c = chain.stream().map(PemUtils::encodeCertificate).toList();
         VerificationException firstFailure = null;
-        for (X509TrustMaterial material : issuanceTrust) {
+        for (IssuerTrustAnchors material : issuerTrustAnchors) {
             try {
-                X509CertificateChainValidator.validateCertificateChain(
-                        chain, material.trustAnchors(), material.requiredExtendedKeyUsages());
+                X509CertificateChainValidator.validate(
+                        x5c, null, material.trustAnchors(), material.requiredExtendedKeyUsages());
                 return leaf.getPublicKey();
             } catch (VerificationException e) {
                 if (firstFailure == null) {
@@ -177,11 +181,13 @@ public record ResolvedTrust(
                 }
             }
         }
-        throw firstFailure;
+        throw new VerificationException(
+                FailureDetails.causeChain(firstFailure) + " (chain=" + FailureDetails.certificates(chain) + ")",
+                firstFailure);
     }
 
     private boolean isTrustAnchor(X509Certificate certificate) {
-        return issuanceTrust.stream()
+        return issuerTrustAnchors.stream()
                 .anyMatch(material -> material.trustAnchors().contains(certificate));
     }
 }

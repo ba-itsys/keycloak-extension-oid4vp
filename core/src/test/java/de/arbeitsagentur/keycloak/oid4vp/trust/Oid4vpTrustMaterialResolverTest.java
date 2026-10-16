@@ -69,7 +69,7 @@ class Oid4vpTrustMaterialResolverTest {
         CredentialTrustPlan plan = resolver.resolvePlan(null, "x509-trust, jwk-trust, unknown");
         ResolvedTrust trust = plan.forCredentialType(PID);
 
-        assertThat(trust.issuanceTrust()).isEqualTo(x509Trust.issuanceTrust());
+        assertThat(trust.issuerTrustAnchors()).isEqualTo(x509Trust.issuerTrustAnchors());
         assertThat(trust.pinnedCertificates()).containsExactly(ca);
         assertThat(trust.revocationCertificates()).containsExactly(ca);
         assertThat(trust.trustedIssuerKeys()).containsExactly(TrustedIssuerKey.ofAnyIssuer(jwk));
@@ -217,7 +217,7 @@ class Oid4vpTrustMaterialResolverTest {
                         TrustedAuthority.of(TrustedAuthorityType.AKI, List.of(authorityKeyIdentifier)).stream())
                 .toList();
         return new ResolvedTrust(
-                List.of(new X509TrustMaterial(Set.of(certificate), List.of())),
+                List.of(new IssuerTrustAnchors(Set.of(certificate), List.of())),
                 TestTrust.anyIssuer(List.of(certificate)),
                 List.of(),
                 List.of(certificate),

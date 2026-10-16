@@ -19,7 +19,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.jboss.logging.Logger;
+import org.keycloak.OID4VCConstants;
 import org.keycloak.crypto.KeyUse;
+import org.keycloak.jose.jwe.JWEConstants;
 import org.keycloak.util.JsonSerialization;
 
 /**
@@ -37,8 +39,8 @@ public record WalletMetadata(Oid4vpJwk encryptionKey, String algorithm, String e
 
     private static final Logger LOG = Logger.getLogger(WalletMetadata.class);
 
-    private static final String DEFAULT_ENCRYPTION_ALGORITHM = "ECDH-ES";
-    private static final String DEFAULT_ENCRYPTION_METHOD = "A128GCM";
+    private static final String DEFAULT_ENCRYPTION_ALGORITHM = JWEConstants.ECDH_ES;
+    private static final String DEFAULT_ENCRYPTION_METHOD = JWEConstants.A128GCM;
 
     /**
      * Returns the encryption the given {@code wallet_metadata} asks for, empty when it names no
@@ -70,14 +72,14 @@ public record WalletMetadata(Oid4vpJwk encryptionKey, String algorithm, String e
      */
     @SuppressWarnings("unchecked")
     private static Optional<Oid4vpJwk> extractEncryptionKey(Map<String, Object> metadata) {
-        Object jwksObj = metadata.get("jwks");
+        Object jwksObj = metadata.get(OID4VCConstants.JWKS);
         if (jwksObj == null) {
             return Optional.empty();
         }
 
         try {
             Map<String, Object> jwks = JsonSerialization.mapper.convertValue(jwksObj, Map.class);
-            Object keysObj = jwks.get("keys");
+            Object keysObj = jwks.get(OID4VCConstants.JWKS_KEYS);
             if (!(keysObj instanceof List<?> keys)) {
                 throw new IllegalArgumentException("wallet_metadata jwks missing keys");
             }

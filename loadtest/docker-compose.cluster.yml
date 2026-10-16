@@ -28,7 +28,7 @@ services:
       - oid4vc-wallet:/wallet
 
   keycloak-1:
-    image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.7.1}
+    image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.8.1}
     command:
       - start
       - --http-enabled=true
@@ -65,7 +65,7 @@ services:
       - ../core/src/test/resources/realm-wallet-demo-local.json:/opt/keycloak/data/import/realm-wallet-demo-local.json:ro
 
   keycloak-2:
-    image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.7.1}
+    image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.8.1}
     command:
       - start
       - --http-enabled=true

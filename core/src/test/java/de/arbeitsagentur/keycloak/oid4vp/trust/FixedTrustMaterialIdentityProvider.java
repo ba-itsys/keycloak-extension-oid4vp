@@ -58,8 +58,8 @@ public class FixedTrustMaterialIdentityProvider implements Oid4vpTrustMaterialId
     }
 
     @Override
-    public Stream<X509TrustMaterial> resolveX509Trust(TrustMaterialRequest request) {
-        return trust.issuanceTrust().stream();
+    public List<IssuerTrustAnchors> issuerTrustAnchors() {
+        return trust.issuerTrustAnchors();
     }
 
     @Override

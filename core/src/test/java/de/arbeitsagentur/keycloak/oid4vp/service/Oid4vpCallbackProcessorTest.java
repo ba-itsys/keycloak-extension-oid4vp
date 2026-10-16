@@ -18,8 +18,8 @@ package de.arbeitsagentur.keycloak.oid4vp.service;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.FLOW_CROSS_DEVICE;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.FLOW_SAME_DEVICE;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.FORMAT_MSO_MDOC;
-import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.FORMAT_SD_JWT_VC;
 import static org.assertj.core.api.Assertions.*;
+import static org.keycloak.OID4VCConstants.FORMAT_SD_JWT_VC;
 
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.binding.ReferenceBindingCheck;
@@ -666,7 +666,6 @@ class Oid4vpCallbackProcessorTest {
                 "https://example.com/callback",
                 flow,
                 nonce,
-                null,
                 null,
                 requestedCredentials,
                 credentialSets,

@@ -15,6 +15,8 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
+import org.keycloak.broker.oid4vp.EphemeralKey;
+
 /**
  * The parameters of one OID4VP Authorization Request Object, a signed JWT.
  *
@@ -34,6 +36,6 @@ public record RequestObjectParams(
         String nonce,
         String x509CertPem,
         String x509SigningKeyJwk,
-        String responseEncryptionKeyJson,
+        EphemeralKey responseEncryptionKey,
         String walletNonce,
         Oid4vpResponseMode responseMode) {}

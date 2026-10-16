@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.keycloak.OID4VCConstants;
 
 /**
  * An empty credential map stands for an identity provider without mappers, so only the rules that
@@ -214,7 +215,7 @@ class Oid4vpCredentialSetsValidatorTest {
     @Test
     void validate_principalClaimRestrictedToOneClaimSetOption_isReported() {
         CredentialTypeSpec spec = new CredentialTypeSpec(
-                Oid4vpConstants.FORMAT_SD_JWT_VC,
+                OID4VCConstants.FORMAT_SD_JWT_VC,
                 "urn:eudi:pid:1",
                 List.of(ClaimSpec.sdJwt("given_name", List.of("1-full")), ClaimSpec.sdJwt("sub", List.of("2-min"))));
 
@@ -228,7 +229,7 @@ class Oid4vpCredentialSetsValidatorTest {
     @Test
     void validate_principalClaimInEveryClaimSetOption_isValid() {
         CredentialTypeSpec spec = new CredentialTypeSpec(
-                Oid4vpConstants.FORMAT_SD_JWT_VC,
+                OID4VCConstants.FORMAT_SD_JWT_VC,
                 "urn:eudi:pid:1",
                 List.of(ClaimSpec.sdJwt("given_name", List.of("1-full")), ClaimSpec.sdJwt("sub")));
 
@@ -341,7 +342,7 @@ class Oid4vpCredentialSetsValidatorTest {
 
     private static CredentialTypeSpec pidSpec() {
         return new CredentialTypeSpec(
-                Oid4vpConstants.FORMAT_SD_JWT_VC,
+                OID4VCConstants.FORMAT_SD_JWT_VC,
                 "urn:eudi:pid:1",
                 List.of(ClaimSpec.sdJwt("given_name"), ClaimSpec.sdJwt("sub")));
     }

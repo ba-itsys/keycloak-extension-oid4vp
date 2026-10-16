@@ -86,7 +86,7 @@ public class EtsiTrustListIdentityProvider
     }
 
     @Override
-    public Stream<X509TrustMaterial> resolveX509Trust(TrustMaterialRequest request) {
+    public List<IssuerTrustAnchors> issuerTrustAnchors() {
         Set<X509Certificate> anchors = new LinkedHashSet<>();
         for (X509Certificate certificate : issuanceCertificates()) {
             if (X5cChainValidator.isCaCertificate(certificate)) {
@@ -94,9 +94,9 @@ public class EtsiTrustListIdentityProvider
             }
         }
         if (anchors.isEmpty()) {
-            return Stream.empty();
+            return List.of();
         }
-        return Stream.of(new X509TrustMaterial(anchors, config.getRequiredExtendedKeyUsages()));
+        return List.of(new IssuerTrustAnchors(anchors, config.getRequiredExtendedKeyUsages()));
     }
 
     // End entity certificates are served through directIssuerCertificates. Exposing them here as
@@ -108,7 +108,7 @@ public class EtsiTrustListIdentityProvider
 
     @Override
     public List<X509Certificate> directIssuerCertificates() {
-        // CA certificates are exposed as PKIX trust anchors through resolveX509Trust instead. The
+        // CA certificates are exposed as PKIX trust anchors through issuerTrustAnchors instead. The
         // pinned leaf fast path skips the end entity certificate checks, so a CA certificate must
         // never pass it.
         return issuanceCertificates().stream()

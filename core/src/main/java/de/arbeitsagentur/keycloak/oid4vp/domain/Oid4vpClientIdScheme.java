@@ -26,10 +26,9 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.jboss.logging.Logger;
-import org.keycloak.common.util.Base64Url;
+import org.keycloak.broker.oid4vp.ClientIdentifier;
 import org.keycloak.common.util.PemUtils;
 import org.keycloak.crypto.JavaAlgorithm;
-import org.keycloak.jose.jws.crypto.HashUtils;
 import org.keycloak.utils.StringUtil;
 
 /** The OID4VP {@code client_id_scheme} values and their client id prefixes. */
@@ -90,7 +89,7 @@ public enum Oid4vpClientIdScheme {
         return switch (this) {
             case PLAIN -> clientId;
             case X509_SAN_DNS -> formatValue(extractDnsSubjectAlternativeName(pemCertificate));
-            case X509_HASH -> formatValue(computeCertificateHash(pemCertificate));
+            case X509_HASH -> ClientIdentifier.X509_HASH.forCertificate(decodeFirstCertificate(pemCertificate));
         };
     }
 
@@ -129,15 +128,6 @@ public enum Oid4vpClientIdScheme {
             throw e;
         } catch (Exception e) {
             throw new IllegalStateException("Failed to extract DNS SAN from certificate", e);
-        }
-    }
-
-    private static String computeCertificateHash(String pemCertificate) {
-        try {
-            X509Certificate certificate = decodeFirstCertificate(pemCertificate);
-            return Base64Url.encode(HashUtils.hash(JavaAlgorithm.SHA256, certificate.getEncoded()));
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to compute certificate hash", e);
         }
     }
 

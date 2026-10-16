@@ -70,7 +70,7 @@ class KeycloakRealmIssuerIdentityProviderTest {
                 provider(new FixedRealmKeyMaterial(ISSUER, List.of(), List.of(certificate)));
 
         assertThat(provider.directIssuerCertificates()).containsExactly(certificate);
-        assertThat(provider.resolveX509Trust(null))
+        assertThat(provider.issuerTrustAnchors())
                 .as("a realm certificate is not a certificate authority")
                 .isEmpty();
     }

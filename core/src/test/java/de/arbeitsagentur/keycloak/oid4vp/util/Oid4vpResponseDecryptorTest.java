@@ -24,17 +24,16 @@ import com.nimbusds.jose.JWEHeader;
 import com.nimbusds.jose.JWEObject;
 import com.nimbusds.jose.Payload;
 import com.nimbusds.jose.crypto.ECDHEncrypter;
-import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jose.jwk.gen.ECKeyGenerator;
 import com.nimbusds.jose.util.Base64URL;
 import de.arbeitsagentur.keycloak.oid4vp.domain.DecryptedResponse;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.keycloak.broker.oid4vp.EphemeralKey;
+import org.keycloak.broker.oid4vp.ResponseEncryption;
 import org.keycloak.common.crypto.CryptoIntegration;
 import org.keycloak.common.util.Base64Url;
 import org.keycloak.util.JsonSerialization;
@@ -42,7 +41,7 @@ import org.keycloak.util.JsonSerialization;
 class Oid4vpResponseDecryptorTest {
 
     private Oid4vpResponseDecryptor decryptor;
-    private Oid4vpJwk encryptionKey;
+    private EphemeralKey encryptionKey;
 
     @BeforeAll
     static void initCrypto() {
@@ -52,7 +51,7 @@ class Oid4vpResponseDecryptorTest {
     @BeforeEach
     void setUp() {
         decryptor = new Oid4vpResponseDecryptor();
-        encryptionKey = Oid4vpJwk.generate("P-256", "ECDH-ES", "enc");
+        encryptionKey = EphemeralKey.generate("test-kid");
     }
 
     @Test
@@ -81,8 +80,7 @@ class Oid4vpResponseDecryptorTest {
 
     @Test
     void decrypt_nimbusProducedJwe_returnsVpToken() throws Exception {
-        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("test-kid").generate();
-        encryptionKey = Oid4vpJwk.parse(key.toJSONString());
+        ECKey key = ECKey.parse(JsonSerialization.writeValueAsString(encryptionKey.publicJwk()));
         String vpToken = "eyJhbGciOiJFUzI1NiJ9.test.sig~";
         JWEObject jwe = new JWEObject(
                 new JWEHeader.Builder(JWEAlgorithm.ECDH_ES, EncryptionMethod.A256GCM)
@@ -98,8 +96,7 @@ class Oid4vpResponseDecryptorTest {
 
     @Test
     void decrypt_nimbusProducedJweWithBinaryApu_returnsVpToken() throws Exception {
-        ECKey key = new ECKeyGenerator(Curve.P_256).keyID("test-kid").generate();
-        encryptionKey = Oid4vpJwk.parse(key.toJSONString());
+        ECKey key = ECKey.parse(JsonSerialization.writeValueAsString(encryptionKey.publicJwk()));
         byte[] apu = new byte[] {(byte) 0x80, 0x00, 0x01, 0x02, (byte) 0xff};
         byte[] apv = new byte[] {0x10, 0x11, 0x12, 0x13};
         String vpToken = "eyJhbGciOiJFUzI1NiJ9.test.sig~";
@@ -114,7 +111,7 @@ class Oid4vpResponseDecryptorTest {
 
         DecryptedResponse result = decryptor.decrypt(jwe.serialize(), encryptionKey);
 
-        var header = Oid4vpResponseDecryptor.extractHeader(jwe.serialize());
+        var header = ResponseEncryption.parse(jwe.serialize()).header();
         assertThat(result.vpToken()).isEqualTo(vpToken);
         assertThat(new String(Base64Url.decode(header.getAgreementPartyUInfo()), StandardCharsets.ISO_8859_1))
                 .isEqualTo(new String(apu, StandardCharsets.ISO_8859_1));
@@ -150,19 +147,12 @@ class Oid4vpResponseDecryptorTest {
 
     @Test
     void extractKid_noKid_returnsNull() throws Exception {
-        Oid4vpJwk noKidKey = new Oid4vpJwk(
-                encryptionKey.curve(),
-                encryptionKey.x(),
-                encryptionKey.y(),
-                encryptionKey.privateKey(),
-                null,
-                encryptionKey.algorithm(),
-                encryptionKey.use());
-        String payloadJson = JsonSerialization.writeValueAsString(Map.of("vp_token", "test"));
-        String jwe = Oid4vpRequestObjectEncryptor.encrypt(
-                payloadJson.getBytes(), noKidKey.toPublicJwk(), "ECDH-ES", "A256GCM", null);
+        JWEObject jwe = new JWEObject(
+                new JWEHeader.Builder(JWEAlgorithm.ECDH_ES, EncryptionMethod.A256GCM).build(),
+                new Payload(JsonSerialization.writeValueAsString(Map.of("vp_token", "test"))));
+        jwe.encrypt(new ECDHEncrypter(ECKey.parse(JsonSerialization.writeValueAsString(encryptionKey.publicJwk()))));
 
-        String kid = decryptor.extractKid(jwe);
+        String kid = decryptor.extractKid(jwe.serialize());
 
         assertThat(kid).isNull();
     }
@@ -176,27 +166,19 @@ class Oid4vpResponseDecryptorTest {
 
     private String encryptPayload(Map<String, Object> payload, String apuNonce) throws Exception {
         String payloadJson = JsonSerialization.writeValueAsString(payload);
-        Oid4vpJwk recipientKey = new Oid4vpJwk(
-                encryptionKey.curve(),
-                encryptionKey.x(),
-                encryptionKey.y(),
-                null,
-                "test-kid",
-                encryptionKey.algorithm(),
-                encryptionKey.use());
-        return encryptPayload(payloadJson, recipientKey, apuNonce);
+        return encryptPayload(payloadJson, encryptionKey, apuNonce);
     }
 
-    private static String encryptPayload(String payloadJson, Oid4vpJwk recipientKey, String apuNonce) {
+    private static String encryptPayload(String payloadJson, EphemeralKey recipientKey, String apuNonce) {
         try {
             JWEHeader.Builder header =
-                    new JWEHeader.Builder(JWEAlgorithm.ECDH_ES, EncryptionMethod.A256GCM).keyID(recipientKey.keyId());
+                    new JWEHeader.Builder(JWEAlgorithm.ECDH_ES, EncryptionMethod.A256GCM).keyID(recipientKey.kid());
             if (apuNonce != null) {
                 header.agreementPartyUInfo(
                         new Base64URL(Base64URL.encode(apuNonce).toString()));
             }
             JWEObject jwe = new JWEObject(header.build(), new Payload(payloadJson));
-            ECKey publicKey = ECKey.parse(recipientKey.toPublicJwk().toJson());
+            ECKey publicKey = ECKey.parse(JsonSerialization.writeValueAsString(recipientKey.publicJwk()));
             jwe.encrypt(new ECDHEncrypter(publicKey));
             return jwe.serialize();
         } catch (Exception e) {

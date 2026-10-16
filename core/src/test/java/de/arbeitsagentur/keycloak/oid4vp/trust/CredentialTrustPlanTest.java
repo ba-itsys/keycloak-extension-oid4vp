@@ -127,7 +127,7 @@ class CredentialTrustPlanTest {
         }
 
         @Override
-        public Stream<X509TrustMaterial> resolveX509Trust(TrustMaterialRequest request) {
+        public List<IssuerTrustAnchors> issuerTrustAnchors() {
             throw new IdentityBrokerException("Trust list unreachable");
         }
 
@@ -156,9 +156,9 @@ class CredentialTrustPlanTest {
         }
 
         @Override
-        public Stream<X509TrustMaterial> resolveX509Trust(TrustMaterialRequest request) {
+        public List<IssuerTrustAnchors> issuerTrustAnchors() {
             resolutions++;
-            return Stream.empty();
+            return List.of();
         }
 
         @Override

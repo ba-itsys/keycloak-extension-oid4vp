@@ -41,10 +41,10 @@ public final class TestTrust {
                 endEntityCertificates.add(certificate);
             }
         }
-        List<X509TrustMaterial> issuanceTrust =
-                anchors.isEmpty() ? List.of() : List.of(new X509TrustMaterial(anchors, List.of()));
+        List<IssuerTrustAnchors> issuerTrustAnchors =
+                anchors.isEmpty() ? List.of() : List.of(new IssuerTrustAnchors(anchors, List.of()));
         return new ResolvedTrust(
-                issuanceTrust, anyIssuer(endEntityCertificates), List.of(), certificates, List.of(), true);
+                issuerTrustAnchors, anyIssuer(endEntityCertificates), List.of(), certificates, List.of(), true);
     }
 
     public static List<TrustedIssuerCertificate> anyIssuer(List<X509Certificate> certificates) {
