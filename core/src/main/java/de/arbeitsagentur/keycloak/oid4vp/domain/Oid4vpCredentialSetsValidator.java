@@ -79,8 +79,10 @@ public final class Oid4vpCredentialSetsValidator {
             List<PrincipalAttribute> principalAttributes,
             boolean subjectCredentialMayBeMissing) {
         if (principalAttributes.isEmpty()) {
-            return List.of(
-                    "principalAttributes is required: it names the credentials the subject is read from, and the claim of each that carries it");
+            return subjectCredentialMayBeMissing
+                    ? List.of("allowMissingSubjectCredential names which subject credential may be missing, so it "
+                            + "requires principalAttributes")
+                    : List.of();
         }
         List<String> problems =
                 principalCoverageProblems(credentialSets, principalAttributes, subjectCredentialMayBeMissing);

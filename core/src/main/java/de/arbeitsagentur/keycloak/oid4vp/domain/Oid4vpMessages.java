@@ -24,6 +24,18 @@ public final class Oid4vpMessages {
 
     public static final String PRESENTATION_REJECTED = "oid4vpPresentationRejected";
 
+    /** A login through an identity provider without principal attributes. */
+    public static final String PRESENTATION_ONLY = "oid4vpPresentationOnly";
+
+    /** A presentation whose identity is linked to no user. */
+    public static final String PRESENTATION_NOT_LINKED = "oid4vpPresentationNotLinked";
+
+    /** A presentation whose identity is linked to another user than the one authenticating. */
+    public static final String PRESENTATION_OTHER_USER = "oid4vpPresentationOtherUser";
+
+    /** The user declined the presentation in the wallet. */
+    public static final String PRESENTATION_CANCELLED = "oid4vpPresentationCancelled";
+
     /** Verification broke on the verifier's side, so nothing was decided about the credential. */
     public static final String VERIFICATION_FAILED = "oid4vpVerificationFailed";
 

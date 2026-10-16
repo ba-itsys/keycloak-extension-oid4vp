@@ -138,10 +138,11 @@ class Oid4vpCredentialSetsValidatorTest {
         List<CredentialSet> parsed = CredentialSet.parse(objectMapper, credentialSets);
 
         assertThat(Oid4vpCredentialSetsValidator.problems(parsed, credentials, List.of(), true, true))
-                .as("nothing says which claim of which credential the subject is read from")
+                .as("nothing says which subject credential may be missing")
                 .singleElement()
                 .asString()
-                .contains("principalAttributes is required");
+                .contains("allowMissingSubjectCredential")
+                .contains("requires principalAttributes");
     }
 
     @Test
@@ -251,16 +252,14 @@ class Oid4vpCredentialSetsValidatorTest {
     }
 
     @Test
-    void validate_noPrincipalAttributes_isRejected() {
+    void validate_noPrincipalAttributes_isAPresentationOnlyProvider() {
         Map<String, CredentialTypeSpec> credentials = new LinkedHashMap<>();
         credentials.put(PID, pidSpec());
         credentials.put(MDL, pidSpec());
 
         assertThat(problems("", "", credentials))
-                .as("nothing else says which claim of which credential identifies the user")
-                .singleElement()
-                .asString()
-                .contains("principalAttributes is required");
+                .as("an identity provider without principal attributes serves presentations only")
+                .isEmpty();
     }
 
     @Test

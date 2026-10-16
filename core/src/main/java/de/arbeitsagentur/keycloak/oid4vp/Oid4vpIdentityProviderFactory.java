@@ -125,7 +125,8 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                         + "'sdjwt_urn_eudi_pid_1:sub, mdoc_eu_europa_ec_eudi_pid_1:eu\\.europa\\.ec\\.eudi\\.pid\\.1"
                         + ".family_name'. The first named credential a wallet presents supplies the subject, every "
                         + "required credential set option has to contain one of them, and each has to request its "
-                        + "claim in every claim set option. Required unless OID4VP transient users are enabled.")
+                        + "claim in every claim set option. Without them and without transient users the identity provider "
+                        + "refuses logins and only serves the 'oid4vp-presentation' authenticator and required action.")
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()

@@ -16,6 +16,7 @@
 package de.arbeitsagentur.keycloak.oid4vp.it;
 
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
+import de.arbeitsagentur.keycloak.oid4vp.authentication.Oid4vpPresentationRequiredAction;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialId;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
@@ -32,11 +33,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import org.keycloak.OID4VCConstants;
+import org.keycloak.admin.client.resource.AuthenticationManagementResource;
 import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.models.IdentityProviderMapperSyncMode;
 import org.keycloak.representations.idm.FederatedIdentityRepresentation;
 import org.keycloak.representations.idm.IdentityProviderMapperRepresentation;
 import org.keycloak.representations.idm.IdentityProviderRepresentation;
+import org.keycloak.representations.idm.RequiredActionConfigRepresentation;
+import org.keycloak.representations.idm.RequiredActionProviderSimpleRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 
 public final class Oid4vpTestKeycloakSetup {
@@ -256,6 +260,22 @@ public final class Oid4vpTestKeycloakSetup {
         }
         mapper.setConfig(config);
         return mapper;
+    }
+
+    /** Registers the OID4VP presentation required action once and replaces its configuration. */
+    static void configurePresentationRequiredAction(RealmResource realm, Map<String, String> config) {
+        AuthenticationManagementResource flows = realm.flows();
+        boolean registered = flows.getRequiredActions().stream()
+                .anyMatch(action -> Oid4vpPresentationRequiredAction.PROVIDER_ID.equals(action.getAlias()));
+        if (!registered) {
+            RequiredActionProviderSimpleRepresentation action = new RequiredActionProviderSimpleRepresentation();
+            action.setProviderId(Oid4vpPresentationRequiredAction.PROVIDER_ID);
+            action.setName("OID4VP presentation");
+            flows.registerRequiredAction(action);
+        }
+        RequiredActionConfigRepresentation representation = new RequiredActionConfigRepresentation();
+        representation.setConfig(config);
+        flows.updateRequiredActionConfig(Oid4vpPresentationRequiredAction.PROVIDER_ID, representation);
     }
 
     static void deleteAllOid4vpUsers(RealmResource realm) {

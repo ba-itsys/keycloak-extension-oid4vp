@@ -64,14 +64,14 @@ The configuration is validated when the identity provider is saved. It is valida
 
 | Key | Description | Default |
 |-----|-------------|---------|
-| `principalAttributes` | The claims that identify the user, as a comma separated list of `credentialId:claimPath` entries in the order they are tried. See [Which Claim Carries the Subject](#which-claim-carries-the-subject). Required unless OID4VP transient users are enabled. | *(none)* |
+| `principalAttributes` | The claims that identify the user, as a comma separated list of `credentialId:claimPath` entries in the order they are tried. See [Which Claim Carries the Subject](#which-claim-carries-the-subject). Required for logins unless OID4VP transient users are enabled. Without it the identity provider refuses logins and only serves the [presentation authenticator and required action](#presentation-authenticator-and-required-action). | *(none)* |
 | `allowMissingSubjectCredential` | Accepts a presentation that does not carry the subject credential. Requires `principalAttributes`, because the setting says which credentials may be missing. See [Subject Credential Issued by This Keycloak](#subject-credential-issued-by-this-keycloak). | `false` |
 | `doNotStoreUsers` | Native Keycloak IdP setting. When enabled, OID4VP switches to transient per-login identities, ignores configured identifying claims, and relies on Keycloak transient users. Requires the Keycloak `transient-users` feature to be enabled. | `false` |
 | `clockSkewSeconds` | Allowed clock skew for ID token time checks. | `60` |
 
 ### Which Claim Carries the Subject
 
-`principalAttributes` says which claim of which credential identifies the user. It is required because nothing else identifies the user. Which claim carries the subject depends on the credential, not on the identity provider. A single verifier-wide claim name cannot serve a query of several credentials.
+`principalAttributes` says which claim of which credential identifies the user. A login needs it because nothing else identifies the user. Which claim carries the subject depends on the credential, not on the identity provider. A single verifier-wide claim name cannot serve a query of several credentials.
 
 ```properties
 principalAttributes = sdjwt_urn_eudi_pid_1:sub, mdoc_eu_europa_ec_eudi_pid_1:eu\.europa\.ec\.eudi\.pid\.1.family_name
@@ -225,6 +225,23 @@ At least one claim path is required. An empty `claims` is refused at startup. Bi
 Every bound claim is one whose change costs the user a password login. The verifier treats the credential as not presented. The user signs in with a password and receives a credential bound to the PID of today. Selecting fewer claims makes that rarer and the binding weaker. A deployment binding to something other than a PID writes its own provider for this SPI.
 
 A credential carrying no reference binding is accepted in any presentation. A credential of another issuer is such a credential.
+
+### Presentation Authenticator and Required Action
+
+The extension provides an authenticator and a required action, both with the id `oid4vp-presentation`. They ask for a presentation with an existing OID4VP identity provider, named in their configuration (`identityProvider`). Its mappers define the DCQL query, and its verifier settings, response mode and trust material verify the presentation. The mappers' session notes reach the authentication session, and the browser returns to the execution that asked. A declined or rejected presentation shows the error message of the identity provider.
+
+Both identify the user through the identity provider link, the link a login through that identity provider reads and writes. A user linked by one of them also logs in with the identity provider, and the other way round.
+
+| Provider | Behavior |
+|----------|----------|
+| Authenticator | Without a user in the flow it sets the linked user, so a flow of this authenticator alone logs in without a password. With a user it accepts only a presentation linked to that user, as second factor or step-up. It never links, because a user set by a username form alone is identified but not authenticated. |
+| Required action | Links the presentation to the authenticated user, also as application initiated action (`kc_action=oid4vp-presentation`). It replaces an earlier link of the user to the identity provider and refuses a presentation linked to another user. |
+
+A presentation without the subject credential (`allowMissingSubjectCredential`) identifies nobody. The required action binds it to the user like the [subject binding authenticator](#subject-credential-issued-by-this-keycloak): it links a subject derived from the user and offers the subject credential configured with `credentialConfigurationId` and `offerClientId`.
+
+An identity provider without `principalAttributes` identifies nobody. Both providers then keep the claims without touching links. Such an identity provider refuses logins with "This wallet presentation cannot be used to log in" and stays hidden on the login page with `hideOnLogin`. Saving it without `hideOnLogin` logs a warning. Each presentation gets a random subject that is never stored, so presentations of the same person stay unlinkable.
+
+Later executions read the presentation with `Oid4vpPresentationSession.result(authSession)`. It holds the verified credentials (`PresentedCredentials`), the identity key, the issuer, the presentation flow and the execution that asked for it. Derived implementations of `Oid4vpPresentationAuthenticator` and `Oid4vpPresentationRequiredAction` decide in `verify(...)` whether a verified presentation completes the execution, and override `identify(...)`, `link(...)` and `identityLinks(...)` to change how users are found and linked. A custom provider starts a presentation with `Oid4vpPresentationSession.start(...)`.
 
 ### Transient Login Mode
 

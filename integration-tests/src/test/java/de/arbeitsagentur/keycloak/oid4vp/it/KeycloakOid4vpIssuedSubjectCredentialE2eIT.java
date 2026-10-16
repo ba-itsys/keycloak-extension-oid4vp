@@ -18,6 +18,8 @@ package de.arbeitsagentur.keycloak.oid4vp.it;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
+import de.arbeitsagentur.keycloak.oid4vp.authentication.Oid4vpPresentationAuthenticatorFactory;
+import de.arbeitsagentur.keycloak.oid4vp.authentication.Oid4vpPresentationRequiredAction;
 import de.arbeitsagentur.keycloak.oid4vp.authentication.Oid4vpSubjectCredentialOffer;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestCertificates;
@@ -196,6 +198,41 @@ class KeycloakOid4vpIssuedSubjectCredentialE2eIT extends AbstractOid4vpE2eTest {
         assertThat(page.locator("input[name='password']").count())
                 .as("the credential was issued for another person's PID, so it identifies nobody here")
                 .isPositive();
+    }
+
+    /**
+     * The required action binds a presentation without the subject credential to the signed in user
+     * the same way the subject binding authenticator does in the first broker login flow.
+     */
+    @Test
+    void theRequiredActionBindsAPidOnlyPresentationAndOffersTheSubjectCredential() throws Exception {
+        startFromAWalletHoldingThePidAlone();
+        Oid4vpTestKeycloakSetup.configurePresentationRequiredAction(
+                realm.admin(),
+                Map.of(
+                        Oid4vpPresentationAuthenticatorFactory.IDENTITY_PROVIDER,
+                        Oid4vpTestKeycloakSetup.IDP_ALIAS,
+                        Oid4vpSubjectCredentialOffer.CREDENTIAL_CONFIGURATION_ID,
+                        CREDENTIAL_CONFIGURATION_ID,
+                        Oid4vpSubjectCredentialOffer.OFFER_CLIENT_ID,
+                        VCI_CLIENT_ID));
+
+        flow.navigateToLoginPage(Map.of("kc_action", Oid4vpPresentationRequiredAction.PROVIDER_ID));
+        signInWithPassword();
+        page.navigate(flow.submitToWallet(flow.getSameDeviceWalletUrl()).redirectUri());
+        acceptTheCredentialOffer();
+        flow.assertLoginSucceeded();
+
+        testApp().reset();
+        flow.clearBrowserSession();
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        flow.waitForLoginCompletion(flow.submitToWallet(flow.getSameDeviceWalletUrl()));
+
+        assertThat(page.locator("input[name='password']").count())
+                .as("the issued credential identifies the user, so no password is asked for")
+                .isZero();
+        flow.assertLoginSucceeded();
     }
 
     /**
