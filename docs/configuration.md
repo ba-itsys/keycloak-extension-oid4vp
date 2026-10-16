@@ -323,6 +323,10 @@ An issuer is trusted for what its credentials say about themselves. A credential
 
 A credential type that no provider serves has no trust material. Its presentation cannot be verified. This is logged when the query is built. It is only reported once providers declare credential types at all.
 
+### X.509 Trust for Keycloak Consumers
+
+The trust providers of this extension implement Keycloak's `TrustMaterialIdentityProvider.validateX509Chain` with the rules they apply to credentials. A directly trusted leaf certificate is accepted within its validity period. Any other chain needs a PKIX path to one of the provider's trust anchors, which may be intermediate CAs. Keycloak features that take trust identity provider aliases, such as attestation checks with `attester_trust_idps`, can use an ETSI trusted list this way, for example the list of wallet providers.
+
 ### Keycloak Default Trust Identity Provider (`default-trust`)
 
 An issuer that publishes plain JWKs instead of a trust list is trusted through Keycloak's own `default-trust` provider. Configure it with `jwksUrl` or a pasted JWK. Reference it in `trustMaterialIdps` like the providers of this extension. Two limits follow from the upstream contract, which returns keys without saying whose they are. Its keys are trusted for any issuer. `allowedIssuers` is what restricts them. It advertises no `trusted_authorities`, because a bare key has nothing a wallet could match. Set `servedCredentialTypes` in its configuration. Otherwise its keys verify every credential of every request that references it.
