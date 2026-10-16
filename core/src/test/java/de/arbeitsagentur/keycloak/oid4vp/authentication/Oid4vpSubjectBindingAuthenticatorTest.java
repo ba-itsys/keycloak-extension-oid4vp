@@ -75,7 +75,7 @@ class Oid4vpSubjectBindingAuthenticatorTest {
     @Test
     void offersTheConfiguredCredentialAsTheConfiguredClient() {
         VerifiableCredentialOfferActionConfig offer =
-                Oid4vpSubjectBindingAuthenticator.offerFor("employee-credential", "wallet-vci");
+                Oid4vpSubjectCredentialOffer.offerFor("employee-credential", "wallet-vci");
 
         assertThat(offer.getCredentialConfigurationId()).isEqualTo("employee-credential");
         assertThat(offer.getClientId()).isEqualTo("wallet-vci");
@@ -87,7 +87,7 @@ class Oid4vpSubjectBindingAuthenticatorTest {
     @Test
     void leavesTheOfferClientUnsetWhenNoneIsConfigured() {
         VerifiableCredentialOfferActionConfig offer =
-                Oid4vpSubjectBindingAuthenticator.offerFor("employee-credential", "  ");
+                Oid4vpSubjectCredentialOffer.offerFor("employee-credential", "  ");
 
         assertThat(offer.getClientId()).isNull();
     }
@@ -115,8 +115,8 @@ class Oid4vpSubjectBindingAuthenticatorTest {
                 .as("the entitlement is not configurable, it is what carries the subject to the issuance")
                 .extracting(ProviderConfigProperty::getName)
                 .containsExactly(
-                        Oid4vpSubjectBindingAuthenticator.CREDENTIAL_CONFIGURATION_ID,
-                        Oid4vpSubjectBindingAuthenticator.OFFER_CLIENT_ID);
+                        Oid4vpSubjectCredentialOffer.CREDENTIAL_CONFIGURATION_ID,
+                        Oid4vpSubjectCredentialOffer.OFFER_CLIENT_ID);
     }
 
     private static SerializedBrokeredIdentityContext generatedSubjectContext(String generatedSubject) {
