@@ -18,7 +18,7 @@ package de.arbeitsagentur.keycloak.oid4vp.it;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
-import de.arbeitsagentur.keycloak.oid4vp.authentication.Oid4vpSubjectBindingAuthenticator;
+import de.arbeitsagentur.keycloak.oid4vp.authentication.Oid4vpSubjectCredentialOffer;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestCertificates;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
@@ -449,9 +449,9 @@ class KeycloakOid4vpIssuedSubjectCredentialE2eIT extends AbstractOid4vpE2eTest {
         AuthenticatorConfigRepresentation config = new AuthenticatorConfigRepresentation();
         config.setAlias("oid4vp-subject-binding-config");
         config.setConfig(Map.of(
-                Oid4vpSubjectBindingAuthenticator.CREDENTIAL_CONFIGURATION_ID,
+                Oid4vpSubjectCredentialOffer.CREDENTIAL_CONFIGURATION_ID,
                 CREDENTIAL_CONFIGURATION_ID,
-                Oid4vpSubjectBindingAuthenticator.OFFER_CLIENT_ID,
+                Oid4vpSubjectCredentialOffer.OFFER_CLIENT_ID,
                 VCI_CLIENT_ID));
         assertCreated("subject binding config", realm.admin().flows().newExecutionConfig(executionId, config));
     }
