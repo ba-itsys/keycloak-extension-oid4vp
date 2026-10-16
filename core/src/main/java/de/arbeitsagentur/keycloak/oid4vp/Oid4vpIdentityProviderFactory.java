@@ -69,6 +69,12 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 + "Leave empty for no ceiling.";
     }
 
+    private static String requestUriLifetimeHelpText(String flow) {
+        return "How long a wallet can fetch the " + flow + " request object after the login page loads. "
+                + "The login page then offers a new link. A wallet that already fetched the request "
+                + "object can still send its presentation until the Keycloak authentication session expires.";
+    }
+
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES;
 
     static {
@@ -250,6 +256,29 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                         + "The wallet fetches and processes it immediately, so this should be short.")
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .defaultValue(String.valueOf(Oid4vpIdentityProviderConfig.DEFAULT_REQUEST_OBJECT_LIFESPAN_SECONDS))
+                .add()
+                .property()
+                .name(Oid4vpIdentityProviderConfig.SAME_DEVICE_REQUEST_URI_LIFETIME_SECONDS)
+                .label("Same-Device Request URI Lifetime (seconds)")
+                .helpText(requestUriLifetimeHelpText("same-device"))
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .defaultValue(String.valueOf(Oid4vpIdentityProviderConfig.DEFAULT_REQUEST_URI_LIFETIME_SECONDS))
+                .add()
+                .property()
+                .name(Oid4vpIdentityProviderConfig.CROSS_DEVICE_REQUEST_URI_LIFETIME_SECONDS)
+                .label("Cross-Device Request URI Lifetime (seconds)")
+                .helpText(requestUriLifetimeHelpText("cross-device"))
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .defaultValue(String.valueOf(Oid4vpIdentityProviderConfig.DEFAULT_REQUEST_URI_LIFETIME_SECONDS))
+                .add()
+                .property()
+                .name(Oid4vpIdentityProviderConfig.MAX_LIVE_REQUESTS_PER_LOGIN)
+                .label("Maximum Live Wallet Requests per Login")
+                .helpText("How many wallet requests of one login stay valid when the login page offers new links. "
+                        + "Each page issues one request per enabled flow. Beyond this number the oldest requests "
+                        + "end, and a wallet still answering one of them is rejected. At least 2.")
+                .type(ProviderConfigProperty.STRING_TYPE)
+                .defaultValue(String.valueOf(Oid4vpIdentityProviderConfig.DEFAULT_MAX_LIVE_REQUESTS_PER_LOGIN))
                 .add()
                 .build();
     }

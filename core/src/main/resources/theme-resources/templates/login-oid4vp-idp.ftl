@@ -1,5 +1,4 @@
-<#-- Use a dedicated layout so the broker-bound OID4VP step does not inherit Keycloak's generic restart polling. -->
-<#import "oid4vp-template.ftl" as layout>
+<#import "template.ftl" as layout>
 <@layout.registrationLayout displayInfo=false; section>
     <#if section = "header">
         ${msg("oid4vpLoginTitle")}
@@ -30,6 +29,20 @@
                      data-wallet-url="${crossDeviceWalletUrl!''}"
                      style="max-width: 250px; border: 1px solid #ddd; padding: 10px; background: white;"/>
             </div>
+        </#if>
+
+        <#if (sameDeviceWalletUrl!'')?has_content || (crossDeviceWalletUrl!'')?has_content>
+            <#assign expiresIn = requestUriExpiresInSeconds!0>
+            <p id="oid4vp-request-uri-countdown"
+               class="${properties.kcFormGroupClass!}"
+               role="timer"
+               data-expires-in-seconds="${expiresIn?c}"
+               data-expired-url="${requestUriExpiredUrl!''}"
+               style="text-align: center;">
+                ${msg("oid4vpLinkExpiresIn")}
+                <span id="oid4vp-request-uri-remaining">${(expiresIn / 60)?floor?c}:${(expiresIn % 60)?string("00")}</span>
+            </p>
+            <script nonce="${cspNonce!}" src="${url.resourcesPath}/js/oid4vp-request-uri-countdown.js"></script>
         </#if>
 
         <#assign hasAlternativeProvider = false>
@@ -66,7 +79,6 @@
         <#if (crossDeviceStatusUrl!'')?has_content && (crossDeviceEnabled!false)>
             <div id="oid4vp-cross-device-sse-config"
                  data-status-url="${crossDeviceStatusUrl!''}"
-                 data-state="${crossDeviceState!''}"
                  hidden></div>
             <script nonce="${cspNonce!}" src="${url.resourcesPath}/js/oid4vp-cross-device-sse.js"></script>
         </#if>

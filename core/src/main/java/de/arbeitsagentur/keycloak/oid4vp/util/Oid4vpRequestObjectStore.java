@@ -77,7 +77,14 @@ public class Oid4vpRequestObjectStore {
             String encryptionJwkThumbprint,
             List<RequestedCredential> requestedCredentials,
             List<CredentialSet> credentialSets,
-            String dcqlQuery) {}
+            String dcqlQuery,
+            long requestUriExpiresAtEpochSeconds) {
+
+        // Entries stored by a version without this deadline carry 0 and never expire.
+        public boolean isRequestUriExpired(long currentEpochSeconds) {
+            return requestUriExpiresAtEpochSeconds > 0 && currentEpochSeconds >= requestUriExpiresAtEpochSeconds;
+        }
+    }
 
     public void storeRequestContext(KeycloakSession session, RequestContextEntry entry) {
         if (entry == null || StringUtil.isBlank(entry.state())) {

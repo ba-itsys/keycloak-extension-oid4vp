@@ -15,10 +15,10 @@ sequenceDiagram
     participant Wallet
 
     Browser->>Keycloak: Open Keycloak login page
-    Keycloak-->>Browser: Render login UI with openid4vp://...?client_id=...&request_uri=https://.../request-object/{state}<br/>QR code for cross-device<br/>SSE URL=/cross-device/status?state={state}
+    Keycloak-->>Browser: Render login UI with openid4vp://...?client_id=...&request_uri=https://.../request-object/{state}<br/>QR code for cross-device<br/>SSE URL=/cross-device/status?tab_id={tab_id}&client_id={client_id}
 
     opt Cross-device browser waiting path
-        Browser->>Keycloak: GET /cross-device/status?state={state}
+        Browser->>Keycloak: GET /cross-device/status?tab_id={tab_id}&client_id={client_id}
         Note over Browser,Keycloak: Browser keeps one SSE connection open.<br/>A virtual-thread SSE worker polls Keycloak's shared single-use-object store<br/>for oid4vp_complete:{state} and emits a complete event when found.
     end
 
@@ -97,7 +97,7 @@ sequenceDiagram
     alt Same-device completion
         Keycloak-->>Wallet: redirect_uri=https://.../complete-auth?state={state}&response_code={response_code}
     else Cross-device completion
-        Browser->>Keycloak: GET /cross-device/status?state={state}
+        Browser->>Keycloak: GET /cross-device/status?tab_id={tab_id}&client_id={client_id}
         Keycloak-->>Browser: SSE complete event with absolute redirect_uri (incl. response_code) after polling shared store
     end
 

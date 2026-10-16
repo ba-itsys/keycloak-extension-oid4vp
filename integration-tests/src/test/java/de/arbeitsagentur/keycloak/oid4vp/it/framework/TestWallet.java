@@ -87,6 +87,7 @@ public final class TestWallet implements AutoCloseable {
     public void resetState() {
         client().clearPreferredFormat();
         client().clearNextError();
+        client().setAutoAccept(true);
         restoreSeededCredentials();
     }
 

@@ -50,8 +50,6 @@ class KeycloakOid4vpThemeE2eIT extends AbstractOid4vpE2eTest {
         assertThat(page.locator("#kc-page-title").textContent()).contains("Custom wallet login");
         assertThat(page.locator("#custom-oid4vp-page").textContent()).isEqualTo("Custom wallet content");
         assertThat(flow.getSameDeviceWalletUrl()).contains("request_uri=");
-        assertThat(page.locator("script[src$='/js/oid4vp-template.js']").count())
-                .isEqualTo(1);
     }
 
     @Test
