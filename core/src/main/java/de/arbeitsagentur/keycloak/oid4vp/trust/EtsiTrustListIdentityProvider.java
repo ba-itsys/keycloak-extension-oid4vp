@@ -124,7 +124,7 @@ public class EtsiTrustListIdentityProvider
         return revocationCertificates;
     }
 
-    private List<X509Certificate> resolveRevocationCertificates() {
+    protected List<X509Certificate> resolveRevocationCertificates() {
         List<X509Certificate> certificates = new ArrayList<>();
         if (urlTrustList != null) {
             certificates.addAll(urlTrustList.getRevocationCertificates());
@@ -168,7 +168,7 @@ public class EtsiTrustListIdentityProvider
     // This runs while the authorization request is built, so an unreachable trust list resolves to
     // no aki entries instead of failing the request. The login page still renders, and the etsi_tl
     // URL lets the wallet resolve the list itself.
-    private List<String> resolveAuthorityKeyIdentifiers() {
+    protected List<String> resolveAuthorityKeyIdentifiers() {
         Set<String> identifiers = new LinkedHashSet<>();
         if (urlTrustList != null) {
             identifiers.addAll(urlTrustList.getTrustedAuthorityKeyIdentifiers());
@@ -189,7 +189,7 @@ public class EtsiTrustListIdentityProvider
         return issuanceCertificates;
     }
 
-    private List<X509Certificate> resolveIssuanceCertificates() {
+    protected List<X509Certificate> resolveIssuanceCertificates() {
         List<X509Certificate> certificates = new ArrayList<>();
         if (urlTrustList != null) {
             certificates.addAll(urlTrustList.getIssuanceCertificates());

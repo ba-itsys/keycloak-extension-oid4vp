@@ -214,7 +214,7 @@ public class Oid4vpIdentityProviderEndpoint {
         return new ResolvedRequest(state, null, null);
     }
 
-    private Response sessionExpiredResponse(
+    protected Response sessionExpiredResponse(
             String state, String encryptedResponse, Oid4vpRequestObjectStore.RequestContextEntry requestContext) {
         LOG.warnf(
                 "OID4VP callback session resolution failed: state=%s encrypted=%s requestContextPresent=%s",
@@ -353,7 +353,7 @@ public class Oid4vpIdentityProviderEndpoint {
      * again from the browser's restart cookie and shows its login timeout message, as on any other
      * login page. Without that cookie, as in another browser, Keycloak shows its own error page.
      */
-    private Response restartLogin(String clientId, String tabId) {
+    protected Response restartLogin(String clientId, String tabId) {
         if (StringUtil.isBlank(clientId) || StringUtil.isBlank(tabId)) {
             return browserError(Oid4vpMessages.LOGIN_EXPIRED);
         }
@@ -477,7 +477,7 @@ public class Oid4vpIdentityProviderEndpoint {
         };
     }
 
-    private Response processVpToken(
+    protected Response processVpToken(
             AuthenticationSessionModel authSession,
             Oid4vpRequestObjectStore.RequestContextEntry requestContext,
             String state,
@@ -507,7 +507,7 @@ public class Oid4vpIdentityProviderEndpoint {
      * the wallet whose login it names, so it gets a plain error and the attempt it claims to belong
      * to is left alone: a front-channel return would let anyone who knows the state end that login.
      */
-    private Response handleError(String error, String errorDescription) {
+    protected Response handleError(String error, String errorDescription) {
         event.event(EventType.LOGIN_ERROR)
                 .detail(OAuth2Constants.ERROR, error)
                 .detail(OAuth2Constants.ERROR_DESCRIPTION, errorDescription)
@@ -520,7 +520,7 @@ public class Oid4vpIdentityProviderEndpoint {
      * Answers a wallet-reported error response (OID4VP 1.0 §8.5). Whatever the wallet reported,
      * the response URI processed the post successfully.
      */
-    private Response handleWalletError(
+    protected Response handleWalletError(
             String error,
             String errorDescription,
             Oid4vpRequestObjectStore.RequestContextEntry requestContext,
@@ -545,7 +545,7 @@ public class Oid4vpIdentityProviderEndpoint {
      * page says that the verification failed instead of blaming what the wallet presented.
      * {@code rejectionResponse} does not apply, because there is no rejection to report.
      */
-    private Response handleServerFailure(
+    protected Response handleServerFailure(
             String errorDescription,
             Oid4vpRequestObjectStore.RequestContextEntry requestContext,
             boolean isCrossDevice) {
@@ -562,7 +562,7 @@ public class Oid4vpIdentityProviderEndpoint {
      * answered this way, while the transport level failures {@link #handlePost} catches get a plain
      * error, because a post that never proved it came from the wallet must not end the attempt.
      */
-    private Response handleVerificationFailure(
+    protected Response handleVerificationFailure(
             String errorDescription,
             Oid4vpRequestObjectStore.RequestContextEntry requestContext,
             boolean isCrossDevice) {
@@ -578,7 +578,7 @@ public class Oid4vpIdentityProviderEndpoint {
      * {@code redirect_uri} that leads to {@link #handleFailureRedirect}, or an empty object in a
      * cross-device flow.
      */
-    private Response handleFailure(
+    protected Response handleFailure(
             Oid4vpDirectPostService.LoginFailure failure,
             Oid4vpRequestObjectStore.RequestContextEntry requestContext,
             boolean isCrossDevice) {
@@ -598,7 +598,7 @@ public class Oid4vpIdentityProviderEndpoint {
     }
 
     /** Renders Keycloak's error page. These endpoints are opened by a browser, not by the wallet. */
-    private Response browserError(String messageKey) {
+    protected Response browserError(String messageKey) {
         return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, messageKey);
     }
 

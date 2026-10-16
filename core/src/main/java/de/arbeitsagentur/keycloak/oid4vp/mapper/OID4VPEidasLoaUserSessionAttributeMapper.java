@@ -148,7 +148,7 @@ public class OID4VPEidasLoaUserSessionAttributeMapper extends AbstractIdentityPr
         addSessionNote(mapperModel, context);
     }
 
-    private void addSessionNote(IdentityProviderMapperModel mapperModel, BrokeredIdentityContext context) {
+    protected void addSessionNote(IdentityProviderMapperModel mapperModel, BrokeredIdentityContext context) {
         Oid4vpPresentationFlow flow = Oid4vpMapperUtils.presentationFlow(context);
         if (flow == null) {
             logger.warnf("No presentation flow in the brokered context, mapper %s sets nothing", mapperModel.getName());

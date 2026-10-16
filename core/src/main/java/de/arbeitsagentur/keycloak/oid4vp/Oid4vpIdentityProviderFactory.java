@@ -305,7 +305,7 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
         return new Oid4vpIdentityProvider(session, config);
     }
 
-    private void validateTransientUserMode(Oid4vpIdentityProviderConfig config) {
+    protected void validateTransientUserMode(Oid4vpIdentityProviderConfig config) {
         if (config.isTransientUsersEnabled() && !isTransientUsersFeatureEnabled()) {
             throw new IllegalStateException(
                     "OID4VP transient users require the Keycloak feature 'transient-users' to be enabled.");
