@@ -35,14 +35,14 @@ The `state` is the single identifier for a browser login flow. It is allocated o
 1. Allocated when the login page is rendered.
 2. Carried in the `request_uri` path (`/endpoint/request-object/{state}`) and advertised inside the signed request object.
 3. Echoed back by the wallet in its `direct_post` `state` parameter.
-4. Used by the browser for SSE polling (`/cross-device/status?state=...`) and for `/complete-auth?state=...&response_code=...`.
+4. Used by the browser for `/complete-auth?state=...&response_code=...`.
 5. Removed by `Oid4vpDirectPostService.completeAuth` after the first successful callback.
 
 At render the flow also allocates the `nonce`. For `direct_post.jwt` it allocates the ephemeral response-encryption key as well. It stores one `RequestContextEntry` keyed by `oid4vp_state:{state}`. The encryption key's `kid` is set to the `state`. The cleartext JWE header of an encrypted callback identifies the request context without a separate index. `state`, `nonce`, and the encryption key are allocated once at render. Repeated `request_uri` fetches return the same `state`, `nonce`, and encryption key. They are stable per flow, not fresh per fetch. The signed request object is still built on each fetch. It can embed wallet-supplied `wallet_nonce` and `wallet_metadata`.
 
 The `state` entry is the liveness anchor. While it exists the flow is live. `Oid4vpDirectPostService.completeAuth` removes it (`removeRequestContext`) after a successful callback. This blocks replay. An attempt that ended without completing is removed too, once the End-User has been handed back to the login page at `/failed` (`consumeFailure`). An attempt nobody is waiting for any more stops serving its request object. It stops accepting a presentation for the rest of the login timeout. Both ways a presentation can end lead there: the wallet reporting an error response, and the verifier rejecting the presentation it received.
 
-**Security note:** The `state` value itself is not a secret. It is transmitted in signed request objects and form parameters. The flow's security does not rely on `state` being confidential. Integrity is ensured by other layers. The request object is **signed**. This prevents tampering with `state`, `nonce`, `response_uri`, and other claims. With the `direct_post.jwt` response mode the wallet response is **encrypted**. This protects `vp_token` and `state` in transit. The `nonce` in the request object provides replay protection. The KB-JWT (SD-JWT) or device authentication (mDoc) binds the presentation to the specific transaction. Two layers guard `/complete-auth`. The first is the single-use **`response_code`** generated during `direct_post`, which the browser must present. The second is the stored `{rootSessionId, tabId}` browser-session check. It requires the current browser auth-session cookie to match the Keycloak login attempt. `/cross-device/status` and `/failed` rely on the same browser-session check. The flow is also **single-completion**. The first verified `direct_post` for a `state` establishes the identity. Later submissions to the same `state` are ignored. This limits what a presentation injected to a known `state` can do. That injection is the residual cross-device risk, because `state` travels in the public `request_uri`. One authentication session carries several live states at a time, one per rendered flow. The deferred result is stored under an auth note named after its own `state` (`OID4VP_DEFERRED_IDENTITY:{state}`, `OID4VP_DEFERRED_CLAIMS:{state}`). A presentation answering another state of the same authentication session establishes its own identity. It cannot become the one `/complete-auth` reads back for this state.
+**Security note:** The `state` value itself is not a secret. It is transmitted in signed request objects and form parameters. The flow's security does not rely on `state` being confidential. Integrity is ensured by other layers. The request object is **signed**. This prevents tampering with `state`, `nonce`, `response_uri`, and other claims. With the `direct_post.jwt` response mode the wallet response is **encrypted**. This protects `vp_token` and `state` in transit. The `nonce` in the request object provides replay protection. The KB-JWT (SD-JWT) or device authentication (mDoc) binds the presentation to the specific transaction. Two layers guard `/complete-auth`. The first is the single-use **`response_code`** generated during `direct_post`, which the browser must present. The second is the stored `{rootSessionId, tabId}` browser-session check. It requires the current browser auth-session cookie to match the Keycloak login attempt. `/failed` relies on the same browser-session check. `/cross-device/status`, `/expired` and `/refresh` take the auth-session `tab_id` and look it up only in the root authentication session named by the browser's own auth-session cookie, so a copied URL finds nothing in another browser. There `/expired` and `/refresh` hand over to Keycloak's restart, which fails without that browser's `KC_RESTART` cookie. The flow is also **single-completion**. The first verified `direct_post` for a `state` establishes the identity. Later submissions to the same `state` are ignored. This limits what a presentation injected to a known `state` can do. That injection is the residual cross-device risk, because `state` travels in the public `request_uri`. One authentication session carries several live states at a time, one per rendered flow. The deferred result is stored under an auth note named after its own `state` (`OID4VP_DEFERRED_IDENTITY:{state}`, `OID4VP_DEFERRED_CLAIMS:{state}`). A presentation answering another state of the same authentication session establishes its own identity. It cannot become the one `/complete-auth` reads back for this state.
 
 ## Entry Point: Login Page
 
@@ -59,12 +59,22 @@ This method:
 3. **Renders the login page** (`buildLoginFormResponse`): passes wallet URLs, QR code, and SSE status URL to `login-oid4vp-idp.ftl`
 
 The login page contains:
-- A cross-device SSE config div exposing `data-state`, read by `oid4vp-cross-device-sse.js`. This keeps the browser-side flow bound to the original Keycloak login attempt
 - A same-device deep link (`openid4vp://...?client_id=...&request_uri=...`)
 - A cross-device QR code encoding a similar URL (`openid4vp://...?client_id=...&request_uri=...`)
-- JavaScript that opens an SSE connection to `/cross-device/status?state=...` using the cross-device flow's `state` when that flow is enabled
+- A countdown to the first request URI on the page to expire, capped at the end of the Keycloak authentication session
+- A cross-device SSE config div whose `data-status-url` is `/cross-device/status?tab_id=...&client_id=...`, read by `oid4vp-cross-device-sse.js` when the cross-device flow is enabled
 
-**Key detail:** The `request_uri` points to `/endpoint/request-object/{state}`. The `state`, `nonce`, and (for `direct_post.jwt`) response-encryption key are allocated once at render and stay stable across fetches. Repeated request-object fetches return the same values. The signed request object JWT itself expires quickly (default 10 seconds). This limits fetch and replay windows. Once a wallet has fetched it, the later callback is accepted as long as the stored request context and authentication session still exist.
+**Key detail:** The `request_uri` points to `/endpoint/request-object/{state}`. The `state`, `nonce`, and (for `direct_post.jwt`) response-encryption key are allocated once at render and stay stable across fetches. Repeated request-object fetches return the same values. The signed request object JWT itself expires quickly (default 10 seconds).
+
+### Request URI Lifetime
+
+A wallet can fetch the request object for five minutes after the page loads. `sameDeviceRequestUriLifetimeSeconds` and `crossDeviceRequestUriLifetimeSeconds` set this per flow. After that deadline the request object endpoint answers `404`. The stored request context stays until the Keycloak authentication session expires, so a wallet that fetched the request object in time can still send its presentation.
+
+When the countdown reaches zero, the page navigates to `/expired?tab_id=...&client_id=...`, which renders `login-oid4vp-expired.ftl` with a **Get new link and QR code** button. The button opens `/refresh?tab_id=...&client_id=...`, which renders the wallet login page with new states and a new QR code in the same authentication session. Both are `GET` requests, so reloading the page and switching the language work as on any Keycloak login page.
+
+The countdown ends at the authentication session's end when that comes first. `/expired` and `/refresh` then find no authentication session and redirect to Keycloak's `login-actions/restart`. Keycloak restarts the login from its `KC_RESTART` cookie and shows its login timeout message, as on any other login page.
+
+The authentication session records the states the wallet login page offered (auth note `oid4vp.wallet-login-states.{alias}`). States whose request context still exists stay in that list across refreshes, up to `maxLiveRequestsPerLogin` (default `10`). Beyond that the oldest states end and their request contexts are removed, so repeated refreshes cannot pile up stored requests. `/cross-device/status` watches all live cross-device states of the tab, and the expired page keeps that connection open, so a wallet that finishes an older QR code still moves the browser on.
 
 ## Phase 1: Wallet Fetches Request Object
 
@@ -81,9 +91,10 @@ Oid4vpRequestObjectService.generateRequestObject(state, walletNonce, walletMetad
 `generateRequestObject`:
 
 1. Resolves the `state`: looks up the stored request context `{rootSessionId, tabId, effectiveClientId, responseUri, flow, state, nonce, encryptionKeyJson, encryptionJwkThumbprint}` from `Oid4vpRequestObjectStore`
-2. Resolves the auth session from `rootSessionId` + `tabId`. This ensures the login attempt is still active
-3. Uses the stored `state`, `nonce`, and encryption key. They are allocated once at render and stable across fetches, not fresh per fetch
-4. Delegates to `Oid4vpRedirectFlowService.buildSignedRequestObject(params)` using that request context:
+2. Rejects the fetch when the stored `requestUriExpiresAtEpochSeconds` deadline has passed. This deadline applies only to request-object retrieval.
+3. Resolves the auth session from `rootSessionId` + `tabId`. This ensures the login attempt is still active
+4. Uses the stored `state`, `nonce`, and encryption key. They are allocated once at render and stable across fetches, not fresh per fetch
+5. Delegates to `Oid4vpRedirectFlowService.buildSignedRequestObject(params)` using that request context:
 
 ```
 Oid4vpRedirectFlowService.buildSignedRequestObject(RequestObjectParams)

@@ -28,7 +28,6 @@ import de.arbeitsagentur.keycloak.oid4vp.util.FailureDetails;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpResponseDecryptor;
-import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.FormParam;
 import jakarta.ws.rs.GET;
@@ -43,6 +42,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.sse.Sse;
 import jakarta.ws.rs.sse.SseEventSink;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.jboss.logging.Logger;
 import org.keycloak.OAuth2Constants;
@@ -52,10 +52,14 @@ import org.keycloak.broker.provider.IdentityBrokerException;
 import org.keycloak.events.Errors;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.events.EventType;
+import org.keycloak.models.Constants;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.services.ErrorPage;
+import org.keycloak.services.managers.AuthenticationSessionManager;
+import org.keycloak.services.resources.LoginActionsService;
 import org.keycloak.sessions.AuthenticationSessionModel;
+import org.keycloak.sessions.RootAuthenticationSessionModel;
 import org.keycloak.utils.StringUtil;
 
 /**
@@ -314,21 +318,82 @@ public class Oid4vpIdentityProviderEndpoint {
     }
 
     @GET
+    @Path("/expired")
+    @Produces(MediaType.TEXT_HTML)
+    public Response requestUriExpired(
+            @QueryParam(PARAM_TAB_ID) String tabId, @QueryParam(Constants.CLIENT_ID) String clientId) {
+        AuthenticationSessionModel authSession = walletLoginSession(tabId);
+        if (authSession == null) {
+            return restartLogin(clientId, tabId);
+        }
+        session.getContext().setAuthenticationSession(authSession);
+        return provider.renderExpiredPage(authSession);
+    }
+
+    /**
+     * Renders the wallet login page with new request URIs. Request contexts of earlier renders
+     * stay, up to the configured maximum, because a wallet that already fetched one may still be
+     * completing its presentation.
+     */
+    @GET
+    @Path("/refresh")
+    @Produces(MediaType.TEXT_HTML)
+    public Response refreshRequestUris(
+            @QueryParam(PARAM_TAB_ID) String tabId, @QueryParam(Constants.CLIENT_ID) String clientId) {
+        AuthenticationSessionModel authSession = walletLoginSession(tabId);
+        if (authSession == null) {
+            return restartLogin(clientId, tabId);
+        }
+        session.getContext().setAuthenticationSession(authSession);
+        return provider.refreshLoginPage(authSession);
+    }
+
+    /**
+     * Hands an ended authentication session to Keycloak's restart endpoint, which starts the login
+     * again from the browser's restart cookie and shows its login timeout message, as on any other
+     * login page. Without that cookie, as in another browser, Keycloak shows its own error page.
+     */
+    private Response restartLogin(String clientId, String tabId) {
+        if (StringUtil.isBlank(clientId) || StringUtil.isBlank(tabId)) {
+            return browserError(Oid4vpMessages.LOGIN_EXPIRED);
+        }
+        return Response.seeOther(LoginActionsService.loginActionsBaseUrl(
+                                session.getContext().getUri())
+                        .path(LoginActionsService.RESTART_PATH)
+                        .queryParam(Constants.CLIENT_ID, clientId)
+                        .queryParam(Constants.TAB_ID, tabId)
+                        .queryParam(Constants.SKIP_LOGOUT, true)
+                        .build(realm.getName()))
+                .build();
+    }
+
+    /**
+     * Returns the authentication session of this browser's tab when it showed the wallet login
+     * page. The browser's own authentication session cookie selects the session, so a URL copied
+     * to another browser finds nothing.
+     */
+    private AuthenticationSessionModel walletLoginSession(String tabId) {
+        RootAuthenticationSessionModel rootAuthSession =
+                new AuthenticationSessionManager(session).getCurrentRootAuthenticationSession(realm);
+        if (rootAuthSession == null || StringUtil.isBlank(tabId)) {
+            return null;
+        }
+        AuthenticationSessionModel authSession =
+                rootAuthSession.getAuthenticationSessions().get(tabId);
+        return authSession != null && provider.showedWalletLogin(authSession) ? authSession : null;
+    }
+
+    @GET
     @Path("/cross-device/status")
     @Produces("text/event-stream")
     public void crossDeviceStatus(
-            @QueryParam(PARAM_STATE) String state, @Context SseEventSink eventSink, @Context Sse sse) {
-        if (StringUtil.isBlank(state)) {
-            throw new BadRequestException("Missing state parameter");
-        }
-        AuthenticationSessionModel expectedAuthSession = directPostService.resolveExpectedAuthSession(state);
-        if (expectedAuthSession == null) {
+            @QueryParam(PARAM_TAB_ID) String tabId, @Context SseEventSink eventSink, @Context Sse sse) {
+        AuthenticationSessionModel authSession = walletLoginSession(tabId);
+        List<String> states = authSession != null ? provider.crossDeviceStates(authSession) : List.of();
+        if (states.isEmpty()) {
             throw stopSseReconnects();
         }
-        if (authSessionResolver.sameBrowserSession(expectedAuthSession) == null) {
-            throw stopSseReconnects();
-        }
-        sseService.subscribe(state, eventSink, sse, expectedAuthSession);
+        sseService.subscribe(states, eventSink, sse, authSession);
     }
 
     @GET

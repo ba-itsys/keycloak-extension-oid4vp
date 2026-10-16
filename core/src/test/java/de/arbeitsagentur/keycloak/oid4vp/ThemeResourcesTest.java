@@ -21,29 +21,17 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpMessages;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Properties;
 import org.junit.jupiter.api.Test;
 
 class ThemeResourcesTest {
 
     @Test
-    void oid4vpLoginTemplateUsesDedicatedLayoutWithoutGenericAuthChecker() throws Exception {
-        String loginTemplate = loadResource("/theme-resources/templates/login-oid4vp-idp.ftl");
-        String layoutTemplate = loadResource("/theme-resources/templates/oid4vp-template.ftl");
-
-        assertThat(loginTemplate).contains("<#import \"oid4vp-template.ftl\" as layout>");
-        assertThat(layoutTemplate).doesNotContain("startSessionPolling");
-        assertThat(layoutTemplate).doesNotContain("checkAuthSession");
-    }
-
-    @Test
-    void oid4vpLayoutAvoidsInlineJavaScript() throws Exception {
-        String layoutTemplate = loadResource("/theme-resources/templates/oid4vp-template.ftl");
-
-        assertThat(layoutTemplate).doesNotContain("<script type=\"importmap\">");
-        assertThat(layoutTemplate).doesNotContain("<script type=\"module\">");
-        assertThat(layoutTemplate).doesNotContain("onclick=");
-        assertThat(layoutTemplate).doesNotContain("onchange=");
-        assertThat(layoutTemplate).doesNotContain("javascript:");
+    void oid4vpTemplatesUseTheLoginThemeLayout() throws Exception {
+        assertThat(loadResource("/theme-resources/templates/login-oid4vp-idp.ftl"))
+                .contains("<#import \"template.ftl\" as layout>");
+        assertThat(loadResource("/theme-resources/templates/login-oid4vp-expired.ftl"))
+                .contains("<#import \"template.ftl\" as layout>");
     }
 
     @Test
@@ -56,9 +44,9 @@ class ThemeResourcesTest {
     }
 
     @Test
-    void oid4vpLoginTemplateUsesMessageBundleForUserFacingTexts() throws Exception {
+    void oid4vpLoginTemplateUsesMessageBundleKeysForUserFacingTexts() throws Exception {
         String loginTemplate = loadResource("/theme-resources/templates/login-oid4vp-idp.ftl");
-        String messages = loadResource("/theme-resources/messages/messages_en.properties");
+        Properties messages = loadMessageBundle();
 
         assertThat(loginTemplate).contains("${msg(\"oid4vpLoginTitle\")}");
         assertThat(loginTemplate).contains("${msg(\"oid4vpOpenWalletApp\")}");
@@ -66,40 +54,57 @@ class ThemeResourcesTest {
         assertThat(loginTemplate).contains("${msg(\"oid4vpScanWithWalletApp\")}");
         assertThat(loginTemplate).contains("${msg(\"oid4vpQrCodeAlt\")}");
         assertThat(loginTemplate).contains("${msg(\"oid4vpAlternativeMethods\")}");
-        assertThat(loginTemplate).doesNotContain("Sign in with Wallet");
-        assertThat(loginTemplate).doesNotContain("Open Wallet App");
-        assertThat(loginTemplate).doesNotContain("Or scan with your phone:");
-        assertThat(loginTemplate).doesNotContain("Scan with your wallet app:");
-        assertThat(loginTemplate).doesNotContain("QR Code for wallet login");
-        assertThat(loginTemplate).doesNotContain("Or sign in with another method:");
+        assertThat(loginTemplate).contains("${msg(\"oid4vpLinkExpiresIn\")}");
+        assertThat(messages.stringPropertyNames())
+                .contains(
+                        "oid4vpLoginTitle",
+                        "oid4vpOpenWalletApp",
+                        "oid4vpScanWithPhone",
+                        "oid4vpScanWithWalletApp",
+                        "oid4vpQrCodeAlt",
+                        "oid4vpAlternativeMethods",
+                        "oid4vpLinkExpiresIn");
+    }
 
-        assertThat(messages).contains("oid4vpLoginTitle=Sign in with Wallet");
-        assertThat(messages).contains("oid4vpOpenWalletApp=Open Wallet App");
-        assertThat(messages).contains("oid4vpScanWithPhone=Or scan with your phone:");
-        assertThat(messages).contains("oid4vpScanWithWalletApp=Scan with your wallet app:");
-        assertThat(messages).contains("oid4vpQrCodeAlt=QR Code for wallet login");
-        assertThat(messages).contains("oid4vpAlternativeMethods=Or sign in with another method:");
+    @Test
+    void oid4vpExpiredTemplateUsesMessageBundleKeysForUserFacingTexts() throws Exception {
+        String expiredTemplate = loadResource("/theme-resources/templates/login-oid4vp-expired.ftl");
+        Properties messages = loadMessageBundle();
+
+        assertThat(expiredTemplate).contains("${msg(\"oid4vpLinkExpiredTitle\")}");
+        assertThat(expiredTemplate).contains("${msg(\"oid4vpLinkExpired\")}");
+        assertThat(expiredTemplate).contains("${msg(\"oid4vpGetNewLink\")}");
+        assertThat(messages.stringPropertyNames())
+                .contains("oid4vpLinkExpiredTitle", "oid4vpLinkExpired", "oid4vpGetNewLink");
     }
 
     @Test
     void messageBundleNamesARejectedPresentation() throws Exception {
-        String messages = loadResource("/theme-resources/messages/messages_en.properties");
+        Properties messages = loadMessageBundle();
 
-        assertThat(messages)
-                .as("the login page shows this key when the verifier rejected the presentation")
-                .contains(Oid4vpMessages.PRESENTATION_REJECTED + "=");
+        assertThat(messages.stringPropertyNames()).contains(Oid4vpMessages.PRESENTATION_REJECTED);
     }
 
     @Test
     void messageBundleCoversTheErrorPageKeys() throws Exception {
-        String messages = loadResource("/theme-resources/messages/messages_en.properties");
+        Properties messages = loadMessageBundle();
 
-        assertThat(messages)
-                .contains(Oid4vpMessages.LOGIN_ENDED + "=")
-                .contains(Oid4vpMessages.LOGIN_EXPIRED + "=")
-                .contains(Oid4vpMessages.INVALID_LOGIN_RESPONSE + "=")
-                .contains(Oid4vpMessages.BROWSER_SESSION_MISMATCH + "=")
-                .contains(Oid4vpMessages.LOGIN_DATA_MISSING + "=");
+        assertThat(messages.stringPropertyNames())
+                .contains(
+                        Oid4vpMessages.LOGIN_ENDED,
+                        Oid4vpMessages.LOGIN_EXPIRED,
+                        Oid4vpMessages.INVALID_LOGIN_RESPONSE,
+                        Oid4vpMessages.BROWSER_SESSION_MISMATCH,
+                        Oid4vpMessages.LOGIN_DATA_MISSING);
+    }
+
+    private Properties loadMessageBundle() throws IOException {
+        Properties properties = new Properties();
+        try (InputStream input = getClass().getResourceAsStream("/theme-resources/messages/messages_en.properties")) {
+            assertThat(input).as("message bundle").isNotNull();
+            properties.load(input);
+        }
+        return properties;
     }
 
     private String loadResource(String resourcePath) throws IOException {

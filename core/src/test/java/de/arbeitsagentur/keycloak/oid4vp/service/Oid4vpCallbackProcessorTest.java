@@ -670,6 +670,7 @@ class Oid4vpCallbackProcessorTest {
                 null,
                 requestedCredentials,
                 credentialSets,
-                null);
+                null,
+                0);
     }
 }

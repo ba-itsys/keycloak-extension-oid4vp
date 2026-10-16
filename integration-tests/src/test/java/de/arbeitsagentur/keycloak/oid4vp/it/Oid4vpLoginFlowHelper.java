@@ -107,6 +107,25 @@ class Oid4vpLoginFlowHelper {
         return walletUrl;
     }
 
+    String getCrossDeviceQrImage() {
+        return page.locator("#oid4vp-qr-code").getAttribute("src");
+    }
+
+    String getRequestUriExpiredUrl() {
+        return page.locator("#oid4vp-request-uri-countdown").getAttribute("data-expired-url");
+    }
+
+    String getCrossDeviceStatusUrl() {
+        return page.locator("#oid4vp-cross-device-sse-config").getAttribute("data-status-url");
+    }
+
+    /** Opens the expired page the countdown leads to and asks it for new links. */
+    void refreshRequestUris() {
+        page.navigate(getRequestUriExpiredUrl());
+        page.locator("#oid4vp-get-new-link").click();
+        page.waitForSelector("#oid4vp-request-uri-countdown");
+    }
+
     WalletResponse submitToWallet(String walletUrl) {
         String presentationUri = convertToOpenid4vpUri(walletUrl);
         var response = wallet.acceptPresentationRequest(presentationUri);
@@ -157,11 +176,6 @@ class Oid4vpLoginFlowHelper {
     }
 
     String getState() {
-        String state = (String)
-                page.evaluate("() => document.querySelector('#oid4vp-cross-device-sse-config')?.dataset?.state ?? ''");
-        if (state != null && !state.isBlank()) {
-            return state;
-        }
         return lastCrossDeviceState;
     }
 

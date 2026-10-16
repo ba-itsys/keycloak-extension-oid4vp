@@ -1,4 +1,4 @@
-<#import "oid4vp-template.ftl" as layout>
+<#import "template.ftl" as layout>
 <@layout.registrationLayout displayInfo=false; section>
     <#if section = "header">
         Custom wallet login

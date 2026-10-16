@@ -46,17 +46,33 @@ priority over the extension. Use a named theme for overrides.
 
 ## Preserve Wallet Flow Behavior
 
-Start with the extension's `login-oid4vp-idp.ftl` when changing its appearance. Keep the
-wallet URLs and the cross-device completion wiring:
+The extension renders two pages. `login-oid4vp-idp.ftl` shows the wallet button, the QR code
+and a countdown. `login-oid4vp-expired.ftl` replaces it when the countdown reaches zero and
+offers a new link. Both import the login theme's `template.ftl`, so they follow the selected
+theme's layout and language switcher. Errors use Keycloak's standard error page. Start with the
+extension's templates when changing their appearance, and keep the values below.
+
+`login-oid4vp-idp.ftl`:
 
 | Value | Purpose |
 |-------|---------|
 | `sameDeviceEnabled`, `sameDeviceWalletUrl` | Whether to show the wallet button and its destination |
 | `crossDeviceEnabled`, `qrCodeBase64`, `crossDeviceWalletUrl` | Whether to show the QR code, its PNG data, and wallet URL |
-| `crossDeviceStatusUrl`, `crossDeviceState` | SSE status endpoint and the login attempt to follow |
+| `requestUriExpiresInSeconds`, `requestUriExpiredUrl` | Seconds until the first link on the page expires, and the expired page to open then |
+| `crossDeviceStatusUrl` | SSE status endpoint that follows the cross-device attempts of this tab |
 | `currentBrokerAlias` | Excludes the current provider from alternative login methods |
 
-For cross-device login, preserve `#oid4vp-cross-device-sse-config`, its `data-status-url`
-and `data-state` attributes, and the `js/oid4vp-cross-device-sse.js` script. Keycloak
-serves the extension's fallback scripts through `${url.resourcesPath}` for the selected
-theme as well. Preserve the script nonce `${cspNonce!}`.
+`login-oid4vp-expired.ftl`:
+
+| Value | Purpose |
+|-------|---------|
+| `refreshUrl` | Renders the wallet login page with new links |
+| `crossDeviceStatusUrl` | SSE status endpoint, set while a cross-device attempt can still complete |
+
+For the countdown, preserve `#oid4vp-request-uri-countdown` with its `data-expires-in-seconds`
+and `data-expired-url` attributes, the `#oid4vp-request-uri-remaining` element, and the
+`js/oid4vp-request-uri-countdown.js` script. For cross-device login, preserve
+`#oid4vp-cross-device-sse-config`, its `data-status-url` attribute, and the
+`js/oid4vp-cross-device-sse.js` script on both pages. Keycloak serves the extension's fallback
+scripts through `${url.resourcesPath}` for the selected theme as well. Preserve the script nonce
+`${cspNonce!}`.

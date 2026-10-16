@@ -269,7 +269,7 @@ public class Oid4vpDirectPostService {
                 expected.getBytes(StandardCharsets.UTF_8), provided.getBytes(StandardCharsets.UTF_8));
     }
 
-    public AuthenticationSessionModel resolveExpectedAuthSession(String state) {
+    private AuthenticationSessionModel resolveExpectedAuthSession(String state) {
         Map<String, String> signal = ownSignal(DEFERRED_AUTH_PREFIX + state);
         if (signal != null) {
             AuthenticationSessionModel authSession =

@@ -5,19 +5,13 @@
         }
 
         var statusUrl = root.dataset.statusUrl || "";
-        var state = root.dataset.state || "";
-        if (!statusUrl || !state) {
+        if (!statusUrl) {
             return null;
         }
 
         return {
-            statusUrl: statusUrl,
-            state: state
+            statusUrl: statusUrl
         };
-    }
-
-    function buildStatusUrl(config) {
-        return config.statusUrl + "?state=" + encodeURIComponent(config.state);
     }
 
     // The server builds the redirect from the base this page was loaded from. A URL on another
@@ -32,11 +26,11 @@
     }
 
     function initOid4vpCrossDeviceSse(config) {
-        if (!config || !config.statusUrl || !config.state) {
+        if (!config || !config.statusUrl) {
             return null;
         }
 
-        var statusUrl = buildStatusUrl(config);
+        var statusUrl = config.statusUrl;
         var currentSource = null;
         var stopped = false;
 

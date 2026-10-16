@@ -42,6 +42,9 @@ The DCQL query is generated from the configured OID4VP mappers. The mapper type 
 |-----|-------------|---------|
 | `credentialSets` | DCQL `credential_sets` constraints in specification syntax, referencing credential ids. Empty requires every configured credential. | *(none)* |
 | `requestObjectLifespanSeconds` | Lifespan of the signed request object JWT used by the wallet fetch. | `10` |
+| `sameDeviceRequestUriLifetimeSeconds` | How long a wallet can fetch the same-device request object after the login page loads. The page then offers a new link. A wallet that fetched it in time can send its presentation until the authentication session expires. | `300` |
+| `crossDeviceRequestUriLifetimeSeconds` | The same for the cross-device request object behind the QR code. | `300` |
+| `maxLiveRequestsPerLogin` | How many wallet requests of one login stay valid when the page offers new links. Each page issues one per enabled flow. Beyond this the oldest end, and a wallet still answering one is rejected. At least `2`. | `10` |
 
 Each mapper contributes to the credential named by its `credential.id`. Mappers sharing an id form one credential entry. That entry accepts every credential type any of them names. This allows requesting the same credential type twice with different claims. It also allows one entry to accept several VCTs. A credential of a type derived from a requested type satisfies the request as well, see [Credential Type Inheritance](#credential-type-inheritance). An empty `credential.id` derives the id from the format and the first credential type: `sdjwt_urn_eudi_pid_1`, `mdoc_org_iso_18013_5_1_mDL`. DCQL restricts ids to letters, digits, `_` and `-`.
 

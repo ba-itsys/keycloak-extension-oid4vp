@@ -17,18 +17,24 @@ package de.arbeitsagentur.keycloak.oid4vp.it;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.microsoft.playwright.BrowserContext;
+import com.microsoft.playwright.Page;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpRejectionResponse;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
+import io.github.dominikschlosser.eudi.ConsentRequest;
+import io.github.dominikschlosser.eudi.PresentationResponse;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
@@ -89,6 +95,193 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
         assertThat(kid1).isEqualTo(kid2).isEqualTo(kid3);
         assertThat(nonce1).isEqualTo(nonce2).isEqualTo(nonce3);
         assertThat(state1).isEqualTo(state2).isEqualTo(state3);
+    }
+
+    @Test
+    void sameAndCrossDeviceRequestUrisUseIndependentLifetimes() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        setIdpConfig(Map.of(
+                Oid4vpIdentityProviderConfig.SAME_DEVICE_REQUEST_URI_LIFETIME_SECONDS, "2",
+                Oid4vpIdentityProviderConfig.CROSS_DEVICE_REQUEST_URI_LIFETIME_SECONDS, "30"));
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        String sameDeviceWalletUrl = flow.getSameDeviceWalletUrl();
+        String crossDeviceWalletUrl = flow.getCrossDeviceWalletUrl();
+        Thread.sleep(2_200);
+        HttpResponse<String> expiredSameDeviceRequest = requestObjectResponse(sameDeviceWalletUrl);
+        HttpResponse<String> liveCrossDeviceRequest = requestObjectResponse(crossDeviceWalletUrl);
+        assertThat(expiredSameDeviceRequest.statusCode()).isEqualTo(404);
+        assertThat(liveCrossDeviceRequest.statusCode()).isEqualTo(200);
+
+        Oid4vpLoginFlowHelper.WalletResponse response = flow.submitToWallet(crossDeviceWalletUrl);
+        flow.waitForLoginCompletion(response);
+        flow.completeFirstBrokerLoginIfNeeded("different-request-uri-lifetimes-user");
+        flow.assertLoginSucceeded();
+    }
+
+    @Test
+    void presentationCallbackStillWorksAfterRequestUriExpires() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        deleteAllOid4vpUsers();
+        setIdpConfig(Map.of(
+                Oid4vpIdentityProviderConfig.SAME_DEVICE_REQUEST_URI_LIFETIME_SECONDS, "2",
+                Oid4vpIdentityProviderConfig.CROSS_DEVICE_REQUEST_URI_LIFETIME_SECONDS, "30"));
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        String walletUrl = flow.getSameDeviceWalletUrl();
+        String openid4vpUri = walletUrl.replace(wallet.getAuthorizeUrl() + "?", "openid4vp://authorize?");
+
+        // Interactive consent pauses the eudi-dev wallet after it has fetched and validated the
+        // request object, letting the request_uri expire before the wallet sends its presentation.
+        wallet.client().setAutoAccept(false);
+        var pendingSubmission = wallet.client().submitPresentationRequestForConsent(openid4vpUri);
+        ConsentRequest pendingConsent = wallet.client().awaitPendingRequest(Duration.ofSeconds(20));
+        assertThat(pendingConsent.type()).isEqualTo("presentation");
+
+        Thread.sleep(2_200);
+        assertThat(requestObjectResponse(walletUrl).statusCode()).isEqualTo(404);
+
+        wallet.client().approveRequest(pendingConsent.id());
+        PresentationResponse presentationResponse = pendingSubmission.get(30, TimeUnit.SECONDS);
+        assertThat(presentationResponse.status()).isEqualTo("submitted");
+        assertThat(presentationResponse.verifierStatusCode()).isEqualTo(200);
+
+        Oid4vpLoginFlowHelper.WalletResponse response = new Oid4vpLoginFlowHelper.WalletResponse(
+                presentationResponse.rawBody(), presentationResponse.redirectUri());
+        flow.waitForLoginCompletion(response);
+        flow.completeFirstBrokerLoginIfNeeded("callback-after-request-uri-expiry-user");
+        flow.assertLoginSucceeded();
+    }
+
+    @Test
+    void countdownLeadsToExpiredPageWhoseNewLinkRendersFreshLinks() {
+        testApp().reset();
+        flow.clearBrowserSession();
+        setIdpConfig(Map.of(
+                Oid4vpIdentityProviderConfig.SAME_DEVICE_REQUEST_URI_LIFETIME_SECONDS, "2",
+                Oid4vpIdentityProviderConfig.CROSS_DEVICE_REQUEST_URI_LIFETIME_SECONDS, "30"));
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        String oldSameDeviceUrl = flow.getSameDeviceWalletUrl();
+
+        page.waitForSelector("#oid4vp-get-new-link", new Page.WaitForSelectorOptions().setTimeout(10_000));
+        assertThat(page.locator("#oid4vp-link-expired").isVisible()).isTrue();
+        page.locator("#oid4vp-get-new-link").click();
+
+        assertThat(flow.getSameDeviceWalletUrl()).isNotEqualTo(oldSameDeviceUrl);
+    }
+
+    @Test
+    void countdownToTheEndOfTheAuthenticationSessionRestartsTheLogin() {
+        testApp().reset();
+        flow.clearBrowserSession();
+        realm.updateWithCleanup(config -> config.update(representation -> {
+            representation.setAccessCodeLifespanLogin(5);
+            representation.setAccessCodeLifespanUserAction(5);
+            representation.setAccessCodeLifespan(5);
+        }));
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        flow.getSameDeviceWalletUrl();
+
+        page.waitForSelector("a#social-oid4vp", new Page.WaitForSelectorOptions().setTimeout(15_000));
+        assertThat(page.locator(".kc-feedback-text").textContent()).contains("timed out");
+    }
+
+    @Test
+    void refreshingRenewsSameAndCrossDeviceLinksTogether() {
+        testApp().reset();
+        flow.clearBrowserSession();
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        String oldSameDeviceUrl = flow.getSameDeviceWalletUrl();
+        String oldCrossDeviceUrl = flow.getCrossDeviceWalletUrl();
+        String oldQrImage = flow.getCrossDeviceQrImage();
+        flow.refreshRequestUris();
+
+        String newSameDeviceUrl = flow.getSameDeviceWalletUrl();
+        assertThat(newSameDeviceUrl).isNotEqualTo(oldSameDeviceUrl);
+        assertThat(flow.getCrossDeviceWalletUrl()).isNotEqualTo(oldCrossDeviceUrl);
+        assertThat(flow.getCrossDeviceQrImage()).isNotEqualTo(oldQrImage);
+
+        // The refreshed page answers a GET, so reloading it renders the wallet login page again.
+        page.reload();
+        assertThat(flow.getSameDeviceWalletUrl()).isNotEqualTo(newSameDeviceUrl);
+    }
+
+    @Test
+    void refreshBeyondTheMaximumOfLiveRequestsEndsTheOldestRequests() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.MAX_LIVE_REQUESTS_PER_LOGIN, "2"));
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        String oldWalletUrl = flow.getCrossDeviceWalletUrl();
+        flow.refreshRequestUris();
+
+        assertThat(requestObjectResponse(oldWalletUrl).statusCode()).isEqualTo(404);
+        assertThat(requestObjectResponse(flow.getCrossDeviceWalletUrl()).statusCode())
+                .isEqualTo(200);
+    }
+
+    @Test
+    void copiedExpiredAndRefreshUrlsDoNotWorkInAnotherBrowser() {
+        testApp().reset();
+        flow.clearBrowserSession();
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        String expiredUrl = flow.getRequestUriExpiredUrl();
+        String statusUrl = flow.getCrossDeviceStatusUrl();
+        page.navigate(expiredUrl);
+        String refreshUrl = page.locator("#oid4vp-get-new-link").getAttribute("href");
+
+        BrowserContext otherContext = newBrowserContext();
+        try {
+            assertThat(otherContext.request().get(expiredUrl).status()).isEqualTo(400);
+            assertThat(otherContext.request().get(refreshUrl).status()).isEqualTo(400);
+            assertThat(otherContext.request().get(statusUrl).status()).isEqualTo(204);
+        } finally {
+            otherContext.close();
+        }
+    }
+
+    @Test
+    void presentationCallbackStillWorksAfterLinksRefresh() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        deleteAllOid4vpUsers();
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        String oldWalletUrl = flow.getCrossDeviceWalletUrl();
+        String openid4vpUri = oldWalletUrl.replace(wallet.getAuthorizeUrl() + "?", "openid4vp://authorize?");
+
+        wallet.client().setAutoAccept(false);
+        var pendingSubmission = wallet.client().submitPresentationRequestForConsent(openid4vpUri);
+        ConsentRequest pendingConsent = wallet.client().awaitPendingRequest(Duration.ofSeconds(20));
+        assertThat(pendingConsent.type()).isEqualTo("presentation");
+
+        flow.refreshRequestUris();
+
+        wallet.client().approveRequest(pendingConsent.id());
+        PresentationResponse presentationResponse = pendingSubmission.get(30, TimeUnit.SECONDS);
+        assertThat(presentationResponse.status()).isEqualTo("submitted");
+        assertThat(presentationResponse.verifierStatusCode()).isEqualTo(200);
+
+        Oid4vpLoginFlowHelper.WalletResponse response = new Oid4vpLoginFlowHelper.WalletResponse(
+                presentationResponse.rawBody(), presentationResponse.redirectUri());
+        flow.waitForLoginCompletion(response);
+        flow.completeFirstBrokerLoginIfNeeded("callback-after-links-refresh-user");
+        flow.assertLoginSucceeded();
     }
 
     @Test

@@ -26,6 +26,7 @@ import jakarta.ws.rs.sse.OutboundSseEvent;
 import jakarta.ws.rs.sse.Sse;
 import jakarta.ws.rs.sse.SseEventSink;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -67,9 +68,10 @@ public class Oid4vpCrossDeviceSseService {
         this.sessionFactory = session.getKeycloakSessionFactory();
     }
 
-    public void subscribe(String state, SseEventSink eventSink, Sse sse, AuthenticationSessionModel authSession) {
+    public void subscribe(
+            List<String> states, SseEventSink eventSink, Sse sse, AuthenticationSessionModel authSession) {
         PendingConnection connection = new PendingConnection(
-                state,
+                List.copyOf(states),
                 eventSink,
                 sse,
                 Instant.now().plusSeconds(timeoutSeconds),
@@ -95,7 +97,7 @@ public class Oid4vpCrossDeviceSseService {
         // worker resolve providers the way a request thread does.
         ClassLoader requestClassLoader = Thread.currentThread().getContextClassLoader();
         Thread worker = Thread.ofVirtual()
-                .name(WORKER_NAME_PREFIX + state, 0)
+                .name(WORKER_NAME_PREFIX + authSessionTabId(authSession), 0)
                 .inheritInheritableThreadLocals(false)
                 .unstarted(() -> {
                     Thread.currentThread().setContextClassLoader(requestClassLoader);
@@ -146,7 +148,7 @@ public class Oid4vpCrossDeviceSseService {
                 }
             }
         } catch (RuntimeException ex) {
-            LOG.warnf(ex, "Cross-device SSE stream failed for %s", connection.state());
+            LOG.warnf(ex, "Cross-device SSE stream failed for tab %s", connection.tabId());
             closeQuietly(connection.eventSink());
         } finally {
             ACTIVE_WORKERS.remove(Thread.currentThread());
@@ -196,11 +198,9 @@ public class Oid4vpCrossDeviceSseService {
                 return PollResult.realmNotFound();
             }
 
-            SingleUseObjectProvider store = requestSession.singleUseObjects();
-            Map<String, String> signal = store.get(CROSS_DEVICE_COMPLETE_PREFIX + connection.state());
-            String completeAuthUrl = signal != null ? signal.get(KEY_COMPLETE_AUTH_URL) : null;
-            if (completeAuthUrl != null) {
-                return PollResult.complete(completeAuthUrl);
+            PollResult signalled = signalledResult(requestSession.singleUseObjects(), connection.states());
+            if (signalled != null) {
+                return signalled;
             }
 
             if (isAuthenticationSessionExpired(requestSession, realm, connection)) {
@@ -209,7 +209,7 @@ public class Oid4vpCrossDeviceSseService {
 
             return PollResult.pending();
         } catch (RuntimeException ex) {
-            LOG.debugf(ex, "Immediate cross-device SSE check failed for %s", connection.state());
+            LOG.debugf(ex, "Immediate cross-device SSE check failed for tab %s", connection.tabId());
             return null;
         }
     }
@@ -224,23 +224,10 @@ public class Oid4vpCrossDeviceSseService {
                     return PollResult.realmNotFound();
                 }
 
-                SingleUseObjectProvider store = pollingSession.singleUseObjects();
-                Map<String, String> signal = store.get(CROSS_DEVICE_COMPLETE_PREFIX + connection.state());
-                String completeAuthUrl = signal != null ? signal.get(KEY_COMPLETE_AUTH_URL) : null;
-                if (completeAuthUrl != null) {
+                PollResult signalled = signalledResult(pollingSession.singleUseObjects(), connection.states());
+                if (signalled != null) {
                     pollingSession.getTransactionManager().commit();
-                    return PollResult.complete(completeAuthUrl);
-                }
-
-                // In the cross-device flow no response to the wallet can carry the End-User back,
-                // so a presentation that ended on the back channel, whether the wallet reported an
-                // error or the verifier rejected it, sends the browser to the failure URL instead of
-                // letting the stream time out.
-                Map<String, String> failure = store.get(CROSS_DEVICE_FAILED_PREFIX + connection.state());
-                String failureUrl = failure != null ? failure.get(KEY_FAILURE_URL) : null;
-                if (failureUrl != null) {
-                    pollingSession.getTransactionManager().commit();
-                    return PollResult.failed(failureUrl);
+                    return signalled;
                 }
 
                 if (isAuthenticationSessionExpired(pollingSession, realm, connection)) {
@@ -255,6 +242,29 @@ public class Oid4vpCrossDeviceSseService {
                 throw ex;
             }
         }
+    }
+
+    /**
+     * Returns the completion or failure signalled for the first of the states that has one, or
+     * null. In the cross-device flow no response to the wallet can carry the End-User back, so a
+     * presentation that ended on the back channel, whether the wallet reported an error or the
+     * verifier rejected it, sends the browser to the failure URL instead of letting the stream
+     * time out.
+     */
+    private static PollResult signalledResult(SingleUseObjectProvider store, List<String> states) {
+        for (String state : states) {
+            Map<String, String> signal = store.get(CROSS_DEVICE_COMPLETE_PREFIX + state);
+            String completeAuthUrl = signal != null ? signal.get(KEY_COMPLETE_AUTH_URL) : null;
+            if (completeAuthUrl != null) {
+                return PollResult.complete(completeAuthUrl);
+            }
+            Map<String, String> failure = store.get(CROSS_DEVICE_FAILED_PREFIX + state);
+            String failureUrl = failure != null ? failure.get(KEY_FAILURE_URL) : null;
+            if (failureUrl != null) {
+                return PollResult.failed(failureUrl);
+            }
+        }
+        return null;
     }
 
     private boolean isAuthenticationSessionExpired(
@@ -311,7 +321,7 @@ public class Oid4vpCrossDeviceSseService {
             connection.eventSink().send(event);
             return true;
         } catch (Exception ex) {
-            LOG.debugf(ex, "Failed to send SSE event '%s' for %s", eventType, connection.state());
+            LOG.debugf(ex, "Failed to send SSE event '%s' for tab %s", eventType, connection.tabId());
             closeQuietly(connection.eventSink());
             return false;
         }
@@ -363,7 +373,7 @@ public class Oid4vpCrossDeviceSseService {
     }
 
     private static final class PendingConnection {
-        private final String state;
+        private final List<String> states;
         private final SseEventSink eventSink;
         private final Sse sse;
         private final Instant deadline;
@@ -373,7 +383,7 @@ public class Oid4vpCrossDeviceSseService {
         private volatile Instant nextPingAt;
 
         private PendingConnection(
-                String state,
+                List<String> states,
                 SseEventSink eventSink,
                 Sse sse,
                 Instant deadline,
@@ -381,7 +391,7 @@ public class Oid4vpCrossDeviceSseService {
                 String rootSessionId,
                 String tabId,
                 String clientId) {
-            this.state = state;
+            this.states = states;
             this.eventSink = eventSink;
             this.sse = sse;
             this.deadline = deadline;
@@ -391,8 +401,8 @@ public class Oid4vpCrossDeviceSseService {
             this.clientId = clientId;
         }
 
-        private String state() {
-            return state;
+        private List<String> states() {
+            return states;
         }
 
         private SseEventSink eventSink() {

@@ -40,17 +40,23 @@ import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpQrCodeService;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriBuilder;
 import java.net.URI;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.broker.provider.AuthenticationRequest;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.broker.provider.IdentityBrokerException;
+import org.keycloak.common.util.Time;
 import org.keycloak.events.Details;
 import org.keycloak.events.Errors;
 import org.keycloak.events.EventBuilder;
@@ -62,6 +68,7 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.UserSessionModel;
+import org.keycloak.models.utils.SessionExpiration;
 import org.keycloak.services.ErrorPage;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.utils.StringUtil;
@@ -75,6 +82,7 @@ import org.keycloak.utils.StringUtil;
  */
 public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdentityProviderConfig> {
 
+    private static final String WALLET_LOGIN_STATES_NOTE_PREFIX = "oid4vp.wallet-login-states.";
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProvider.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final int DEFAULT_LOGIN_TIMEOUT_SECONDS = 1800;
@@ -108,9 +116,10 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 ReferenceCredentialBinding.checkOf(session));
 
         RealmModel realm = session.getContext().getRealm();
-        int loginTimeoutSeconds = realm != null ? realm.getAccessCodeLifespanLogin() : DEFAULT_LOGIN_TIMEOUT_SECONDS;
+        int authSessionLifespanSeconds =
+                realm != null ? SessionExpiration.getAuthSessionLifespan(realm) : DEFAULT_LOGIN_TIMEOUT_SECONDS;
         this.requestObjectStore =
-                new Oid4vpRequestObjectStore(Duration.ofSeconds(loginTimeoutSeconds), config.getAlias());
+                new Oid4vpRequestObjectStore(Duration.ofSeconds(authSessionLifespanSeconds), config.getAlias());
     }
 
     public Oid4vpRedirectFlowService getRedirectFlowService() {
@@ -125,48 +134,64 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     public Response performLogin(AuthenticationRequest request) {
         try {
             AuthenticationSessionModel authSession = request.getAuthenticationSession();
-
-            LoginContext loginContext = initializeLoginContext(request, authSession);
-
-            boolean sameDeviceConfigured = getConfig().isSameDeviceEnabled();
-            boolean crossDeviceConfigured = getConfig().isCrossDeviceEnabled();
-            int requestedLoa = requestedLevelOfAuthentication(authSession);
-            boolean sameDeviceEnabled =
-                    sameDeviceConfigured && flowOfferedAt(getConfig().getSameDeviceMaxLoa(), requestedLoa);
-            boolean crossDeviceEnabled =
-                    crossDeviceConfigured && flowOfferedAt(getConfig().getCrossDeviceMaxLoa(), requestedLoa);
-
-            // A flow above its LoA ceiling gets no state and no request object, so nothing a wallet
-            // posts can complete it.
-            if (!sameDeviceEnabled && !crossDeviceEnabled && (sameDeviceConfigured || crossDeviceConfigured)) {
-                LOG.debugf(
-                        "OID4VP IdP '%s': no flow is offered at the requested level of authentication %d",
-                        getConfig().getAlias(), requestedLoa);
-                new EventBuilder(
-                                request.getRealm(),
-                                session,
-                                session.getContext().getConnection())
-                        .event(EventType.LOGIN_ERROR)
-                        .detail(
-                                Details.REASON,
-                                "No OID4VP flow is offered at the requested level of authentication " + requestedLoa)
-                        .error(Errors.NOT_ALLOWED);
-                return ErrorPage.error(
-                        session,
-                        authSession,
-                        Response.Status.FORBIDDEN,
-                        Oid4vpMessages.NOT_AVAILABLE_FOR_REQUESTED_LEVEL);
-            }
-
-            RedirectFlowData redirectFlowData =
-                    buildRedirectFlowData(request, authSession, loginContext, sameDeviceEnabled, crossDeviceEnabled);
-
-            return buildLoginFormResponse(authSession, redirectFlowData, sameDeviceEnabled, crossDeviceEnabled);
-
+            return renderLoginPage(authSession, initializeLoginContext(request, authSession));
         } catch (Exception e) {
             LOG.errorf(e, "Failed to initiate OID4VP login: %s", e.getMessage());
             throw new IdentityBrokerException("Failed to initiate wallet login", e);
         }
+    }
+
+    /** Renders the wallet login page with new request URIs in an authentication session that already showed it. */
+    Response refreshLoginPage(AuthenticationSessionModel authSession) {
+        LoginContext loginContext = new LoginContext(
+                authSession.getParentSession().getId(),
+                authSession.getTabId(),
+                computeEffectiveClientId(computeBaseClientId()));
+        return renderLoginPage(authSession, loginContext);
+    }
+
+    Response renderExpiredPage(AuthenticationSessionModel authSession) {
+        boolean crossDeviceInProgress = !crossDeviceStates(authSession).isEmpty();
+        return session.getProvider(LoginFormsProvider.class)
+                .setAuthenticationSession(authSession)
+                .setAttribute("refreshUrl", endpointUrl("refresh", authSession))
+                .setAttribute(
+                        "crossDeviceStatusUrl",
+                        crossDeviceInProgress ? endpointUrl("cross-device/status", authSession) : null)
+                .createForm("login-oid4vp-expired.ftl");
+    }
+
+    private Response renderLoginPage(AuthenticationSessionModel authSession, LoginContext loginContext) {
+        boolean sameDeviceConfigured = getConfig().isSameDeviceEnabled();
+        boolean crossDeviceConfigured = getConfig().isCrossDeviceEnabled();
+        int requestedLoa = requestedLevelOfAuthentication(authSession);
+        boolean sameDeviceEnabled =
+                sameDeviceConfigured && flowOfferedAt(getConfig().getSameDeviceMaxLoa(), requestedLoa);
+        boolean crossDeviceEnabled =
+                crossDeviceConfigured && flowOfferedAt(getConfig().getCrossDeviceMaxLoa(), requestedLoa);
+
+        // A flow above its LoA ceiling gets no state and no request object, so nothing a wallet
+        // posts can complete it.
+        if (!sameDeviceEnabled && !crossDeviceEnabled && (sameDeviceConfigured || crossDeviceConfigured)) {
+            LOG.debugf(
+                    "OID4VP IdP '%s': no flow is offered at the requested level of authentication %d",
+                    getConfig().getAlias(), requestedLoa);
+            new EventBuilder(
+                            session.getContext().getRealm(),
+                            session,
+                            session.getContext().getConnection())
+                    .event(EventType.LOGIN_ERROR)
+                    .detail(
+                            Details.REASON,
+                            "No OID4VP flow is offered at the requested level of authentication " + requestedLoa)
+                    .error(Errors.NOT_ALLOWED);
+            return ErrorPage.error(
+                    session, authSession, Response.Status.FORBIDDEN, Oid4vpMessages.NOT_AVAILABLE_FOR_REQUESTED_LEVEL);
+        }
+
+        RedirectFlowData redirectFlowData = buildRedirectFlowData(loginContext, sameDeviceEnabled, crossDeviceEnabled);
+
+        return buildLoginFormResponse(authSession, redirectFlowData, sameDeviceEnabled, crossDeviceEnabled);
     }
 
     /**
@@ -327,8 +352,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     }
 
     private LoginContext initializeLoginContext(AuthenticationRequest request, AuthenticationSessionModel authSession) {
-        String clientId = computeBaseClientId(request);
-        String effectiveClientId = computeEffectiveClientId(clientId);
+        String effectiveClientId = computeEffectiveClientId(computeBaseClientId());
 
         var uriInfo = request.getUriInfo();
         String requestTabId = uriInfo.getQueryParameters().getFirst(Oid4vpConstants.PARAM_TAB_ID);
@@ -349,12 +373,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     }
 
     private RedirectFlowData buildRedirectFlowData(
-            AuthenticationRequest request,
-            AuthenticationSessionModel authSession,
-            LoginContext loginContext,
-            boolean sameDeviceEnabled,
-            boolean crossDeviceEnabled) {
-
+            LoginContext loginContext, boolean sameDeviceEnabled, boolean crossDeviceEnabled) {
         if (!sameDeviceEnabled && !crossDeviceEnabled) {
             return RedirectFlowData.EMPTY;
         }
@@ -368,26 +387,23 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         // a wallet login page with no button and no QR code.
         if (sameDeviceEnabled) {
             sameDeviceFlow = createFlowEntry(
-                    request,
                     loginContext,
                     Oid4vpConstants.FLOW_SAME_DEVICE,
-                    getConfig().getWalletScheme());
+                    getConfig().getSameDeviceRequestUriLifetimeSeconds());
         }
 
         if (crossDeviceEnabled) {
             crossDeviceFlow = createFlowEntry(
-                    request,
                     loginContext,
                     Oid4vpConstants.FLOW_CROSS_DEVICE,
-                    getConfig().getWalletScheme());
+                    getConfig().getCrossDeviceRequestUriLifetimeSeconds());
             qrCodeBase64 = qrCodeService.generateQrCode(crossDeviceFlow.walletUrl(), QR_CODE_SIZE, QR_CODE_SIZE);
         }
 
         return new RedirectFlowData(sameDeviceFlow, crossDeviceFlow, qrCodeBase64);
     }
 
-    private FlowEntry createFlowEntry(
-            AuthenticationRequest request, LoginContext loginContext, String flow, String walletScheme) {
+    private FlowEntry createFlowEntry(LoginContext loginContext, String flow, int requestUriLifetimeSeconds) {
         String state = StringUtil.isBlank(loginContext.flowTabId())
                 ? UUID.randomUUID().toString()
                 : loginContext.flowTabId() + "." + UUID.randomUUID();
@@ -402,6 +418,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
             encryptionJwkThumbprint = Oid4vpRequestObjectStore.computeEncryptionJwkThumbprint(encryptionKeyJson);
         }
         PreparedDcqlQuery preparedDcqlQuery = prepareDcqlQueryFromConfig();
+        long requestUriExpiresAtEpochSeconds = (long) Time.currentTime() + requestUriLifetimeSeconds;
 
         Oid4vpRequestObjectStore.RequestContextEntry requestContext = new Oid4vpRequestObjectStore.RequestContextEntry(
                 state,
@@ -415,40 +432,27 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 encryptionJwkThumbprint,
                 preparedDcqlQuery.requestedCredentials(),
                 preparedDcqlQuery.credentialSets(),
-                preparedDcqlQuery.dcqlQuery());
+                preparedDcqlQuery.dcqlQuery(),
+                requestUriExpiresAtEpochSeconds);
         requestObjectStore.storeRequestContext(session, requestContext);
 
-        URI requestUri = request.getUriInfo()
-                .getBaseUriBuilder()
-                .path("realms")
-                .path(request.getRealm().getName())
-                .path("broker")
-                .path(getConfig().getAlias())
-                .path("endpoint")
+        URI requestUri = UriBuilder.fromUri(responseUri)
                 .path("request-object")
                 .path(state)
                 .build();
         String walletUrl = redirectFlowService
                 .buildWalletAuthorizationUrl(
-                        walletScheme,
+                        getConfig().getWalletScheme(),
                         loginContext.effectiveClientId(),
                         requestUri,
                         getConfig().isRequestUriMethodPost())
                 .toString();
-        return new FlowEntry(state, walletUrl);
+        return new FlowEntry(state, walletUrl, requestUriExpiresAtEpochSeconds);
     }
 
     private String computeEffectiveClientId(String clientId) {
         Oid4vpClientIdScheme clientIdScheme = getConfig().getResolvedClientIdScheme();
         return clientIdScheme.computeClientId(clientId, getConfig().getX509CertificatePem());
-    }
-
-    private String buildCrossDeviceStatusUrl() {
-        return Oid4vpConstants.buildEndpointBaseUrl(
-                        session.getContext().getUri().getBaseUri(),
-                        session.getContext().getRealm().getName(),
-                        getConfig().getAlias())
-                + "/cross-device/status";
     }
 
     private Response buildLoginFormResponse(
@@ -457,25 +461,103 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
             boolean sameDeviceEnabled,
             boolean crossDeviceEnabled) {
 
+        FlowEntry sameDeviceFlow = redirectFlowData.sameDeviceFlow();
         FlowEntry crossDeviceFlow = redirectFlowData.crossDeviceFlow();
-        String crossDeviceState = crossDeviceFlow != null ? crossDeviceFlow.state() : null;
-        String sameDeviceWalletUrl = redirectFlowData.sameDeviceFlow() != null
-                ? redirectFlowData.sameDeviceFlow().walletUrl()
-                : null;
-        String crossDeviceWalletUrl = crossDeviceFlow != null ? crossDeviceFlow.walletUrl() : null;
+        rememberWalletLoginStates(
+                authSession,
+                Stream.of(sameDeviceFlow, crossDeviceFlow)
+                        .filter(Objects::nonNull)
+                        .map(FlowEntry::state)
+                        .toList());
 
         return session.getProvider(LoginFormsProvider.class)
                 .setAuthenticationSession(authSession)
-                .setAttribute("crossDeviceState", crossDeviceState)
                 .setAttribute("currentBrokerAlias", getConfig().getAlias())
                 .setAttribute("sameDeviceEnabled", sameDeviceEnabled)
                 .setAttribute("crossDeviceEnabled", crossDeviceEnabled)
-                .setAttribute("sameDeviceWalletUrl", sameDeviceWalletUrl)
-                .setAttribute("crossDeviceWalletUrl", crossDeviceWalletUrl)
+                .setAttribute("sameDeviceWalletUrl", sameDeviceFlow != null ? sameDeviceFlow.walletUrl() : null)
+                .setAttribute("crossDeviceWalletUrl", crossDeviceFlow != null ? crossDeviceFlow.walletUrl() : null)
+                .setAttribute(
+                        "requestUriExpiresInSeconds",
+                        requestUriExpiresInSeconds(authSession, sameDeviceFlow, crossDeviceFlow))
+                .setAttribute("requestUriExpiredUrl", endpointUrl("expired", authSession))
                 .setAttribute("qrCodeBase64", redirectFlowData.qrCodeBase64())
-                .setAttribute("crossDeviceStatusUrl", crossDeviceEnabled ? buildCrossDeviceStatusUrl() : null)
+                .setAttribute(
+                        "crossDeviceStatusUrl",
+                        crossDeviceEnabled ? endpointUrl("cross-device/status", authSession) : null)
                 .setAttribute("crossDevicePollIntervalMs", getConfig().getSsePollIntervalMs())
                 .createForm("login-oid4vp-idp.ftl");
+    }
+
+    /**
+     * Counts down to the first request URI on the page to expire, or to the end of the
+     * authentication session when that comes first.
+     */
+    private long requestUriExpiresInSeconds(AuthenticationSessionModel authSession, FlowEntry... flows) {
+        long authSessionExpiresAt = SessionExpiration.getAuthSessionExpiration(
+                session.getContext().getRealm(), authSession.getParentSession().getTimestamp());
+        long expiresAt = Stream.of(flows)
+                .filter(Objects::nonNull)
+                .mapToLong(FlowEntry::requestUriExpiresAtEpochSeconds)
+                .reduce(authSessionExpiresAt, Math::min);
+        return Math.max(0, expiresAt - Time.currentTime());
+    }
+
+    /**
+     * Records the states the wallet login page offered in this authentication session. States from
+     * earlier renders stay while their request context exists, so a wallet that fetched an older
+     * request object still completes the login and the browser still follows it. Beyond the
+     * configured maximum the oldest states end and their request contexts are removed, so
+     * repeated refreshes cannot pile up stored requests.
+     */
+    private void rememberWalletLoginStates(AuthenticationSessionModel authSession, List<String> newStates) {
+        List<String> states = new ArrayList<>(liveRequestContexts(authSession)
+                .map(Oid4vpRequestObjectStore.RequestContextEntry::state)
+                .toList());
+        states.addAll(newStates);
+        List<String> evicted = evictedStates(states, getConfig().getMaxLiveRequestsPerLogin());
+        evicted.forEach(state -> requestObjectStore.removeRequestContext(session, state));
+        authSession.setAuthNote(
+                walletLoginStatesNote(), String.join(",", states.subList(evicted.size(), states.size())));
+    }
+
+    static List<String> evictedStates(List<String> statesOldestFirst, int max) {
+        return statesOldestFirst.subList(0, Math.max(0, statesOldestFirst.size() - max));
+    }
+
+    boolean showedWalletLogin(AuthenticationSessionModel authSession) {
+        return authSession.getAuthNote(walletLoginStatesNote()) != null;
+    }
+
+    List<String> crossDeviceStates(AuthenticationSessionModel authSession) {
+        return liveRequestContexts(authSession)
+                .filter(context -> Oid4vpConstants.FLOW_CROSS_DEVICE.equals(context.flow()))
+                .map(Oid4vpRequestObjectStore.RequestContextEntry::state)
+                .toList();
+    }
+
+    private Stream<Oid4vpRequestObjectStore.RequestContextEntry> liveRequestContexts(
+            AuthenticationSessionModel authSession) {
+        String states = authSession.getAuthNote(walletLoginStatesNote());
+        if (StringUtil.isBlank(states)) {
+            return Stream.empty();
+        }
+        return Arrays.stream(states.split(","))
+                .map(state -> requestObjectStore.resolveByState(session, state))
+                .filter(Objects::nonNull);
+    }
+
+    private String walletLoginStatesNote() {
+        return WALLET_LOGIN_STATES_NOTE_PREFIX + getConfig().getAlias();
+    }
+
+    private String endpointUrl(String path, AuthenticationSessionModel authSession) {
+        return UriBuilder.fromUri(computeVerifierResponseUri())
+                .path(path)
+                .queryParam(Oid4vpConstants.PARAM_TAB_ID, authSession.getTabId())
+                .queryParam(Constants.CLIENT_ID, authSession.getClient().getClientId())
+                .build()
+                .toString();
     }
 
     private String computeVerifierResponseUri() {
@@ -485,11 +567,12 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 getConfig().getAlias());
     }
 
-    private String computeBaseClientId(AuthenticationRequest request) {
-        URI realmBase = request.getUriInfo()
+    private String computeBaseClientId() {
+        URI realmBase = session.getContext()
+                .getUri()
                 .getBaseUriBuilder()
                 .path("realms")
-                .path(request.getRealm().getName())
+                .path(session.getContext().getRealm().getName())
                 .build();
         String value = realmBase.toString();
         return value.endsWith("/") ? value : value + "/";
@@ -497,7 +580,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
     record LoginContext(String rootSessionId, String flowTabId, String effectiveClientId) {}
 
-    record FlowEntry(String state, String walletUrl) {}
+    record FlowEntry(String state, String walletUrl, long requestUriExpiresAtEpochSeconds) {}
 
     record RedirectFlowData(FlowEntry sameDeviceFlow, FlowEntry crossDeviceFlow, String qrCodeBase64) {
         static final RedirectFlowData EMPTY = new RedirectFlowData(null, null, null);

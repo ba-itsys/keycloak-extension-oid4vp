@@ -33,6 +33,28 @@ import org.keycloak.util.JsonSerialization;
 class Oid4vpRequestContextEntrySerializationTest {
 
     @Test
+    void requestUriDeadline_expiresRetrievalAtDeadline() {
+        Oid4vpRequestObjectStore.RequestContextEntry entry = new Oid4vpRequestObjectStore.RequestContextEntry(
+                "state",
+                "root",
+                "tab",
+                "client",
+                "https://example.com/callback",
+                "cross_device",
+                "nonce",
+                null,
+                null,
+                List.of(),
+                List.of(),
+                "{}",
+                300);
+
+        assertThat(entry.isRequestUriExpired(299)).isFalse();
+        assertThat(entry.isRequestUriExpired(300)).isTrue();
+        assertThat(entry.isRequestUriExpired(301)).isTrue();
+    }
+
+    @Test
     void requestContextEntry_survivesJsonRoundTrip() throws Exception {
         Oid4vpRequestObjectStore.RequestContextEntry entry = new Oid4vpRequestObjectStore.RequestContextEntry(
                 "state",
@@ -53,7 +75,8 @@ class Oid4vpRequestContextEntrySerializationTest {
                 List.of(
                         new CredentialSet(List.of(List.of("pid", "mdl"), List.of("pid")), true, "Login"),
                         new CredentialSet(List.of(List.of("diploma")), false, null)),
-                "{\"credentials\":[]}");
+                "{\"credentials\":[]}",
+                1_800_000_000L);
 
         String json = JsonSerialization.writeValueAsString(entry);
         Oid4vpRequestObjectStore.RequestContextEntry restored =

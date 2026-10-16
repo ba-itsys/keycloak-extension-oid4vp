@@ -158,15 +158,12 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
         flow.navigateToLoginPage();
         flow.clickOid4vpIdpButton();
         String walletUrl = flow.getCrossDeviceWalletUrl();
-        String state = flow.getState();
+        String sseStatusUrl = flow.getCrossDeviceStatusUrl();
 
         page.navigate("about:blank");
 
         Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
         assertThat(walletResponse.redirectUri()).isNull();
-        String sseStatusUrl = keycloakUrls.getBase() + "/realms/" + REALM
-                + "/broker/oid4vp/endpoint/cross-device/status?state="
-                + URLEncoder.encode(state, StandardCharsets.UTF_8);
         String cookieHeader = browserCookieHeader(sseStatusUrl);
         HttpResponse<String> sseResponse = HttpClient.newHttpClient()
                 .send(
@@ -198,16 +195,13 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
         flow.navigateToLoginPage();
         flow.clickOid4vpIdpButton();
         String walletUrl = flow.getCrossDeviceWalletUrl();
-        String state = flow.getState();
+        String sseStatusUrl = flow.getCrossDeviceStatusUrl();
 
         page.navigate("about:blank");
 
         Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
         assertThat(walletResponse.redirectUri()).isNull();
 
-        String sseStatusUrl = keycloakUrls.getBase() + "/realms/" + REALM
-                + "/broker/oid4vp/endpoint/cross-device/status?state="
-                + URLEncoder.encode(state, StandardCharsets.UTF_8);
         HttpResponse<String> sseResponse = HttpClient.newHttpClient()
                 .send(
                         HttpRequest.newBuilder()
@@ -235,7 +229,7 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
         Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
         assertThat(walletResponse.redirectUri()).isNull();
 
-        // A foreign party can observe the public state in the request_uri or the SSE URL, but not
+        // A foreign party can observe the public state in the request_uri, but not
         // the single-use response_code generated during direct_post, and without that code
         // /complete-auth rejects the request before it even checks the browser session.
         String completeAuthUrl = keycloakUrls.getBase() + "/realms/" + REALM
@@ -315,7 +309,7 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
         flow.navigateToLoginPage();
         flow.clickOid4vpIdpButton();
         String walletUrl = flow.getCrossDeviceWalletUrl();
-        String state = flow.getState();
+        String sseStatusUrl = flow.getCrossDeviceStatusUrl();
 
         page.navigate("about:blank");
 
@@ -329,9 +323,6 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
             wallet().client().clearNextError();
         }
 
-        String sseStatusUrl = keycloakUrls.getBase() + "/realms/" + REALM
-                + "/broker/oid4vp/endpoint/cross-device/status?state="
-                + URLEncoder.encode(state, StandardCharsets.UTF_8);
         HttpResponse<String> sseResponse = HttpClient.newHttpClient()
                 .send(
                         HttpRequest.newBuilder()

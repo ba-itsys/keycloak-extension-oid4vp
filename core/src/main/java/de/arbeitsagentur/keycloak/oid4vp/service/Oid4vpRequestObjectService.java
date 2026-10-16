@@ -29,6 +29,7 @@ import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import jakarta.ws.rs.core.Response;
 import java.util.Optional;
 import org.jboss.logging.Logger;
+import org.keycloak.common.util.Time;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.utils.StringUtil;
@@ -65,6 +66,12 @@ public class Oid4vpRequestObjectService {
         if (requestContext == null) {
             return responseFactory.jsonErrorResponse(
                     Response.Status.NOT_FOUND, "not_found", "State not found or expired");
+        }
+
+        // Only fetching the request object has this deadline. The stored context stays so that a
+        // wallet that already fetched it can still send its presentation.
+        if (requestContext.isRequestUriExpired(Time.currentTime())) {
+            return responseFactory.jsonErrorResponse(Response.Status.NOT_FOUND, "not_found", "Request URI expired");
         }
 
         AuthenticationSessionModel authSession =

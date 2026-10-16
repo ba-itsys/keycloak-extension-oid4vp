@@ -218,6 +218,30 @@ class Oid4vpIdentityProviderConfigTest {
     }
 
     @Test
+    void requestUriLifetimes_defaultToFiveMinutes() {
+        assertThat(config.getSameDeviceRequestUriLifetimeSeconds()).isEqualTo(300);
+        assertThat(config.getCrossDeviceRequestUriLifetimeSeconds()).isEqualTo(300);
+    }
+
+    @Test
+    void validate_rejectsRequestUriLifetimeOfZero() {
+        config.setCrossDeviceRequestUriLifetimeSeconds(0);
+
+        assertThatThrownBy(() -> config.validate(null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("request URI lifetimes");
+    }
+
+    @Test
+    void validate_rejectsAMaximumOfLiveRequestsBelowOnePagesRequests() {
+        config.setMaxLiveRequestsPerLogin(1);
+
+        assertThatThrownBy(() -> config.validate(null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("at least 2");
+    }
+
+    @Test
     void sseInvalidIntFallsBackToDefault() {
         config.getConfig().put("ssePollIntervalMs", "not-a-number");
         config.getConfig().put("sseTimeoutSeconds", "");

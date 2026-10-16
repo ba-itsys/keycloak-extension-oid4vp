@@ -96,6 +96,9 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final String CLOCK_SKEW_SECONDS = "clockSkewSeconds";
     public static final String KB_JWT_MAX_AGE_SECONDS = "kbJwtMaxAgeSeconds";
     public static final String REQUEST_OBJECT_LIFESPAN_SECONDS = "requestObjectLifespanSeconds";
+    public static final String SAME_DEVICE_REQUEST_URI_LIFETIME_SECONDS = "sameDeviceRequestUriLifetimeSeconds";
+    public static final String CROSS_DEVICE_REQUEST_URI_LIFETIME_SECONDS = "crossDeviceRequestUriLifetimeSeconds";
+    public static final String MAX_LIVE_REQUESTS_PER_LOGIN = "maxLiveRequestsPerLogin";
 
     public static final int DEFAULT_SSE_POLL_INTERVAL_MS = 2000;
     public static final int DEFAULT_SSE_TIMEOUT_SECONDS = 120;
@@ -104,6 +107,8 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final int DEFAULT_CLOCK_SKEW_SECONDS = 60;
     public static final int DEFAULT_KB_JWT_MAX_AGE_SECONDS = 300;
     public static final int DEFAULT_REQUEST_OBJECT_LIFESPAN_SECONDS = 10;
+    public static final int DEFAULT_REQUEST_URI_LIFETIME_SECONDS = 300;
+    public static final int DEFAULT_MAX_LIVE_REQUESTS_PER_LOGIN = 10;
 
     public Oid4vpIdentityProviderConfig() {
         super();
@@ -245,6 +250,16 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         // of failing every login afterwards.
         getSameDeviceMaxLoa();
         getCrossDeviceMaxLoa();
+
+        if (getSameDeviceRequestUriLifetimeSeconds() <= 0 || getCrossDeviceRequestUriLifetimeSeconds() <= 0) {
+            throw new IllegalArgumentException("The request URI lifetimes must be positive numbers of seconds.");
+        }
+
+        // One page render issues a request per flow, so a smaller cap would drop the requests of
+        // the page it is rendering.
+        if (getMaxLiveRequestsPerLogin() < 2) {
+            throw new IllegalArgumentException("The maximum of live wallet requests per login must be at least 2.");
+        }
 
         if (getResolvedClientIdScheme().isCertificateBound()
                 && StringUtil.isNotBlank(getX509CertificatePem())
@@ -446,6 +461,30 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public void setRequestObjectLifespanSeconds(int seconds) {
         getConfig().put(REQUEST_OBJECT_LIFESPAN_SECONDS, String.valueOf(seconds));
+    }
+
+    public int getSameDeviceRequestUriLifetimeSeconds() {
+        return getIntConfig(SAME_DEVICE_REQUEST_URI_LIFETIME_SECONDS, DEFAULT_REQUEST_URI_LIFETIME_SECONDS);
+    }
+
+    public void setSameDeviceRequestUriLifetimeSeconds(int seconds) {
+        getConfig().put(SAME_DEVICE_REQUEST_URI_LIFETIME_SECONDS, String.valueOf(seconds));
+    }
+
+    public int getCrossDeviceRequestUriLifetimeSeconds() {
+        return getIntConfig(CROSS_DEVICE_REQUEST_URI_LIFETIME_SECONDS, DEFAULT_REQUEST_URI_LIFETIME_SECONDS);
+    }
+
+    public void setCrossDeviceRequestUriLifetimeSeconds(int seconds) {
+        getConfig().put(CROSS_DEVICE_REQUEST_URI_LIFETIME_SECONDS, String.valueOf(seconds));
+    }
+
+    public int getMaxLiveRequestsPerLogin() {
+        return getIntConfig(MAX_LIVE_REQUESTS_PER_LOGIN, DEFAULT_MAX_LIVE_REQUESTS_PER_LOGIN);
+    }
+
+    public void setMaxLiveRequestsPerLogin(int max) {
+        getConfig().put(MAX_LIVE_REQUESTS_PER_LOGIN, String.valueOf(max));
     }
 
     /**
