@@ -15,10 +15,10 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import de.arbeitsagentur.keycloak.oid4vp.domain.WalletMetadata;
 import java.nio.charset.StandardCharsets;
+import org.keycloak.OID4VCConstants;
 import org.keycloak.jose.jwe.JWE;
 import org.keycloak.jose.jwe.JWEHeader;
 
@@ -38,7 +38,7 @@ public final class Oid4vpRequestObjectEncryptor {
                     walletMetadata.encryptionKey(),
                     walletMetadata.algorithm(),
                     walletMetadata.encryptionMethod(),
-                    Oid4vpConstants.REQUEST_OBJECT_TYP);
+                    OID4VCConstants.REQUEST_OBJECT_TYPE);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to encrypt request object: " + e.getMessage(), e);
         }

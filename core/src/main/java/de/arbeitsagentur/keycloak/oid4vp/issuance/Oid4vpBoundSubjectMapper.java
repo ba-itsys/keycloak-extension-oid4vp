@@ -18,7 +18,9 @@ package de.arbeitsagentur.keycloak.oid4vp.issuance;
 import de.arbeitsagentur.keycloak.oid4vp.binding.ReferenceCredentialBinding;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.jboss.logging.Logger;
+import org.keycloak.OID4VCConstants;
 import org.keycloak.models.ClientScopeModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -118,6 +120,13 @@ public class Oid4vpBoundSubjectMapper extends OID4VCMapper {
     @Override
     public void setClaim(VerifiableCredential verifiableCredential, UserSessionModel userSession) {
         // This extension issues SD-JWT. It does not use the W3C credential model of Keycloak.
+    }
+
+    // The subject comes from the entitlement the subject binding authenticator records, never from
+    // a user attribute, so the reserved sub claim is the issuer's own value.
+    @Override
+    protected Set<String> getAllowedReservedClaims() {
+        return Set.of(OID4VCConstants.CLAIM_NAME_SUB);
     }
 
     @Override

@@ -11,6 +11,8 @@ The extension is configured as a Keycloak identity provider. All settings are st
 
 Transient wallet logins require Keycloak to be started with the `transient-users` feature enabled. Then enable the IdP's built-in **Do not store users** option in Keycloak.
 
+Keycloak's experimental `oid4vc-vp` feature ships its own OID4VP identity provider and SD-JWT mappers under the same provider ids (`oid4vp`, `oid4vp-sd-jwt-user-attribute-idp-mapper`, `oid4vp-sd-jwt-user-session-attribute-idp-mapper`). The extension overrides them, so leave that feature disabled.
+
 Example realm import fragment:
 
 ```json

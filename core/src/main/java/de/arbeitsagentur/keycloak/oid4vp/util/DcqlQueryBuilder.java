@@ -40,6 +40,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Stream;
 import org.jboss.logging.Logger;
+import org.keycloak.OID4VCConstants;
 import org.keycloak.models.IdentityProviderMapperModel;
 import org.keycloak.utils.StringUtil;
 
@@ -255,7 +256,7 @@ public class DcqlQueryBuilder {
     private static String formatOfMapper(String mapperProviderId) {
         return switch (mapperProviderId) {
             case OID4VPSdJwtUserAttributeMapper.PROVIDER_ID, OID4VPSdJwtUserSessionAttributeMapper.PROVIDER_ID ->
-                FORMAT_SD_JWT_VC;
+                OID4VCConstants.FORMAT_SD_JWT_VC;
             case OID4VPMdocUserAttributeMapper.PROVIDER_ID, OID4VPMdocUserSessionAttributeMapper.PROVIDER_ID ->
                 FORMAT_MSO_MDOC;
             default -> null;

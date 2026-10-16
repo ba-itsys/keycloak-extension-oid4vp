@@ -15,7 +15,6 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
-import de.arbeitsagentur.keycloak.oid4vp.trust.X509CertificateChainValidator;
 import de.arbeitsagentur.keycloak.oid4vp.util.FailureDetails;
 import java.nio.charset.StandardCharsets;
 import java.security.PublicKey;
@@ -30,6 +29,7 @@ import org.keycloak.crypto.KeyType;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.crypto.SignatureVerifierContext;
+import org.keycloak.crypto.X509CertificateChainValidator;
 import org.keycloak.jose.jws.JWSInput;
 import org.keycloak.util.JsonSerialization;
 import org.keycloak.util.KeyWrapperUtil;
@@ -94,7 +94,7 @@ public final class X5cChainValidator {
         if (anchors.isEmpty()) {
             throw new IllegalStateException("x5c chain not anchored by any trusted certificate");
         }
-        X509CertificateChainValidator.validateCertificateChain(chain, anchors, List.of());
+        X509CertificateChainValidator.validate(x5c, null, anchors, List.of());
         return leaf.getPublicKey();
     }
 

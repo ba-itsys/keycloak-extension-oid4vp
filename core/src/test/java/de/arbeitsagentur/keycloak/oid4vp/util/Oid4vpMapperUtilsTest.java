@@ -27,6 +27,7 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.keycloak.OID4VCConstants;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.util.JsonSerialization;
 
@@ -98,7 +99,7 @@ class Oid4vpMapperUtilsTest {
 
         assertThat(presented.get("pid").claims()).containsEntry("family_name", "Mustermann");
         assertThat(presented.get("mdl").claims()).containsEntry("family_name", "Musterfrau");
-        assertThat(presented.get("pid").format()).isEqualTo(Oid4vpConstants.FORMAT_SD_JWT_VC);
+        assertThat(presented.get("pid").format()).isEqualTo(OID4VCConstants.FORMAT_SD_JWT_VC);
         assertThat(presented.firstOfFormat(Oid4vpConstants.FORMAT_MSO_MDOC).type())
                 .isEqualTo("org.iso.18013.5.1.mDL");
     }

@@ -18,7 +18,6 @@ package de.arbeitsagentur.keycloak.oid4vp;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.DecryptedResponse;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpMessages;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpCrossDeviceSseService;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService;
@@ -46,6 +45,8 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.jboss.logging.Logger;
 import org.keycloak.OAuth2Constants;
+import org.keycloak.OID4VCConstants;
+import org.keycloak.broker.oid4vp.EphemeralKey;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.broker.provider.IdentityBrokerException;
@@ -121,8 +122,8 @@ public class Oid4vpIdentityProviderEndpoint {
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     public Response handlePost(
             @FormParam(OAuth2Constants.STATE) String state,
-            @FormParam(VP_TOKEN) String vpToken,
-            @FormParam(RESPONSE) String encryptedResponse,
+            @FormParam(OID4VCConstants.VP_TOKEN) String vpToken,
+            @FormParam(OAuth2Constants.RESPONSE) String encryptedResponse,
             @FormParam(OAuth2Constants.ERROR) String error,
             @FormParam(OAuth2Constants.ERROR_DESCRIPTION) String errorDescription) {
 
@@ -173,7 +174,7 @@ public class Oid4vpIdentityProviderEndpoint {
             String state, String vpToken, String encryptedResponse, String error, String errorDescription) {}
 
     private record ResolvedRequest(
-            String state, Oid4vpRequestObjectStore.RequestContextEntry requestContext, Oid4vpJwk kidBasedKey) {}
+            String state, Oid4vpRequestObjectStore.RequestContextEntry requestContext, EphemeralKey kidBasedKey) {}
 
     private record ResolvedSubmission(
             String state,
@@ -204,7 +205,7 @@ public class Oid4vpIdentityProviderEndpoint {
                             attempt, requestContext.state(), kid);
                 }
                 String resolvedState = requestContext != null ? requestContext.state() : state;
-                Oid4vpJwk kidBasedKey = parseEncryptionKey(requestContext);
+                EphemeralKey kidBasedKey = requestContext != null ? requestContext.encryptionKey() : null;
                 return new ResolvedRequest(resolvedState, requestContext, kidBasedKey);
             }
 
@@ -277,18 +278,6 @@ public class Oid4vpIdentityProviderEndpoint {
         }
     }
 
-    private Oid4vpJwk parseEncryptionKey(Oid4vpRequestObjectStore.RequestContextEntry requestContext) {
-        if (requestContext == null || requestContext.encryptionKeyJson() == null) {
-            return null;
-        }
-        try {
-            return Oid4vpJwk.parse(requestContext.encryptionKeyJson());
-        } catch (Exception e) {
-            LOG.warnf("Failed to parse encryption key from stored request context: %s", e.getMessage());
-            return null;
-        }
-    }
-
     private void pauseRequestContextLookup() {
         try {
             // Sleeping is intentional: repeated reads without time passing do not help while the
@@ -301,17 +290,17 @@ public class Oid4vpIdentityProviderEndpoint {
 
     @GET
     @Path("/request-object/{state}")
-    @Produces(REQUEST_OBJECT_CONTENT_TYPE)
-    public Response getRequestObject(@PathParam(PARAM_STATE) String state) {
+    @Produces(OID4VCConstants.REQUEST_OBJECT_MEDIA_TYPE)
+    public Response getRequestObject(@PathParam(OAuth2Constants.STATE) String state) {
         return requestObjectService.generateRequestObject(state, null, null);
     }
 
     @POST
     @Path("/request-object/{state}")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
-    @Produces(REQUEST_OBJECT_CONTENT_TYPE)
+    @Produces(OID4VCConstants.REQUEST_OBJECT_MEDIA_TYPE)
     public Response postRequestObject(
-            @PathParam(PARAM_STATE) String state,
+            @PathParam(OAuth2Constants.STATE) String state,
             @FormParam(WALLET_NONCE) String walletNonce,
             @FormParam(WALLET_METADATA) String walletMetadata) {
         return requestObjectService.generateRequestObject(state, walletNonce, walletMetadata);
@@ -399,7 +388,8 @@ public class Oid4vpIdentityProviderEndpoint {
     @GET
     @Path("/complete-auth")
     public Response completeAuth(
-            @QueryParam(PARAM_STATE) String state, @QueryParam(PARAM_RESPONSE_CODE) String responseCode) {
+            @QueryParam(OAuth2Constants.STATE) String state,
+            @QueryParam(OID4VCConstants.RESPONSE_CODE) String responseCode) {
         if (StringUtil.isBlank(state) || StringUtil.isBlank(responseCode)) {
             return browserError(Oid4vpMessages.INVALID_LOGIN_RESPONSE);
         }
@@ -435,7 +425,8 @@ public class Oid4vpIdentityProviderEndpoint {
     @GET
     @Path("/failed")
     public Response handleFailureRedirect(
-            @QueryParam(PARAM_STATE) String state, @QueryParam(PARAM_RESPONSE_CODE) String responseCode) {
+            @QueryParam(OAuth2Constants.STATE) String state,
+            @QueryParam(OID4VCConstants.RESPONSE_CODE) String responseCode) {
         if (StringUtil.isBlank(state) || StringUtil.isBlank(responseCode)) {
             return browserError(Oid4vpMessages.INVALID_LOGIN_RESPONSE);
         }

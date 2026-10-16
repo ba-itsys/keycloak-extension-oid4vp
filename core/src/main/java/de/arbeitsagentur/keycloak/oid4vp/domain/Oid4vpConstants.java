@@ -17,6 +17,8 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
 
 import java.net.URI;
 import java.util.List;
+import org.keycloak.crypto.Algorithm;
+import org.keycloak.jose.jwe.JWEConstants;
 
 /**
  * Protocol constants of the OID4VP 1.0 identity provider extension. Parameter names, response
@@ -38,14 +40,7 @@ public final class Oid4vpConstants {
     public static final String PROVIDER_ID = "oid4vp";
 
     // Credential formats
-    public static final String FORMAT_SD_JWT_VC = "dc+sd-jwt";
     public static final String FORMAT_MSO_MDOC = "mso_mdoc";
-
-    // JOSE signature algorithms
-    public static final String JWS_ALG_ES256 = "ES256";
-    public static final String JWS_ALG_ES384 = "ES384";
-    public static final String JWS_ALG_ES512 = "ES512";
-    public static final String JWS_ALG_RS256 = "RS256";
 
     // COSE signature algorithms
     public static final int COSE_ALG_ES256 = -7;
@@ -53,17 +48,15 @@ public final class Oid4vpConstants {
     public static final int COSE_ALG_ES512 = -36;
 
     public static final List<String> SUPPORTED_SD_JWT_ALG_VALUES =
-            List.of(JWS_ALG_ES256, JWS_ALG_ES384, JWS_ALG_ES512, JWS_ALG_RS256);
+            List.of(Algorithm.ES256, Algorithm.ES384, Algorithm.ES512, Algorithm.RS256);
     public static final List<Integer> SUPPORTED_MDOC_ISSUERAUTH_ALG_VALUES =
             List.of(COSE_ALG_ES256, COSE_ALG_ES384, COSE_ALG_ES512);
     public static final List<Integer> SUPPORTED_MDOC_DEVICEAUTH_ALG_VALUES = SUPPORTED_MDOC_ISSUERAUTH_ALG_VALUES;
-    public static final List<String> SUPPORTED_VERIFIER_RESPONSE_ENCRYPTION_METHOD_VALUES =
-            List.of("A128GCM", "A256GCM");
-    public static final List<String> SUPPORTED_REQUEST_OBJECT_ENCRYPTION_ALGORITHMS = List.of("ECDH-ES");
-    public static final List<String> SUPPORTED_REQUEST_OBJECT_ENCRYPTION_METHODS = List.of("A128GCM", "A256GCM");
+    public static final List<String> SUPPORTED_REQUEST_OBJECT_ENCRYPTION_ALGORITHMS = List.of(JWEConstants.ECDH_ES);
+    public static final List<String> SUPPORTED_REQUEST_OBJECT_ENCRYPTION_METHODS =
+            List.of(JWEConstants.A128GCM, JWEConstants.A256GCM);
 
     // OID4VP protocol parameters
-    public static final String VP_TOKEN = "vp_token";
     public static final String REQUEST_URI = "request_uri";
     public static final String REQUEST_URI_METHOD = "request_uri_method";
     public static final String REQUEST_URI_METHOD_POST = "post";
@@ -73,7 +66,6 @@ public final class Oid4vpConstants {
     public static final String WALLET_NONCE = "wallet_nonce";
     public static final String WALLET_METADATA = "wallet_metadata";
     public static final String RESPONSE_URI = "response_uri";
-    public static final String RESPONSE = "response";
     public static final String DCQL_CREDENTIALS = "credentials";
     public static final String DCQL_CREDENTIAL_SETS = "credential_sets";
     public static final String DCQL_CLAIMS = "claims";
@@ -93,26 +85,12 @@ public final class Oid4vpConstants {
     public static final String DCQL_VCT_VALUES = "vct_values";
     public static final String DCQL_DOCTYPE_VALUE = "doctype_value";
 
-    // Response mode values
-    public static final String RESPONSE_MODE_DIRECT_POST = "direct_post";
-    public static final String RESPONSE_MODE_DIRECT_POST_JWT = "direct_post.jwt";
-
-    // Audience of a request object addressed to any wallet, per OID4VP 1.0 §5.8
-    // https://openid.net/specs/openid-connect-self-issued-v2-1_0-ID1.html#name-static-self-issued-openid-p
-    public static final String SELF_ISSUED_V2 = "https://self-issued.me/v2";
-
     // Flow types
     public static final String FLOW_SAME_DEVICE = "same_device";
     public static final String FLOW_CROSS_DEVICE = "cross_device";
 
     // Query/form parameter names
     public static final String PARAM_TAB_ID = "tab_id";
-    public static final String PARAM_STATE = "state";
-    public static final String PARAM_RESPONSE_CODE = "response_code";
-
-    // Request object media type
-    public static final String REQUEST_OBJECT_CONTENT_TYPE = "application/oauth-authz-req+jwt";
-    public static final String REQUEST_OBJECT_TYP = "oauth-authz-req+jwt";
 
     // Default wallet scheme
     public static final String DEFAULT_WALLET_SCHEME = "openid4vp://";

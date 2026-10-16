@@ -15,16 +15,17 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.util;
 
-import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.VP_TOKEN;
+import static org.keycloak.OID4VCConstants.VP_TOKEN;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.DecryptedResponse;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.jboss.logging.Logger;
 import org.keycloak.OAuth2Constants;
+import org.keycloak.broker.oid4vp.EphemeralKey;
+import org.keycloak.broker.oid4vp.ParsedResponse;
+import org.keycloak.broker.oid4vp.ResponseEncryption;
 import org.keycloak.common.util.Base64Url;
-import org.keycloak.jose.jwe.JWE;
 import org.keycloak.jose.jwe.JWEHeader;
 import org.keycloak.util.JsonSerialization;
 
@@ -43,12 +44,12 @@ public class Oid4vpResponseDecryptor {
     /**
      * Reads the JWE key id header without decrypting. Since the value only selects a candidate
      * decryption key, this stays tolerant and returns {@code null} for malformed input, while
-     * {@link #decrypt(String, Oid4vpJwk)} remains strict and rejects it.
+     * {@link #decrypt(String, EphemeralKey)} remains strict and rejects it.
      */
     public String extractKid(String encryptedResponse) {
         String kid;
         try {
-            kid = extractHeader(encryptedResponse).getKeyId();
+            kid = ResponseEncryption.parse(encryptedResponse).keyId();
         } catch (Exception e) {
             LOG.warnf("Failed to read the kid header of the wallet response JWE: %s", FailureDetails.causeChain(e));
             return null;
@@ -59,11 +60,11 @@ public class Oid4vpResponseDecryptor {
         return kid;
     }
 
-    public DecryptedResponse decrypt(String encryptedResponse, Oid4vpJwk decryptionKey) {
+    public DecryptedResponse decrypt(String encryptedResponse, EphemeralKey decryptionKey) {
         try {
-            JWE jwe = decryptJwe(encryptedResponse, decryptionKey);
-            JWEHeader header = (JWEHeader) jwe.getHeader();
-            String payload = new String(jwe.getContent(), StandardCharsets.UTF_8);
+            ParsedResponse parsed = ResponseEncryption.parse(encryptedResponse);
+            String payload = ResponseEncryption.decrypt(parsed, decryptionKey.privateKey());
+            JWEHeader header = parsed.header();
 
             @SuppressWarnings("unchecked")
             Map<String, Object> payloadMap = JsonSerialization.readValue(payload, Map.class);
@@ -93,34 +94,19 @@ public class Oid4vpResponseDecryptor {
             throw new IllegalStateException(
                     "Failed to decrypt response: " + FailureDetails.causeChain(e) + " ("
                             + describeHeader(encryptedResponse) + ", decryption key kid="
-                            + (decryptionKey != null ? decryptionKey.keyId() : null) + ")",
+                            + (decryptionKey != null ? decryptionKey.kid() : null) + ")",
                     e);
         }
     }
 
     private static String describeHeader(String compactJwe) {
         try {
-            JWEHeader header = extractHeader(compactJwe);
+            JWEHeader header = ResponseEncryption.parse(compactJwe).header();
             return FailureDetails.singleLine("alg=" + header.getAlgorithm() + ", enc=" + header.getEncryptionAlgorithm()
                     + ", kid=" + header.getKeyId());
         } catch (Exception e) {
             return "unreadable JWE header";
         }
-    }
-
-    static JWE decryptJwe(String compactJwe, Oid4vpJwk recipientKey) {
-        try {
-            JWE jwe = new JWE();
-            jwe.getKeyStorage().setDecryptionKey(recipientKey.toPrivateKey());
-            jwe.verifyAndDecodeJwe(compactJwe);
-            return jwe;
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to decrypt JWE", e);
-        }
-    }
-
-    static JWEHeader extractHeader(String compactJwe) {
-        return (JWEHeader) new JWE(compactJwe).getHeader();
     }
 
     static String decodeHeaderValue(String value) {

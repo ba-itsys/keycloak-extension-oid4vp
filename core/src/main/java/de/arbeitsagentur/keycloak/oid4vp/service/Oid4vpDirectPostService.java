@@ -16,7 +16,6 @@
 package de.arbeitsagentur.keycloak.oid4vp.service;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpMessages;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredentials;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
@@ -29,6 +28,8 @@ import java.security.MessageDigest;
 import java.util.HashMap;
 import java.util.Map;
 import org.jboss.logging.Logger;
+import org.keycloak.OAuth2Constants;
+import org.keycloak.OID4VCConstants;
 import org.keycloak.authentication.authenticators.broker.util.SerializedBrokeredIdentityContext;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
@@ -403,16 +404,16 @@ public class Oid4vpDirectPostService {
     private static String buildFailureUrl(String endpointBaseUrl, String state, String responseCode) {
         return endpointBaseUrl
                 + "/failed?"
-                + Oid4vpConstants.PARAM_STATE + "=" + URLEncoder.encode(state, StandardCharsets.UTF_8)
+                + OAuth2Constants.STATE + "=" + URLEncoder.encode(state, StandardCharsets.UTF_8)
                 + "&"
-                + Oid4vpConstants.PARAM_RESPONSE_CODE + "=" + URLEncoder.encode(responseCode, StandardCharsets.UTF_8);
+                + OID4VCConstants.RESPONSE_CODE + "=" + URLEncoder.encode(responseCode, StandardCharsets.UTF_8);
     }
 
     private static String buildCompleteAuthUrl(String endpointBaseUrl, String state, String responseCode) {
         return endpointBaseUrl
                 + "/complete-auth?"
-                + Oid4vpConstants.PARAM_STATE + "=" + URLEncoder.encode(state, StandardCharsets.UTF_8)
+                + OAuth2Constants.STATE + "=" + URLEncoder.encode(state, StandardCharsets.UTF_8)
                 + "&"
-                + Oid4vpConstants.PARAM_RESPONSE_CODE + "=" + URLEncoder.encode(responseCode, StandardCharsets.UTF_8);
+                + OID4VCConstants.RESPONSE_CODE + "=" + URLEncoder.encode(responseCode, StandardCharsets.UTF_8);
     }
 }

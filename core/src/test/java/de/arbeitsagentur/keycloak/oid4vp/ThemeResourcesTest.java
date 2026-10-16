@@ -57,13 +57,13 @@ class ThemeResourcesTest {
         assertThat(loginTemplate).contains("${msg(\"oid4vpLinkExpiresIn\")}");
         assertThat(messages.stringPropertyNames())
                 .contains(
-                        "oid4vpLoginTitle",
-                        "oid4vpOpenWalletApp",
                         "oid4vpScanWithPhone",
                         "oid4vpScanWithWalletApp",
-                        "oid4vpQrCodeAlt",
                         "oid4vpAlternativeMethods",
                         "oid4vpLinkExpiresIn");
+        // Keycloak's base login theme supplies these, and its theme messages take precedence.
+        assertThat(messages.stringPropertyNames())
+                .doesNotContain("oid4vpLoginTitle", "oid4vpOpenWalletApp", "oid4vpQrCodeAlt");
     }
 
     @Test

@@ -18,11 +18,14 @@ package de.arbeitsagentur.keycloak.oid4vp.util;
 import static org.assertj.core.api.Assertions.*;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential.RequestedClaim;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.keycloak.OID4VCConstants;
+import org.keycloak.broker.oid4vp.EphemeralKey;
+import org.keycloak.common.crypto.CryptoIntegration;
+import org.keycloak.util.JWKSUtils;
 import org.keycloak.util.JsonSerialization;
 
 /**
@@ -42,7 +45,6 @@ class Oid4vpRequestContextEntrySerializationTest {
                 "https://example.com/callback",
                 "cross_device",
                 "nonce",
-                null,
                 null,
                 List.of(),
                 List.of(),
@@ -65,10 +67,9 @@ class Oid4vpRequestContextEntrySerializationTest {
                 "same_device",
                 "nonce",
                 null,
-                null,
                 List.of(new RequestedCredential(
                         "pid",
-                        Oid4vpConstants.FORMAT_SD_JWT_VC,
+                        OID4VCConstants.FORMAT_SD_JWT_VC,
                         List.of("urn:eudi:pid:1", "urn:eudi:pid:de:1"),
                         List.of(new RequestedClaim(null, "sub"), new RequestedClaim(null, "given_name")),
                         List.of(List.of(0, 1), List.of(0)))),
@@ -90,5 +91,46 @@ class Oid4vpRequestContextEntrySerializationTest {
         assertThat(restored.requestedCredentials().get(0).types())
                 .containsExactly("urn:eudi:pid:1", "urn:eudi:pid:de:1");
         assertThat(restored.requestedCredentials().get(0).claimSets()).containsExactly(List.of(0, 1), List.of(0));
+    }
+
+    @Test
+    void responseEncryptionKey_survivesJsonRoundTrip() throws Exception {
+        CryptoIntegration.init(Oid4vpRequestContextEntrySerializationTest.class.getClassLoader());
+        EphemeralKey key = EphemeralKey.generate("state");
+        Oid4vpRequestObjectStore.RequestContextEntry entry = new Oid4vpRequestObjectStore.RequestContextEntry(
+                "state",
+                "root",
+                "tab",
+                "client",
+                "https://example.com/callback",
+                "same_device",
+                "nonce",
+                key,
+                List.of(),
+                List.of(),
+                "{}",
+                0);
+
+        EphemeralKey restored = JsonSerialization.readValue(
+                        JsonSerialization.writeValueAsString(entry), Oid4vpRequestObjectStore.RequestContextEntry.class)
+                .encryptionKey();
+
+        assertThat(restored.kid()).isEqualTo("state");
+        assertThat(restored.privateKey()).isEqualTo(key.privateKey());
+        assertThat(JWKSUtils.computeThumbprint(restored.publicJwk()))
+                .isEqualTo(JWKSUtils.computeThumbprint(key.publicJwk()));
+    }
+
+    @Test
+    void entryWithFieldsOfAnEarlierVersion_stillDeserializes() throws Exception {
+        String json = """
+                {"state":"state","nonce":"nonce","encryptionKeyJson":"{}","encryptionJwkThumbprint":"abc",\
+                "requestedCredentials":[],"credentialSets":[],"requestUriExpiresAtEpochSeconds":0}""";
+
+        Oid4vpRequestObjectStore.RequestContextEntry restored =
+                JsonSerialization.readValue(json, Oid4vpRequestObjectStore.RequestContextEntry.class);
+
+        assertThat(restored.state()).isEqualTo("state");
+        assertThat(restored.encryptionKey()).isNull();
     }
 }

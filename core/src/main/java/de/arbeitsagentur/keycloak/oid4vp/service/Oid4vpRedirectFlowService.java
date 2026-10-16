@@ -18,7 +18,6 @@ package de.arbeitsagentur.keycloak.oid4vp.service;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpClientIdScheme;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestObjectParams;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SignedRequestObject;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectSigner;
@@ -33,6 +32,9 @@ import java.util.Objects;
 import java.util.UUID;
 import org.jboss.logging.Logger;
 import org.keycloak.OAuth2Constants;
+import org.keycloak.OID4VCConstants;
+import org.keycloak.broker.oid4vp.EphemeralKey;
+import org.keycloak.broker.oid4vp.ResponseEncryption;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.models.KeycloakSession;
@@ -113,17 +115,17 @@ public class Oid4vpRedirectFlowService {
      */
     public SignedRequestObject buildSignedRequestObject(RequestObjectParams params) {
         KeyWrapper signingKey = resolveSigningKey(params.x509SigningKeyJwk());
-        Oid4vpJwk responseEncryptionKey = resolveResponseEncryptionKey(params);
+        EphemeralKey responseEncryptionKey = resolveResponseEncryptionKey(params);
         LinkedHashMap<String, Object> claims = buildRequestObjectClaims(params, responseEncryptionKey);
         String jwt = signRequestObject(signingKey, params.clientIdScheme(), params.x509CertPem(), claims);
         return new SignedRequestObject(jwt);
     }
 
-    private Oid4vpJwk resolveResponseEncryptionKey(RequestObjectParams params) {
+    private EphemeralKey resolveResponseEncryptionKey(RequestObjectParams params) {
         if (!params.responseMode().requiresEncryption()) {
             return null;
         }
-        if (StringUtil.isBlank(params.responseEncryptionKeyJson())) {
+        if (params.responseEncryptionKey() == null) {
             // Advertising a freshly generated key here would invite the wallet to encrypt to a key
             // this verifier never stored, leaving the callback undecryptable. The key is generated
             // and stored with the request context when the login page is rendered.
@@ -131,15 +133,11 @@ public class Oid4vpRedirectFlowService {
                     "No stored response encryption key for this request context; refusing to advertise one the"
                             + " callback could not decrypt");
         }
-        try {
-            return Oid4vpJwk.parse(params.responseEncryptionKeyJson());
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to parse request handle encryption key", e);
-        }
+        return params.responseEncryptionKey();
     }
 
     private LinkedHashMap<String, Object> buildRequestObjectClaims(
-            RequestObjectParams params, Oid4vpJwk responseEncryptionKey) {
+            RequestObjectParams params, EphemeralKey responseEncryptionKey) {
         Instant now = Instant.now();
         long issuedAt = now.getEpochSecond();
         long expiresAt = now.plusSeconds(requestObjectLifespanSeconds).getEpochSecond();
@@ -148,10 +146,10 @@ public class Oid4vpRedirectFlowService {
         claims.put("jti", UUID.randomUUID().toString());
         claims.put("iat", issuedAt);
         claims.put("exp", expiresAt);
-        claims.put("iss", params.clientId());
-        claims.put("aud", SELF_ISSUED_V2);
+        claims.put(OID4VCConstants.CLAIM_NAME_ISSUER, params.clientId());
+        claims.put("aud", OID4VCConstants.SELF_ISSUED_V2);
         claims.put(OAuth2Constants.CLIENT_ID, params.clientId());
-        claims.put(OAuth2Constants.RESPONSE_TYPE, VP_TOKEN);
+        claims.put(OAuth2Constants.RESPONSE_TYPE, OID4VCConstants.VP_TOKEN);
         claims.put(OIDCLoginProtocol.RESPONSE_MODE_PARAM, params.responseMode().parameterValue());
         claims.put(RESPONSE_URI, params.responseUri());
         claims.put(OIDCLoginProtocol.NONCE_PARAM, params.nonce());
@@ -212,29 +210,13 @@ public class Oid4vpRedirectFlowService {
         return key;
     }
 
-    /**
-     * Generates the ephemeral response encryption key, using the flow state as its kid so that an
-     * encrypted {@code direct_post.jwt} callback resolves its request context from the cleartext JWE
-     * header alone, without a separate kid index.
-     */
-    public Oid4vpJwk createResponseEncryptionKey(String kid) {
-        try {
-            Oid4vpJwk key = Oid4vpJwk.generate("P-256", "ECDH-ES", "enc");
-            key.setKeyId(kid);
-            LOG.tracef("Generated ephemeral encryption key: kid=%s", key.keyId());
-            return key;
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to generate response encryption key", e);
-        }
-    }
-
-    private Map<String, Object> buildClientMetadata(Oid4vpJwk responseEncryptionKey) {
+    private Map<String, Object> buildClientMetadata(EphemeralKey responseEncryptionKey) {
         var vpFormats = new LinkedHashMap<String, Object>();
         vpFormats.put(
-                FORMAT_SD_JWT_VC,
+                OID4VCConstants.FORMAT_SD_JWT_VC,
                 Map.of(
-                        "sd-jwt_alg_values", SUPPORTED_SD_JWT_ALG_VALUES,
-                        "kb-jwt_alg_values", SUPPORTED_SD_JWT_ALG_VALUES));
+                        OID4VCConstants.SD_JWT_ALG_VALUES, SUPPORTED_SD_JWT_ALG_VALUES,
+                        OID4VCConstants.KB_JWT_ALG_VALUES, SUPPORTED_SD_JWT_ALG_VALUES));
         vpFormats.put(
                 FORMAT_MSO_MDOC,
                 Map.of(
@@ -242,23 +224,16 @@ public class Oid4vpRedirectFlowService {
                         "deviceauth_alg_values", SUPPORTED_MDOC_DEVICEAUTH_ALG_VALUES));
 
         var meta = new LinkedHashMap<String, Object>();
-        meta.put("vp_formats_supported", vpFormats);
+        meta.put(OID4VCConstants.VP_FORMATS_SUPPORTED, vpFormats);
         if (responseEncryptionKey != null) {
-            Map<String, Object> jwk =
-                    parseJsonObject(responseEncryptionKey.toPublicJwk().toJson());
-            meta.put("jwks", Map.of("keys", List.of(jwk)));
-            meta.put("encrypted_response_enc_values_supported", SUPPORTED_VERIFIER_RESPONSE_ENCRYPTION_METHOD_VALUES);
+            meta.put(
+                    OID4VCConstants.JWKS,
+                    Map.of(OID4VCConstants.JWKS_KEYS, List.of(responseEncryptionKey.publicJwk())));
+            meta.put(
+                    OID4VCConstants.ENCRYPTED_RESPONSE_ENC_VALUES_SUPPORTED,
+                    ResponseEncryption.CONTENT_ENCRYPTION_ALGS);
         }
         return meta;
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> parseJsonObject(String json) {
-        try {
-            return JsonSerialization.readValue(json, Map.class);
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to parse generated JWK JSON", e);
-        }
     }
 
     private Object parseJsonClaim(String json) {

@@ -45,6 +45,7 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.keycloak.broker.oid4vp.EphemeralKey;
 import org.keycloak.common.crypto.CryptoIntegration;
 
 class Oid4vpRedirectFlowServiceRequestObjectTest {
@@ -88,9 +89,8 @@ class Oid4vpRedirectFlowServiceRequestObjectTest {
 
     @Test
     void directPostJwt_advertisesTheStoredEncryptionKey() throws Exception {
-        String storedKeyJson = service.createResponseEncryptionKey("test-state").toJson();
-        SignedRequestObject result =
-                buildRequestObject(DEFAULT_DCQL, Oid4vpResponseMode.DIRECT_POST_JWT, storedKeyJson);
+        EphemeralKey storedKey = EphemeralKey.generate("test-state");
+        SignedRequestObject result = buildRequestObject(DEFAULT_DCQL, Oid4vpResponseMode.DIRECT_POST_JWT, storedKey);
 
         Map<String, Object> claims = parseClaims(result.jwt());
         @SuppressWarnings("unchecked")
@@ -100,9 +100,9 @@ class Oid4vpRedirectFlowServiceRequestObjectTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> advertised = ((List<Map<String, Object>>) jwks.get("keys")).get(0);
 
-        ECKey storedKey = ECKey.parse(storedKeyJson);
-        assertThat(advertised.get("x")).isEqualTo(storedKey.getX().toString());
-        assertThat(advertised.get("y")).isEqualTo(storedKey.getY().toString());
+        assertThat(advertised.get("kid")).isEqualTo(storedKey.kid());
+        assertThat(advertised.get("x")).isEqualTo(storedKey.publicJwk().getOtherClaim("x", String.class));
+        assertThat(advertised.get("y")).isEqualTo(storedKey.publicJwk().getOtherClaim("y", String.class));
         assertThat(advertised.get("crv")).isEqualTo(Curve.P_256.getName());
         assertThat(advertised).as("the private part must never be advertised").doesNotContainKey("d");
     }
@@ -260,14 +260,13 @@ class Oid4vpRedirectFlowServiceRequestObjectTest {
     }
 
     private SignedRequestObject buildRequestObject(String dcqlQuery, Oid4vpResponseMode responseMode) {
-        String storedEncryptionKeyJson = responseMode.requiresEncryption()
-                ? service.createResponseEncryptionKey("test-state").toJson()
-                : null;
-        return buildRequestObject(dcqlQuery, responseMode, storedEncryptionKeyJson);
+        EphemeralKey storedEncryptionKey =
+                responseMode.requiresEncryption() ? EphemeralKey.generate("test-state") : null;
+        return buildRequestObject(dcqlQuery, responseMode, storedEncryptionKey);
     }
 
     private SignedRequestObject buildRequestObject(
-            String dcqlQuery, Oid4vpResponseMode responseMode, String storedEncryptionKeyJson) {
+            String dcqlQuery, Oid4vpResponseMode responseMode, EphemeralKey storedEncryptionKey) {
         return service.buildSignedRequestObject(new RequestObjectParams(
                 dcqlQuery,
                 null,
@@ -278,7 +277,7 @@ class Oid4vpRedirectFlowServiceRequestObjectTest {
                 "test-nonce",
                 null,
                 signingKeyJwk,
-                storedEncryptionKeyJson,
+                storedEncryptionKey,
                 null,
                 responseMode));
     }

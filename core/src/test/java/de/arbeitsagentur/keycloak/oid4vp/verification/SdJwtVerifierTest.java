@@ -30,13 +30,14 @@ import com.nimbusds.jose.util.Base64URL;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SdJwtVerificationResult;
+import de.arbeitsagentur.keycloak.oid4vp.trust.IssuerTrustAnchors;
 import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
 import de.arbeitsagentur.keycloak.oid4vp.trust.TestCertificates;
 import de.arbeitsagentur.keycloak.oid4vp.trust.TestTrust;
 import de.arbeitsagentur.keycloak.oid4vp.trust.TrustedIssuerCertificate;
-import de.arbeitsagentur.keycloak.oid4vp.trust.X509TrustMaterial;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
 import java.security.MessageDigest;
 import java.security.cert.X509Certificate;
 import java.security.interfaces.ECPublicKey;
@@ -423,6 +424,29 @@ class SdJwtVerifierTest {
     }
 
     @Test
+    void verify_x5cChainAnchoredAtIssuingCa_succeeds() throws Exception {
+        // ETSI trust lists commonly list the issuing CA rather than its root, so that CA alone anchors the chain.
+        KeyPair rootKeys = TestCertificates.generateKeyPair();
+        KeyPair issuingCaKeys = TestCertificates.generateKeyPair();
+        KeyPair issuerKeys = TestCertificates.generateKeyPair();
+        X509Certificate issuingCa =
+                TestCertificates.issue(issuingCaKeys, rootKeys, "CN=Issuing CA", "CN=Root CA", true);
+        X509Certificate issuerCert =
+                TestCertificates.issue(issuerKeys, issuingCaKeys, "CN=Test Issuer", "CN=Issuing CA", false);
+        ECKey issuerKey = new ECKey.Builder(Curve.P_256, (ECPublicKey) issuerKeys.getPublic())
+                .privateKey(issuerKeys.getPrivate())
+                .build();
+
+        for (List<X509Certificate> x5c : List.of(List.of(issuerCert), List.of(issuerCert, issuingCa))) {
+            String sdJwt = buildSignedJwtWithKey(Map.of("iss", ISSUER, "vct", "PID"), issuerKey, x5c) + "~";
+
+            assertThat(verifier.verify(sdJwt, null, null, anchorsOnly(issuingCa))
+                            .issuer())
+                    .isEqualTo(ISSUER);
+        }
+    }
+
+    @Test
     void verify_x5cChainWithUnrelatedSan_succeeds() throws Exception {
         ECKey caKey = new ECKeyGenerator(Curve.P_256).generate();
         X509Certificate caCert = generateSelfSignedCaCert(caKey, "CN=Test CA");
@@ -544,7 +568,7 @@ class SdJwtVerifierTest {
 
     private static ResolvedTrust anchorsOnly(X509Certificate caCert) {
         return new ResolvedTrust(
-                List.of(new X509TrustMaterial(Set.of(caCert), List.of())),
+                List.of(new IssuerTrustAnchors(Set.of(caCert), List.of())),
                 List.of(),
                 List.of(),
                 List.of(),
@@ -583,7 +607,7 @@ class SdJwtVerifierTest {
                         List.of(),
                         Instant.now().plusSeconds(3600))));
         ResolvedTrust anchorsOnly = new ResolvedTrust(
-                List.of(new X509TrustMaterial(
+                List.of(new IssuerTrustAnchors(
                         Set.of(TestCertificates.issue(
                                 TestCertificates.generateKeyPair(),
                                 TestCertificates.generateKeyPair(),

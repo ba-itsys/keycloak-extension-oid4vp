@@ -26,6 +26,7 @@ import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import java.util.ArrayList;
 import java.util.List;
 import org.jboss.logging.Logger;
+import org.keycloak.broker.oid4vp.mappers.ClaimPath;
 import org.keycloak.broker.provider.AbstractIdentityProviderMapper;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.models.IdentityProviderMapperModel;

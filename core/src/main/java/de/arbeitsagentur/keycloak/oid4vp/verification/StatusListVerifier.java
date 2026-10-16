@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
 import org.jboss.logging.Logger;
+import org.keycloak.OID4VCConstants;
 import org.keycloak.broker.provider.util.SimpleHttp;
 import org.keycloak.jose.jws.JWSInput;
 import org.keycloak.models.KeycloakSession;
@@ -125,7 +126,7 @@ public class StatusListVerifier {
     StatusReference extractStatusReference(Map<String, Object> claims) {
         if (claims == null) return null;
 
-        Object statusObj = claims.get("status");
+        Object statusObj = claims.get(OID4VCConstants.CLAIM_NAME_STATUS);
         if (statusObj == null) {
             statusObj = findNestedStatusClaim(claims);
         }
@@ -224,7 +225,7 @@ public class StatusListVerifier {
         if (trustedCerts.isEmpty()) {
             LOG.debugf(
                     "Status list JWT signature not verified: no trusted keys configured (issuer=%s)",
-                    stringClaim(claims, "iss"));
+                    stringClaim(claims, OID4VCConstants.CLAIM_NAME_ISSUER));
             return;
         }
 
@@ -232,7 +233,7 @@ public class StatusListVerifier {
             X5cChainValidator.verifyJwtSignature(compactJwt, trustedCerts);
         } catch (Exception e) {
             throw new IllegalStateException(
-                    "Status list JWT from " + uri + " (iss=" + stringClaim(claims, "iss")
+                    "Status list JWT from " + uri + " (iss=" + stringClaim(claims, OID4VCConstants.CLAIM_NAME_ISSUER)
                             + ") failed signature verification: " + FailureDetails.causeChain(e),
                     e);
         }

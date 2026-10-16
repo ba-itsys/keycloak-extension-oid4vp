@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.jboss.logging.Logger;
+import org.keycloak.OID4VCConstants;
 import org.keycloak.broker.provider.AbstractIdentityProviderFactory;
 import org.keycloak.common.Profile;
 import org.keycloak.common.util.Base64Url;
@@ -85,9 +86,9 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .helpText("Response mode for wallet callbacks. direct_post.jwt encrypts the wallet response "
                         + "and is what wallets following the high assurance profile expect.")
                 .type(ProviderConfigProperty.LIST_TYPE)
-                .defaultValue(Oid4vpConstants.RESPONSE_MODE_DIRECT_POST_JWT)
+                .defaultValue(OID4VCConstants.RESPONSE_MODE_DIRECT_POST_JWT)
                 .options(List.of(
-                        Oid4vpConstants.RESPONSE_MODE_DIRECT_POST, Oid4vpConstants.RESPONSE_MODE_DIRECT_POST_JWT))
+                        OID4VCConstants.RESPONSE_MODE_DIRECT_POST, OID4VCConstants.RESPONSE_MODE_DIRECT_POST_JWT))
                 .add()
                 .property()
                 .name(Oid4vpIdentityProviderConfig.REJECTION_RESPONSE)

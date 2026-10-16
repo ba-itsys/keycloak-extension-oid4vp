@@ -15,8 +15,8 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.mapper;
 
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import java.util.List;
+import org.keycloak.OID4VCConstants;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.models.IdentityProviderMapperModel;
 import org.keycloak.models.KeycloakSession;
@@ -84,7 +84,7 @@ public class OID4VPSdJwtUserSessionAttributeMapper extends AbstractOID4VPClaimMa
 
     @Override
     public String credentialFormat() {
-        return Oid4vpConstants.FORMAT_SD_JWT_VC;
+        return OID4VCConstants.FORMAT_SD_JWT_VC;
     }
 
     /**

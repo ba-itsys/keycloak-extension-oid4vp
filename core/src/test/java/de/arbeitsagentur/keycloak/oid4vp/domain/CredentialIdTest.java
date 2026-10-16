@@ -15,8 +15,8 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
-import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.FORMAT_SD_JWT_VC;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.keycloak.OID4VCConstants.FORMAT_SD_JWT_VC;
 
 import org.junit.jupiter.api.Test;
 

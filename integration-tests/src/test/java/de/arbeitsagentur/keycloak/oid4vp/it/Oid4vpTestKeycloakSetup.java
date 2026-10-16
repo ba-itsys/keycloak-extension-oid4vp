@@ -31,6 +31,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.keycloak.OID4VCConstants;
 import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.models.IdentityProviderMapperSyncMode;
 import org.keycloak.representations.idm.FederatedIdentityRepresentation;
@@ -46,7 +47,7 @@ public final class Oid4vpTestKeycloakSetup {
     public static final String SD_JWT_PID_VCT = "urn:eudi:pid:1";
     public static final String MDOC_PID_DOCTYPE = "eu.europa.ec.eudi.pid.1";
     public static final String SD_JWT_PID_CREDENTIAL_ID =
-            CredentialId.defaultFor(Oid4vpConstants.FORMAT_SD_JWT_VC, SD_JWT_PID_VCT);
+            CredentialId.defaultFor(OID4VCConstants.FORMAT_SD_JWT_VC, SD_JWT_PID_VCT);
     public static final String MDOC_PID_CREDENTIAL_ID =
             CredentialId.defaultFor(Oid4vpConstants.FORMAT_MSO_MDOC, MDOC_PID_DOCTYPE);
 
@@ -155,7 +156,7 @@ public final class Oid4vpTestKeycloakSetup {
         String providerId = mapper.getIdentityProviderMapper();
         boolean mdoc = OID4VPMdocUserSessionAttributeMapper.PROVIDER_ID.equals(providerId)
                 || OID4VPMdocUserAttributeMapper.PROVIDER_ID.equals(providerId);
-        return mdoc ? Oid4vpConstants.FORMAT_MSO_MDOC : Oid4vpConstants.FORMAT_SD_JWT_VC;
+        return mdoc ? Oid4vpConstants.FORMAT_MSO_MDOC : OID4VCConstants.FORMAT_SD_JWT_VC;
     }
 
     // Maps the flow the presentation finished in to the mapper's default STORK QAA level, stored as

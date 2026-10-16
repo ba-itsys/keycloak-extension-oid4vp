@@ -25,7 +25,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import org.keycloak.broker.provider.TrustMaterialRequest;
 import org.keycloak.utils.StringUtil;
 
 /**
@@ -139,8 +138,7 @@ public class CredentialTrustPlan {
     }
 
     private ResolvedTrust resolve(String credentialType) {
-        TrustMaterialRequest request = TrustMaterialRequest.builder().build();
-        List<X509TrustMaterial> issuanceTrust = new ArrayList<>();
+        List<IssuerTrustAnchors> issuerTrustAnchors = new ArrayList<>();
         List<TrustedIssuerKey> trustedIssuerKeys = new ArrayList<>();
         List<TrustedAuthority> trustedAuthorities = new ArrayList<>();
         Set<TrustedIssuerCertificate> directIssuerCertificates = new LinkedHashSet<>();
@@ -150,7 +148,7 @@ public class CredentialTrustPlan {
             if (!serves(provider, credentialType)) {
                 continue;
             }
-            issuanceTrust.addAll(provider.resolveX509Trust(request).toList());
+            issuerTrustAnchors.addAll(provider.issuerTrustAnchors());
             trustedIssuerKeys.addAll(provider.trustedIssuerKeys());
             directIssuerCertificates.addAll(provider.trustedIssuerCertificates());
             revocationCertificates.addAll(provider.revocationCertificates());
@@ -158,7 +156,7 @@ public class CredentialTrustPlan {
         }
 
         return new ResolvedTrust(
-                issuanceTrust,
+                issuerTrustAnchors,
                 List.copyOf(directIssuerCertificates),
                 trustedIssuerKeys,
                 List.copyOf(revocationCertificates),
