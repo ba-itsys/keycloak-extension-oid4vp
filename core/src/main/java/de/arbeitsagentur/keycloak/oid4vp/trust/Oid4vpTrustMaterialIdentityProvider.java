@@ -16,10 +16,15 @@
 package de.arbeitsagentur.keycloak.oid4vp.trust;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthority;
+import java.security.cert.CertificateExpiredException;
+import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.X509Certificate;
 import java.util.List;
 import org.keycloak.broker.provider.TrustMaterialIdentityProvider;
 import org.keycloak.broker.provider.TrustMaterialRequest;
+import org.keycloak.common.VerificationException;
+import org.keycloak.crypto.X509CertificateChainValidator;
+import org.keycloak.jose.jwk.JWK;
 import org.keycloak.models.IdentityProviderModel;
 
 /**
@@ -98,5 +103,45 @@ public interface Oid4vpTrustMaterialIdentityProvider<C extends IdentityProviderM
         return directIssuerCertificates().stream()
                 .map(TrustedIssuerCertificate::ofAnyIssuer)
                 .toList();
+    }
+
+    /**
+     * Validates a certificate chain with the rules the extension applies to credentials: a directly
+     * trusted leaf certificate is accepted within its validity period, any other chain needs a PKIX
+     * path to one of the trust anchors, which may be intermediate CAs. Returns null without X.509
+     * trust, like the upstream default.
+     */
+    @Override
+    default JWK validateX509Chain(TrustMaterialRequest request, List<String> x5c, String algorithm)
+            throws VerificationException {
+        List<X509Certificate> direct = directIssuerCertificates();
+        List<IssuerTrustAnchors> anchors = issuerTrustAnchors();
+        if (direct.isEmpty() && anchors.isEmpty()) {
+            return null;
+        }
+        List<X509Certificate> chain = X509CertificateChainValidator.decodeCertificateChain(x5c);
+        X509Certificate leaf = chain.get(0);
+        if (direct.contains(leaf)) {
+            try {
+                leaf.checkValidity();
+            } catch (CertificateExpiredException | CertificateNotYetValidException e) {
+                throw new VerificationException("The directly trusted certificate is not currently valid", e);
+            }
+            return X509CertificateChainValidator.toJwk(leaf, algorithm, chain);
+        }
+        VerificationException firstFailure = null;
+        for (IssuerTrustAnchors material : anchors) {
+            try {
+                return X509CertificateChainValidator.validate(
+                        x5c, algorithm, material.trustAnchors(), material.requiredExtendedKeyUsages());
+            } catch (VerificationException e) {
+                if (firstFailure == null) {
+                    firstFailure = e;
+                }
+            }
+        }
+        throw firstFailure != null
+                ? firstFailure
+                : new VerificationException("The x5c chain leads to none of the trusted certificates");
     }
 }
