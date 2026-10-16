@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.14.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.13.4...v0.14.0) (2026-10-16)
+
+
+### Features
+
+* expire wallet request URIs per flow and offer fresh links from the login page ([fb0b801](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/fb0b801267b96fc652ec68f05f8ac60e44c1c1aa))
+
+
+### Dependencies
+
+* **deps-dev:** Bump com.microsoft.playwright:playwright ([6f83650](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/6f83650715b799529032be7ba05bf6049c9487fb))
+* **deps:** Bump org.apache.maven.plugins:maven-compiler-plugin ([e9099d8](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/e9099d8ca6fb593ceb08d3ce35f357c65ad8b3ad))
+
 ## [0.13.4](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.13.3...v0.13.4) (2026-10-06)
 
 
