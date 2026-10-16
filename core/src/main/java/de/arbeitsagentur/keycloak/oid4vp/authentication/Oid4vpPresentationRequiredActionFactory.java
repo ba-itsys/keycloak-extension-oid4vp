@@ -1,0 +1,62 @@
+/*
+ * Copyright 2026 Bundesagentur für Arbeit
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package de.arbeitsagentur.keycloak.oid4vp.authentication;
+
+import java.util.List;
+import java.util.stream.Stream;
+import org.keycloak.Config;
+import org.keycloak.authentication.RequiredActionFactory;
+import org.keycloak.authentication.RequiredActionProvider;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.KeycloakSessionFactory;
+import org.keycloak.provider.ProviderConfigProperty;
+
+public class Oid4vpPresentationRequiredActionFactory implements RequiredActionFactory {
+
+    private static final Oid4vpPresentationRequiredAction INSTANCE = new Oid4vpPresentationRequiredAction();
+
+    @Override
+    public RequiredActionProvider create(KeycloakSession session) {
+        return INSTANCE;
+    }
+
+    @Override
+    public String getDisplayText() {
+        return "OID4VP presentation";
+    }
+
+    @Override
+    public List<ProviderConfigProperty> getConfigMetadata() {
+        return Stream.concat(
+                        Oid4vpPresentationAuthenticatorFactory.CONFIG_PROPERTIES.stream(),
+                        Oid4vpSubjectCredentialOffer.CONFIG_PROPERTIES.stream())
+                .toList();
+    }
+
+    @Override
+    public void init(Config.Scope config) {}
+
+    @Override
+    public void postInit(KeycloakSessionFactory factory) {}
+
+    @Override
+    public void close() {}
+
+    @Override
+    public String getId() {
+        return Oid4vpPresentationRequiredAction.PROVIDER_ID;
+    }
+}

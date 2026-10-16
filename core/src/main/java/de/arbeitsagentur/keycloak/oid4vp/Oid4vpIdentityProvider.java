@@ -18,6 +18,8 @@ package de.arbeitsagentur.keycloak.oid4vp;
 import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import de.arbeitsagentur.keycloak.oid4vp.authentication.Oid4vpAuthenticationCallback;
+import de.arbeitsagentur.keycloak.oid4vp.authentication.Oid4vpPresentationSession;
 import de.arbeitsagentur.keycloak.oid4vp.binding.ReferenceCredentialBinding;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
@@ -238,7 +240,8 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
     @Override
     public Object callback(RealmModel realm, AuthenticationCallback callback, EventBuilder event) {
-        return new Oid4vpIdentityProviderEndpoint(session, realm, this, callback, event, requestObjectStore);
+        AuthenticationCallback routed = new Oid4vpAuthenticationCallback(session, this, getConfig(), callback);
+        return new Oid4vpIdentityProviderEndpoint(session, realm, this, routed, event, requestObjectStore);
     }
 
     public PreparedDcqlQuery prepareDcqlQueryFromConfig() {
@@ -470,6 +473,10 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         return session.getProvider(LoginFormsProvider.class)
                 .setAuthenticationSession(authSession)
                 .setAttribute("currentBrokerAlias", getConfig().getAlias())
+                .setAttribute(
+                        "alternativeProvidersOffered",
+                        !Oid4vpPresentationSession.isPending(
+                                authSession, getConfig().getAlias()))
                 .setAttribute("sameDeviceEnabled", sameDeviceEnabled)
                 .setAttribute("crossDeviceEnabled", crossDeviceEnabled)
                 .setAttribute("sameDeviceWalletUrl", sameDeviceFlow != null ? sameDeviceFlow.walletUrl() : null)

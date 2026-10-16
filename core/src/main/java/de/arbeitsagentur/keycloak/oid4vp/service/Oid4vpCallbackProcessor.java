@@ -136,9 +136,15 @@ public class Oid4vpCallbackProcessor {
         String subject;
         String identityKey;
         boolean generatedSubject = false;
+        boolean presentationOnly = false;
         if (configProvider.isTransientUsersEnabled()) {
             subject = buildTransientSubject(requestContext);
             identityKey = primary.generateIdentityKey(subject);
+        } else if (configProvider.getPrincipalAttributes().isEmpty()) {
+            // A random subject keeps presentations of the same person unlinkable.
+            subject = generateSubject();
+            identityKey = primary.generateCaseInsensitiveIdentityKey(subject);
+            presentationOnly = true;
         } else {
             SubjectSource subjectSource = subjectSource(vpResult);
             if (subjectSource == null) {
@@ -162,6 +168,9 @@ public class Oid4vpCallbackProcessor {
         context.getContextData().put(Oid4vpMapperUtils.CONTEXT_SUBJECT_KEY, subject);
         if (generatedSubject) {
             context.getContextData().put(Oid4vpMapperUtils.CONTEXT_GENERATED_SUBJECT_KEY, subject);
+        }
+        if (presentationOnly) {
+            context.getContextData().put(Oid4vpMapperUtils.CONTEXT_PRESENTATION_ONLY_KEY, Boolean.TRUE.toString());
         }
         Oid4vpPresentationFlow flow = Oid4vpPresentationFlow.of(requestContext.flow());
         if (flow != null) {

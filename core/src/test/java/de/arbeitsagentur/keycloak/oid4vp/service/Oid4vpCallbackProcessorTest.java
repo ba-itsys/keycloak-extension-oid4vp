@@ -542,6 +542,24 @@ class Oid4vpCallbackProcessorTest {
     }
 
     @Test
+    void process_withoutPrincipalAttributes_marksThePresentationForFlowStepsOnly() {
+        config.setPrincipalAttributes(null);
+
+        BrokeredIdentityContext first = processor(resultOf(sdJwtCredential(Map.of("sub", "stable-subject"))))
+                .process(requestContext("state", "nonce"), "vp-token", null);
+        BrokeredIdentityContext second = processor(resultOf(sdJwtCredential(Map.of("sub", "stable-subject"))))
+                .process(requestContext("state-2", "nonce-2"), "vp-token", null);
+
+        assertThat(first.getContextData())
+                .containsEntry(Oid4vpMapperUtils.CONTEXT_PRESENTATION_ONLY_KEY, "true")
+                .containsKey(Oid4vpMapperUtils.CONTEXT_CREDENTIALS_KEY);
+        assertThat(first.getUsername()).isNotEqualToIgnoringCase("stable-subject");
+        assertThat(second.getId())
+                .as("presentations of the same person stay unlinkable")
+                .isNotEqualTo(first.getId());
+    }
+
+    @Test
     void process_subjectCredentialPresented_usesItsSubjectInsteadOfGeneratingOne() {
         config.setPrincipalAttributes("cred-1:sub");
         config.setAllowMissingSubjectCredential(true);

@@ -46,7 +46,7 @@
         </#if>
 
         <#assign hasAlternativeProvider = false>
-        <#if social.providers?? && social.providers?size gt 0>
+        <#if (alternativeProvidersOffered!true) && social.providers?? && social.providers?size gt 0>
             <#list social.providers as p>
                 <#if p.alias != (currentBrokerAlias!'')>
                     <#assign hasAlternativeProvider = true>

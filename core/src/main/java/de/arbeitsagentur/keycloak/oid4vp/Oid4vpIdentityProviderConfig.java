@@ -30,6 +30,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.jboss.logging.Logger;
 import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.models.RealmModel;
 import org.keycloak.util.JsonSerialization;
@@ -41,6 +42,8 @@ import org.keycloak.utils.StringUtil;
  * the Keycloak model.
  */
 public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implements Oid4vpConfigProvider {
+
+    private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProviderConfig.class);
 
     public static final String TRANSIENT_USERS = IdentityProviderModel.DO_NOT_STORE_USERS;
 
@@ -280,6 +283,13 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
                 isAllowMissingSubjectCredential()));
         if (!problems.isEmpty()) {
             throw new IllegalArgumentException(String.join("; ", problems));
+        }
+        if (getPrincipalAttributes().isEmpty() && !isTransientUsersEnabled() && !isHideOnLogin()) {
+            LOG.warnf(
+                    "OID4VP IdP '%s' has no principalAttributes, so it refuses every login, but it is shown on the "
+                            + "login page. Set principalAttributes for logins, or hideOnLogin when it only serves the "
+                            + "OID4VP presentation authenticator and required action.",
+                    getAlias());
         }
     }
 
