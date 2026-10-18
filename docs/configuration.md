@@ -266,16 +266,18 @@ This mode is intended for credentials that do not carry a stable account identif
 |-----|-------------|---------|
 | `sameDeviceEnabled` | Enables same-device wallet login. | `true` |
 | `crossDeviceEnabled` | Enables cross-device QR-code wallet login. | `true` |
-| `sameDeviceMaxLoa` | Highest requested level of authentication the same-device flow is offered at. The level is the integer Keycloak derives from the client's `acr_values` or `claims` request through the realm or client ACR-to-LoA mapping. Empty means no ceiling. | *(none)* |
-| `crossDeviceMaxLoa` | Highest requested level of authentication the cross-device flow is offered at, with the same semantics as `sameDeviceMaxLoa`. | *(none)* |
+| `sameDeviceLoa` | Level of authentication a presentation over the same-device flow reaches, as the integer of the realm or client ACR-to-LoA mapping. The flow is offered only to requests of this level or below, and a login records the level in the Keycloak session. Empty means no level. | *(none)* |
+| `crossDeviceLoa` | Level of authentication a presentation over the cross-device flow reaches, with the same semantics as `sameDeviceLoa`. | *(none)* |
 | `walletScheme` | URI scheme used to invoke the wallet app, for the same-device and cross-device flows alike. | `openid4vp://` |
 | `responseMode` | Wallet callback response mode. `direct_post.jwt` encrypts the wallet response and is what wallets following the high assurance profile expect. | `direct_post.jwt` |
 | `rejectionResponse` | How the response URI answers a presentation the verifier rejects. `redirect` answers with HTTP 200 and the `redirect_uri` that returns the End-User to the login page. `error` answers with HTTP 400 and the error beside that `redirect_uri`. A wallet aborting on a non-2xx status never follows that `redirect_uri`. Wallet-reported errors are answered with HTTP 200 either way. | `redirect` |
 | `requestUriMethodPost` | Advertises `request_uri_method=post`. A conforming wallet then retrieves the request object with POST (OID4VP 1.0 §5.10) and sends its `wallet_metadata` and `wallet_nonce`. This enables request-object encryption and `wallet_nonce` replay protection. Leave off for wallets that retrieve the request object with GET only. | `false` |
 
-A flow above its ceiling is not offered on the login page. Its state is never created. No request object exists for it, and nothing a wallet posts can complete it. When the requested level exceeds the ceiling of every enabled flow, the login ends on an error page. A request that names no level reaches every enabled flow. A ceiling value that is not an integer is rejected when the provider is saved.
+A flow whose level is below the requested level is not offered on the login page. Its state is never created. No request object exists for it, and nothing a wallet posts can complete it. When the requested level exceeds the level of every enabled flow, the login ends on an error page. A request that names no level reaches every enabled flow. A level that is not an integer is rejected when the provider is saved.
 
-The ceilings apply when the wallet login runs. Whether an existing SSO session must re-authenticate for a requested level is decided by the realm's step-up flow configuration. The level itself comes from the request as Keycloak maps it. An `acr` value the ACR-to-LoA mapping does not name counts as the minimum level. A request naming several `acr` values counts as the lowest of them.
+A login records the level of the flow its presentation arrived over the way a `conditional-level-of-authentication` condition of the browser flow does: the token of the login carries the matching `acr`, and the user session keeps the level with its time. A later request for that level is then satisfied by single sign-on, within the max age the realm's browser flow configures for the level (a level the browser flow has no condition for counts with max age 0). A login whose presentation lacked the subject credential (`allowMissingSubjectCredential`) records no level, because the presentation identified nobody and the first broker login flow found the user. Presentation steps in other flows (the `oid4vp-presentation` authenticator and required action) record nothing, their flows' own conditions do.
+
+The requested level comes from the request as Keycloak maps it. An `acr` value the ACR-to-LoA mapping does not name counts as the minimum level. A request naming several `acr` values counts as the lowest of them.
 
 ### Client Authentication (X.509)
 

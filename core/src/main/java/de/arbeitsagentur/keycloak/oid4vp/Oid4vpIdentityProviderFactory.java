@@ -64,10 +64,11 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
         }
     }
 
-    private static String maxLoaHelpText(String flow) {
-        return "Highest requested level of authentication the " + flow + " flow is offered at, as the integer "
-                + "from the realm or client ACR-to-LoA mapping of the client's acr_values or claims request. "
-                + "Leave empty for no ceiling.";
+    private static String loaHelpText(String flow) {
+        return "Level of authentication a presentation over the " + flow + " flow reaches, as the integer of the "
+                + "realm or client ACR-to-LoA mapping. The flow is offered only to requests of this level or below, "
+                + "and a login whose presentation identified the user records the level in the session. Leave empty "
+                + "for no level.";
     }
 
     private static String requestUriLifetimeHelpText(String flow) {
@@ -156,15 +157,15 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .defaultValue("true")
                 .add()
                 .property()
-                .name(Oid4vpIdentityProviderConfig.SAME_DEVICE_MAX_LOA)
+                .name(Oid4vpIdentityProviderConfig.SAME_DEVICE_LOA)
                 .label("Same-Device Max Level of Authentication")
-                .helpText(maxLoaHelpText("same-device"))
+                .helpText(loaHelpText("same-device"))
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
-                .name(Oid4vpIdentityProviderConfig.CROSS_DEVICE_MAX_LOA)
+                .name(Oid4vpIdentityProviderConfig.CROSS_DEVICE_LOA)
                 .label("Cross-Device Max Level of Authentication")
-                .helpText(maxLoaHelpText("cross-device"))
+                .helpText(loaHelpText("cross-device"))
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
