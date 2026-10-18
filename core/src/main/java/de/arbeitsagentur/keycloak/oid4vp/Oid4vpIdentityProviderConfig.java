@@ -51,14 +51,16 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final String CROSS_DEVICE_ENABLED = "crossDeviceEnabled";
 
     /**
-     * The highest requested level of authentication at which the same-device flow is offered, empty
-     * for no ceiling. The level is the integer Keycloak derives from the client's acr_values or
-     * claims request through the realm or client ACR-to-LoA mapping.
+     * The level of authentication a presentation over the same-device flow reaches, empty for none.
+     * The level is an integer of the realm or client ACR-to-LoA mapping. The flow is offered only to
+     * requests of this level or below, and a login whose presentation identified the user records it
+     * in the Keycloak session, so tokens carry the matching acr and single sign-on satisfies later
+     * requests of that level.
      */
-    public static final String SAME_DEVICE_MAX_LOA = "sameDeviceMaxLoa";
+    public static final String SAME_DEVICE_LOA = "sameDeviceLoa";
 
-    /** The same ceiling for the cross-device flow. See {@link #SAME_DEVICE_MAX_LOA}. */
-    public static final String CROSS_DEVICE_MAX_LOA = "crossDeviceMaxLoa";
+    /** The same level for the cross-device flow. See {@link #SAME_DEVICE_LOA}. */
+    public static final String CROSS_DEVICE_LOA = "crossDeviceLoa";
 
     public static final String WALLET_SCHEME = "walletScheme";
     public static final String REQUEST_URI_METHOD_POST = "requestUriMethodPost";
@@ -137,27 +139,27 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         getConfig().put(CROSS_DEVICE_ENABLED, String.valueOf(enabled));
     }
 
-    public Integer getSameDeviceMaxLoa() {
-        return getOptionalIntConfig(SAME_DEVICE_MAX_LOA);
+    public Integer getSameDeviceLoa() {
+        return getOptionalIntConfig(SAME_DEVICE_LOA);
     }
 
-    public void setSameDeviceMaxLoa(Integer maxLoa) {
+    public void setSameDeviceLoa(Integer maxLoa) {
         if (maxLoa == null) {
-            getConfig().remove(SAME_DEVICE_MAX_LOA);
+            getConfig().remove(SAME_DEVICE_LOA);
         } else {
-            getConfig().put(SAME_DEVICE_MAX_LOA, String.valueOf(maxLoa));
+            getConfig().put(SAME_DEVICE_LOA, String.valueOf(maxLoa));
         }
     }
 
-    public Integer getCrossDeviceMaxLoa() {
-        return getOptionalIntConfig(CROSS_DEVICE_MAX_LOA);
+    public Integer getCrossDeviceLoa() {
+        return getOptionalIntConfig(CROSS_DEVICE_LOA);
     }
 
-    public void setCrossDeviceMaxLoa(Integer maxLoa) {
+    public void setCrossDeviceLoa(Integer maxLoa) {
         if (maxLoa == null) {
-            getConfig().remove(CROSS_DEVICE_MAX_LOA);
+            getConfig().remove(CROSS_DEVICE_LOA);
         } else {
-            getConfig().put(CROSS_DEVICE_MAX_LOA, String.valueOf(maxLoa));
+            getConfig().put(CROSS_DEVICE_LOA, String.valueOf(maxLoa));
         }
     }
 
@@ -249,10 +251,10 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public void validate(RealmModel realm) {
         super.validate(realm);
 
-        // Parsing the ceilings here rejects a mistyped value when the provider is saved, instead
+        // Parsing the levels here rejects a mistyped value when the provider is saved, instead
         // of failing every login afterwards.
-        getSameDeviceMaxLoa();
-        getCrossDeviceMaxLoa();
+        getSameDeviceLoa();
+        getCrossDeviceLoa();
 
         if (getSameDeviceRequestUriLifetimeSeconds() <= 0 || getCrossDeviceRequestUriLifetimeSeconds() <= 0) {
             throw new IllegalArgumentException("The request URI lifetimes must be positive numbers of seconds.");
@@ -498,9 +500,9 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     }
 
     /**
-     * Fails on an unparseable value instead of falling back to a default, because the max LoA
-     * settings are ceilings and dropping a mistyped one would offer a flow at a level the
-     * configuration forbids.
+     * Fails on an unparseable value instead of falling back to a default, because the flow levels
+     * gate the flows and dropping a mistyped one would offer a flow at a level the configuration
+     * forbids.
      */
     protected Integer getOptionalIntConfig(String key) {
         String value = getConfig().get(key);

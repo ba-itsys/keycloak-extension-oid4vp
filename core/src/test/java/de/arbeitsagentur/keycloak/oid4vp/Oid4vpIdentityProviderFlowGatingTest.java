@@ -23,24 +23,24 @@ import org.keycloak.models.Constants;
 class Oid4vpIdentityProviderFlowGatingTest {
 
     @Test
-    void noCeilingOffersTheFlowAtEveryLevel() {
+    void noFlowLevelOffersTheFlowAtEveryLevel() {
         assertThat(Oid4vpIdentityProvider.flowOfferedAt(null, 4)).isTrue();
         assertThat(Oid4vpIdentityProvider.flowOfferedAt(null, Constants.NO_LOA)).isTrue();
     }
 
     @Test
-    void requestedLevelAtOrBelowTheCeilingIsOffered() {
+    void requestedLevelAtOrBelowTheFlowLevelIsOffered() {
         assertThat(Oid4vpIdentityProvider.flowOfferedAt(3, 3)).isTrue();
         assertThat(Oid4vpIdentityProvider.flowOfferedAt(3, 2)).isTrue();
     }
 
     @Test
-    void requestedLevelAboveTheCeilingIsNotOffered() {
+    void requestedLevelAboveTheFlowLevelIsNotOffered() {
         assertThat(Oid4vpIdentityProvider.flowOfferedAt(3, 4)).isFalse();
     }
 
     @Test
-    void requestWithoutALevelPassesEveryNonNegativeCeiling() {
+    void requestWithoutALevelPassesEveryNonNegativeFlowLevel() {
         assertThat(Oid4vpIdentityProvider.flowOfferedAt(0, Constants.NO_LOA)).isTrue();
     }
 }

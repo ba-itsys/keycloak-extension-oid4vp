@@ -53,6 +53,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.jboss.logging.Logger;
+import org.keycloak.authentication.authenticators.util.AcrStore;
 import org.keycloak.broker.oid4vp.EphemeralKey;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.broker.provider.AuthenticationRequest;
@@ -168,11 +169,11 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         boolean crossDeviceConfigured = getConfig().isCrossDeviceEnabled();
         int requestedLoa = requestedLevelOfAuthentication(authSession);
         boolean sameDeviceEnabled =
-                sameDeviceConfigured && flowOfferedAt(getConfig().getSameDeviceMaxLoa(), requestedLoa);
+                sameDeviceConfigured && flowOfferedAt(getConfig().getSameDeviceLoa(), requestedLoa);
         boolean crossDeviceEnabled =
-                crossDeviceConfigured && flowOfferedAt(getConfig().getCrossDeviceMaxLoa(), requestedLoa);
+                crossDeviceConfigured && flowOfferedAt(getConfig().getCrossDeviceLoa(), requestedLoa);
 
-        // A flow above its LoA ceiling gets no state and no request object, so nothing a wallet
+        // A flow below the requested level gets no state and no request object, so nothing a wallet
         // posts can complete it.
         if (!sameDeviceEnabled && !crossDeviceEnabled && (sameDeviceConfigured || crossDeviceConfigured)) {
             LOG.debugf(
@@ -214,10 +215,15 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         setPresentationFlowSessionNote(context);
     }
 
+    /**
+     * Keycloak calls this for every brokered login once it resolved the user (an existing link, a new
+     * user, or an account the first broker login flow linked), so it also records the level reached.
+     */
     @Override
     public void updateBrokeredUser(
             KeycloakSession session, RealmModel realm, UserModel user, BrokeredIdentityContext context) {
         setPresentationFlowSessionNote(context);
+        recordLevelOfAuthentication(session, context);
     }
 
     private static void setPresentationFlowSessionNote(BrokeredIdentityContext context) {
@@ -350,8 +356,47 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         return StringUtil.isBlank(requestedLoa) ? Constants.NO_LOA : Integer.parseInt(requestedLoa);
     }
 
-    static boolean flowOfferedAt(Integer maxLoa, int requestedLoa) {
-        return maxLoa == null || requestedLoa <= maxLoa;
+    static boolean flowOfferedAt(Integer flowLoa, int requestedLoa) {
+        return flowLoa == null || requestedLoa <= flowLoa;
+    }
+
+    /**
+     * Returns the level of authentication a brokered login reached: the level of the flow its
+     * presentation arrived over. A presentation without the subject credential identified nobody, the
+     * user was found by another step of the first broker login flow, so it reaches no level here.
+     */
+    static Integer levelReached(Oid4vpIdentityProviderConfig config, BrokeredIdentityContext context) {
+        if (context.getContextData().containsKey(Oid4vpMapperUtils.CONTEXT_GENERATED_SUBJECT_KEY)) {
+            return null;
+        }
+        Oid4vpPresentationFlow flow = Oid4vpMapperUtils.presentationFlow(context);
+        if (flow == null) {
+            return null;
+        }
+        return switch (flow) {
+            case SAME_DEVICE -> config.getSameDeviceLoa();
+            case CROSS_DEVICE -> config.getCrossDeviceLoa();
+        };
+    }
+
+    /**
+     * Records the level a login reached the way the browser flow's level condition does: for the
+     * token of this login and, with the time, in the user session for single sign-on, within the max
+     * age the browser flow configures for that level. Runs only once the broker resolved the user,
+     * never for a presentation step of another flow, so a presentation that a later check refuses
+     * records nothing.
+     */
+    private void recordLevelOfAuthentication(KeycloakSession session, BrokeredIdentityContext context) {
+        Integer level = levelReached(getConfig(), context);
+        AuthenticationSessionModel authSession = context.getAuthenticationSession();
+        if (level == null || authSession == null) {
+            return;
+        }
+        new AcrStore(session, authSession).setLevelAuthenticated(level);
+        context.setSessionNote(Constants.LOA_MAP, authSession.getAuthNote(Constants.LOA_MAP));
+        LOG.debugf(
+                "OID4VP IdP '%s': the login reached level of authentication %d",
+                getConfig().getAlias(), level);
     }
 
     protected LoginContext initializeLoginContext(

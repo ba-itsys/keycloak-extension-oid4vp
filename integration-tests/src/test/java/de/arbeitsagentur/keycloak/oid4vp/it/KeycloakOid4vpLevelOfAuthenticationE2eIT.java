@@ -53,7 +53,7 @@ class KeycloakOid4vpLevelOfAuthenticationE2eIT extends AbstractOid4vpE2eTest {
         testApp().reset();
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
-        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.CROSS_DEVICE_MAX_LOA, "3"));
+        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.CROSS_DEVICE_LOA, "3"));
         addIdpMapper(Oid4vpTestKeycloakSetup.eidasLoaMapper());
 
         flow.navigateToLoginPage(Map.of("acr_values", STORK_LEVEL_3));
@@ -70,6 +70,9 @@ class KeycloakOid4vpLevelOfAuthenticationE2eIT extends AbstractOid4vpE2eTest {
         assertThat(idToken.getJWTClaimsSet().getStringClaim("presentation_flow"))
                 .isEqualTo("cross_device");
         assertThat(idToken.getJWTClaimsSet().getStringClaim("eidas_loa")).isEqualTo(STORK_LEVEL_3);
+        assertThat(idToken.getJWTClaimsSet().getStringClaim("acr"))
+                .as("the login records the cross-device level in the Keycloak session")
+                .isEqualTo(STORK_LEVEL_3);
     }
 
     @Test
@@ -77,7 +80,7 @@ class KeycloakOid4vpLevelOfAuthenticationE2eIT extends AbstractOid4vpE2eTest {
         testApp().reset();
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
-        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.CROSS_DEVICE_MAX_LOA, "3"));
+        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.CROSS_DEVICE_LOA, "3"));
         addIdpMapper(Oid4vpTestKeycloakSetup.eidasLoaMapper());
 
         flow.navigateToLoginPage(Map.of("acr_values", STORK_LEVEL_4));
@@ -85,7 +88,7 @@ class KeycloakOid4vpLevelOfAuthenticationE2eIT extends AbstractOid4vpE2eTest {
 
         String walletUrl = flow.getSameDeviceWalletUrl();
         assertThat(page.locator("#oid4vp-qr-code").count())
-                .as("the cross-device QR code is not offered above its LoA ceiling")
+                .as("the cross-device QR code is not offered above its level")
                 .isZero();
 
         Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
@@ -104,8 +107,8 @@ class KeycloakOid4vpLevelOfAuthenticationE2eIT extends AbstractOid4vpE2eTest {
         testApp().reset();
         flow.clearBrowserSession();
         setIdpConfig(Map.of(
-                Oid4vpIdentityProviderConfig.SAME_DEVICE_MAX_LOA, "3",
-                Oid4vpIdentityProviderConfig.CROSS_DEVICE_MAX_LOA, "3"));
+                Oid4vpIdentityProviderConfig.SAME_DEVICE_LOA, "3",
+                Oid4vpIdentityProviderConfig.CROSS_DEVICE_LOA, "3"));
 
         flow.navigateToLoginPage(Map.of("acr_values", STORK_LEVEL_4));
         flow.clickOid4vpIdpButton();
@@ -116,10 +119,10 @@ class KeycloakOid4vpLevelOfAuthenticationE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
-    void requestWithoutALevelOffersBothFlowsDespiteTheCeiling() {
+    void requestWithoutALevelOffersBothFlowsDespiteTheFlowLevel() {
         testApp().reset();
         flow.clearBrowserSession();
-        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.CROSS_DEVICE_MAX_LOA, "3"));
+        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.CROSS_DEVICE_LOA, "3"));
 
         flow.navigateToLoginPage();
         flow.clickOid4vpIdpButton();
