@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.15.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.14.0...v0.15.0) (2026-10-19)
+
+
+### Features
+
+* add OID4VP presentation authenticator and required action ([35d7442](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/35d74423752e0e422ea310a996ed9ce84aaa962b))
+* update to Keycloak 26.8 ([cfb5d1a](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/cfb5d1a0843710df92a723027f2875ea1a9d44bb))
+* validate X.509 chains with the trust providers for Keycloak trust material consumers ([66b320d](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/66b320d7f52ea19f5b810ba4d44aef85e001c428))
+
+
+### Bug Fixes
+
+* set LoA in the keycloak session ([94b93fa](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/94b93faf249dc6c857bf128a8b3a0bf24ac63c08))
+
 ## [0.14.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.13.4...v0.14.0) (2026-10-16)
 
 
