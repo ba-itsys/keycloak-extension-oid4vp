@@ -32,6 +32,7 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.PreparedDcqlQuery;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthority;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpCallbackProcessor;
+import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpRedirectFlowService;
 import de.arbeitsagentur.keycloak.oid4vp.trust.CredentialTrustPlan;
 import de.arbeitsagentur.keycloak.oid4vp.trust.Oid4vpTrustMaterialResolver;
@@ -505,14 +506,16 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
         FlowEntry sameDeviceFlow = redirectFlowData.sameDeviceFlow();
         FlowEntry crossDeviceFlow = redirectFlowData.crossDeviceFlow();
-        requestObjectStore.rememberStates(
-                session,
-                authSession,
-                Stream.of(sameDeviceFlow, crossDeviceFlow)
-                        .filter(Objects::nonNull)
-                        .map(FlowEntry::state)
-                        .toList(),
-                getConfig().getMaxLiveRequestsPerLogin());
+        requestObjectStore
+                .rememberStates(
+                        session,
+                        authSession,
+                        Stream.of(sameDeviceFlow, crossDeviceFlow)
+                                .filter(Objects::nonNull)
+                                .map(FlowEntry::state)
+                                .toList(),
+                        getConfig().getMaxLiveRequestsPerLogin())
+                .forEach(state -> Oid4vpDirectPostService.endAttempt(session, requestObjectStore, authSession, state));
 
         return session.getProvider(LoginFormsProvider.class)
                 .setAuthenticationSession(authSession)
@@ -549,10 +552,6 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 .mapToLong(FlowEntry::requestUriExpiresAtEpochSeconds)
                 .reduce(authSessionExpiresAt, Math::min);
         return Math.max(0, expiresAt - Time.currentTime());
-    }
-
-    boolean showedWalletLogin(AuthenticationSessionModel authSession) {
-        return requestObjectStore.showedWalletLogin(authSession);
     }
 
     List<String> crossDeviceStates(AuthenticationSessionModel authSession) {

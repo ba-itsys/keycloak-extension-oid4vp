@@ -353,13 +353,6 @@ public class JwtVcIssuerMetadataResolver {
         return parseCacheControlMaxAge(response.headers().allValues("Cache-Control"));
     }
 
-    private Duration parseCacheControlMaxAge(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        return parseCacheControlMaxAge(List.of(value));
-    }
-
     private Duration parseCacheControlMaxAge(List<String> values) {
         if (values == null || values.isEmpty()) {
             return null;

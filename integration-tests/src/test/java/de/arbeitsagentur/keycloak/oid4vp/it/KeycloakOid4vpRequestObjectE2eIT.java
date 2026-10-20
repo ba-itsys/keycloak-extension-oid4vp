@@ -233,6 +233,23 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
+    void anEvictedRequestCannotCompleteTheLoginItsWalletAnswered() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        deleteAllOid4vpUsers();
+        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.MAX_LIVE_REQUESTS_PER_LOGIN, "2"));
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        Oid4vpLoginFlowHelper.WalletResponse response = flow.submitToWallet(flow.getSameDeviceWalletUrl());
+        flow.refreshRequestUris();
+
+        page.navigate(response.redirectUri());
+        page.waitForLoadState();
+        assertThat(page.locator("body").innerText()).contains("This login link is not valid");
+    }
+
+    @Test
     void copiedExpiredAndRefreshUrlsDoNotWorkInAnotherBrowser() {
         testApp().reset();
         flow.clearBrowserSession();
