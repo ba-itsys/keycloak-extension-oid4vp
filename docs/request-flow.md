@@ -148,7 +148,7 @@ This:
 - Reads the request-scoped configured credential types captured when the request object was created
 - Passes `mdocGeneratedNonce` from the decrypted callback payload when present
 - Calls `VpTokenProcessor.process` with the `vp_token`, the `clientId`, `nonce`, `responseUri` of the request context, the RFC 7638 thumbprint of its `encryptionKey`, the `mdocGeneratedNonce` of the callback, and the requested credentials:
-  - SD-JWT: `SdJwtVerifier.verify()` delegates to Keycloak's `SdJwtVP.verify()`, which performs:
+  - SD-JWT: `SdJwtVerifier.verify()` first requires the issuer-signed JWT to have the `typ` `dc+sd-jwt`, or the earlier `vc+sd-jwt` that [SD-JWT VC draft 13, section 3.2.1](https://www.ietf.org/archive/id/draft-ietf-oauth-sd-jwt-vc-13.html#section-3.2.1) recommends accepting for a transitional period. It then delegates to Keycloak's `SdJwtVP.verify()`, which performs:
     1. **Issuer signature verification**: validates the SD-JWT's JWS signature using the issuer's public key. The key is resolved in this order:
        - `x5c` certificate-chain validation against the resolved trust material. Either a pinned trusted leaf certificate satisfying any configured issuer binding, or a PKIX path to the trust anchors that authenticates the leaf certificate's subject (`ResolvedTrust.validateIssuerChain`). With `requireIssuerSanMatch` enabled, `Oid4vpTrustedSdJwtIssuer` also checks the issuer against the validated leaf's SANs
        - the issuer keys the credential's trust domain publishes, matched on `iss` and JOSE `kid`

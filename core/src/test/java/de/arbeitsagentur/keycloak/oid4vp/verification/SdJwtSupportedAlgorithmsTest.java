@@ -134,6 +134,7 @@ class SdJwtSupportedAlgorithmsTest {
 
         SignedJWT signedJwt = new SignedJWT(
                 new JWSHeader.Builder(material.algorithm())
+                        .type(new JOSEObjectType("dc+sd-jwt"))
                         .x509CertChain(List.of(Base64.encode(cert.getEncoded())))
                         .build(),
                 builder.build());

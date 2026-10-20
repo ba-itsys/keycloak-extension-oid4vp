@@ -380,7 +380,7 @@ class VpTokenProcessorCredentialTrustTest {
             String keyId,
             List<String> alsoKnownAs)
             throws Exception {
-        JWSHeader.Builder header = new JWSHeader.Builder(JWSAlgorithm.ES256);
+        JWSHeader.Builder header = new JWSHeader.Builder(JWSAlgorithm.ES256).type(new JOSEObjectType("dc+sd-jwt"));
         if (issuerCert != null) {
             header.x509CertChain(List.of(Base64.encode(issuerCert.getEncoded())));
         }
