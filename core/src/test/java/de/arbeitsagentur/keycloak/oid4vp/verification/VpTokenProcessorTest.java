@@ -287,6 +287,7 @@ class VpTokenProcessorTest {
 
     private JWSHeader buildHeaderWithX5c() throws Exception {
         return new JWSHeader.Builder(JWSAlgorithm.ES256)
+                .type(new JOSEObjectType("dc+sd-jwt"))
                 .x509CertChain(List.of(Base64.encode(signingCert.getEncoded())))
                 .build();
     }

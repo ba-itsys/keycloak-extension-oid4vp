@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import org.jboss.logging.Logger;
 import org.keycloak.OID4VCConstants;
+import org.keycloak.VCFormat;
 import org.keycloak.sdjwt.IssuerSignedJwtVerificationOpts;
 import org.keycloak.sdjwt.consumer.SdJwtPresentationConsumer;
 import org.keycloak.sdjwt.vp.KeyBindingJwtVerificationOpts;
@@ -42,6 +43,8 @@ import org.keycloak.util.JsonSerialization;
 public class SdJwtVerifier {
 
     private static final Logger LOG = Logger.getLogger(SdJwtVerifier.class);
+    private static final String MEDIA_TYPE_PREFIX = "application/";
+    private static final String TRANSITIONAL_SD_JWT_VC_TYPE = "vc+sd-jwt";
 
     private final int clockSkewSeconds;
     private final int kbJwtMaxAgeSeconds;
@@ -101,6 +104,11 @@ public class SdJwtVerifier {
 
         try {
             SdJwtVP sdJwtVP = SdJwtVP.of(sdJwt);
+            String type = sdJwtVP.getIssuerSignedJWT().getJwsHeader().getType();
+            if (!isSdJwtVcType(type)) {
+                throw new IllegalStateException(
+                        "The issuer-signed JWT has typ " + type + " instead of " + VCFormat.SD_JWT_VC);
+            }
 
             // The ClaimVerifier.Builder constructor adds an IatLifetimeCheck with the KB-JWT default
             // maxAge of 300 seconds to every builder, including the issuer options. It is removed for
@@ -140,5 +148,21 @@ public class SdJwtVerifier {
         } catch (Exception e) {
             throw new IllegalStateException("SD-JWT verification failed: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Accepts {@code dc+sd-jwt} and the earlier {@code vc+sd-jwt}, which draft-ietf-oauth-sd-jwt-vc-13
+     * section 3.2.1 recommends accepting for a transitional period. A typ is a media type, so it
+     * matches case-insensitively and with or without the {@code application/} prefix (RFC 7515
+     * section 4.1.9).
+     */
+    private static boolean isSdJwtVcType(String type) {
+        if (type == null) {
+            return false;
+        }
+        String subtype = type.regionMatches(true, 0, MEDIA_TYPE_PREFIX, 0, MEDIA_TYPE_PREFIX.length())
+                ? type.substring(MEDIA_TYPE_PREFIX.length())
+                : type;
+        return subtype.equalsIgnoreCase(VCFormat.SD_JWT_VC) || subtype.equalsIgnoreCase(TRANSITIONAL_SD_JWT_VC_TYPE);
     }
 }

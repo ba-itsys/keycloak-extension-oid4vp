@@ -64,7 +64,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.keycloak.VCFormat;
 import org.keycloak.common.crypto.CryptoIntegration;
 
 class SdJwtVerifierTest {
@@ -113,6 +115,31 @@ class SdJwtVerifierTest {
         assertThat(result.issuer()).isEqualTo("https://issuer.example");
         assertThat(result.credentialType()).isEqualTo("IdentityCredential");
         assertThat(result.claims()).containsEntry("sub", "user123");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"dc+sd-jwt", "vc+sd-jwt", "DC+SD-JWT", "application/dc+sd-jwt"})
+    void verify_acceptsCurrentAndTransitionalSdJwtVcType(String type) throws Exception {
+        String sdJwt = buildSignedJwt(
+                        Map.of("iss", "https://issuer.example", "vct", "IdentityCredential"), Instant.now(), type)
+                + "~";
+
+        assertThat(verifier.verify(sdJwt, null, null, TestTrust.ofCertificates(signingCert))
+                        .credentialType())
+                .isEqualTo("IdentityCredential");
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"JWT", "statuslist+jwt", "application/jwt"})
+    void verify_rejectsIssuerSignedJwtOfAnotherType(String type) throws Exception {
+        String sdJwt = buildSignedJwt(
+                        Map.of("iss", "https://issuer.example", "vct", "IdentityCredential"), Instant.now(), type)
+                + "~";
+
+        assertThatThrownBy(() -> verifier.verify(sdJwt, null, null, TestTrust.ofCertificates(signingCert)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("instead of dc+sd-jwt");
     }
 
     @Test
@@ -759,7 +786,12 @@ class SdJwtVerifierTest {
     }
 
     private JWSHeader buildHeaderWithX5c() throws Exception {
+        return buildHeaderWithX5c(VCFormat.SD_JWT_VC);
+    }
+
+    private JWSHeader buildHeaderWithX5c(String type) throws Exception {
         return new JWSHeader.Builder(JWSAlgorithm.ES256)
+                .type(type == null ? null : new JOSEObjectType(type))
                 .x509CertChain(List.of(Base64.encode(signingCert.getEncoded())))
                 .build();
     }
@@ -769,6 +801,10 @@ class SdJwtVerifierTest {
     }
 
     private String buildSignedJwtAt(Map<String, Object> claimsMap, Instant issuedAt) throws Exception {
+        return buildSignedJwt(claimsMap, issuedAt, VCFormat.SD_JWT_VC);
+    }
+
+    private String buildSignedJwt(Map<String, Object> claimsMap, Instant issuedAt, String type) throws Exception {
         JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder();
         for (var entry : claimsMap.entrySet()) {
             builder.claim(entry.getKey(), entry.getValue());
@@ -777,7 +813,7 @@ class SdJwtVerifierTest {
         builder.notBeforeTime(Date.from(issuedAt));
         builder.expirationTime(Date.from(issuedAt.plusSeconds(86400)));
 
-        SignedJWT signedJWT = new SignedJWT(buildHeaderWithX5c(), builder.build());
+        SignedJWT signedJWT = new SignedJWT(buildHeaderWithX5c(type), builder.build());
         signedJWT.sign(new ECDSASigner(signingKey));
         return signedJWT.serialize();
     }
@@ -828,8 +864,10 @@ class SdJwtVerifierTest {
                 })
                 .toList();
 
-        JWSHeader header =
-                new JWSHeader.Builder(JWSAlgorithm.ES256).x509CertChain(x5cB64).build();
+        JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.ES256)
+                .type(new JOSEObjectType(VCFormat.SD_JWT_VC))
+                .x509CertChain(x5cB64)
+                .build();
         SignedJWT signedJWT = new SignedJWT(header, builder.build());
         signedJWT.sign(new ECDSASigner(key));
         return signedJWT.serialize();
@@ -845,7 +883,10 @@ class SdJwtVerifierTest {
         builder.notBeforeTime(Date.from(now));
         builder.expirationTime(Date.from(now.plusSeconds(86400)));
 
-        JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.ES256).keyID(kid).build();
+        JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.ES256)
+                .type(new JOSEObjectType(VCFormat.SD_JWT_VC))
+                .keyID(kid)
+                .build();
         SignedJWT signedJWT = new SignedJWT(header, builder.build());
         signedJWT.sign(new ECDSASigner(key));
         return signedJWT.serialize();
