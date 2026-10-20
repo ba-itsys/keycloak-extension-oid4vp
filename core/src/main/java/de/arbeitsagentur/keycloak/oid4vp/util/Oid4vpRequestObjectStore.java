@@ -19,12 +19,16 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.oid4vp.EphemeralKey;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.SingleUseObjectProvider;
+import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 
@@ -45,6 +49,7 @@ public class Oid4vpRequestObjectStore {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpRequestObjectStore.class);
     private static final String STATE_INDEX_PREFIX = "oid4vp_state:";
+    private static final String WALLET_LOGIN_STATES_NOTE_PREFIX = "oid4vp.wallet-login-states.";
     private static final String KEY_JSON = "json";
     private static final String KEY_IDP_ALIAS = "idp_alias";
     private final Duration ttl;
@@ -120,6 +125,57 @@ public class Oid4vpRequestObjectStore {
     public void removeRequestContext(KeycloakSession session, String state) {
         if (StringUtil.isBlank(state)) return;
         session.singleUseObjects().remove(STATE_INDEX_PREFIX + state);
+    }
+
+    /**
+     * Records the states the wallet login page offered in this authentication session. States from
+     * earlier renders stay while their request context exists, so a wallet that fetched an older
+     * request object still completes the login and the browser still follows it. Beyond
+     * {@code max} the oldest states end and their request contexts are removed, so repeated
+     * refreshes cannot pile up stored requests.
+     */
+    public void rememberStates(
+            KeycloakSession session, AuthenticationSessionModel authSession, List<String> newStates, int max) {
+        List<String> states = new ArrayList<>(liveRequestContexts(session, authSession).stream()
+                .map(RequestContextEntry::state)
+                .toList());
+        states.addAll(newStates);
+        List<String> evicted = evictedStates(states, max);
+        evicted.forEach(state -> removeRequestContext(session, state));
+        authSession.setAuthNote(
+                walletLoginStatesNote(), String.join(",", states.subList(evicted.size(), states.size())));
+    }
+
+    static List<String> evictedStates(List<String> statesOldestFirst, int max) {
+        return statesOldestFirst.subList(0, Math.max(0, statesOldestFirst.size() - max));
+    }
+
+    public boolean showedWalletLogin(AuthenticationSessionModel authSession) {
+        return authSession.getAuthNote(walletLoginStatesNote()) != null;
+    }
+
+    public List<RequestContextEntry> liveRequestContexts(
+            KeycloakSession session, AuthenticationSessionModel authSession) {
+        return rememberedStates(authSession).stream()
+                .map(state -> resolveByState(session, state))
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    /** Forgets the states the wallet login page offered and returns them, for the caller to end. */
+    public List<String> forgetStates(AuthenticationSessionModel authSession) {
+        List<String> states = rememberedStates(authSession);
+        authSession.removeAuthNote(walletLoginStatesNote());
+        return states;
+    }
+
+    private List<String> rememberedStates(AuthenticationSessionModel authSession) {
+        String states = authSession.getAuthNote(walletLoginStatesNote());
+        return StringUtil.isBlank(states) ? List.of() : Arrays.asList(states.split(","));
+    }
+
+    private String walletLoginStatesNote() {
+        return WALLET_LOGIN_STATES_NOTE_PREFIX + aliasOrEmpty();
     }
 
     private static String serializeEntry(Object entry) {

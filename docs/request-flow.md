@@ -74,7 +74,7 @@ When the countdown reaches zero, the page navigates to `/expired?tab_id=...&clie
 
 The countdown ends at the authentication session's end when that comes first. `/expired` and `/refresh` then find no authentication session and redirect to Keycloak's `login-actions/restart`. Keycloak restarts the login from its `KC_RESTART` cookie and shows its login timeout message, as on any other login page.
 
-The authentication session records the states the wallet login page offered (auth note `oid4vp.wallet-login-states.{alias}`). States whose request context still exists stay in that list across refreshes, up to `maxLiveRequestsPerLogin` (default `10`). Beyond that the oldest states end and their request contexts are removed, so repeated refreshes cannot pile up stored requests. `/cross-device/status` watches all live cross-device states of the tab, and the expired page keeps that connection open, so a wallet that finishes an older QR code still moves the browser on.
+The authentication session records the states the wallet login page offered (auth note `oid4vp.wallet-login-states.{alias}`). States whose request context still exists stay in that list across refreshes, up to `maxLiveRequestsPerLogin` (default `10`). Beyond that the oldest states end and their request contexts are removed, so repeated refreshes cannot pile up stored requests. A completed login ends all of them (see [Completion](#completion-complete-auth)). `/cross-device/status` watches all live cross-device states of the tab, and the expired page keeps that connection open, so a wallet that finishes an older QR code still moves the browser on.
 
 ## Phase 1: Wallet Fetches Request Object
 
@@ -218,7 +218,8 @@ Oid4vpIdentityProviderEndpoint.completeAuth(state, responseCode)
 4. Consumes `oid4vp_deferred:{state}` and the cross-device completion marker
 5. Deserializes the `BrokeredIdentityContext` from `DEFERRED_IDENTITY_NOTE`
 6. Restores claims from `DEFERRED_CLAIMS_NOTE`
-7. Calls `callback.authenticated(context)`. Keycloak completes the login
+7. Ends every state the login page offered in this authentication session, the completed one included. It removes their request contexts, completion and failure signals, and deferred auth notes, and drops the `oid4vp.wallet-login-states.{alias}` note. The other states can then neither serve a request object nor complete or fail the login, and their entries do not stay in the single-use store until the login timeout
+8. Calls `callback.authenticated(context)`. Keycloak completes the login
 
 ### Cross-Device: SSE Browser Notification
 

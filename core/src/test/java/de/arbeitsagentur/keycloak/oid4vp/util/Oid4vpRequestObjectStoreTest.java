@@ -13,23 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package de.arbeitsagentur.keycloak.oid4vp;
+package de.arbeitsagentur.keycloak.oid4vp.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-class Oid4vpIdentityProviderWalletLoginStatesTest {
+class Oid4vpRequestObjectStoreTest {
 
     @Test
     void statesWithinTheMaximumAreKept() {
-        assertThat(Oid4vpIdentityProvider.evictedStates(List.of("a", "b"), 2)).isEmpty();
+        assertThat(Oid4vpRequestObjectStore.evictedStates(List.of("a", "b"), 2)).isEmpty();
     }
 
     @Test
     void oldestStatesBeyondTheMaximumAreEvicted() {
-        assertThat(Oid4vpIdentityProvider.evictedStates(List.of("a", "b", "c", "d", "e"), 3))
+        assertThat(Oid4vpRequestObjectStore.evictedStates(List.of("a", "b", "c", "d", "e"), 3))
                 .containsExactly("a", "b");
     }
 }

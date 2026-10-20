@@ -232,15 +232,29 @@ public class Oid4vpDirectPostService {
             } catch (Exception e) {
                 LOG.warnf("Failed to deserialize the presented credentials: %s", e.getMessage());
             }
-            storedAuthSession.removeAuthNote(deferredClaimsNote(state));
         }
 
-        storedAuthSession.removeAuthNote(deferredIdentityNote(state));
+        endAttempt(storedAuthSession, state);
+        requestObjectStore.forgetStates(storedAuthSession).forEach(other -> endAttempt(storedAuthSession, other));
 
         event.event(EventType.LOGIN);
-        Response response = callback.authenticated(context);
+        return callback.authenticated(context);
+    }
+
+    /**
+     * Removes everything a state of the wallet login holds. Once one presentation completes the
+     * login, the other states it offered must neither serve a request object nor complete or fail
+     * the login, and their entries would otherwise stay in the single-use store until the login
+     * timeout.
+     */
+    private void endAttempt(AuthenticationSessionModel authSession, String state) {
+        session.singleUseObjects().remove(DEFERRED_AUTH_PREFIX + state);
+        session.singleUseObjects().remove(CROSS_DEVICE_COMPLETE_PREFIX + state);
+        session.singleUseObjects().remove(FAILURE_PREFIX + state);
+        session.singleUseObjects().remove(CROSS_DEVICE_FAILED_PREFIX + state);
+        authSession.removeAuthNote(deferredIdentityNote(state));
+        authSession.removeAuthNote(deferredClaimsNote(state));
         requestObjectStore.removeRequestContext(session, state);
-        return response;
     }
 
     /**

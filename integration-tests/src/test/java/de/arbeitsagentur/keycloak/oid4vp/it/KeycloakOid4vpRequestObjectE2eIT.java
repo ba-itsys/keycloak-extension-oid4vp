@@ -356,31 +356,29 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
-    void completedFlowInvalidatesRequestUri() throws Exception {
+    void completedLoginInvalidatesEveryRequestUriItOffered() throws Exception {
         testApp().reset();
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
 
         flow.navigateToLoginPage();
         flow.clickOid4vpIdpButton();
+        String earlierWalletUrl = flow.getCrossDeviceWalletUrl();
+        flow.refreshRequestUris();
         String walletUrl = flow.getSameDeviceWalletUrl();
+        String crossDeviceWalletUrl = flow.getCrossDeviceWalletUrl();
+        assertThat(requestObjectResponse(earlierWalletUrl).statusCode()).isEqualTo(200);
 
         Oid4vpLoginFlowHelper.WalletResponse response = flow.submitToWallet(walletUrl);
         flow.waitForLoginCompletion(response);
         flow.completeFirstBrokerLoginIfNeeded("earlier-ro-user");
         flow.assertLoginSucceeded();
 
-        String requestUri = Oid4vpLoginFlowHelper.extractRequestUri(walletUrl);
-        HttpResponse<String> postLoginFetch = HttpClient.newHttpClient()
-                .send(
-                        HttpRequest.newBuilder()
-                                .uri(URI.create(requestUri))
-                                .GET()
-                                .build(),
-                        HttpResponse.BodyHandlers.ofString());
-
-        assertThat(postLoginFetch.statusCode()).isEqualTo(404);
-        assertThat(postLoginFetch.body()).contains("State not found or expired");
+        for (String offeredWalletUrl : List.of(walletUrl, crossDeviceWalletUrl, earlierWalletUrl)) {
+            HttpResponse<String> postLoginFetch = requestObjectResponse(offeredWalletUrl);
+            assertThat(postLoginFetch.statusCode()).as(offeredWalletUrl).isEqualTo(404);
+            assertThat(postLoginFetch.body()).contains("State not found or expired");
+        }
     }
 
     @Test

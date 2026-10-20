@@ -44,8 +44,6 @@ import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriBuilder;
 import java.net.URI;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -85,7 +83,6 @@ import org.keycloak.utils.StringUtil;
  */
 public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdentityProviderConfig> {
 
-    private static final String WALLET_LOGIN_STATES_NOTE_PREFIX = "oid4vp.wallet-login-states.";
     private static final Logger LOG = Logger.getLogger(Oid4vpIdentityProvider.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final int DEFAULT_LOGIN_TIMEOUT_SECONDS = 1800;
@@ -508,12 +505,14 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
 
         FlowEntry sameDeviceFlow = redirectFlowData.sameDeviceFlow();
         FlowEntry crossDeviceFlow = redirectFlowData.crossDeviceFlow();
-        rememberWalletLoginStates(
+        requestObjectStore.rememberStates(
+                session,
                 authSession,
                 Stream.of(sameDeviceFlow, crossDeviceFlow)
                         .filter(Objects::nonNull)
                         .map(FlowEntry::state)
-                        .toList());
+                        .toList(),
+                getConfig().getMaxLiveRequestsPerLogin());
 
         return session.getProvider(LoginFormsProvider.class)
                 .setAuthenticationSession(authSession)
@@ -552,52 +551,15 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         return Math.max(0, expiresAt - Time.currentTime());
     }
 
-    /**
-     * Records the states the wallet login page offered in this authentication session. States from
-     * earlier renders stay while their request context exists, so a wallet that fetched an older
-     * request object still completes the login and the browser still follows it. Beyond the
-     * configured maximum the oldest states end and their request contexts are removed, so
-     * repeated refreshes cannot pile up stored requests.
-     */
-    private void rememberWalletLoginStates(AuthenticationSessionModel authSession, List<String> newStates) {
-        List<String> states = new ArrayList<>(liveRequestContexts(authSession)
-                .map(Oid4vpRequestObjectStore.RequestContextEntry::state)
-                .toList());
-        states.addAll(newStates);
-        List<String> evicted = evictedStates(states, getConfig().getMaxLiveRequestsPerLogin());
-        evicted.forEach(state -> requestObjectStore.removeRequestContext(session, state));
-        authSession.setAuthNote(
-                walletLoginStatesNote(), String.join(",", states.subList(evicted.size(), states.size())));
-    }
-
-    static List<String> evictedStates(List<String> statesOldestFirst, int max) {
-        return statesOldestFirst.subList(0, Math.max(0, statesOldestFirst.size() - max));
-    }
-
     boolean showedWalletLogin(AuthenticationSessionModel authSession) {
-        return authSession.getAuthNote(walletLoginStatesNote()) != null;
+        return requestObjectStore.showedWalletLogin(authSession);
     }
 
     List<String> crossDeviceStates(AuthenticationSessionModel authSession) {
-        return liveRequestContexts(authSession)
+        return requestObjectStore.liveRequestContexts(session, authSession).stream()
                 .filter(context -> Oid4vpConstants.FLOW_CROSS_DEVICE.equals(context.flow()))
                 .map(Oid4vpRequestObjectStore.RequestContextEntry::state)
                 .toList();
-    }
-
-    private Stream<Oid4vpRequestObjectStore.RequestContextEntry> liveRequestContexts(
-            AuthenticationSessionModel authSession) {
-        String states = authSession.getAuthNote(walletLoginStatesNote());
-        if (StringUtil.isBlank(states)) {
-            return Stream.empty();
-        }
-        return Arrays.stream(states.split(","))
-                .map(state -> requestObjectStore.resolveByState(session, state))
-                .filter(Objects::nonNull);
-    }
-
-    private String walletLoginStatesNote() {
-        return WALLET_LOGIN_STATES_NOTE_PREFIX + getConfig().getAlias();
     }
 
     private String endpointUrl(String path, AuthenticationSessionModel authSession) {

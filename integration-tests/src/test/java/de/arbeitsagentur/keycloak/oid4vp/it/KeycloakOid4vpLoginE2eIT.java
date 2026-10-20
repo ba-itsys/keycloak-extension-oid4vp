@@ -360,6 +360,41 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
     }
 
     /**
+     * Each request URI the login page offered can receive a verified presentation. Once the browser
+     * completes one of them, the completion links of the others are void, even while the first
+     * broker login of the completed one still runs.
+     */
+    @Test
+    void aCompletedPresentationVoidsTheOtherPresentationsOfTheLogin() throws Exception {
+        testApp().reset();
+        flow.clearBrowserSession();
+        deleteAllOid4vpUsers();
+        replaceDcqlMappers(Oid4vpTestKeycloakSetup.sdJwtPidMappers());
+
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        String earlierWalletUrl = flow.getSameDeviceWalletUrl();
+        flow.refreshRequestUris();
+        String walletUrl = flow.getSameDeviceWalletUrl();
+
+        issueSdJwtPidOf("Somebody-Else");
+        Oid4vpLoginFlowHelper.WalletResponse otherResponse = flow.submitToWallet(earlierWalletUrl);
+        assertThat(otherResponse.redirectUri()).contains("complete-auth");
+        issueSdJwtPidOf("Holder-Of-Record");
+        Oid4vpLoginFlowHelper.WalletResponse decidingResponse = flow.submitToWallet(walletUrl);
+
+        page.navigate(decidingResponse.redirectUri());
+        page.waitForLoadState();
+        assertThat(page.locator("input[name='username']").count())
+                .as("The first broker login is running")
+                .isPositive();
+
+        page.navigate(otherResponse.redirectUri());
+        page.waitForLoadState();
+        assertThat(page.locator("body").innerText()).contains("This login link is not valid");
+    }
+
+    /**
      * A wallet-reported error ends the attempt it belongs to once the End-User is back on the login
      * page, so the abandoned state has to stop serving its request object rather than stay answerable
      * for the rest of the login timeout.
