@@ -83,6 +83,18 @@ class StatusListVerifierTest {
     }
 
     @Test
+    void readsOnlyTheTopLevelStatusClaim() {
+        Map<String, Object> payload = Map.of(
+                "employment", Map.of("status", "active"),
+                "org.iso.18013.5.1",
+                        Map.of(
+                                "status",
+                                Map.of("status_list", Map.of("uri", "https://issuer.example/status", "idx", 1))));
+
+        assertThat(verifier.extractStatusReference(payload)).isNull();
+    }
+
+    @Test
     void rejectsMalformedStatusClaim() {
         assertThatThrownBy(() -> verifier.extractStatusReference(Map.of("status", "not-a-map")))
                 .isInstanceOf(IllegalStateException.class);
@@ -454,21 +466,6 @@ class StatusListVerifierTest {
         StatusListVerifier.StatusReference ref = verifier.extractStatusReference(payload);
         assertThat(ref).isNotNull();
         assertThat(ref.idx()).isEqualTo(53);
-    }
-
-    @Test
-    void extractsStatusReferenceFromMdocNamespace() {
-        Map<String, Object> claims = Map.of(
-                "eu.europa.ec.eudi.pid.1",
-                Map.of(
-                        "family_name",
-                        "Smith",
-                        "status",
-                        Map.of("status_list", Map.of("uri", "https://issuer.example/status", "idx", 7))));
-        StatusListVerifier.StatusReference ref = verifier.extractStatusReference(claims);
-        assertThat(ref).isNotNull();
-        assertThat(ref.uri()).isEqualTo("https://issuer.example/status");
-        assertThat(ref.idx()).isEqualTo(7);
     }
 
     @Test
