@@ -127,10 +127,6 @@ public class StatusListVerifier {
         if (claims == null) return null;
 
         Object statusObj = claims.get(OID4VCConstants.CLAIM_NAME_STATUS);
-        if (statusObj == null) {
-            statusObj = findNestedStatusClaim(claims);
-        }
-
         if (statusObj == null) return null;
         if (!(statusObj instanceof Map<?, ?> statusMap)) {
             throw new IllegalStateException("Credential status claim must be an object");
@@ -151,18 +147,6 @@ public class StatusListVerifier {
                     "Credential status_list requires a URI and a non-negative integer index within the supported range");
         }
         return new StatusReference(uri, idx);
-    }
-
-    private Object findNestedStatusClaim(Map<String, Object> claims) {
-        for (Object value : claims.values()) {
-            if (value instanceof Map<?, ?> namespaceClaims) {
-                Object status = namespaceClaims.get("status");
-                if (status != null) {
-                    return status;
-                }
-            }
-        }
-        return null;
     }
 
     DecodedStatusList fetchAndDecodeStatusList(String uri, List<X509Certificate> revocationCertificates)
