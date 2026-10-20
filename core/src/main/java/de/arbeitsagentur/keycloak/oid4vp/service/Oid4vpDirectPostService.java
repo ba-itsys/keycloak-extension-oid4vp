@@ -234,20 +234,26 @@ public class Oid4vpDirectPostService {
             }
         }
 
-        endAttempt(storedAuthSession, state);
-        requestObjectStore.forgetStates(storedAuthSession).forEach(other -> endAttempt(storedAuthSession, other));
+        endAttempt(session, requestObjectStore, storedAuthSession, state);
+        requestObjectStore
+                .forgetStates(storedAuthSession)
+                .forEach(other -> endAttempt(session, requestObjectStore, storedAuthSession, other));
 
         event.event(EventType.LOGIN);
         return callback.authenticated(context);
     }
 
     /**
-     * Removes everything a state of the wallet login holds. Once one presentation completes the
-     * login, the other states it offered must neither serve a request object nor complete or fail
-     * the login, and their entries would otherwise stay in the single-use store until the login
-     * timeout.
+     * Removes everything a state of the wallet login holds. A state ends when a presentation
+     * completes the login or when newer states push it out. It must then neither serve a request
+     * object nor complete or fail the login, and its entries would otherwise stay in the single-use
+     * store until the login timeout.
      */
-    private void endAttempt(AuthenticationSessionModel authSession, String state) {
+    public static void endAttempt(
+            KeycloakSession session,
+            Oid4vpRequestObjectStore requestObjectStore,
+            AuthenticationSessionModel authSession,
+            String state) {
         session.singleUseObjects().remove(DEFERRED_AUTH_PREFIX + state);
         session.singleUseObjects().remove(CROSS_DEVICE_COMPLETE_PREFIX + state);
         session.singleUseObjects().remove(FAILURE_PREFIX + state);

@@ -369,7 +369,7 @@ public class Oid4vpIdentityProviderEndpoint {
         }
         AuthenticationSessionModel authSession =
                 rootAuthSession.getAuthenticationSessions().get(tabId);
-        return authSession != null && provider.showedWalletLogin(authSession) ? authSession : null;
+        return authSession != null && requestObjectStore.showedWalletLogin(authSession) ? authSession : null;
     }
 
     @GET

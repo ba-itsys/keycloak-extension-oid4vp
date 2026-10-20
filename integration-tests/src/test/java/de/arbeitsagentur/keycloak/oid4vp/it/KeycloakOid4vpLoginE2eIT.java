@@ -385,9 +385,7 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
 
         page.navigate(decidingResponse.redirectUri());
         page.waitForLoadState();
-        assertThat(page.locator("input[name='username']").count())
-                .as("The first broker login is running")
-                .isPositive();
+        assertThat(page.url()).contains("/first-broker-login");
 
         page.navigate(otherResponse.redirectUri());
         page.waitForLoadState();

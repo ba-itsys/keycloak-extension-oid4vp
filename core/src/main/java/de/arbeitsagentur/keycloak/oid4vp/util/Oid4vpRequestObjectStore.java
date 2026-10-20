@@ -128,22 +128,22 @@ public class Oid4vpRequestObjectStore {
     }
 
     /**
-     * Records the states the wallet login page offered in this authentication session. States from
-     * earlier renders stay while their request context exists, so a wallet that fetched an older
-     * request object still completes the login and the browser still follows it. Beyond
-     * {@code max} the oldest states end and their request contexts are removed, so repeated
+     * Records the states the wallet login page offered in this authentication session and returns the
+     * states it drops, for the caller to end. States from earlier renders stay while their request
+     * context exists, so a wallet that fetched an older request object still completes the login and
+     * the browser still follows it. Beyond {@code max} the oldest states drop out, so repeated
      * refreshes cannot pile up stored requests.
      */
-    public void rememberStates(
+    public List<String> rememberStates(
             KeycloakSession session, AuthenticationSessionModel authSession, List<String> newStates, int max) {
         List<String> states = new ArrayList<>(liveRequestContexts(session, authSession).stream()
                 .map(RequestContextEntry::state)
                 .toList());
         states.addAll(newStates);
         List<String> evicted = evictedStates(states, max);
-        evicted.forEach(state -> removeRequestContext(session, state));
         authSession.setAuthNote(
                 walletLoginStatesNote(), String.join(",", states.subList(evicted.size(), states.size())));
+        return List.copyOf(evicted);
     }
 
     static List<String> evictedStates(List<String> statesOldestFirst, int max) {

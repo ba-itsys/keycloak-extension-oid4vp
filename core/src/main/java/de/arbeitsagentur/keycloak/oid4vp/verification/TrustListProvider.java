@@ -71,10 +71,6 @@ public class TrustListProvider {
         this(session, trustListUrl, null, null, null);
     }
 
-    TrustListProvider(KeycloakSession session, String trustListUrl, Duration maxCacheTtl) {
-        this(session, trustListUrl, maxCacheTtl, null, null);
-    }
-
     /**
      * @param signingCertificates when non-null and non-empty, the trust list JWT signature is
      *     verified: its x5c chain is validated against these certificates, or the signature is
