@@ -28,10 +28,10 @@ import org.keycloak.testframework.server.KeycloakServerConfigInterceptor;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * Supplies eudi-dev wallet containers. Every wallet is seeded with the same stable certificate
- * authority (see {@link WalletCertificateAuthority}), which this supplier also registers in the
- * Keycloak server's truststore, so the server can fetch issuer metadata and status lists over HTTPS
- * from any wallet, including ones started later in the run.
+ * Supplies eudi-dev wallet containers. Every wallet is seeded with the same certificate authority
+ * (see {@link WalletCertificateAuthority}), and this supplier registers it in the Keycloak server's
+ * truststore. The server can then fetch issuer metadata and status lists over HTTPS from any wallet,
+ * including ones started later in the run.
  */
 public class TestWalletSupplier
         implements Supplier<TestWallet, InjectTestWallet>,

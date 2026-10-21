@@ -93,9 +93,8 @@ class KeycloakOid4vpProtocolConfigE2eIT extends AbstractOid4vpE2eTest {
         assertThat(requestJwt.getHeader().getX509CertChain()).hasSize(1);
     }
 
-    // A certificate without its private key cannot sign the request object it advertises, so the
-    // configuration is rejected at save time rather than letting every login produce a request object
-    // that every wallet rejects.
+    // A certificate without its private key cannot sign the request object it advertises. Saving such a
+    // configuration fails, so no login produces a request object that every wallet rejects.
     @Test
     void certOnlyPemUnderCertificateBoundSchemeIsRejected() throws Exception {
         KeyPair leafKeyPair = TestCertificates.generateEcKeyPair();

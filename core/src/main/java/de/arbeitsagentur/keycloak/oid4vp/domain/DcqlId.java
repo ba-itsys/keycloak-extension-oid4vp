@@ -21,8 +21,8 @@ import java.util.regex.Pattern;
  * DCQL ids of credentials and claims may only contain letters, digits, underscore and hyphen.
  * Configured values are slugged before they name an entry of the query.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1">OID4VP 1.0 §6.1 — Credential Query</a>
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.3">OID4VP 1.0 §6.3 — Claims Query</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1">OID4VP 1.0 section 6.1</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.3">OID4VP 1.0 section 6.3</a>
  */
 public final class DcqlId {
 

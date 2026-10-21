@@ -31,18 +31,17 @@ import org.keycloak.crypto.X509CertificateChainValidator;
  *
  * @param issuerTrustAnchors        X.509 trust anchors and policy for credential issuer chains
  *                                  (SD-JWT x5c, mDoc x5chain)
- * @param directIssuerCertificates  end entity certificates listed as issuance services. Their keys
- *                                  are trusted directly when a credential carries no chain. Each is
- *                                  bound to the issuer it is trusted for.
+ * @param directIssuerCertificates  end entity certificates trusted directly. Their keys verify a
+ *                                  credential that carries no chain. Each is bound to the issuer it
+ *                                  is trusted for.
  * @param trustedIssuerKeys         trusted issuer keys from providers that expose keys instead of
  *                                  X.509 anchors, each bound to the issuer it is trusted for
- * @param hasDeclaredTrustSource    whether any trust material provider is configured. This is
- *                                  derived from configuration alone, so it holds whether or not the
- *                                  trust material is currently reachable. A credential type no
- *                                  provider serves and a declared source that resolves to no
- *                                  anchors both leave the lists empty and make verification fail
- *                                  instead of falling back to the issuer's own self-published
- *                                  metadata.
+ * @param hasDeclaredTrustSource    whether any trust material provider is configured. It comes
+ *                                  from the configuration alone and holds even when the trust
+ *                                  material is unreachable. A credential type no provider serves
+ *                                  and a declared source without anchors both leave the lists
+ *                                  empty. Verification then fails and does not fall back to the
+ *                                  metadata the issuer publishes itself.
  */
 public record ResolvedTrust(
         List<IssuerTrustAnchors> issuerTrustAnchors,
@@ -68,7 +67,6 @@ public record ResolvedTrust(
         return hasX509Trust() || !trustedIssuerKeys.isEmpty();
     }
 
-    /** Returns whether a presented certificate chain can be validated against this trust material. */
     public boolean hasX509Trust() {
         return !issuerTrustAnchors.isEmpty() || !directIssuerCertificates.isEmpty();
     }
@@ -80,7 +78,7 @@ public record ResolvedTrust(
     /**
      * Returns whether a credential without a certificate chain can be verified. Pinned issuer
      * certificates and published issuer keys both identify the issuer key directly, so a provider
-     * exposing either makes a chainless credential a configured case rather than a missing chain.
+     * exposing either expects chainless credentials.
      */
     public boolean hasChainlessIssuerTrust() {
         return !directIssuerCertificates.isEmpty() || !trustedIssuerKeys.isEmpty();
@@ -103,9 +101,9 @@ public record ResolvedTrust(
     }
 
     /**
-     * Returns the directly trusted certificates usable for a credential of the given issuer. This
-     * serves the case where a credential names no certificate and its bare key is taken on trust,
-     * which is exactly where the issuer has to match.
+     * Returns the directly trusted certificates usable for a credential of the given issuer. Serves
+     * credentials that name no certificate, whose bare key is taken on trust. The issuer must match
+     * there, because nothing else ties the key to the credential.
      */
     public List<X509Certificate> issuerCertificatesFor(String issuer) {
         return directIssuerCertificates.stream()
@@ -115,9 +113,9 @@ public record ResolvedTrust(
     }
 
     /**
-     * Returns every directly trusted certificate, whichever issuer it belongs to. This serves the
-     * case where a credential presents the certificate itself, because matching the certificate is
-     * the stronger statement, and the formats that have no issuer identifier to match against.
+     * Returns every directly trusted certificate, whichever issuer it belongs to. Serves credentials
+     * that present the certificate itself, because a matching certificate is the stronger statement.
+     * Also serves formats that have no issuer identifier to match against.
      */
     public List<X509Certificate> pinnedCertificates() {
         return directIssuerCertificates.stream()

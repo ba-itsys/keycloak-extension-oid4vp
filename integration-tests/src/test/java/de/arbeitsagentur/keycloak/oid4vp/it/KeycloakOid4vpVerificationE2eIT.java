@@ -186,7 +186,7 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
     /**
      * The first failure recorded for a login owns the URL handed out with it. Anyone who knows the
      * public state can post a second presentation for that login, and it must not leave the End-User
-     * holding a URL that no longer resolves.
+     * holding a dead URL.
      */
     @Test
     void aSecondRejectionKeepsTheFirstFailureUrlValid() throws Exception {
@@ -225,7 +225,7 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
 
     /**
      * The failure record is single-use, so a reload of the page the End-User was handed back to finds
-     * nothing. A browser opened it, which means it gets Keycloak's error page rather than JSON.
+     * nothing. A browser opened it, so it gets Keycloak's error page.
      */
     @Test
     void revisitingTheFailureUrlRendersTheErrorPage() throws Exception {
@@ -265,9 +265,9 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
     }
 
     /**
-     * A deployment can have the rejection reported to the wallet instead, which OID4VP 1.0 §8.2
-     * permits as well. The End-User still reaches the login page, because the error travels beside the
-     * {@code redirect_uri} instead of replacing it.
+     * A deployment can have the rejection reported to the wallet instead, which OID4VP 1.0 section 8.2
+     * permits as well. The End-User still reaches the login page, because the error response carries
+     * the {@code redirect_uri} too.
      */
     @Test
     void configuredRejectionResponseReportsTheErrorToTheWallet() throws Exception {
@@ -308,8 +308,8 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
 
     /**
      * A post naming a login the endpoint cannot resolve gets a plain error and no
-     * {@code redirect_uri}, because nothing about such a post proves it came from a wallet and it must
-     * not be able to hand anyone a front-channel URL that ends a login.
+     * {@code redirect_uri}. Nothing about such a post proves it came from a wallet, and it must not be
+     * able to hand anyone a front-channel URL that ends a login.
      */
     @Test
     void aPostForAnUnknownLoginIsRejectedWithoutARedirect() throws Exception {

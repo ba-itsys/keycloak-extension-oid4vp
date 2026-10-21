@@ -21,9 +21,9 @@ import java.util.TreeMap;
 
 /**
  * What one credential of a presentation contributes to a reference credential binding. The credential
- * type is part of it, because the same claims out of another credential are a different statement, and
- * the claims are ordered by key so that the digest over them does not depend on the order a wallet
- * answered in or the order a provider selected them in.
+ * type is part of it, because the same claims out of another credential are a different statement. The
+ * claims are ordered by key, so the digest over them does not depend on the order a wallet answered in
+ * or the order a provider selected them in.
  */
 public record BoundCredential(String credentialType, Map<String, Object> claims) {
 

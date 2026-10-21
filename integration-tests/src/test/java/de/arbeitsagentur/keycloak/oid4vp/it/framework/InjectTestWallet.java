@@ -23,7 +23,7 @@ import org.keycloak.testframework.injection.LifeCycle;
 
 /**
  * Injects an eudi-dev wallet. The container binds fixed host ports, so a test class can only use one
- * wallet at a time; a class that requests a different configuration gets a fresh container.
+ * wallet at a time. A class that requests a different configuration gets a fresh container.
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.FIELD)

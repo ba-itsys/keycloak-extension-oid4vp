@@ -147,9 +147,8 @@ public class Oid4vpDirectPostService {
             }
         }
 
-        // A fresh, unguessable secret bound to this direct_post submission that the browser must
-        // present back at /complete-auth, so the public state alone is not enough to drive
-        // completion (OID4VP 1.0 §8.2 response_code).
+        // The browser must present this secret at /complete-auth, so the public state alone cannot
+        // drive completion (OID4VP 1.0 section 8.2, response_code).
         String responseCode = Base64Url.encode(SecretGenerator.getInstance().randomBytes(RESPONSE_CODE_BYTES));
         String completeAuthUrl = buildCompleteAuthUrl(endpointBaseUrl, state, responseCode);
         session.singleUseObjects()
@@ -277,7 +276,7 @@ public class Oid4vpDirectPostService {
         return DEFERRED_IDENTITY_NOTE + ":" + state;
     }
 
-    /** Names the auth note holding the presented credentials after its state, as above. */
+    // Keys the note by state for the same reason as deferredIdentityNote.
     private static String deferredClaimsNote(String state) {
         return DEFERRED_CLAIMS_NOTE + ":" + state;
     }
@@ -308,15 +307,17 @@ public class Oid4vpDirectPostService {
     }
 
     /**
-     * Records a login that ended before it could be completed, either because the wallet reported an
-     * error response (OID4VP 1.0 §8.5) or because this verifier rejected the presentation, and
-     * returns the URL that hands the End-User back to the front channel, where {@code /failed}
-     * returns them to the login page. OID4VP 1.0 §8.2 lets the Response URI return a
-     * {@code redirect_uri} for Error Responses and requires the URL to carry a fresh,
-     * cryptographically random value, which is the {@code response_code} created here. The failure
-     * itself is kept server-side, so whoever posted cannot choose what the browser is told. In the
-     * cross-device flow the wallet runs on another device, so the same URL is also published under
-     * {@link #CROSS_DEVICE_FAILED_PREFIX} for the browser's SSE stream.
+     * Records a login that ended before it could complete and returns the URL that hands the
+     * End-User back to the front channel, where {@code /failed} returns them to the login page. The
+     * login ends either with a wallet error response (OID4VP 1.0 section 8.5) or with a presentation
+     * this verifier rejected.
+     *
+     * <p>OID4VP 1.0 section 8.2 lets the Response URI return a {@code redirect_uri} for error
+     * responses and requires that URL to carry a fresh, cryptographically random value. The
+     * {@code response_code} created here is that value. The failure itself stays on the server, so
+     * whoever posted cannot choose what the browser is told. In the cross-device flow the wallet runs
+     * on another device, so the same URL is also published under {@link #CROSS_DEVICE_FAILED_PREFIX}
+     * for the browser's SSE stream.
      */
     public String signalFailure(String state, String endpointBaseUrl, LoginFailure failure, boolean isCrossDevice) {
         // The first failure recorded for a state owns the URL handed out with it, as on the
@@ -381,11 +382,11 @@ public class Oid4vpDirectPostService {
          * End-User cannot know about unless it is named.
          */
         public enum Origin {
-            /** The wallet reported an error response (OID4VP 1.0 §8.5). */
+            // The wallet reported an error response (OID4VP 1.0 section 8.5).
             WALLET,
-            /** The verifier refused what the wallet presented. */
+            // The verifier refused what the wallet presented.
             VERIFIER,
-            /** Verification broke on this side. The presentation was never judged. */
+            // Verification broke on this side. The presentation was never judged.
             SERVER;
 
             static Origin of(String name) {

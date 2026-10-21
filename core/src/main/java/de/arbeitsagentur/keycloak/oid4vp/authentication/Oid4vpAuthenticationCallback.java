@@ -95,7 +95,7 @@ public final class Oid4vpAuthenticationCallback implements AuthenticationCallbac
         return broker.retryLogin(identityProvider, authSession);
     }
 
-    /** Runs the preprocessing the broker runs before it looks for the user. */
+    // Mirrors the preprocessing the broker runs before it looks for the user.
     private void preprocess(BrokeredIdentityContext context) {
         RealmModel realm = session.getContext().getRealm();
         provider.preprocessFederatedIdentity(session, realm, context);

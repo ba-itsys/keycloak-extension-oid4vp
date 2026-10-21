@@ -112,7 +112,7 @@ class Oid4vpSubjectBindingAuthenticatorTest {
         List<ProviderConfigProperty> properties = new Oid4vpSubjectBindingAuthenticator().getConfigProperties();
 
         assertThat(properties)
-                .as("the entitlement is not configurable, it is what carries the subject to the issuance")
+                .as("the entitlement carries the subject to the issuance, so it is not configurable")
                 .extracting(ProviderConfigProperty::getName)
                 .containsExactly(
                         Oid4vpSubjectCredentialOffer.CREDENTIAL_CONFIGURATION_ID,

@@ -23,9 +23,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.keycloak.broker.provider.util.SimpleHttp;
 
-/**
- * Renders the details of a failure caused by something outside this verifier for log lines and error messages.
- * */
+// Renders the details of a failure caused by something outside this verifier for log lines and error messages.
 public final class FailureDetails {
 
     private static final int MAX_BODY_CHARS = 300;

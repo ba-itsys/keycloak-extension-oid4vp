@@ -29,7 +29,7 @@ import org.keycloak.util.JsonSerialization;
  * request object.
  *
  * <p>A wallet that requires an encrypted request object passes its public encryption keys in the
- * {@code jwks} member of that metadata (OID4VP 1.0 §5.10), so metadata without such a key
+ * {@code jwks} member of that metadata (OID4VP 1.0 section 5.10), so metadata without such a key
  * describes a wallet that takes the signed request object as it is and no instance of this record
  * exists for it.
  *
@@ -130,15 +130,15 @@ public record WalletMetadata(Oid4vpJwk encryptionKey, String algorithm, String e
     /**
      * Selects the content encryption method the request object is encrypted with, reading
      * {@code request_object_encryption_enc_values_supported}. The wallet is the authorization
-     * server of the flow, and OID4VP 1.0 §5.10.1 delegates the request object to RFC 9101, which
+     * server of the flow, and OID4VP 1.0 section 5.10.1 delegates the request object to RFC 9101, which
      * defines that parameter. The {@code authorization_encryption_*} parameters describe the
-     * authorization response (OID4VP 1.0 §5.10) and say nothing about the request object, so they
+     * authorization response (OID4VP 1.0 section 5.10) and say nothing about the request object, so they
      * are not read here.
      *
-     * <p>The advertisement is a preference and not a demand, so a wallet advertising only
-     * unsupported methods still receives a request object it may attempt to decrypt. No
+     * <p>The advertisement is a preference, so a wallet advertising only unsupported methods
+     * still receives a request object it may attempt to decrypt. No
      * specification defines a default for this direction, so A128GCM is applied, which OID4VP 1.0
-     * §8.3 names as the default for the encrypted response. The JWE header states the chosen
+     * section 8.3 names as the default for the encrypted response. The JWE header states the chosen
      * method, which lets the wallet decrypt without prior agreement.
      */
     private static String selectEncryptionMethod(Map<String, Object> metadata) {

@@ -33,9 +33,8 @@ import org.keycloak.sdjwt.vp.SdJwtVpVerificationResult;
 import org.keycloak.util.JsonSerialization;
 
 /**
- * Verifies SD-JWT Verifiable Credentials presented in a VP token. This is a thin facade over
- * Keycloak's SD-JWT consumer APIs: Keycloak runs the presentation verification flow, while the
- * extension keeps its own issuer trust policy and the orchestration after verification.
+ * Verifies SD-JWT Verifiable Credentials presented in a VP token. Keycloak's SD-JWT consumer runs
+ * the presentation verification. The extension supplies its own issuer trust policy.
  *
  * @see <a href="https://www.rfc-editor.org/rfc/rfc9901.html">RFC 9901, Selective Disclosure for JSON Web Tokens</a>
  * @see <a href="https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-13">draft-ietf-oauth-sd-jwt-vc-13, SD-JWT VC</a>
@@ -94,10 +93,7 @@ public class SdJwtVerifier {
         }
     }
 
-    /**
-     * Verifies an SD-JWT VP, checking the issuer signature and the key binding and extracting the
-     * disclosed claims. The expected audience and nonce are matched against the key binding JWT.
-     */
+    // Requires a key binding JWT only when both the expected audience and nonce are given.
     @SuppressWarnings("unchecked")
     public SdJwtVerificationResult verify(
             String sdJwt, String expectedAudience, String expectedNonce, ResolvedTrust trust) {
@@ -110,10 +106,9 @@ public class SdJwtVerifier {
                         "The issuer-signed JWT has typ " + type + " instead of " + VCFormat.SD_JWT_VC);
             }
 
-            // The ClaimVerifier.Builder constructor adds an IatLifetimeCheck with the KB-JWT default
-            // maxAge of 300 seconds to every builder, including the issuer options. It is removed for
-            // issuer JWTs because credentials can be arbitrarily old, and their expiration is judged
-            // by the exp claim.
+            // ClaimVerifier.Builder adds an IatLifetimeCheck with the KB-JWT default maxAge of 300 seconds
+            // to every builder, including the issuer options. Remove it for the issuer JWT, because a
+            // credential can be arbitrarily old and its exp claim decides when it expires.
             IssuerSignedJwtVerificationOpts issuerOpts = IssuerSignedJwtVerificationOpts.builder()
                     .withClockSkew(clockSkewSeconds)
                     .withIatCheck(null)

@@ -20,8 +20,8 @@ import java.util.Map;
 
 /**
  * A conformance suite test module to run in one variant combination. The plan variant is chosen when
- * the plan is created and applies plan wide, while the module variant picks which combination of the
- * module to run, since a plan can contain the same module several times.
+ * the plan is created and applies plan wide. A plan can contain the same module several times, and
+ * the module variant picks which of them runs.
  */
 public record ConformanceModuleVariant(
         String plan,
@@ -53,7 +53,7 @@ public record ConformanceModuleVariant(
 
     /**
      * Returns a copy of this variant that also accepts a SKIPPED result from the suite. Only a module
-     * covering a feature the verifier does not advertise opts in; every other module fails on an
+     * covering a feature the verifier does not advertise opts in. Every other module fails on an
      * unexpected skip.
      */
     public ConformanceModuleVariant allowingSkipped() {

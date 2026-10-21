@@ -51,7 +51,7 @@ public class KeycloakRealmIssuerIdentityProviderConfig extends IdentityProviderM
         }
     }
 
-    /** Returns the realm whose keys sign the credentials. Empty means the realm the verifier runs in. */
+    // Empty means the realm the verifier runs in.
     public String getIssuerRealm() {
         return getConfig().get(ISSUER_REALM);
     }

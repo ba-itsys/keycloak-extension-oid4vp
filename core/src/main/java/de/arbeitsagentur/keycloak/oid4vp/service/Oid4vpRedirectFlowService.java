@@ -57,7 +57,7 @@ public class Oid4vpRedirectFlowService {
     private final int requestObjectLifespanSeconds;
     private final Oid4vpRequestObjectSigner requestObjectSigner;
 
-    /** Accepts a null session, which is only required for signing with a realm key. */
+    // The session may be null because only signing with a realm key needs it.
     public Oid4vpRedirectFlowService(KeycloakSession session, int requestObjectLifespanSeconds) {
         this.session = session;
         this.requestObjectLifespanSeconds = requestObjectLifespanSeconds;
@@ -65,10 +65,9 @@ public class Oid4vpRedirectFlowService {
     }
 
     /**
-     * Builds the wallet authorization URL. {@code walletScheme} is either a custom URL scheme such
-     * as {@code openid4vp://} or a full {@code http(s)} wallet authorization endpoint URL such as
-     * {@code http://localhost:8085/authorize} for wallets reachable at a web URL, and both forms
-     * receive the same query parameters.
+     * {@code walletScheme} is a custom URL scheme such as {@code openid4vp://} or the {@code http(s)}
+     * authorization endpoint of a wallet reachable at a web URL, such as
+     * {@code http://localhost:8085/authorize}. Both forms receive the same query parameters.
      */
     public URI buildWalletAuthorizationUrl(
             String walletScheme, String clientId, URI requestUri, boolean requestUriMethodPost) {
@@ -90,14 +89,14 @@ public class Oid4vpRedirectFlowService {
                 .append("=")
                 .append(URLEncoder.encode(requestUri.toString(), StandardCharsets.UTF_8));
         // Without request_uri_method the wallet retrieves the request object with GET (OID4VP 1.0
-        // §5.10). Advertising post lets a conforming wallet POST its wallet_metadata and wallet_nonce.
+        // section 5.10). Advertising post lets a conforming wallet POST its wallet_metadata and wallet_nonce.
         if (requestUriMethodPost) {
             url.append("&").append(REQUEST_URI_METHOD).append("=").append(REQUEST_URI_METHOD_POST);
         }
         return URI.create(url.toString());
     }
 
-    /** Returns whether the wallet target is an http(s) URL with a host rather than a bare scheme. */
+    // A bare "http://" or "https://" without a host counts as a custom scheme.
     private static boolean isWalletEndpointUrl(String walletScheme) {
         String lower = walletScheme.toLowerCase();
         if (lower.startsWith("http://")) {
@@ -130,8 +129,8 @@ public class Oid4vpRedirectFlowService {
             // this verifier never stored, leaving the callback undecryptable. The key is generated
             // and stored with the request context when the login page is rendered.
             throw new IllegalStateException(
-                    "No stored response encryption key for this request context; refusing to advertise one the"
-                            + " callback could not decrypt");
+                    "No stored response encryption key for this request context. Without it the callback could not"
+                            + " decrypt the response.");
         }
         return params.responseEncryptionKey();
     }
@@ -157,8 +156,8 @@ public class Oid4vpRedirectFlowService {
         if (StringUtil.isNotBlank(params.walletNonce())) {
             claims.put(WALLET_NONCE, params.walletNonce());
         }
-        // client_metadata advertising the supported vp_formats is mandatory in every authorization
-        // request.
+        // OID4VP 1.0 section 5.1 requires vp_formats_supported in client_metadata unless the wallet
+        // learns the supported formats another way.
         claims.put(CLIENT_METADATA, buildClientMetadata(responseEncryptionKey));
         addDcqlAndVerifierInfo(claims, params.dcqlQuery(), params.verifierInfo());
         return claims;

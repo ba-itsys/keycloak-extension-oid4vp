@@ -40,10 +40,10 @@ class HappyFlowConformanceTest extends AbstractVerifierConformanceTest {
     }
 
     /**
-     * The suite signs mdoc credentials with a hard-coded mDL issuer certificate, which conformance
-     * suite issue #1663 tracks making configurable. Since the verifier rejects presentations from an
-     * expired issuer certificate, the mdoc happy flow modules cannot pass once that certificate
-     * lapses, so the expiry is read from the checked-in copy and the skip triggers on its own.
+     * The suite signs mdoc credentials with a hard-coded mDL issuer certificate. Conformance suite
+     * issue #1663 tracks making it configurable. The verifier rejects presentations from an expired
+     * issuer certificate, so the mdoc happy flow modules cannot pass once that certificate lapses.
+     * The expiry is read from the checked-in copy, which makes the skip trigger on its own.
      */
     private static void assumeMdlIssuerCertificateNotExpired(ConformanceModuleVariant moduleVariant) {
         if (!"iso_mdl".equals(moduleVariant.planVariant().get("credential_format"))) {
@@ -54,6 +54,6 @@ class HappyFlowConformanceTest extends AbstractVerifierConformanceTest {
         Assumptions.assumeTrue(
                 Instant.now().isBefore(notAfter),
                 "The conformance suite's hard-coded mDL issuer certificate expired " + notAfter
-                        + "; mdoc presentations cannot verify until the suite renews it");
+                        + ". Mdoc presentations cannot verify until the suite renews it");
     }
 }

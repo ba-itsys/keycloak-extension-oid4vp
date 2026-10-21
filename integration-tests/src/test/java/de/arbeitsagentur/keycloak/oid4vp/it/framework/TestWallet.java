@@ -28,7 +28,7 @@ import java.util.stream.Collectors;
 /**
  * An eudi-dev wallet managed by the test framework. It runs in a Docker container with fixed port
  * bindings and advertises {@code localhost} URLs, which resolve from the test JVM, from the
- * embedded Keycloak server and from inside the wallet container alike.
+ * Keycloak server on the host and from inside the wallet container alike.
  */
 public final class TestWallet implements AutoCloseable {
 

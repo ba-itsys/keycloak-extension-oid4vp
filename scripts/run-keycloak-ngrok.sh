@@ -12,7 +12,7 @@ Starts ngrok and Keycloak (via docker compose) with a public HTTPS URL.
 Keycloak is configured with KC_HOSTNAME so it generates correct endpoint URLs.
 
 Prerequisites:
-  - mvn package must have been run first (to build the packaged provider jar)
+  - Maven, which builds the packaged provider jar when it is missing
   - ngrok must be installed and authenticated
   - docker must be running
 
@@ -70,7 +70,6 @@ require_cmd curl
 require_cmd jq
 require_cmd docker
 
-# Build providers if not already present
 if [ ! -f "$PROVIDER_JAR" ]; then
   echo "==> Building extension (packaged provider jar not found)..."
   (cd "$ROOT_DIR" && mvn package -DskipTests -q)
@@ -88,7 +87,6 @@ cleanup() {
 
 trap cleanup INT TERM EXIT
 
-# Start ngrok
 NGROK_ARGS="http $KC_PORT --log=stdout --log-format=json"
 if [ -n "$NGROK_DOMAIN" ]; then
   NGROK_ARGS="$NGROK_ARGS --url=$NGROK_DOMAIN"
@@ -109,7 +107,6 @@ get_public_url() {
   return 1
 }
 
-# Wait for ngrok to be ready
 i=0
 public_url=""
 while [ "$i" -lt 120 ]; do
@@ -156,7 +153,7 @@ YAML
 cleanup_override() {
   rm -f "$NGROK_OVERRIDE" >/dev/null 2>&1 || true
 }
-# Add to existing trap
+# Replaces the trap above and keeps its cleanup.
 trap 'cleanup; cleanup_override' INT TERM EXIT
 
 if [ "$NGROK_ONLY" = "true" ]; then

@@ -31,7 +31,7 @@ import org.keycloak.common.util.PemUtils;
 import org.keycloak.crypto.JavaAlgorithm;
 import org.keycloak.utils.StringUtil;
 
-/** The OID4VP {@code client_id_scheme} values and their client id prefixes. */
+// OID4VP 1.0 section 5.9.3 defines the client identifier prefixes.
 public enum Oid4vpClientIdScheme {
     PLAIN("plain", ""),
     X509_SAN_DNS("x509_san_dns", "x509_san_dns:"),

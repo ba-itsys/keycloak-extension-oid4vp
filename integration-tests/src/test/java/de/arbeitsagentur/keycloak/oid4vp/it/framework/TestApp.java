@@ -32,7 +32,7 @@ import java.util.stream.Collectors;
 import org.keycloak.common.util.SecretGenerator;
 import org.keycloak.protocol.oidc.utils.PkceUtils;
 
-/** Stands in for the OAuth client application that the tests log in to. */
+// Stands in for the OAuth client application that the tests log in to.
 public final class TestApp implements AutoCloseable {
 
     private final HttpServer server;

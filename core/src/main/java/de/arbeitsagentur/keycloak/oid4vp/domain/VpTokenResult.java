@@ -20,7 +20,7 @@ import java.util.Map;
 /**
  * The verified credentials of a {@code vp_token}, keyed by the credential id of the DCQL query.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1">OID4VP 1.0 §8.1 — VP Token</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1">OID4VP 1.0 section 8.1</a>
  */
 public record VpTokenResult(Map<String, VerifiedCredential> credentials) {
     public VerifiedCredential getPrimaryCredential() {

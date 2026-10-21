@@ -229,9 +229,9 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
         Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
         assertThat(walletResponse.redirectUri()).isNull();
 
-        // A foreign party can observe the public state in the request_uri, but not
-        // the single-use response_code generated during direct_post, and without that code
-        // /complete-auth rejects the request before it even checks the browser session.
+        // A foreign party can observe the public state in the request_uri. It cannot know the
+        // single-use response_code generated during direct_post, and without that code
+        // /complete-auth rejects the request before it checks the browser session.
         String completeAuthUrl = keycloakUrls.getBase() + "/realms/" + REALM
                 + "/broker/oid4vp/endpoint/complete-auth?state="
                 + URLEncoder.encode(state, StandardCharsets.UTF_8);
@@ -254,11 +254,11 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
     }
 
     /**
-     * A declined presentation has to move the browser in the cross-device flow too. Since the wallet
-     * runs on another device, a {@code redirect_uri} returned by the response URI reaches only the
-     * wallet's own user agent, so the browser learns of the decline through the SSE stream. Without
-     * that signal it waits for a completion that never comes and shows a generic timeout only after
-     * the stream's full lifetime.
+     * A declined presentation has to move the browser in the cross-device flow too. The wallet runs on
+     * another device, so a {@code redirect_uri} returned by the response URI reaches only the wallet's
+     * own user agent. The browser learns of the decline through the SSE stream. Without that signal it
+     * waits for a completion that never comes and shows a generic timeout only after the stream's
+     * full lifetime.
      */
     @Test
     void crossDeviceWalletErrorReturnsBrowserToLoginPage() throws Exception {
@@ -277,8 +277,8 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
                     .isEqualTo("{}");
             assertLoginFailedBecauseOf("denied consent");
 
-            // The browser has to move well inside the stream's lifetime, because a timeout would move
-            // it eventually too, but only after the End-User has waited the stream out.
+            // A timeout would also move the browser, but only after the End-User has waited the stream
+            // out. The wait therefore ends well inside the stream's lifetime.
             page.waitForURL(
                     url -> url.contains("/failed")
                             || page.locator("a#social-oid4vp").count() > 0,
@@ -295,9 +295,8 @@ class KeycloakOid4vpCrossDeviceE2eIT extends AbstractOid4vpE2eTest {
     }
 
     /**
-     * The stream itself has to carry the decline, so reading it directly pins the contract the browser
-     * script depends on: a {@code failed} event whose payload holds the failure URL, rather than
-     * silence until the stream times out.
+     * The stream itself has to carry the decline. Reading it directly pins the contract the browser
+     * script depends on: a {@code failed} event whose payload holds the failure URL.
      */
     @Test
     void crossDeviceSseEmitsFailedEventWithFailureUrl() throws Exception {

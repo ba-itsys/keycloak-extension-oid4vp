@@ -33,7 +33,7 @@ import org.keycloak.common.util.Base64Url;
 import org.keycloak.common.util.PemUtils;
 import org.keycloak.util.JsonSerialization;
 
-/** Serves ETSI trust list JWTs from a local port to the Keycloak server under test, which runs on the host. */
+// Serves ETSI trust list JWTs from a local port to the Keycloak server under test, which runs on the host.
 public final class TrustListServer implements AutoCloseable {
 
     public static final String PID_LOTE_TYPE = "http://uri.etsi.org/19602/LoTEType/EUPIDProvidersList";

@@ -393,9 +393,8 @@ class MdocVerifierTest {
 
         /**
          * The OpenID conformance suite signs its mDLs directly with a self-signed CA profile
-         * certificate. A trust list serves such a certificate as a PKIX anchor rather than as a
-         * pinned end entity certificate. A chain consisting of exactly that anchor is trusted
-         * without path building.
+         * certificate. A trust list serves such a certificate as a PKIX anchor. A chain consisting of
+         * exactly that anchor is trusted without path building.
          */
         @Test
         void verifyWithSessionTranscript_signerIsTheTrustAnchorItself_passes() throws Exception {
@@ -552,8 +551,8 @@ class MdocVerifierTest {
                     .hasMessageContaining("missing the validity information");
         }
 
-        // ISO/IEC 18013-5 makes validUntil mandatory in ValidityInfo. Without it the credential
-        // would never expire. The presentation must be rejected instead of accepted forever.
+        // ISO/IEC 18013-5 makes validUntil mandatory in ValidityInfo. A credential without it would
+        // never expire.
         @Test
         void verifyPresentation_msoWithoutValidUntil_fails() throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper().withoutValidUntil();
@@ -609,14 +608,13 @@ class MdocVerifierTest {
         }
     }
 
-    // Regression tests for two mDoc presentation bypasses: an intercepted issuer-signed document
-    // replayed without holder proof, and fabricated values that escape digest verification.
+    // Covers two mDoc presentation bypasses: an intercepted issuer-signed document replayed without
+    // holder proof, and fabricated values that escape digest verification.
     @Nested
     class PresentationHardening {
 
-        // The issuer-signed part of an mDoc is static and can be intercepted. A presentation
-        // without deviceSigned carries no proof that the holder key was present, so it must be
-        // rejected rather than accepted by skipping device authentication.
+        // The issuer-signed part of an mDoc is static and can be intercepted. A presentation without
+        // deviceSigned carries no proof that the holder key was present.
         @Test
         void verifyPresentation_withoutDeviceSigned_isRejected() throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();

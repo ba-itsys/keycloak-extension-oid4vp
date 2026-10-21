@@ -74,9 +74,9 @@ abstract class AbstractOid4vpE2eTest {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    // StatusListVerifier rejects a revoked credential with "Credential has been revoked (status=...)"
+    // StatusListVerifier rejects a revoked credential with "Credential has been revoked (status=...)",
     // and the endpoint records that message as the error_description of the login error event.
-    // Matching on "revoked" ties the assertion to the revocation check instead of any failure.
+    // Matching on "revoked" ties the assertion to the revocation check.
     private static final String[] REVOCATION_ERROR_SNIPPETS = {"revoked"};
 
     @InjectRealm(config = Oid4vpRealmConfig.class)
@@ -110,11 +110,10 @@ abstract class AbstractOid4vpE2eTest {
     }
 
     /**
-     * Creates the OID4VP identity provider pointing at the injected wallet's trust list. Because the
-     * realm has CLASS lifecycle the provider is created once per test class, and since the framework
-     * restores neither the mappers nor the credential sets that reference them, this resets both to
-     * the defaults before every test. Config changes made through {@link #setIdpConfig(Map)} are
-     * restored by the framework itself.
+     * Creates the OID4VP identity provider pointing at the injected wallet's trust list. The realm has
+     * CLASS lifecycle, so the provider is created once per test class. The framework restores neither
+     * the mappers nor the credential sets that reference them, so both go back to the defaults before
+     * every test. The framework restores config changes made through {@link #setIdpConfig(Map)}.
      */
     private void ensureIdentityProviderConfigured() {
         boolean trustIdpExists = realm.admin().identityProviders().findAll().stream()
@@ -177,8 +176,8 @@ abstract class AbstractOid4vpE2eTest {
 
     /**
      * Replaces the identity provider mappers that carry a credential type and keeps the untyped
-     * ones, narrowing the credential sets and principal attributes to the credentials the new
-     * mappers produce, because naming a credential no mapper produces is refused on save.
+     * ones. The credential sets and principal attributes narrow to the credentials the new mappers
+     * produce, because naming a credential no mapper produces is refused on save.
      */
     protected void replaceDcqlMappers(List<IdentityProviderMapperRepresentation> mappers) {
         IdentityProviderResource idp = realm.admin().identityProviders().get(Oid4vpTestKeycloakSetup.IDP_ALIAS);
@@ -208,7 +207,7 @@ abstract class AbstractOid4vpE2eTest {
 
     /**
      * Applies a DCQL {@code credential_sets} configuration to the OID4VP identity provider. The
-     * framework does not restore this write; {@link #ensureIdentityProviderConfigured()} puts the
+     * framework does not restore this write. {@link #ensureIdentityProviderConfigured()} puts the
      * default credential sets back before the next test.
      */
     protected void setCredentialSets(String credentialSetsJson) {
@@ -279,7 +278,7 @@ abstract class AbstractOid4vpE2eTest {
                 Oid4vpTestKeycloakSetup.IDP_ALIAS, idp -> idp.getConfig().putAll(entries));
     }
 
-    /** Updates the ETSI trust list identity provider config, which the framework restores afterwards. */
+    // The framework restores the trust list identity provider config after the test.
     protected void setTrustIdpConfig(Map<String, String> entries) {
         realm.updateIdentityProvider(
                 Oid4vpTestKeycloakSetup.TRUST_IDP_ALIAS, idp -> idp.getConfig().putAll(entries));
@@ -302,7 +301,7 @@ abstract class AbstractOid4vpE2eTest {
         flow.completeFirstBrokerLoginIfNeeded(usernamePrefix);
     }
 
-    /** Starts a same device login and returns the request object the wallet would fetch. */
+    // Starts a same device login and returns the request object the wallet would fetch.
     protected SignedJWT fetchCurrentRequestObject() throws Exception {
         flow.navigateToLoginPage();
         flow.clickOid4vpIdpButton();

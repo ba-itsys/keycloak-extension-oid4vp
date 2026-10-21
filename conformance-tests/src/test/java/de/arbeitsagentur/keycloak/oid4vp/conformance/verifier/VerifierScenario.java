@@ -17,7 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp.conformance.verifier;
 
 import java.util.Map;
 
-/** The Keycloak verifier configuration matching one conformance plan variant. */
+// The Keycloak verifier configuration matching one conformance plan variant.
 public record VerifierScenario(CredentialProfile profile, String clientIdScheme, String responseMode) {
 
     public static VerifierScenario fromVariant(String planName, Map<String, String> planVariant) {
@@ -29,8 +29,8 @@ public record VerifierScenario(CredentialProfile profile, String clientIdScheme,
                 ? CredentialProfile.ISO_MDL
                 : CredentialProfile.SD_JWT_VC;
         String clientIdScheme = haip ? "x509_hash" : planVariant.get("client_id_prefix");
-        // The haip profile pins the encrypted response mode, while the plain profile falls back to
-        // the unencrypted one when the variant leaves it open.
+        // The haip profile pins the encrypted response mode. The plain profile falls back to the
+        // unencrypted one when the variant leaves it open.
         String responseMode = planVariant.getOrDefault("response_mode", haip ? "direct_post.jwt" : "direct_post");
         return new VerifierScenario(profile, clientIdScheme, haip ? "direct_post.jwt" : responseMode);
     }

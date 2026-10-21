@@ -25,9 +25,7 @@ import org.keycloak.models.Constants;
 import org.keycloak.models.IdentityProviderMapperModel;
 import org.keycloak.models.IdentityProviderSyncMode;
 
-/**
- * Mirrors the test cases of upstream Keycloak's {@code OID4VPSdJwtUserSessionAttributeMapperTest}.
- */
+// Mirrors the test cases of upstream Keycloak's OID4VPSdJwtUserSessionAttributeMapperTest.
 class OID4VPSdJwtUserSessionAttributeMapperTest {
 
     private final OID4VPSdJwtUserSessionAttributeMapper mapper = new OID4VPSdJwtUserSessionAttributeMapper();

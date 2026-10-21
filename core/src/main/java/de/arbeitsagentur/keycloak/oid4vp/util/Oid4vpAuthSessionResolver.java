@@ -29,7 +29,7 @@ import org.keycloak.sessions.RootAuthenticationSessionModel;
  * to be found through the state parameter or the root session id stored while the request object
  * was generated.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.2">OID4VP 1.0 §8.2, Response Mode direct_post</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.2">OID4VP 1.0 section 8.2, Response Mode direct_post</a>
  */
 public class Oid4vpAuthSessionResolver {
 

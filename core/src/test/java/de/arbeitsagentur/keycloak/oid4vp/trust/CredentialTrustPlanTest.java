@@ -35,7 +35,7 @@ class CredentialTrustPlanTest {
 
     /**
      * Building the authorization request must not depend on the trust material being reachable. A
-     * trust list that cannot be fetched has to fail the presentation, not the login page.
+     * trust list that cannot be fetched fails the presentation, and the login page still renders.
      */
     @Test
     void trustedAuthoritiesAreAdvertisedWithoutPullingTrustMaterial() {
@@ -107,7 +107,7 @@ class CredentialTrustPlanTest {
         assertThat(plan.serves("urn:eudi:pid:de:1")).isFalse();
     }
 
-    /** Advertises its trust domain but cannot serve the material behind it. */
+    // Advertises its trust domain but cannot serve the material behind it.
     private static class UnreachableTrustMaterialProvider
             implements Oid4vpTrustMaterialIdentityProvider<IdentityProviderModel> {
 

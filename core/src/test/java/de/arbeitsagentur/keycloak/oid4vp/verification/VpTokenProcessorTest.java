@@ -275,7 +275,6 @@ class VpTokenProcessorTest {
                 "user1",
                 "cnf",
                 Map.of("jwk", holderKey.toPublicJWK().toJSONObject())));
-        // KB-JWT audience is the alternate URI, not the client-id
         String sdJwt = buildSdJwtVpWithKbJwt(credJwt, "https://alternate.example", "nonce");
 
         VpTokenResult result = processor.process(request(sdJwt, "client-id", "nonce", "https://alternate.example"));

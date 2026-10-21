@@ -115,9 +115,9 @@ public class OID4VPEidasLoaUserSessionAttributeMapper extends AbstractIdentityPr
     }
 
     /**
-     * The note is per login state, so preprocessing sets it too because it runs for every login,
-     * while the user centric hooks below never run for an existing user whose effective sync mode
-     * is IMPORT.
+     * Sets the note during preprocessing too, because the note belongs to the login and preprocessing
+     * runs for every login. The user hooks below never run for an existing user whose effective sync
+     * mode is IMPORT.
      */
     @Override
     public void preprocessFederatedIdentity(

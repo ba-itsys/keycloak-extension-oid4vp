@@ -142,7 +142,6 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         }
     }
 
-    /** Renders the wallet login page with new request URIs in an authentication session that already showed it. */
     protected Response refreshLoginPage(AuthenticationSessionModel authSession) {
         LoginContext loginContext = new LoginContext(
                 authSession.getParentSession().getId(),
@@ -299,8 +298,8 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     /**
      * Validates the credential set configuration again, because identity provider mappers have no
      * validation hook and a mapper edited after the provider was last saved can invalidate a
-     * configuration the admin console accepted. Failing here is deliberate, since a wallet would
-     * reject an inconsistent query with an opaque error.
+     * configuration the admin console accepted. A wallet would reject an inconsistent query with an
+     * opaque error.
      */
     private List<CredentialSet> validatedCredentialSets(Map<String, CredentialTypeSpec> credentialTypes) {
         List<CredentialSet> credentialSets;
@@ -359,9 +358,9 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
     }
 
     /**
-     * Returns the level of authentication a brokered login reached: the level of the flow its
-     * presentation arrived over. A presentation without the subject credential identified nobody, the
-     * user was found by another step of the first broker login flow, so it reaches no level here.
+     * Returns the level of the flow the presentation arrived over. A presentation without the
+     * subject credential identified nobody. Another step of the first broker login flow found the
+     * user, so such a login reaches no level here.
      */
     static Integer levelReached(Oid4vpIdentityProviderConfig config, BrokeredIdentityContext context) {
         if (context.getContextData().containsKey(Oid4vpMapperUtils.CONTEXT_GENERATED_SUBJECT_KEY)) {
@@ -429,9 +428,9 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         FlowEntry crossDeviceFlow = null;
         String qrCodeBase64 = null;
 
-        // A failure here, an invalid credential set configuration for example, is deliberately not
-        // swallowed: it propagates to performLogin, which renders Keycloak's error page instead of
-        // a wallet login page with no button and no QR code.
+        // Lets a failure such as an invalid credential set configuration propagate to performLogin,
+        // which renders Keycloak's error page. A caught failure would leave a wallet login page with
+        // no button and no QR code.
         if (sameDeviceEnabled) {
             sameDeviceFlow = createFlowEntry(
                     loginContext,

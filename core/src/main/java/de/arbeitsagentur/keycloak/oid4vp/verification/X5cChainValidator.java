@@ -35,11 +35,9 @@ import org.keycloak.util.JsonSerialization;
 import org.keycloak.util.KeyWrapperUtil;
 
 /**
- * JWT signature verification against pinned trusted certificates, used for trust list and status
- * list JWTs. A presented x5c chain is accepted when its leaf is one of the trusted certificates or
- * when it builds a PKIX path to a trusted CA certificate via
- * {@link X509CertificateChainValidator}. Without a usable x5c chain the signature is verified
- * directly against each trusted certificate's key.
+ * Verifies trust list and status list JWTs against pinned trusted certificates. A presented x5c
+ * chain is accepted when its leaf is a trusted certificate or when it builds a PKIX path to a trusted
+ * CA certificate. Without a usable x5c chain each trusted certificate's key is tried directly.
  */
 public final class X5cChainValidator {
 
@@ -107,11 +105,10 @@ public final class X5cChainValidator {
     }
 
     /**
-     * Validates the certificate chain the verifier itself puts into the request object {@code x5c}
-     * header and derives its client id from. Only what the verifier emits is checked here: every
-     * certificate has to be currently valid and signed by the next one. Whether the chain is
-     * acceptable at all is the wallet's decision, made against its own relying party trust list, so
-     * no policy about certificate authorities is enforced here.
+     * Checks the chain the verifier puts into the request object {@code x5c} header and derives its
+     * client id from. Every certificate must be currently valid and signed by the next one, which
+     * must be a CA certificate. The wallet decides against its own relying party trust list whether
+     * it accepts the chain, so no trust anchor is required here.
      */
     public static void validateEmittedVerifierChain(List<X509Certificate> chain) throws Exception {
         if (chain.isEmpty()) {

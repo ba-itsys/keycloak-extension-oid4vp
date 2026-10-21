@@ -25,7 +25,7 @@ import org.keycloak.jose.jwe.JWEHeader;
 /**
  * Encrypts a signed request object into a JWE for the wallet's key from {@code wallet_metadata}.
  * The result is a nested JWT, so it carries {@code cty: oauth-authz-req+jwt} to declare the inner
- * content type per RFC 7516 §4.1.12.
+ * content type per RFC 7516 section 4.1.12.
  */
 public final class Oid4vpRequestObjectEncryptor {
 

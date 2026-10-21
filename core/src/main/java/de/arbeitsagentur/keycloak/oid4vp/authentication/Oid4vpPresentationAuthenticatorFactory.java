@@ -48,7 +48,7 @@ public class Oid4vpPresentationAuthenticatorFactory implements AuthenticatorFact
         String alias = config.get(IDENTITY_PROVIDER);
         if (alias == null || alias.isBlank()) {
             throw new IllegalStateException(
-                    "The OID4VP presentation names no identity provider; configure '" + IDENTITY_PROVIDER + "'");
+                    "The OID4VP presentation names no identity provider. Configure '" + IDENTITY_PROVIDER + "'");
         }
         return alias.strip();
     }
@@ -89,8 +89,8 @@ public class Oid4vpPresentationAuthenticatorFactory implements AuthenticatorFact
 
     @Override
     public String getHelpText() {
-        return "Identifies the user by an OID4VP presentation linked through an OID4VP identity provider, without a "
-                + "password or as second factor.";
+        return "Identifies the user by an OID4VP presentation linked through an OID4VP identity provider. Works as a "
+                + "passwordless login or as a second factor.";
     }
 
     @Override

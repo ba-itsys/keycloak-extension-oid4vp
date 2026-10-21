@@ -59,7 +59,7 @@ public final class TestTrust {
         return new ResolvedTrust(List.of(), List.of(), List.of(issuerKeys), List.of(), List.of(), true);
     }
 
-    /** Builds a plan with one provider serving the given credential types, or every type when none are given. */
+    // One provider serves the given credential types, or every type when none are given.
     public static CredentialTrustPlan planOf(ResolvedTrust trust, String... servedCredentialTypes) {
         return new CredentialTrustPlan(
                 List.of(FixedTrustMaterialIdentityProvider.serving(trust, servedCredentialTypes)));

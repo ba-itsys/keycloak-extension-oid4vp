@@ -18,6 +18,7 @@ package de.arbeitsagentur.keycloak.oid4vp.util;
 import static org.assertj.core.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import de.arbeitsagentur.keycloak.oid4vp.binding.ReferenceCredentialBinding;
 import de.arbeitsagentur.keycloak.oid4vp.domain.ClaimSpec;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialTypeSpec;
@@ -588,7 +589,7 @@ class DcqlQueryBuilderTest {
         assertThat(credentialSets.get(0).get("options")).isEqualTo(List.of(List.of("pid", "mdl"), List.of("pid")));
         assertThat(credentialSets.get(0).get("purpose")).isEqualTo("Login");
         assertThat(credentialSets.get(0))
-                .as("required defaults to true in DCQL, so it is only written when false")
+                .as("OID4VP 1.0 section 6.2 defaults required to true, so it is only written when false")
                 .doesNotContainKey("required");
     }
 
@@ -946,6 +947,11 @@ class DcqlQueryBuilderTest {
             @Override
             public boolean isAllowMissingSubjectCredential() {
                 return false;
+            }
+
+            @Override
+            public String getReferenceBindingClaim() {
+                return ReferenceCredentialBinding.DEFAULT_REFERENCE_BINDING_CLAIM;
             }
 
             @Override

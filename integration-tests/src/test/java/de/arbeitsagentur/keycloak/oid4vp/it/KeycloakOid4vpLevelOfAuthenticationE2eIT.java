@@ -28,11 +28,11 @@ import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
 /**
  * Documents the intended level of authentication usage pattern. The client maps the STORK QAA ACR
- * values to levels 3 and 4 ({@code acr.loa.map} in {@link Oid4vpRealmConfig}) while the identity
- * provider caps the cross-device flow at level 3, so a request for level 3 offers both flows and a
- * request for level 4 only the same-device one. The eIDAS LoA mapper writes the level configured for
- * the flow the presentation finished in into the session, from where the client's user session note
- * protocol mapper carries it into the id token.
+ * values to levels 3 and 4 ({@code acr.loa.map} in {@link Oid4vpRealmConfig}). The identity provider
+ * caps the cross-device flow at level 3, so a request for level 3 offers both flows and a request for
+ * level 4 only the same-device one. The eIDAS LoA mapper writes the level configured for the flow the
+ * presentation finished in into the session. The client's user session note protocol mapper carries
+ * it from there into the id token.
  */
 @KeycloakIntegrationTest(config = Oid4vpServerConfig.class)
 class KeycloakOid4vpLevelOfAuthenticationE2eIT extends AbstractOid4vpE2eTest {

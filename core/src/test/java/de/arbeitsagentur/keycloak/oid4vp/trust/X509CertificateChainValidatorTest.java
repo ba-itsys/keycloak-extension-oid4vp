@@ -72,7 +72,7 @@ class X509CertificateChainValidatorTest {
     @Test
     void validatesChainThatIncludesTheTrustedIntermediate() throws Exception {
         // The wallet presents [leaf, issuing CA] and the trust list contains the issuing CA, so the
-        // anchor is the top of the presented chain itself, not its parent.
+        // anchor is the top of the presented chain itself.
         assertThat(X509CertificateChainValidator.validate(
                         encode(leaf, intermediateCert), "ES256", Set.of(intermediateCert), List.of()))
                 .isNotNull();

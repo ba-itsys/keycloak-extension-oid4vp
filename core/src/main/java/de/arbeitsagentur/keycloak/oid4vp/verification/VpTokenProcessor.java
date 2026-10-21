@@ -39,22 +39,19 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Top level processor for VP tokens received from wallets, covering format detection (SD-JWT or
- * mDoc), single and multi credential VP tokens, signature verification through
- * {@link SdJwtVerifier} and {@link MdocVerifier}, trust validation, and revocation checking through
- * {@link StatusListVerifier}.
+ * Verifies the SD-JWT VCs and mDocs in a wallet's VP token and checks their revocation status.
  *
- * <p>Trust is selected per credential: a presentation is verified against the trust material of the
+ * <p>Trust is selected per credential. A presentation is verified against the trust material of the
  * providers serving the credential type requested under the credential id the wallet answered with.
  * The binding from requested id to credential type comes from the request context and never from
  * the presentation, so a wallet cannot choose the trust domain its credential is judged by.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1">OID4VP 1.0 §8.1, VP Token</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1">OID4VP 1.0 section 8.1</a>
  */
 public class VpTokenProcessor implements VpTokenVerifier {
 
     private static final Logger LOG = Logger.getLogger(VpTokenProcessor.class);
-    /** Placeholder id of a bare credential that cannot be attributed to a requested one. */
+    // Placeholder id of a bare credential that cannot be attributed to a requested one.
     private static final String UNATTRIBUTED_CREDENTIAL_ID = "cred1";
 
     private final SdJwtVerifier sdJwtVerifier;
@@ -233,11 +230,11 @@ public class VpTokenProcessor implements VpTokenVerifier {
     }
 
     /**
-     * Reads the types a presentation claims for itself before anything about it is verified: the
-     * SD-JWT {@code vct} with its {@code aka_vcts}, or the mDoc {@code docType}. Reading them
-     * unverified is safe because they only select among the types the query already requested, and
-     * the verified types are checked against the request again after verification, so a wallet
-     * cannot have its credential judged by the trust domain of a type it does not carry.
+     * Reads the SD-JWT {@code vct} with its {@code aka_vcts}, or the mDoc {@code docType}, before
+     * anything is verified. Reading them unverified is safe. They only select among the types the
+     * query requested, and the verified types are checked against the request again afterwards. A
+     * wallet therefore cannot have its credential judged by the trust domain of a type it does not
+     * carry.
      */
     private ClaimedTypes claimedTypes(String credential) {
         if (sdJwtVerifier.isSdJwt(credential)) {
@@ -257,8 +254,8 @@ public class VpTokenProcessor implements VpTokenVerifier {
         }
     }
 
-    // Wallets bind the KB-JWT audience either to client_id or to response_uri, so the configured
-    // client_id is tried first with a single fallback to the redirect flow's response_uri.
+    // Wallets bind the KB-JWT audience either to client_id or to response_uri. Try the configured
+    // client_id first, then the response_uri once.
     private SdJwtVerificationResult verifySdJwtWithFallback(
             String sdJwt, String clientId, String expectedNonce, ResolvedTrust trust, String alternateResponseUri) {
         try {
@@ -283,7 +280,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
      * unknown id can never borrow the trust of a requested credential. The presentation is judged by
      * the trust domain of the type it claims, as long as that type is requested under the id or
      * derives from one (see {@link CredentialTypeHierarchy}). Without a readable type the first
-     * requested type is used, and the type check after verification then fails.
+     * requested type is used, and the type check after verification fails.
      */
     private static class CredentialTrustSelection {
 
@@ -320,10 +317,9 @@ public class VpTokenProcessor implements VpTokenVerifier {
         }
 
         /**
-         * Returns the credential id of a VP token that is a bare credential instead of the
-         * credential id keyed object OID4VP 1.0 §8.1 defines. It can only be attributed when
-         * exactly one credential is requested; with several, the placeholder id is not among the
-         * requested ids and the presentation is rejected.
+         * Attributes a VP token that is a bare credential, not the credential id keyed object of
+         * OID4VP 1.0 section 8.1. Only a request for exactly one credential can be attributed. With
+         * several, the placeholder id is not among the requested ids and the presentation is rejected.
          */
         String singleCredentialId() {
             if (credentialTypesById.size() == 1) {

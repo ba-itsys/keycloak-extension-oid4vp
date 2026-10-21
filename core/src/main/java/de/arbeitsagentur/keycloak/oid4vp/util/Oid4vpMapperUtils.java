@@ -20,14 +20,14 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredentials;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.util.JsonSerialization;
 
-/** Holds the context data keys that OID4VP callback processing and the identity provider mappers agree on. */
+// Holds the context data keys that OID4VP callback processing and the identity provider mappers agree on.
 public final class Oid4vpMapperUtils {
 
     public static final String CONTEXT_CREDENTIALS_KEY = "OID4VP_CREDENTIALS";
     public static final String CONTEXT_ISSUER_KEY = "oid4vp_issuer";
     public static final String CONTEXT_SUBJECT_KEY = "oid4vp_subject";
 
-    /** Set when the subject was generated because the subject credential was not presented. */
+    // Set when the subject was generated because the subject credential was not presented.
     public static final String CONTEXT_GENERATED_SUBJECT_KEY = "oid4vp_generated_subject";
 
     /**
@@ -38,7 +38,7 @@ public final class Oid4vpMapperUtils {
      */
     public static final String CONTEXT_PRESENTATION_FLOW_KEY = "oid4vp_presentation_flow";
 
-    /** Marks a presentation to an identity provider without principal attributes, which refuses logins. */
+    // Marks a presentation to an identity provider without principal attributes, which refuses logins.
     public static final String CONTEXT_PRESENTATION_ONLY_KEY = "oid4vp_presentation_only";
 
     private Oid4vpMapperUtils() {}

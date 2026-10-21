@@ -58,8 +58,9 @@ public abstract class AbstractOID4VPClaimMapper extends AbstractIdentityProvider
         property.setName(CLAIM);
         property.setLabel("Claim");
         property.setHelpText("Path of the claim in the presented credential. Use dot notation for nested claims, "
-                + "i.e. 'address.locality', [] to select all array elements, i.e. 'nationalities[]', and [0] to select the first element of the presented array. "
-                + "To use dot (.) literally, escape it with backslash (\\.)");
+                + "for example 'address.locality'. Use [] to select all array elements, for example "
+                + "'nationalities[]', and [0] to select the first element. Escape a literal dot with a "
+                + "backslash (\\.).");
         property.setType(ProviderConfigProperty.STRING_TYPE);
         return property;
     }
@@ -69,8 +70,8 @@ public abstract class AbstractOID4VPClaimMapper extends AbstractIdentityProvider
         property.setName(CLAIM_ALTERNATIVES);
         property.setLabel("Alternative Claims");
         property.setHelpText("Comma-separated claim paths tried in order when the claim is not presented, in the "
-                + "same notation as the claim. Use it when issuers name the same claim differently, i.e. "
-                + "'birth_name' as an alternative to 'birth_family_name'. Each alternative is requested as a "
+                + "same notation as the claim. Use it when issuers name the same claim differently, for "
+                + "example 'birth_name' as an alternative to 'birth_family_name'. Each alternative is requested as a "
                 + "claim of its own, and the generated claim sets ask for exactly one of them per option.");
         property.setType(ProviderConfigProperty.STRING_TYPE);
         return property;
@@ -92,9 +93,9 @@ public abstract class AbstractOID4VPClaimMapper extends AbstractIdentityProvider
         property.setHelpText("Identifier of this credential in the generated DCQL query, referenced by the "
                 + "identity provider's credential sets and used as the key the wallet answers under. "
                 + "Only letters, digits, '_' and '-' are allowed. Leave empty to derive it from format and "
-                + "first credential type, i.e. 'sdjwt_urn_eudi_pid_1' or 'mdoc_org_iso_18013_5_1_mDL'. Mappers "
-                + "sharing a credential id are requested as one credential, so the same credential type can "
-                + "be requested twice with different claims by giving the mappers different ids.");
+                + "first credential type, for example 'sdjwt_urn_eudi_pid_1' or 'mdoc_org_iso_18013_5_1_mDL'. "
+                + "Mappers sharing a credential id are requested as one credential, so the same credential type "
+                + "can be requested twice with different claims by giving the mappers different ids.");
         property.setType(ProviderConfigProperty.STRING_TYPE);
         return property;
     }
@@ -121,7 +122,7 @@ public abstract class AbstractOID4VPClaimMapper extends AbstractIdentityProvider
         return true;
     }
 
-    /** Returns the credential format this mapper covers, named as DCQL queries name it. */
+    // Returns the format as DCQL names it.
     public abstract String credentialFormat();
 
     protected boolean matchesCredential(IdentityProviderMapperModel mapperModel, BrokeredIdentityContext context) {
@@ -160,20 +161,20 @@ public abstract class AbstractOID4VPClaimMapper extends AbstractIdentityProvider
                 mapperModel.getConfig().get(CREDENTIAL_ID), credentialFormat(), firstCredentialType);
     }
 
-    /** Returns the node the claim paths resolve against. mDoc mappers narrow it to a namespace. */
+    // mDoc mappers override this to narrow the root to a namespace.
     protected JsonNode claimsRoot(IdentityProviderMapperModel mapperModel, PresentedCredential credential) {
         return credential.claimsNode();
     }
 
-    /** Reports whether the claim source configuration is usable. mDoc mappers require a namespace. */
+    // mDoc mappers override this because they require a namespace.
     protected boolean claimSourceConfigured(IdentityProviderMapperModel mapperModel) {
         return true;
     }
 
     /**
-     * The two empty outcomes carry different obligations: a misconfigured mapper must leave the
-     * brokered user untouched, while a well configured mapper whose claim the presentation does not
-     * carry keeps the remove-on-absent update semantics.
+     * Separates the two empty outcomes. A misconfigured mapper must leave the brokered user
+     * untouched. A well configured mapper whose claim the presentation does not carry keeps the
+     * remove-on-absent update semantics.
      */
     protected record ClaimResolution(boolean misconfigured, List<String> values) {
 

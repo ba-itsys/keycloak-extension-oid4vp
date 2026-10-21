@@ -170,7 +170,6 @@ class SdJwtVerifierTest {
 
     @Test
     void verify_withDisclosures_mergesClaims() throws Exception {
-        // A disclosure is [salt, claimName, claimValue].
         String disclosureJson = "[\"salt123\",\"given_name\",\"John\"]";
         String disclosureB64 = Base64URL.encode(disclosureJson.getBytes(StandardCharsets.UTF_8))
                 .toString();
@@ -452,7 +451,7 @@ class SdJwtVerifierTest {
 
     @Test
     void verify_x5cChainAnchoredAtIssuingCa_succeeds() throws Exception {
-        // ETSI trust lists commonly list the issuing CA rather than its root, so that CA alone anchors the chain.
+        // ETSI trust lists commonly list the issuing CA, so that CA alone anchors the chain.
         KeyPair rootKeys = TestCertificates.generateKeyPair();
         KeyPair issuingCaKeys = TestCertificates.generateKeyPair();
         KeyPair issuerKeys = TestCertificates.generateKeyPair();
@@ -892,7 +891,7 @@ class SdJwtVerifierTest {
         return signedJWT.serialize();
     }
 
-    /** Generates a self-signed end entity signer certificate, the shape a trust list pins directly. */
+    // A trust list pins a self-signed end entity signer certificate directly.
     private static X509Certificate generateSelfSignedCert(ECKey ecKey) throws Exception {
         ECPublicKey publicKey = ecKey.toECPublicKey();
         X500Principal subject = new X500Principal("CN=Test SD-JWT Issuer");

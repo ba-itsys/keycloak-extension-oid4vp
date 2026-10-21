@@ -24,12 +24,12 @@ import org.keycloak.utils.StringUtil;
 
 /**
  * One credential the subject of a login may be read from, and the claim of it that carries the
- * subject. The claim belongs to the credential rather than to the identity provider, because
- * credentials do not agree on where the subject sits.
+ * subject. The claim belongs to the credential, because credentials do not agree on where the
+ * subject sits.
  *
- * <p>The configuration is a comma separated list of {@code credentialId:claimPath} entries, and
- * the first entry a wallet presented supplies the subject, so the verifier and not the wallet
- * decides which credential answers.
+ * <p>The configuration is a comma separated list of {@code credentialId:claimPath} entries. The
+ * first entry a wallet presented supplies the subject, so the verifier decides which credential
+ * answers.
  *
  * <p>The claim path starts at the root of what the credential presents, so an SD-JWT entry reads
  * like {@code employee:sub}. An mDoc keeps its data elements inside a namespace, whose dots are
@@ -103,13 +103,13 @@ public record PrincipalAttribute(String credentialId, String claimPath) {
         return separator < 0 ? null : unescape(claimPath.substring(0, separator));
     }
 
-    /** Returns the path inside {@link #mdocNamespace()}, or the whole path when it names none. */
+    // Returns the whole path when it names no namespace.
     public String mdocElementPath() {
         int separator = unescapedDot(claimPath);
         return separator < 0 ? claimPath : claimPath.substring(separator + 1);
     }
 
-    /** Returns the index of the first dot that separates steps, skipping the escaped ones. */
+    // Skips escaped dots, because they belong to a namespace name.
     private static int unescapedDot(String path) {
         for (int i = 0; i < path.length(); i++) {
             char character = path.charAt(i);

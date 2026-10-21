@@ -52,8 +52,8 @@ public final class Oid4vpSubjectCredentialOffer {
             .property()
             .name(CREDENTIAL_CONFIGURATION_ID)
             .label("Credential Configuration ID")
-            .helpText("Credential configuration of this Keycloak that the credential offer offers. Empty means no "
-                    + "offer, and the user signs in with a password on every login.")
+            .helpText("Credential configuration of this Keycloak that is offered to the user. When empty, nothing is "
+                    + "offered and the user has to sign in another way on every login.")
             .type(ProviderConfigProperty.STRING_TYPE)
             .add()
             .property()
@@ -133,7 +133,7 @@ public final class Oid4vpSubjectCredentialOffer {
      * binding of this presentation, and since the pre-authorized code is redeemed in a session of its
      * own, the entitlement is the only thing of this login the issuance sees. An entitlement that exists
      * already is replaced, so a login after a change of the bound claims issues a credential that
-     * matches the presentation of today.
+     * matches the current presentation.
      */
     private static void entitle(
             KeycloakSession session,

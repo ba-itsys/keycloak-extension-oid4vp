@@ -56,9 +56,9 @@ public final class Oid4vpRequestObjectSigner {
     }
 
     /**
-     * Removes a trailing self-signed trust anchor from the chain, because HAIP requires that the
-     * trust anchor is not included in the {@code x5c} header of the signed request and the wallet
-     * holds it out of band. The leaf certificate is always retained.
+     * Removes trailing self-signed certificates from the chain, because HAIP excludes the trust
+     * anchor from the {@code x5c} header of the signed request. The wallet holds it out of band.
+     * Keeps the leaf certificate.
      */
     private static List<X509Certificate> withoutTrustAnchor(List<X509Certificate> chain) {
         List<X509Certificate> trimmed = new ArrayList<>(chain);

@@ -40,7 +40,7 @@ public interface Oid4vpTrustMaterialIdentityProvider<C extends IdentityProviderM
     /**
      * Returns the PKIX trust anchors and policy for issuer certificate chains. The default adapts
      * the upstream {@code resolveX509Trust} method. Providers whose anchors may be intermediate CAs
-     * override this instead, because the upstream record only accepts self-signed roots.
+     * override this, because the upstream record only accepts self-signed roots.
      */
     default List<IssuerTrustAnchors> issuerTrustAnchors() {
         return resolveX509Trust(TrustMaterialRequest.builder().build())
@@ -49,9 +49,9 @@ public interface Oid4vpTrustMaterialIdentityProvider<C extends IdentityProviderM
     }
 
     /**
-     * Returns the end entity certificates listed as issuance services. Their keys are trusted
-     * directly for credentials that carry no certificate chain, and a presented chain whose leaf
-     * equals one of these certificates is trusted without further path building.
+     * Returns the end entity certificates trusted directly. Their keys verify credentials that carry
+     * no certificate chain. A presented chain whose leaf equals one of these certificates is trusted
+     * without path building.
      */
     default List<X509Certificate> directIssuerCertificates() {
         return List.of();
@@ -94,10 +94,9 @@ public interface Oid4vpTrustMaterialIdentityProvider<C extends IdentityProviderM
     /**
      * Returns the directly trusted issuer certificates together with the issuer they belong to, the
      * counterpart of {@link #trustedIssuerKeys()}. The default adapts
-     * {@link #directIssuerCertificates()}, whose certificates carry no issuer because a trust list
-     * names services rather than credential issuers. A provider that knows the issuer of its
-     * certificates overrides this, and those certificates then cannot verify a credential claiming
-     * to come from somewhere else.
+     * {@link #directIssuerCertificates()}, whose certificates carry no issuer because trust list
+     * entries name services. A provider that knows the issuer of its certificates overrides this,
+     * so those certificates cannot verify a credential that claims another issuer.
      */
     default List<TrustedIssuerCertificate> trustedIssuerCertificates() {
         return directIssuerCertificates().stream()
@@ -106,10 +105,10 @@ public interface Oid4vpTrustMaterialIdentityProvider<C extends IdentityProviderM
     }
 
     /**
-     * Validates a certificate chain with the rules the extension applies to credentials: a directly
-     * trusted leaf certificate is accepted within its validity period, any other chain needs a PKIX
-     * path to one of the trust anchors, which may be intermediate CAs. Returns null without X.509
-     * trust, like the upstream default.
+     * Validates a certificate chain with the rules the extension applies to credentials. A directly
+     * trusted leaf certificate is accepted within its validity period. Any other chain needs a PKIX
+     * path to one of the trust anchors, which may be intermediate CAs. Returns null when the
+     * provider has no X.509 trust, like the upstream default.
      */
     @Override
     default JWK validateX509Chain(TrustMaterialRequest request, List<String> x5c, String algorithm)

@@ -4,7 +4,6 @@ set -eu
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 PROVIDER_JAR="$ROOT_DIR/core/target/keycloak-extension-oid4vp.jar"
 
-# Sensible defaults – override via flags or env vars
 DEFAULT_SANDBOX_DIR="${SANDBOX_DIR:-${ROOT_DIR}/sandbox}"
 DEFAULT_PEM_FILE="${DEFAULT_SANDBOX_DIR}/sandbox-ngrok-combined.pem"
 DEFAULT_VERIFIER_INFO="${DEFAULT_SANDBOX_DIR}/sandbox-verifier-info.json"
@@ -17,7 +16,7 @@ One-command local development: builds the extension, generates realm config
 from sandbox certificates, and starts Keycloak (optionally behind an ngrok tunnel).
 
 Modes:
-  (default)                Sandbox mode – uses X.509 sandbox certificates
+  (default)                Sandbox mode with the X.509 sandbox certificates
   --local-wallet           Use local oid4vc-dev wallet (trust list from wallet, no ngrok)
 
 Options:
@@ -79,7 +78,6 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# Local wallet mode implies no-ngrok (localhost only)
 if [ "$LOCAL_WALLET" = "true" ]; then
   DO_NGROK=false
   if ! command -v oid4vc-dev >/dev/null 2>&1; then
@@ -89,7 +87,6 @@ if [ "$LOCAL_WALLET" = "true" ]; then
   fi
 fi
 
-# Step 1: Build
 if [ "$DO_BUILD" = "true" ]; then
   echo "==> Building extension..."
   (cd "$ROOT_DIR" && mvn package -DskipTests -q)
@@ -102,7 +99,6 @@ else
   echo "==> Skipping build (--no-build)"
 fi
 
-# Step 2: Generate realm config
 if [ "$DO_REALM" = "true" ]; then
   echo "==> Generating local realm config..."
   if [ ! -f "$PEM_FILE" ]; then
@@ -124,7 +120,6 @@ else
   echo "==> Skipping realm generation (--skip-realm)"
 fi
 
-# Extract ngrok domain from cert SAN if not explicitly set
 if [ "$DO_NGROK" = "true" ] && [ "$DOMAIN_EXPLICIT" = "false" ] && [ -f "$PEM_FILE" ] && command -v openssl >/dev/null 2>&1; then
   SAN_DNS="$(openssl x509 -in "$PEM_FILE" -noout -ext subjectAltName 2>/dev/null \
     | grep -o 'DNS:[^ ,]*' | head -n1 | cut -d: -f2 || true)"
@@ -134,7 +129,6 @@ if [ "$DO_NGROK" = "true" ] && [ "$DOMAIN_EXPLICIT" = "false" ] && [ -f "$PEM_FI
   fi
 fi
 
-# Step 3: Prepare oid4vc-dev proxy wrapper (runs Keycloak as subprocess)
 PROXY_PORT=9090
 KC_PORT=8080
 
@@ -149,13 +143,12 @@ elif [ "$DO_PROXY" = "true" ]; then
   echo "==> oid4vc-dev not found, skipping proxy"
 fi
 
-# Step 4: Start oid4vc-dev wallet (if --local-wallet)
 WALLET_PID=""
 if [ "$LOCAL_WALLET" = "true" ]; then
   echo "==> Starting oid4vc-dev wallet on port $WALLET_PORT..."
   oid4vc-dev wallet serve --pid --port "$WALLET_PORT" --register &
   WALLET_PID=$!
-  # Give the wallet a moment to start
+  # The wallet needs a moment before it accepts requests.
   sleep 1
   echo "    Wallet UI: http://localhost:$WALLET_PORT"
   echo "    Trust list: http://localhost:$WALLET_PORT/api/trustlists/pid"
@@ -173,13 +166,12 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# Step 5: Start Keycloak (with or without ngrok)
 if [ "$DO_NGROK" = "false" ]; then
   echo "==> Starting Keycloak (localhost only)..."
   cd "$ROOT_DIR"
   EXTERNAL_PORT="${NGROK_TARGET_PORT:-$KC_PORT}"
   COMPOSE_FILES="-f docker-compose.yml"
-  # When proxy is active, tell Keycloak its external hostname (same as ngrok path does)
+  # Behind the proxy Keycloak needs its external hostname, as on the ngrok path.
   if [ -n "${KC_WRAPPER:-}" ]; then
     PROXY_OVERRIDE="$ROOT_DIR/docker-compose.proxy.yml"
     cat > "$PROXY_OVERRIDE" <<YAML

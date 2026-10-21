@@ -57,7 +57,7 @@ public final class ConfigValues {
         return trimmed.startsWith("{") || trimmed.startsWith("[");
     }
 
-    /** Decodes with the MIME decoder so that values line-wrapped by {@code base64(1)} are read as well. */
+    // Uses the MIME decoder, so values line-wrapped by base64(1) decode as well.
     private static String decodeBase64(String value) {
         try {
             return new String(Base64.getMimeDecoder().decode(value.trim()), StandardCharsets.UTF_8);

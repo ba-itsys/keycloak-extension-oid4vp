@@ -22,8 +22,7 @@ import org.keycloak.provider.Provider;
 /**
  * Selects what a credential this Keycloak issues is bound to, out of the presentation it is issued for.
  * The same selection has to be made when the credential is issued and when it is presented again, and
- * the code on both sides cannot share configuration. That is why this is a provider both sides resolve
- * instead of a setting each of them reads.
+ * the code on both sides cannot share configuration. That is why both sides resolve this provider.
  */
 public interface ReferenceCredentialBindingProvider extends Provider {
 

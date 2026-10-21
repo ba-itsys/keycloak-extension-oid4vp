@@ -67,14 +67,14 @@ import org.keycloak.utils.StringUtil;
  * JAX-RS endpoint for the OID4VP protocol interactions with wallets.
  *
  * <p>There is no handler for {@code GET /}. Under {@code direct_post} and {@code direct_post.jwt}
- * a wallet posts its response, error responses included (OID4VP 1.0 §8.5), and the only way back
- * to the browser is the {@code redirect_uri} that the response URI answers with. A wallet that
+ * a wallet posts its response, error responses included (OID4VP 1.0 section 8.5), and the only way
+ * back to the browser is the {@code redirect_uri} that the response URI answers with. A wallet that
  * redirects an error to the response URI on its own arrives with nothing that proves it is the
  * End-User's browser, and nothing proves that the error is the one that happened, so such a
  * request must not end a login.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5">OID4VP 1.0 §5, Authorization Request</a>
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.2">OID4VP 1.0 §8.2, Response Mode direct_post</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5">OID4VP 1.0 section 5, Authorization Request</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.2">OID4VP 1.0 section 8.2, Response Mode direct_post</a>
  */
 public class Oid4vpIdentityProviderEndpoint {
 
@@ -139,7 +139,7 @@ public class Oid4vpIdentityProviderEndpoint {
 
             ResolvedSubmission submission = resolveSubmission(incomingPost, resolvedRequest);
             // Under direct_post.jwt the wallet's error responses arrive inside the response JWE
-            // as well (OID4VP 1.0 §8.3), so the encryption requirement is checked before the error
+            // as well (OID4VP 1.0 section 8.3), so the encryption requirement is checked before the error
             // branch. Otherwise an unencrypted post could record attacker-chosen error details as a
             // wallet error and be answered with 200.
             ensureEncryptedWhenRequired(submission.wasEncrypted());
@@ -386,29 +386,27 @@ public class Oid4vpIdentityProviderEndpoint {
 
     /**
      * Returns the End-User to the login page after a presentation that ended without completing
-     * the login, either because the wallet reported an error response (OID4VP 1.0 §8.5) or because
+     * the login, because the wallet reported an error response (OID4VP 1.0 section 8.5) or because
      * this verifier rejected what the wallet presented. The wallet sends the End-User here once the
-     * response URI has answered it, which is the only way control returns to the browser while the
+     * response URI has answered it. That is the only way control returns to the browser while the
      * response itself travels the back channel.
      *
      * <p>How the login ends depends on who ended it. A wallet that declines takes a step in the
-     * login rather than failing it, so {@code callback.cancelled()} returns the End-User to the
-     * login page with the standard "access denied" message that Keycloak uses for every refused
-     * brokered login. A presentation this verifier rejected is something the End-User cannot learn
-     * about otherwise, so {@code callback.error()} names it on the login page instead. In both
-     * cases the client deliberately gets no OAuth error, leaving room for another attempt or
-     * another authentication method.
+     * login and does not fail it, so {@code callback.cancelled()} returns the End-User to the login
+     * page with the standard "access denied" message that Keycloak uses for every refused brokered
+     * login. The End-User cannot learn about a presentation this verifier rejected in any other way,
+     * so {@code callback.error()} names it on the login page. In both cases the client gets no OAuth
+     * error, which leaves room for another attempt or another authentication method.
      *
-     * <p>The error code and description come from the server-side record rather than from query
-     * parameters, so whoever opens this URL cannot choose them. The response code proves that the
-     * caller received the answer to the wallet's post, and the auth session cookie proves that the
-     * browser is the one that started the attempt, as at {@code /complete-auth}. Both values only
-     * reach the login event, because §8.5 covers everything
-     * from a declined presentation to a request the wallet could not parse without authenticating
-     * which of them happened, and a rejection reason is an internal verification message an
-     * End-User cannot act on.
+     * <p>The error code and description come from the server-side record, so whoever opens this URL
+     * cannot choose them through query parameters. The response code proves that the caller
+     * received the answer to the wallet's post, and the auth session cookie proves that the browser
+     * is the one that started the attempt, as at {@code /complete-auth}. Both values only reach the
+     * login event. Section 8.5 covers everything from a declined presentation to a request the
+     * wallet could not parse, without authenticating which of them happened, and a rejection reason
+     * is an internal verification message the End-User cannot act on.
      *
-     * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.5">OID4VP 1.0 §8.5, Error Response</a>
+     * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.5">OID4VP 1.0 section 8.5, Error Response</a>
      */
     @GET
     @Path("/failed")
@@ -495,8 +493,8 @@ public class Oid4vpIdentityProviderEndpoint {
     }
 
     /**
-     * Answers a wallet-reported error response (OID4VP 1.0 §8.5). Whatever the wallet reported,
-     * the response URI processed the post successfully.
+     * Answers a wallet-reported error response (OID4VP 1.0 section 8.5). Whatever the wallet
+     * reported, the response URI processed the post successfully.
      */
     protected Response handleWalletError(
             String error,
@@ -575,15 +573,15 @@ public class Oid4vpIdentityProviderEndpoint {
         return responseFactory.jsonRedirectResponse(failureUrl, isCrossDevice);
     }
 
-    /** Renders Keycloak's error page. These endpoints are opened by a browser, not by the wallet. */
+    // Renders Keycloak's error page, because a browser opens these endpoints and the wallet never does.
     protected Response browserError(String messageKey) {
         return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, messageKey);
     }
 
     /**
-     * SSE resource methods with {@link SseEventSink} do not return a regular {@link Response} body.
-     * Aborting the handshake with HTTP 204 is the SSE-compatible way to stop browser reconnects for
-     * dead or mismatched login flows.
+     * Stops browser reconnects for an ended or foreign login. An SSE resource method with an
+     * {@link SseEventSink} returns no {@link Response}, and an EventSource stops reconnecting when
+     * the handshake answers with HTTP 204.
      */
     private WebApplicationException stopSseReconnects() {
         return new WebApplicationException(Response.noContent().build());

@@ -38,10 +38,9 @@ import org.keycloak.jose.jws.JWSInput;
 import org.keycloak.models.KeycloakSession;
 
 /**
- * Verifies credential revocation status using Token Status List (draft-ietf-oauth-status-list). A
- * credential may carry a {@code status.status_list} claim with a {@code uri} and an {@code idx},
- * where the URI points to a JWT whose payload holds a DEFLATE-compressed bitstring, and a non-zero
- * value at the credential's index means the credential is revoked.
+ * Checks credential revocation with a Token Status List (draft-ietf-oauth-status-list). The
+ * credential's {@code status.status_list} claim names a {@code uri} and an {@code idx}. The URI serves
+ * a JWT holding a DEFLATE-compressed bitstring. A non-zero value at the index means revoked.
  */
 public class StatusListVerifier {
 
@@ -51,9 +50,9 @@ public class StatusListVerifier {
     private static final int MAX_INFLATED_BYTES = 16 * 1024 * 1024;
 
     /**
-     * Decoded status lists, keyed by their URI and by the trust material they are verified against,
-     * so that a list one trust domain accepted is never reused for a credential whose trust domain
-     * judges status list signatures by other certificates.
+     * Keys decoded status lists by URI and by the certificates that verified them. A list one trust
+     * domain accepted is then never reused for a trust domain that judges status list signatures by
+     * other certificates.
      */
     private static final Map<CacheKey, CachedStatusList> CACHE = BoundedLruMap.withMaxEntries(MAX_CACHE_ENTRIES);
 
@@ -71,7 +70,7 @@ public class StatusListVerifier {
         this.clockSkewSeconds = clockSkewSeconds;
     }
 
-    /** Checks the revocation status without revocation trust material, leaving the status list JWT unverified. */
+    // Leaves the status list JWT signature unverified.
     void checkRevocationStatus(Map<String, Object> claims) {
         checkRevocationStatus(claims, List.of());
     }
@@ -88,7 +87,7 @@ public class StatusListVerifier {
     public void checkRevocationStatus(Map<String, Object> claims, List<X509Certificate> revocationCertificates) {
         StatusReference ref = extractStatusReference(claims);
         if (ref == null) {
-            LOG.debug("No status_list claim found in credential — skipping revocation check");
+            LOG.debug("No status_list claim found in credential, skipping revocation check");
             return;
         }
 
@@ -227,10 +226,7 @@ public class StatusListVerifier {
         validateStatusListToken(typ, sub, null, exp, null, expectedUri);
     }
 
-    /**
-     * Validates the Status List Token header and claims per draft-ietf-oauth-status-list Section 5.1
-     * and Section 8.3.
-     */
+    // draft-ietf-oauth-status-list section 5.1 and section 8.3
     void validateStatusListToken(String typ, String sub, Instant iat, Instant exp, Object ttl, String expectedUri) {
         if (!"statuslist+jwt".equals(typ)) {
             throw new IllegalStateException("Status list JWT from " + expectedUri
@@ -242,8 +238,8 @@ public class StatusListVerifier {
                     "Status list JWT sub claim '" + sub + "' does not match expected URI '" + expectedUri + "'");
         }
 
-        // Issuers sign lists that live only seconds beyond their update interval, so a list can
-        // arrive at the edge of its lifetime and the clock skew tolerance applies to exp as well.
+        // Issuers sign lists that live only seconds beyond their update interval. A list can arrive at
+        // the edge of its lifetime, so the clock skew tolerance applies to exp as well.
         if (exp != null && exp.isBefore(Instant.now().minusSeconds(clockSkewSeconds))) {
             throw new IllegalStateException("Status list JWT from " + expectedUri + " has expired: exp="
                     + FailureDetails.relativeToNow(exp) + ", iat=" + FailureDetails.relativeToNow(iat)
@@ -253,8 +249,8 @@ public class StatusListVerifier {
     }
 
     /**
-     * Resolves the cache expiry for a Status List Token from {@code ttl} (seconds from fetch time),
-     * falling back to {@code exp}, capped at {@code maxCacheTtl} when one is configured.
+     * Caches a Status List Token until the earlier of {@code exp} and fetch time plus {@code ttl},
+     * capped at {@code maxCacheTtl} when one is configured. A token with neither is not cached.
      *
      * @see <a href="https://datatracker.ietf.org/doc/html/draft-ietf-oauth-status-list">Section 13.7</a>
      */
@@ -297,9 +293,8 @@ public class StatusListVerifier {
         try (var is = new InflaterInputStream(new ByteArrayInputStream(compressed))) {
             return readBounded(is);
         } catch (IOException e) {
-            // Retry as raw DEFLATE without a zlib header. Only format errors reach this retry,
-            // because a list over the size bound throws IllegalStateException and is never inflated
-            // a second time.
+            // Retry as raw DEFLATE without a zlib header. Only format errors reach this retry. A list
+            // over the size bound throws IllegalStateException and is never inflated a second time.
             Inflater rawInflater = new Inflater(true);
             try (var is = new InflaterInputStream(new ByteArrayInputStream(compressed), rawInflater)) {
                 return readBounded(is);
@@ -309,10 +304,7 @@ public class StatusListVerifier {
         }
     }
 
-    /**
-     * Reads the inflated bytes under a size bound, so a DEFLATE bomb served as a status list cannot
-     * exhaust the heap.
-     */
+    // Bounds the inflated size so a DEFLATE bomb served as a status list cannot exhaust the heap.
     private static byte[] readBounded(InflaterInputStream is) throws IOException {
         byte[] data = is.readNBytes(MAX_INFLATED_BYTES);
         if (is.read() != -1) {
@@ -346,7 +338,7 @@ public class StatusListVerifier {
         }
     }
 
-    /** Clears the static cache, for tests only. */
+    // For tests only.
     static void clearCache() {
         CACHE.clear();
     }

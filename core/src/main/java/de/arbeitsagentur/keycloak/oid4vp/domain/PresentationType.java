@@ -20,7 +20,7 @@ import org.keycloak.OID4VCConstants;
 /**
  * The credential format of a presentation in a {@code vp_token}.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1">OID4VP 1.0 §8.1 — VP Token</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.1">OID4VP 1.0 section 8.1</a>
  */
 public enum PresentationType {
     SD_JWT(OID4VCConstants.FORMAT_SD_JWT_VC),

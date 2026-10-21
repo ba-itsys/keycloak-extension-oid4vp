@@ -170,7 +170,7 @@ class EtsiTrustListIdentityProviderTest {
         assertThat(materials.get(0).trustAnchors()).containsExactlyInAnyOrder(tlCa, staticCa);
         assertThat(provider.revocationCertificates()).containsExactly(tlCa, staticCa);
         assertThat(provider.directIssuerCertificates())
-                .as("both sources contribute CA certificates only, which are anchors rather than direct issuer certs")
+                .as("both sources contribute CA certificates only, and those serve as trust anchors")
                 .isEmpty();
     }
 
@@ -260,7 +260,7 @@ class EtsiTrustListIdentityProviderTest {
 
         config.setAdvertisedTrustedAuthorityType("true");
         assertThatThrownBy(config::getAdvertisedTrustedAuthorityType)
-                .as("the boolean values of earlier releases are gone, blank means the default")
+                .as("a boolean is no trusted authority type, and blank means the default")
                 .isInstanceOf(IllegalArgumentException.class);
 
         config.setAdvertisedTrustedAuthorityType("false");

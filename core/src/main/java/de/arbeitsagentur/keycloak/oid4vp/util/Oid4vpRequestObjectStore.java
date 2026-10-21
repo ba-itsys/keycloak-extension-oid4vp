@@ -42,8 +42,8 @@ import org.keycloak.utils.StringUtil;
  * {@code direct_post.jwt} callback that omits the {@code state} form field still resolves through
  * this index via the cleartext JWE header.
  *
- * <p>The entry is the authoritative liveness check: the flow is live while it exists, and removing
- * it after a successful callback is what blocks replay.
+ * <p>A flow is live while its entry exists. Removing the entry after a successful callback blocks
+ * replay.
  */
 public class Oid4vpRequestObjectStore {
 
@@ -68,8 +68,8 @@ public class Oid4vpRequestObjectStore {
 
     /**
      * @param dcqlQuery the query snapshot taken when the login page was rendered and served to the
-     *     wallet, so that callback enforcement judges the response against the query the wallet
-     *     actually answered even when the mapper configuration changes mid-flow
+     *     wallet, so callback enforcement judges the response against the query the wallet answered,
+     *     even when the mapper configuration changes mid-flow
      */
     // Entries outlive a deployment, so fields a previous version stored must not fail the lookup.
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -162,7 +162,7 @@ public class Oid4vpRequestObjectStore {
                 .toList();
     }
 
-    /** Forgets the states the wallet login page offered and returns them, for the caller to end. */
+    // Returns the forgotten states, for the caller to end.
     public List<String> forgetStates(AuthenticationSessionModel authSession) {
         List<String> states = rememberedStates(authSession);
         authSession.removeAuthNote(walletLoginStatesNote());

@@ -75,7 +75,7 @@ public enum CredentialProfile {
         this.mappers = mappers;
     }
 
-    /** Names the credential the subject is read from and the claim of that credential carrying it. */
+    // Names the credential the subject is read from and the claim of that credential carrying it.
     public String principalAttributes() {
         return principalAttributes;
     }

@@ -48,7 +48,7 @@ import org.keycloak.utils.StringUtil;
  * Builds the DCQL (Digital Credentials Query Language) query that tells the wallet which credential
  * types and claims the verifier requires, for both the SD-JWT VC and the mDoc (ISO 18013-5) format.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6">OID4VP 1.0 §6, DCQL Query</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6">OID4VP 1.0 section 6, DCQL Query</a>
  */
 public class DcqlQueryBuilder {
 
@@ -92,12 +92,11 @@ public class DcqlQueryBuilder {
     }
 
     /**
-     * Sets the {@code trusted_authorities} entries per credential id. They are not a verifier wide
-     * policy: each credential advertises only what the trust material identity providers serving
-     * its credential type expose, so a credential from a trusted list and one from a private trust
-     * domain carry different entries.
+     * Sets the {@code trusted_authorities} entries per credential id. Each credential advertises
+     * only what the trust material identity providers serving its credential type expose, so a
+     * credential from a trusted list and one from a private trust domain carry different entries.
      *
-     * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1.1">OID4VP 1.0 §6.1.1, Trusted Authorities Query</a>
+     * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1.1">OID4VP 1.0 section 6.1.1, Trusted Authorities Query</a>
      */
     public DcqlQueryBuilder setTrustedAuthorities(
             Map<String, List<TrustedAuthority>> trustedAuthoritiesByCredentialId) {
@@ -152,9 +151,9 @@ public class DcqlQueryBuilder {
     /**
      * Aggregates the credential entries from the OID4VP claim mappers, keyed by credential id.
      * Mappers sharing a credential id form a single entry that accepts every type any of them
-     * names, while an mDoc entry is limited to one doctype because DCQL takes a single
-     * {@code doctype_value}. Entries are sorted by id so that the resulting query does not depend
-     * on the order in which the realm returns the mappers.
+     * names. An mDoc entry is limited to one doctype, because DCQL takes a single
+     * {@code doctype_value}. Entries are sorted by id, so the query does not depend on the order in
+     * which the realm returns the mappers.
      */
     public static AggregatedCredentials aggregateFromMappers(
             Stream<IdentityProviderMapperModel> mappers, Oid4vpConfigProvider config) {
@@ -213,9 +212,8 @@ public class DcqlQueryBuilder {
             });
 
             if (!config.isTransientUsersEnabled()) {
-                // The claim carrying the subject is requested from the credentials named as
-                // principal attributes. Each credential is asked for the claim it was named with.
-                // A credential that never answers for the subject is not asked for it.
+                // Persistent users are looked up by the subject claim, so the credentials named as
+                // principal attributes request the claim they were named with.
                 Map<String, PrincipalAttribute> principalByCredentialId = new LinkedHashMap<>();
                 config.getPrincipalAttributes()
                         .forEach(principal -> principalByCredentialId.put(principal.credentialId(), principal));
@@ -346,8 +344,8 @@ public class DcqlQueryBuilder {
      * takes the first option it can satisfy.
      *
      * <p>Claims are keyed by their DCQL path because a query may point to a claim only once (OID4VP
-     * 1.0 §6.1), so mappers reading the same claim share one entry under the id of the first of
-     * them. mDoc mappers reading different parts of one data element share an entry as well,
+     * 1.0 section 6.1), so mappers reading the same claim share one entry under the id of the first
+     * of them. mDoc mappers reading different parts of one data element share an entry as well,
      * because an mDoc path stops at the element.
      */
     private void addClaims(Map<String, Object> credential, CredentialTypeSpec typeSpec) {
@@ -410,7 +408,6 @@ public class DcqlQueryBuilder {
         return credentialSet;
     }
 
-    /** Resolves the credential id a mapper contributes to, falling back to one derived from format and first type. */
     private static String credentialIdOfMapper(IdentityProviderMapperModel mapper, CredentialTypeKey typeKey) {
         String configured = mapper.getConfig().get(AbstractOID4VPClaimMapper.CREDENTIAL_ID);
         if (StringUtil.isNotBlank(configured) && !CredentialId.isValid(configured.trim())) {

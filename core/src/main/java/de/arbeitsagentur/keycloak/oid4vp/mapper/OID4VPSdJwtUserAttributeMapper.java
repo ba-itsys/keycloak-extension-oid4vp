@@ -46,7 +46,7 @@ public class OID4VPSdJwtUserAttributeMapper extends AbstractOID4VPClaimMapper {
 
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES = ProviderConfigurationBuilder.create()
             .property(credentialTypeProperty("VCT of the SD-JWT credential this claim is requested from. "
-                    + "A comma-separated list accepts a credential of any of the VCTs, i.e. "
+                    + "A comma-separated list accepts a credential of any of the VCTs, for example "
                     + "'urn:eudi:pid:1, urn:eudi:pid:de:1' for the EUDI and the German PID, requested as one "
                     + "credential entry. Mappers sharing a credential id accept every VCT any of them names."))
             .property(claimProperty())

@@ -163,7 +163,8 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
      * Returns the trust anchor type the DCQL query advertises to wallets for this provider, either
      * {@code aki} or {@code etsi_tl}. A trust domain advertises at most one type, because every
      * entry describes the same anchors and a wallet matches any of them. Empty, the default, leaves
-     * the query without {@code trusted_authorities} for the served credentials.
+     * the query without {@code trusted_authorities} for the served credentials. See OID4VP 1.0
+     * section 6.1.1.
      *
      * @throws IllegalArgumentException when the configured value is neither, or {@code etsi_tl} is
      *     configured without a trust list URL
@@ -207,9 +208,8 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
     }
 
     /**
-     * Parses the trust list signing certificate PEM bundle and returns null when it is unset. A
-     * configured but unparsable value throws instead of silently disabling trust list signature
-     * verification.
+     * Returns null when no trust list signing certificate is configured. A configured but unparsable
+     * value throws, because ignoring it would turn off trust list signature verification.
      */
     public List<X509Certificate> parseTrustListSigningCerts() {
         String pem = getTrustListSigningCertPem();

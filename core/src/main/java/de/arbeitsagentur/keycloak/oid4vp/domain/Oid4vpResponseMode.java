@@ -18,7 +18,7 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
 import org.jboss.logging.Logger;
 import org.keycloak.utils.StringUtil;
 
-/** The OID4VP direct post response modes the verifier supports. */
+// The response modes of OID4VP 1.0 sections 8.2 and 8.3.
 public enum Oid4vpResponseMode {
     DIRECT_POST("direct_post"),
     DIRECT_POST_JWT("direct_post.jwt");

@@ -50,14 +50,12 @@ import org.keycloak.sdjwt.consumer.TrustedSdJwtIssuer;
 import org.keycloak.util.KeyWrapperUtil;
 
 /**
- * Resolves the keys used to verify an SD-JWT credential. The keys and certificates come from
- * the trust material identity providers configured for that credential type.
- *
- * <p>Policy:
+ * Resolves the keys that verify an SD-JWT credential from the trust material configured for its
+ * credential type, in this order:
  * <ol>
- *   <li>Prefer x5c validation: a pinned trusted leaf or a PKIX path to the issuer trust anchors</li>
- *   <li>Then the issuer keys the credential's trust domain publishes, matched on iss and kid</li>
- *   <li>Finally, when no trust source is declared for the credential, fall back to JWT VC issuer metadata</li>
+ *   <li>The x5c header, validated as a pinned trusted leaf or by a PKIX path to the issuer trust anchors</li>
+ *   <li>Pinned certificates for the iss value, and published issuer keys matched on iss and kid</li>
+ *   <li>JWT VC issuer metadata, only when no trust source is declared for the credential</li>
  * </ol>
  */
 public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
@@ -82,8 +80,7 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
     @Override
     public List<SignatureVerifierContext> resolveIssuerVerifyingKeys(IssuerSignedJWT issuerSignedJWT)
             throws VerificationException {
-        // The iss claim is used by the allowedIssuers filter and by trust material
-        // configured for a specific issuer.
+        // Require iss because the allowedIssuers filter and issuer-specific trust material depend on it.
         JsonNode issuerClaim = issuerSignedJWT.getPayload().get(OID4VCConstants.CLAIM_NAME_ISSUER);
         if (issuerClaim == null
                 || !issuerClaim.isTextual()
@@ -104,17 +101,15 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
             LOG.debugf("x5c-based SD-JWT verification unavailable, trying fallback mechanisms: %s", e.getMessage());
         }
 
-        // Use the configured issuer keys before consulting issuer metadata. These keys
-        // come from the trust providers selected for this credential type.
         List<SignatureVerifierContext> directVerifiers = directTrustVerifiers(issuerSignedJWT);
         if (!directVerifiers.isEmpty()) {
             LOG.debug("Using configured trusted issuer keys for signature verification");
             return directVerifiers;
         }
 
-        // Issuer metadata is used only when no trust source is configured for this credential.
-        // If a configured trust list is unavailable, verification fails instead of trusting
-        // keys advertised by the credential issuer.
+        // Consult issuer metadata only when no trust source is configured for this credential. An
+        // unreachable trust list then fails verification and never falls back to keys the issuer
+        // advertises about itself.
         if (issuerMetadataResolver != null && !trust.hasIssuerKeyTrust() && !trust.hasDeclaredTrustSource()) {
             try {
                 ResolvedIssuerKey issuerKey = resolveIssuerKeyFromMetadata(issuerSignedJWT);
@@ -137,9 +132,8 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
     }
 
     /**
-     * A certificate chain is required when the trust material contains only CA certificates.
-     * Pinned certificates and published issuer keys also allow verification of credentials
-     * that carry no certificate chain.
+     * Requires a certificate chain when the trust material holds only CA certificates. Pinned
+     * certificates and published issuer keys can verify a credential that carries no chain.
      */
     private boolean requiresCertificateChain() {
         return trust.hasCertificateChainAnchors() && !trust.hasChainlessIssuerTrust();
@@ -253,9 +247,9 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
     }
 
     /**
-     * Selects pinned certificates and issuer keys for the credential's iss value. Issuer keys
-     * are also selected by the kid header. A certificate or key configured for one issuer
-     * cannot verify a credential that claims to come from another issuer.
+     * Selects pinned certificates by the credential's iss value, and issuer keys by iss and kid. A
+     * certificate or key configured for one issuer then cannot verify a credential that claims
+     * another issuer.
      */
     private List<SignatureVerifierContext> directTrustVerifiers(IssuerSignedJWT issuerSignedJWT) {
         JWSHeader header = issuerSignedJWT.getJwsHeader();

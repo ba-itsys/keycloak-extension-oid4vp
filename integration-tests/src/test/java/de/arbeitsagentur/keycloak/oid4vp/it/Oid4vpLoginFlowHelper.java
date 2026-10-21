@@ -119,7 +119,7 @@ class Oid4vpLoginFlowHelper {
         return page.locator("#oid4vp-cross-device-sse-config").getAttribute("data-status-url");
     }
 
-    /** Opens the expired page the countdown leads to and asks it for new links. */
+    // Opens the expired page the countdown leads to and asks it for new links.
     void refreshRequestUris() {
         page.navigate(getRequestUriExpiredUrl());
         page.locator("#oid4vp-get-new-link").click();

@@ -35,7 +35,6 @@ public class Oid4vpIdentityLinks {
         this.realm = realm;
     }
 
-    /** Returns the user linked to the identity key of the presentation, or null. */
     public UserModel linkedUser(Oid4vpPresentation presentation) {
         return session.users()
                 .getUserByFederatedIdentity(

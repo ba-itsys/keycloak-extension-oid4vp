@@ -18,19 +18,19 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
 /**
  * Type identifier of a DCQL {@code trusted_authorities} entry.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1.1">OID4VP 1.0 §6.1.1 — Trusted Authorities Query</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1.1">OID4VP 1.0 section 6.1.1</a>
  */
 public enum TrustedAuthorityType {
 
-    /** Base64url {@code KeyIdentifier} of an {@code AuthorityKeyIdentifier}, OID4VP 1.0 §6.1.1.1. */
+    // Base64url KeyIdentifier of an AuthorityKeyIdentifier, OID4VP 1.0 section 6.1.1.1.
     AKI(Oid4vpConstants.DCQL_TRUSTED_AUTHORITY_AKI),
 
     /**
-     * Identifier of an ETSI trusted list, OID4VP 1.0 §6.1.1.2. The specification defines the value
-     * as the identifier of a trusted list specified in ETSI TS 119 612, while this extension
+     * Identifier of an ETSI trusted list, OID4VP 1.0 section 6.1.1.2. The specification defines the
+     * value as the identifier of a trusted list specified in ETSI TS 119 612. This extension
      * advertises the URL of the ETSI TS 119 602 trust list of the EUDI ecosystem it verifies
-     * against. The wallet resolves the advertised URL either way, because the entry is a hint for
-     * credential selection and not a format contract.
+     * against. The entry is a hint for credential selection, so the wallet resolves the advertised
+     * URL either way.
      */
     ETSI_TL(Oid4vpConstants.DCQL_TRUSTED_AUTHORITY_ETSI_TL);
 

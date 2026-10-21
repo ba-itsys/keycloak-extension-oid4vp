@@ -31,13 +31,13 @@ import org.keycloak.sdjwt.consumer.PresentationRequirements;
  * <p>{@code claimSets} holds the DCQL {@code claim_sets} options as index lists into
  * {@code claims}, in preference order. An empty list means every claim is required.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.3">OID4VP 1.0 §6.3 — Claims Query</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.3">OID4VP 1.0 section 6.3</a>
  */
 public record RequestedCredential(
         String id, String format, List<String> types, List<RequestedClaim> claims, List<List<Integer>> claimSets)
         implements PresentationRequirements {
 
-    /** One requested claim, where the namespace is the mDoc namespace and null for SD-JWT. */
+    // The namespace is the mDoc namespace and null for SD-JWT.
     public record RequestedClaim(String namespace, String path) {
 
         public boolean presentIn(JsonNode presentedClaims) {
@@ -75,7 +75,7 @@ public record RequestedCredential(
         return new RequestedCredential(credentialId, spec.format(), spec.types(), claims, spec.claimSetOptionIndexes());
     }
 
-    /** Returns whether the credential has this format and one of the accepted types, directly or by derivation. */
+    // Accepts a credential whose type derives from an accepted type as well.
     public boolean matches(VerifiedCredential credential) {
         return format.equals(credential.presentationType().dcqlFormat())
                 && types.stream().anyMatch(credential::isOfType);
@@ -96,8 +96,8 @@ public record RequestedCredential(
 
     /**
      * Returns the requested claims the presentation does not satisfy. Without claim sets every
-     * claim is required, otherwise the presentation has to satisfy at least one option, and when
-     * none is satisfied the result names the missing claims of the most preferred option.
+     * claim is required. With claim sets the presentation has to satisfy one option. When it
+     * satisfies none, the result names the missing claims of the most preferred option.
      */
     public List<String> missingClaims(JsonNode presentedClaims) {
         if (claimSets.isEmpty()) {

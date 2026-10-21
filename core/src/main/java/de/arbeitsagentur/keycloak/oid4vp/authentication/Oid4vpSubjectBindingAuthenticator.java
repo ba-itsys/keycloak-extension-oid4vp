@@ -41,10 +41,10 @@ import org.keycloak.utils.StringUtil;
  *
  * <p>A presentation without the subject credential identifies nobody, so the verifier continues the
  * login with a generated subject and the user signs in another way. This authenticator then derives a
- * subject for that user and sets the brokered identity to its identity key, so that the first broker
- * login flow stores that key as the link and the credential the user receives afterwards carries the
- * same subject, which makes the next presentation reach the same account. The subject is derived rather
- * than the user id, so every verifier the credential is shown to reads an opaque value.
+ * subject for that user and sets the brokered identity to its identity key. The first broker login flow
+ * stores that key as the link, and the credential the user receives afterwards carries the same
+ * subject, so the next presentation reaches the same account. Deriving the subject keeps the user id
+ * hidden from every verifier the credential is shown to.
  *
  * <p>Place it in the first broker login flow after the step that authenticates the user. Logins that
  * carry a subject credential pass through untouched, and so do logins of other identity providers.

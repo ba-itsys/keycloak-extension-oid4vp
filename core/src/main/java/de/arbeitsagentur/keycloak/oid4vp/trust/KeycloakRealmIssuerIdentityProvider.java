@@ -36,13 +36,13 @@ import org.keycloak.urls.UrlType;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Trust material identity provider for credentials issued by this Keycloak, whose trust material is
- * the signature key material of the issuing realm. The published JWKs are bound to the realm's
- * issuer identifier and serve credentials that identify their key by {@code kid}, while the keys'
- * certificates are directly trusted issuer certificates and serve credentials that pin their leaf
- * in {@code x5c}. Reading them in process avoids Keycloak fetching its own metadata over HTTP and
- * makes a key rotation apply immediately, with passive keys staying published while credentials
- * signed with them are still valid.
+ * Trust material identity provider for credentials issued by this Keycloak. Its trust material is
+ * the signature key material of the issuing realm. The realm's JWKs are bound to the realm issuer
+ * identifier and serve credentials that identify their key by {@code kid}. The keys' certificates
+ * are directly trusted issuer certificates and serve credentials that pin their leaf in
+ * {@code x5c}. Reading the keys in process spares Keycloak an HTTP fetch of its own metadata and
+ * applies a key rotation immediately. Passive keys stay trusted, so credentials they signed remain
+ * valid.
  *
  * <p>A realm key certificate issued by an external CA works the same way, because only the signing
  * leaf is trusted directly. A credential presenting the full chain validates against that pinned
@@ -53,10 +53,10 @@ public class KeycloakRealmIssuerIdentityProvider
 
     private static final Logger LOG = Logger.getLogger(KeycloakRealmIssuerIdentityProvider.class);
 
-    /** The signature key material of the issuing realm, replaced by a typed double in tests. */
+    // Lets tests replace the realm key material with a typed double.
     public interface RealmKeyMaterial {
 
-        /** Returns the realm issuer identifier the credentials carry as {@code iss}, or null when unknown. */
+        // Returns the realm issuer identifier the credentials carry as iss, or null when unknown.
         String issuer();
 
         List<JWK> signatureKeys();
@@ -139,7 +139,6 @@ public class KeycloakRealmIssuerIdentityProvider
         return jwk.getPublicKeyUse() == null || KeyUse.SIG.getSpecName().equals(jwk.getPublicKeyUse());
     }
 
-    /** Reads the key material of the issuing realm from the session, without leaving the server. */
     private record SessionRealmKeyMaterial(KeycloakSession session, KeycloakRealmIssuerIdentityProviderConfig config)
             implements RealmKeyMaterial {
 
@@ -202,9 +201,8 @@ public class KeycloakRealmIssuerIdentityProvider
             }
         }
 
-        // Only the signing leaf is pinned. The chain of a CA-issued realm key must not widen the
-        // pinned set. The CA belongs to a chain validating trust provider, not to the directly
-        // trusted keys.
+        // Pins only the signing leaf, so the chain of a CA-issued realm key cannot widen the pinned
+        // set. Trusting that CA is the job of a chain validating trust material provider.
         private static void collectCertificates(KeyWrapper key, Set<X509Certificate> certificates) {
             if (key.getCertificate() != null) {
                 certificates.add(key.getCertificate());
