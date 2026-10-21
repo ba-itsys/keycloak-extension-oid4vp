@@ -155,7 +155,7 @@ This:
     2. **Issuer JWT time checks**: `exp` (must not be expired) and `nbf` (must be valid now), both with configurable clock skew (default 60s). There is no `iat` freshness check on the issuer JWT. Old credentials are valid as long as `exp` holds
     3. **Selective disclosure digest verification**: SHA-256 hashes of disclosed claims match the `_sd` digests in the issuer JWT
     4. **KB-JWT signature verification**: verifies the Key Binding JWT signature against the holder's public key from the credential's `cnf.jwk` claim
-    5. **KB-JWT claim validation**: `aud` must match `clientId` (falls back to `response_uri` if the primary check fails). `nonce` must match the expected nonce from the request object. `iat` must be fresh (default max age 300s + 60s clock skew). `exp` and `nbf` are checked if present
+    5. **KB-JWT claim validation**: `aud` must match `clientId` ([OID4VP 1.0 Appendix B.3.6](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.3.6)). `nonce` must match the expected nonce from the request object. `iat` must be fresh (default max age 300s + 60s clock skew). `exp` and `nbf` are checked if present
     6. **KB-JWT `sd_hash` validation**: must equal SHA-256 of the unbound SD-JWT presentation (issuer JWT + disclosures, without the KB-JWT itself)
   - mDoc: `MdocVerifier.verifyPresentation()` validates the MSO COSE_Sign1 issuer signature. It validates the value digest integrity with the digest algorithm the MSO declares, over the IssuerSignedItems. It validates the MSO validity period (`validFrom`/`validUntil` within the configured clock skew). A presentation whose MSO carries no `validityInfo` is rejected. It validates the device authentication signature over the SessionTranscript of [OID4VP 1.0 Appendix B.2.6.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.2.6.1), `[null, null, ["OpenID4VPHandover", SHA-256(CBOR([client_id, nonce, jwk_thumbprint, response_uri]))]]`. The `jwk_thumbprint` is the RFC 7638 SHA-256 thumbprint of the response encryption key from `client_metadata.jwks`, computed from the `EphemeralKey` stored in the request context, and null for an unencrypted response. It then extracts namespace-prefixed claims
   - Checks revocation via `StatusListVerifier`. The status list URI has to be an https URL
@@ -172,9 +172,7 @@ directPostService.storeAndSignal(authSession, state, context, isCrossDeviceFlow)
 
 ### What the Verifier Accepts Beyond the Specification
 
-The verifier accepts three shapes OID4VP 1.0 does not require. This keeps it interoperable with wallets. Each one widens what a presentation may look like. Each one is listed here because nothing in the configuration reveals it.
-
-**Key Binding JWT audience.** The `aud` of a Key Binding JWT is the Client Identifier (OID4VP 1.0, Appendix B.3.6). Wallets bind to either the `client_id` or the `response_uri`. `VpTokenProcessor` verifies against the configured `client_id`. It then retries once against the `response_uri` of the same request. Both values belong to this verifier and travel inside the signed request object. A presentation still binds to one transaction of one verifier.
+The verifier accepts two shapes OID4VP 1.0 does not require. This keeps it interoperable with wallets. Each one widens what a presentation may look like. Each one is listed here because nothing in the configuration reveals it.
 
 **VP token shape.** The `vp_token` is a JSON object mapping each DCQL credential id to an array of presentations. The array holds exactly one presentation, because the generated queries carry no `multiple` (OID4VP 1.0 §8.1). `VpTokenProcessor` also accepts a bare presentation string in place of that object. It attributes the string to the requested credential when the query requests exactly one. Several presentations under one credential id are each verified and the first one is used. An invalid one among them still fails the login.
 
