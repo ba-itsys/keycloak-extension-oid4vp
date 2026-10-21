@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.16.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.15.0...v0.16.0) (2026-10-21)
+
+
+### Features
+
+* accept SEC1 EC private keys in the verifier certificate PEM ([b4c80f1](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/b4c80f17135bafe2bf0064ef6b07733609368c8c))
+* make the reference binding claim name configurable ([d823c5a](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/d823c5accf2580d00dcfcf5c33477bf1e2d99c5c))
+
+
+### Bug Fixes
+
+* end every wallet login state when the login completes ([0418478](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/0418478a592553d4c6bb990ec1fec1660272c250))
+* end evicted wallet login states like the states of a completed login ([70f93a2](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/70f93a264601f973fe15f616fd976f530bc3406d))
+* read the credential status only from the top-level status claim ([20730fc](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/20730fcfcd0f6e0b639fa26567750533dbcddff3))
+* require the client_id as the key binding JWT audience ([a1a9931](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/a1a9931a652ec1d0ad043f4cd703bfc0c30d1cb1))
+* require the SD-JWT VC typ on the issuer-signed JWT ([b96afa1](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/b96afa1b0bab6f99c474a5d7966ffc06f4e7f4e0))
+
 ## [0.15.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.14.0...v0.15.0) (2026-10-19)
 
 
