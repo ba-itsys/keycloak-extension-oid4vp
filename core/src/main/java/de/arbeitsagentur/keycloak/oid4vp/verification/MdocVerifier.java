@@ -44,6 +44,7 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.jboss.logging.Logger;
 import org.keycloak.crypto.JavaAlgorithm;
 import org.keycloak.jose.jws.crypto.HashUtils;
@@ -109,38 +110,20 @@ public class MdocVerifier {
      * validity window, the value digests, and the device authentication that binds the presentation
      * to this session.
      *
-     * <p>Device authentication and value digest verification are mandatory here (ISO/IEC 18013-5,
-     * 9.1.2), so a {@code DeviceResponse} is rejected when it omits {@code deviceSigned}, omits the
-     * Mobile Security Object, or leaves issuer-signed values uncovered by digests. The OID4VP 1.0
-     * session transcript is tried first, with the ISO/IEC 18013-7 transcript as the fallback when
-     * {@code mdocGeneratedNonce} is present.
+     * <p>ISO/IEC 18013-5 9.1.2 makes device authentication and value digests mandatory, so a
+     * {@code DeviceResponse} is rejected when it omits {@code deviceSigned}, omits the Mobile Security
+     * Object, or leaves issuer-signed values uncovered by digests.
      *
      * @see <a href="https://www.iso.org/standard/69084.html">ISO/IEC 18013-5:2021, 9.1.2 (mdoc authentication)</a>
      */
     public MdocVerificationResult verifyPresentation(
-            String deviceResponseToken,
-            ResolvedTrust trust,
-            String clientId,
-            String nonce,
-            String responseUri,
-            String mdocGeneratedNonce,
-            byte[] jwkThumbprint) {
-        if (clientId == null || nonce == null || responseUri == null) {
-            throw new IllegalStateException(
-                    "mDoc presentation verification requires client_id, nonce and response_uri");
-        }
-        return verify(
-                deviceResponseToken,
-                trust,
-                new DeviceAuthContext(clientId, nonce, responseUri, mdocGeneratedNonce, jwkThumbprint));
+            String deviceResponseToken, ResolvedTrust trust, OpenId4VpHandoverInfo handoverInfo) {
+        return verify(deviceResponseToken, trust, Objects.requireNonNull(handoverInfo));
     }
 
-    /** Session binding inputs for device authentication. A null context selects issuer signature only mode. */
-    private record DeviceAuthContext(
-            String clientId, String nonce, String responseUri, String mdocGeneratedNonce, byte[] jwkThumbprint) {}
-
+    // A null handoverInfo verifies the issuer signature only.
     private MdocVerificationResult verify(
-            String deviceResponseToken, ResolvedTrust trust, DeviceAuthContext deviceAuth) {
+            String deviceResponseToken, ResolvedTrust trust, OpenId4VpHandoverInfo handoverInfo) {
         try {
             CBORPairList document = parseDocument(decodeBase64(deviceResponseToken));
 
@@ -156,22 +139,14 @@ public class MdocVerifier {
             String docType = resolveDocType(document, mso);
 
             verifyIssuerSignature(document, trust);
-            // Claims and digests are both read from the issuer-signed namespaces, so a document can
-            // never present one set of values while a different set is digest checked.
-            verifyDigests(mso, issuerSigned, deviceAuth != null);
-            validateValidity(mso, deviceAuth != null);
+            // Read claims and digests from the same issuer-signed namespaces. A document then cannot
+            // present one set of values while a different set is digest checked.
+            verifyDigests(mso, issuerSigned, handoverInfo != null);
+            validateValidity(mso, handoverInfo != null);
             Map<String, Object> claims = extractClaims(issuerSigned, mso);
 
-            if (deviceAuth != null) {
-                verifyDeviceAuth(
-                        document,
-                        mso,
-                        docType,
-                        deviceAuth.clientId(),
-                        deviceAuth.nonce(),
-                        deviceAuth.responseUri(),
-                        deviceAuth.mdocGeneratedNonce(),
-                        deviceAuth.jwkThumbprint());
+            if (handoverInfo != null) {
+                verifyDeviceAuth(document, mso, docType, handoverInfo.sessionTranscript());
             }
 
             return new MdocVerificationResult(claims, docType);
@@ -358,37 +333,15 @@ public class MdocVerifier {
     }
 
     private void verifyDeviceAuth(
-            CBORPairList document,
-            CBORPairList mso,
-            String docType,
-            String clientId,
-            String nonce,
-            String responseUri,
-            String mdocGeneratedNonce,
-            byte[] jwkThumbprint) {
-
+            CBORPairList document, CBORPairList mso, String docType, CBORItemList sessionTranscript) {
         COSESign1 deviceSign1 = extractDeviceSignature(document);
         PublicKey deviceKey = extractDeviceKey(mso);
         CBORItem deviceNameSpaces = val(map(document, "deviceSigned"), "nameSpaces");
         if (deviceNameSpaces == null) deviceNameSpaces = new CBORPairList(List.of());
 
-        CBORItemList oid4vpTranscript =
-                MdocSessionTranscriptBuilder.buildOid4vp(clientId, nonce, responseUri, jwkThumbprint);
-        if (tryVerifyDevice(deviceSign1, deviceKey, oid4vpTranscript, docType, deviceNameSpaces)) {
-            LOG.debug("Device auth verified using OID4VP 1.0 transcript");
-            return;
+        if (!deviceSignatureVerifies(deviceSign1, deviceKey, sessionTranscript, docType, deviceNameSpaces)) {
+            throw new IllegalStateException("deviceAuth signature invalid");
         }
-
-        if (mdocGeneratedNonce != null && !mdocGeneratedNonce.isBlank()) {
-            CBORItemList isoTranscript =
-                    MdocSessionTranscriptBuilder.buildIso18013_7(clientId, nonce, responseUri, mdocGeneratedNonce);
-            if (tryVerifyDevice(deviceSign1, deviceKey, isoTranscript, docType, deviceNameSpaces)) {
-                LOG.debug("Device auth verified using ISO 18013-7 transcript");
-                return;
-            }
-        }
-
-        throw new IllegalStateException("deviceAuth signature invalid");
     }
 
     private COSESign1 extractDeviceSignature(CBORPairList document) {
@@ -412,7 +365,7 @@ public class MdocVerifier {
         }
     }
 
-    private boolean tryVerifyDevice(
+    private boolean deviceSignatureVerifies(
             COSESign1 originalSign1,
             PublicKey deviceKey,
             CBORItemList sessionTranscript,

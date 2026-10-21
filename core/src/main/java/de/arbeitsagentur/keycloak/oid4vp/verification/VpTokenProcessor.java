@@ -77,7 +77,6 @@ public class VpTokenProcessor implements VpTokenVerifier {
             String clientId,
             String expectedNonce,
             String alternateResponseUri,
-            String mdocGeneratedNonce,
             String encryptionJwkThumbprint,
             List<RequestedCredential> requestedCredentials) {
 
@@ -213,15 +212,14 @@ public class VpTokenProcessor implements VpTokenVerifier {
             }
 
             if (mdocVerifier.isMdoc(credential)) {
-                byte[] jwkThumbprintBytes = decodeJwkThumbprint(request.encryptionJwkThumbprint());
                 MdocVerificationResult result = mdocVerifier.verifyPresentation(
                         credential,
                         trust,
-                        request.clientId(),
-                        request.expectedNonce(),
-                        request.alternateResponseUri(),
-                        request.mdocGeneratedNonce(),
-                        jwkThumbprintBytes);
+                        new OpenId4VpHandoverInfo(
+                                request.clientId(),
+                                request.expectedNonce(),
+                                decodeJwkThumbprint(request.encryptionJwkThumbprint()),
+                                request.alternateResponseUri()));
                 statusListVerifier.checkRevocationStatus(result.claims(), trust.revocationCertificates());
                 return new VerifiedCredential(
                         credentialId, null, result.docType(), result.claims(), PresentationType.MDOC);

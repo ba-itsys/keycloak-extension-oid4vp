@@ -359,6 +359,6 @@ class VpTokenProcessorTest {
             String alternateResponseUri,
             List<RequestedCredential> requestedCredentials) {
         return new VpTokenProcessor.Request(
-                vpToken, clientId, expectedNonce, alternateResponseUri, null, null, requestedCredentials);
+                vpToken, clientId, expectedNonce, alternateResponseUri, null, requestedCredentials);
     }
 }

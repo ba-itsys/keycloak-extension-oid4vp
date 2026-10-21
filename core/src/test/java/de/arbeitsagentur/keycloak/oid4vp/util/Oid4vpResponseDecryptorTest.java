@@ -27,15 +27,12 @@ import com.nimbusds.jose.crypto.ECDHEncrypter;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.util.Base64URL;
 import de.arbeitsagentur.keycloak.oid4vp.domain.DecryptedResponse;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.broker.oid4vp.EphemeralKey;
-import org.keycloak.broker.oid4vp.ResponseEncryption;
 import org.keycloak.common.crypto.CryptoIntegration;
-import org.keycloak.common.util.Base64Url;
 import org.keycloak.util.JsonSerialization;
 
 class Oid4vpResponseDecryptorTest {
@@ -55,21 +52,19 @@ class Oid4vpResponseDecryptorTest {
     }
 
     @Test
-    void decrypt_validJwe_returnsVpTokenAndNonce() throws Exception {
+    void decrypt_validJwe_returnsVpToken() throws Exception {
         String vpToken = "eyJhbGciOiJFUzI1NiJ9.test.sig~";
-        String mdocNonce = "wallet-generated-nonce";
-        String jwe = encryptPayload(Map.of("vp_token", vpToken), mdocNonce);
+        String jwe = encryptPayload(Map.of("vp_token", vpToken));
 
         DecryptedResponse result = decryptor.decrypt(jwe, encryptionKey);
 
         assertThat(result.vpToken()).isEqualTo(vpToken);
-        assertThat(result.mdocGeneratedNonce()).isEqualTo(mdocNonce);
         assertThat(result.error()).isNull();
     }
 
     @Test
     void decrypt_walletError_returnsErrorFields() throws Exception {
-        String jwe = encryptPayload(Map.of("error", "invalid_scope", "error_description", "Bad scope"), null);
+        String jwe = encryptPayload(Map.of("error", "invalid_scope", "error_description", "Bad scope"));
 
         DecryptedResponse result = decryptor.decrypt(jwe, encryptionKey);
 
@@ -111,19 +106,14 @@ class Oid4vpResponseDecryptorTest {
 
         DecryptedResponse result = decryptor.decrypt(jwe.serialize(), encryptionKey);
 
-        var header = ResponseEncryption.parse(jwe.serialize()).header();
         assertThat(result.vpToken()).isEqualTo(vpToken);
-        assertThat(new String(Base64Url.decode(header.getAgreementPartyUInfo()), StandardCharsets.ISO_8859_1))
-                .isEqualTo(new String(apu, StandardCharsets.ISO_8859_1));
-        assertThat(new String(Base64Url.decode(header.getAgreementPartyVInfo()), StandardCharsets.ISO_8859_1))
-                .isEqualTo(new String(apv, StandardCharsets.ISO_8859_1));
     }
 
     @Test
     void decrypt_payloadWithIdToken_ignoresIt() throws Exception {
         String vpToken = "eyJhbGciOiJFUzI1NiJ9.test.sig~";
-        String jwe = encryptPayload(
-                Map.of("vp_token", vpToken, "id_token", "eyJhbGciOiJFUzI1NiJ9.id-token-payload.sig"), null);
+        String jwe =
+                encryptPayload(Map.of("vp_token", vpToken, "id_token", "eyJhbGciOiJFUzI1NiJ9.id-token-payload.sig"));
 
         DecryptedResponse result = decryptor.decrypt(jwe, encryptionKey);
 
@@ -138,7 +128,7 @@ class Oid4vpResponseDecryptorTest {
 
     @Test
     void extractKid_validJwe_returnsKid() throws Exception {
-        String jwe = encryptPayload(Map.of("vp_token", "test"), null);
+        String jwe = encryptPayload(Map.of("vp_token", "test"));
 
         String kid = decryptor.extractKid(jwe);
 
@@ -164,20 +154,17 @@ class Oid4vpResponseDecryptorTest {
         assertThat(kid).isNull();
     }
 
-    private String encryptPayload(Map<String, Object> payload, String apuNonce) throws Exception {
+    private String encryptPayload(Map<String, Object> payload) throws Exception {
         String payloadJson = JsonSerialization.writeValueAsString(payload);
-        return encryptPayload(payloadJson, encryptionKey, apuNonce);
+        return encryptPayload(payloadJson, encryptionKey);
     }
 
-    private static String encryptPayload(String payloadJson, EphemeralKey recipientKey, String apuNonce) {
+    private static String encryptPayload(String payloadJson, EphemeralKey recipientKey) {
         try {
-            JWEHeader.Builder header =
-                    new JWEHeader.Builder(JWEAlgorithm.ECDH_ES, EncryptionMethod.A256GCM).keyID(recipientKey.kid());
-            if (apuNonce != null) {
-                header.agreementPartyUInfo(
-                        new Base64URL(Base64URL.encode(apuNonce).toString()));
-            }
-            JWEObject jwe = new JWEObject(header.build(), new Payload(payloadJson));
+            JWEHeader header = new JWEHeader.Builder(JWEAlgorithm.ECDH_ES, EncryptionMethod.A256GCM)
+                    .keyID(recipientKey.kid())
+                    .build();
+            JWEObject jwe = new JWEObject(header, new Payload(payloadJson));
             ECKey publicKey = ECKey.parse(JsonSerialization.writeValueAsString(recipientKey.publicJwk()));
             jwe.encrypt(new ECDHEncrypter(publicKey));
             return jwe.serialize();

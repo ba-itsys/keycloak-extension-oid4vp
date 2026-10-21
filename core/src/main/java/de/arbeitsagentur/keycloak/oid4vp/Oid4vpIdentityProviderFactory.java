@@ -31,6 +31,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
 import org.jboss.logging.Logger;
 import org.keycloak.OID4VCConstants;
 import org.keycloak.broker.provider.AbstractIdentityProviderFactory;
@@ -200,12 +201,12 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .property()
                 .name(Oid4vpIdentityProviderConfig.X509_CERTIFICATE_PEM)
                 .label("X.509 Certificate (PEM)")
-                .helpText("PEM-encoded X.509 certificate chain for x509_san_dns or x509_hash client ID schemes. "
-                        + "Required whenever the effective client ID scheme is certificate-bound. "
-                        + "May include a PRIVATE KEY block to override the realm signing key for request objects. "
-                        + "Wallets following the high assurance profile expect a CA-issued chain, not a self-signed leaf. "
-                        + "Accepts the value verbatim or Base64-encoded as a whole, for single-line sources such "
-                        + "as environment variables.")
+                .helpText("PEM with the verifier certificate chain, leaf first, and the private key that signs the "
+                        + "request object, as a PKCS#8 PRIVATE KEY or SEC1 EC PRIVATE KEY block. Required for the "
+                        + "x509_san_dns and x509_hash client ID schemes. The key block may be left out when "
+                        + "x509SigningKeyJwk supplies the key. Wallets following the high assurance profile expect "
+                        + "a CA-issued chain and are likely to reject a self-signed leaf. Accepts the value verbatim "
+                        + "or Base64-encoded as a whole, for single-line sources such as environment variables.")
                 .type(ProviderConfigProperty.TEXT_TYPE)
                 .add()
                 .property()
@@ -361,7 +362,8 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
         }
 
         String pem = config.getX509CertificatePem();
-        if (pem == null || !pem.contains("-----BEGIN PRIVATE KEY-----")) {
+        Matcher privateKeyBlock = pem == null ? null : Oid4vpIdentityProviderConfig.PRIVATE_KEY_BLOCK.matcher(pem);
+        if (privateKeyBlock == null || !privateKeyBlock.find()) {
             return;
         }
 
@@ -386,15 +388,11 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 return;
             }
 
-            List<String> keyBlocks = extractPemBlocks(pem, "PRIVATE KEY");
-            if (keyBlocks.isEmpty()) {
-                LOG.warn("No PRIVATE KEY block found in x509CertificatePem");
-                return;
-            }
-            PrivateKey privateKey = PemUtils.decodePrivateKey(keyBlocks.get(0));
-
-            X509Certificate leafCert = certChain.get(0);
-            PublicKey publicKey = leafCert.getPublicKey();
+            PublicKey publicKey = certChain.get(0).getPublicKey();
+            PrivateKey privateKey = privateKeyBlock.group(1).isEmpty()
+                    ? PemUtils.decodePrivateKey(privateKeyBlock.group())
+                    : Oid4vpSigningKeyParser.decodeSec1PrivateKey(
+                            PemUtils.pemToDer(privateKeyBlock.group()), publicKey);
 
             String jwkJson = Oid4vpSigningKeyParser.serialize(publicKey, privateKey, certChain);
             config.setX509SigningKeyJwk(jwkJson);
