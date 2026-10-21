@@ -290,8 +290,8 @@ The requested level comes from the request as Keycloak maps it. An `acr` value t
 
 `x509CertificatePem` supports two practical layouts:
 
-1. Combined PEM with leaf certificate, optional intermediate certificates, and private key.
-2. Certificate-only PEM when request objects should be signed with the Keycloak realm signing key instead.
+1. Combined PEM with the leaf certificate, optional intermediate certificates, and the private key as a PKCS#8 `PRIVATE KEY` or SEC1 `EC PRIVATE KEY` block. OpenSSL writes EC keys in the SEC1 format unless asked for PKCS#8.
+2. Certificate-only PEM, with the private key given as `x509SigningKeyJwk`.
 
 Multi-line values stay usable in single-line sources such as environment variables from Kubernetes secrets. `x509CertificatePem`, `x509SigningKeyJwk`, `verifierInfo`, `trustListSigningCertPem`, and `trustedCertificates` accept their value verbatim or Base64-encoded as a whole. The PEM values additionally accept `\n` escape sequences instead of line breaks.
 

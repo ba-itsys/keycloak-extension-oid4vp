@@ -78,7 +78,7 @@ public class Oid4vpCallbackProcessor {
     }
 
     public BrokeredIdentityContext process(
-            Oid4vpRequestObjectStore.RequestContextEntry requestContext, String vpToken, String mdocGeneratedNonce) {
+            Oid4vpRequestObjectStore.RequestContextEntry requestContext, String vpToken) {
 
         if (requestContext == null || StringUtil.isBlank(requestContext.state())) {
             throw new IdentityBrokerException("Missing request context");
@@ -101,7 +101,6 @@ public class Oid4vpCallbackProcessor {
                 requestContext.effectiveClientId(),
                 requestContext.nonce(),
                 requestContext.responseUri(),
-                mdocGeneratedNonce,
                 requestContext.encryptionKey() != null
                         ? JWKSUtils.computeThumbprint(
                                 requestContext.encryptionKey().publicJwk())

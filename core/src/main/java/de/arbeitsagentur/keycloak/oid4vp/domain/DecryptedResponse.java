@@ -21,8 +21,6 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
  * payload carries either a {@code vp_token} or an {@code error} with its
  * {@code error_description}, so the unused members are {@code null}.
  *
- * @param mdocGeneratedNonce the mDoc session transcript nonce, taken from the JWE APU header
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3.1">OID4VP 1.0 §8.3.1 — Response Mode direct_post.jwt</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3.1">OID4VP 1.0 section 8.3.1</a>
  */
-public record DecryptedResponse(
-        String vpToken, String state, String mdocGeneratedNonce, String error, String errorDescription) {}
+public record DecryptedResponse(String vpToken, String state, String error, String errorDescription) {}

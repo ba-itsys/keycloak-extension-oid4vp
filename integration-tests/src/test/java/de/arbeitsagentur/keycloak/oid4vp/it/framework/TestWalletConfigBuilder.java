@@ -54,7 +54,6 @@ public final class TestWalletConfigBuilder {
 
     private boolean statusList = true;
     private boolean requireEncryptedRequest;
-    private String sessionTranscript;
     private final List<UnaryOperator<EudiWalletContainer>> customizers = new ArrayList<>();
 
     public TestWalletConfigBuilder statusList(boolean statusList) {
@@ -64,12 +63,6 @@ public final class TestWalletConfigBuilder {
 
     public TestWalletConfigBuilder requireEncryptedRequest() {
         this.requireEncryptedRequest = true;
-        return this;
-    }
-
-    // Sets the mdoc session transcript mode, either oid4vp (the default) or iso.
-    public TestWalletConfigBuilder sessionTranscript(String mode) {
-        this.sessionTranscript = mode;
         return this;
     }
 
@@ -111,9 +104,6 @@ public final class TestWalletConfigBuilder {
         }
         if (requireEncryptedRequest) {
             container = container.withRequireEncryptedRequest();
-        }
-        if (sessionTranscript != null) {
-            container = container.withSessionTranscript(sessionTranscript);
         }
         for (UnaryOperator<EudiWalletContainer> customizer : customizers) {
             container = customizer.apply(container);

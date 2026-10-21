@@ -354,7 +354,7 @@ class VpTokenProcessorCredentialTrustTest {
     }
 
     private static VpTokenProcessor.Request request(String vpToken, List<RequestedCredential> requestedCredentials) {
-        return new VpTokenProcessor.Request(vpToken, CLIENT_ID, NONCE, null, null, null, requestedCredentials);
+        return new VpTokenProcessor.Request(vpToken, CLIENT_ID, NONCE, null, null, requestedCredentials);
     }
 
     private String presentation(ECKey issuerKey, X509Certificate issuerCert, String issuer, String credentialType)

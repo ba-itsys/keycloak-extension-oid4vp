@@ -18,22 +18,19 @@ package de.arbeitsagentur.keycloak.oid4vp.util;
 import static org.keycloak.OID4VCConstants.VP_TOKEN;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.DecryptedResponse;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.jboss.logging.Logger;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.broker.oid4vp.EphemeralKey;
 import org.keycloak.broker.oid4vp.ParsedResponse;
 import org.keycloak.broker.oid4vp.ResponseEncryption;
-import org.keycloak.common.util.Base64Url;
 import org.keycloak.jose.jwe.JWEHeader;
 import org.keycloak.util.JsonSerialization;
 
 /**
  * Decrypts wallet responses sent in the {@code direct_post.jwt} response mode. The verifier
  * advertises an ephemeral encryption key per flow in the request object's {@code client_metadata},
- * and the JWE header kid of the response names the key the wallet used. The {@code apu} (Agreement
- * PartyUInfo) header carries the nonce the wallet generated for mDoc session transcripts.
+ * and the JWE header kid of the response names the key the wallet used.
  *
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3.1">OID4VP 1.0 §8.3.1, Response Mode direct_post.jwt</a>
  */
@@ -64,23 +61,17 @@ public class Oid4vpResponseDecryptor {
         try {
             ParsedResponse parsed = ResponseEncryption.parse(encryptedResponse);
             String payload = ResponseEncryption.decrypt(parsed, decryptionKey.privateKey());
-            JWEHeader header = parsed.header();
 
             @SuppressWarnings("unchecked")
             Map<String, Object> payloadMap = JsonSerialization.readValue(payload, Map.class);
 
-            String mdocGeneratedNonce = decodeHeaderValue(header.getAgreementPartyUInfo());
             String state = stringValue(payloadMap.get(OAuth2Constants.STATE));
 
             Object errorObj = payloadMap.get(OAuth2Constants.ERROR);
             if (errorObj != null) {
                 Object errorDescObj = payloadMap.get(OAuth2Constants.ERROR_DESCRIPTION);
                 return new DecryptedResponse(
-                        null,
-                        state,
-                        mdocGeneratedNonce,
-                        errorObj.toString(),
-                        errorDescObj != null ? errorDescObj.toString() : null);
+                        null, state, errorObj.toString(), errorDescObj != null ? errorDescObj.toString() : null);
             }
 
             String vpToken = null;
@@ -89,7 +80,7 @@ public class Oid4vpResponseDecryptor {
                 vpToken = vpTokenObj instanceof String s ? s : JsonSerialization.writeValueAsString(vpTokenObj);
             }
 
-            return new DecryptedResponse(vpToken, state, mdocGeneratedNonce, null, null);
+            return new DecryptedResponse(vpToken, state, null, null);
         } catch (Exception e) {
             throw new IllegalStateException(
                     "Failed to decrypt response: " + FailureDetails.causeChain(e) + " ("
@@ -107,10 +98,6 @@ public class Oid4vpResponseDecryptor {
         } catch (Exception e) {
             return "unreadable JWE header";
         }
-    }
-
-    static String decodeHeaderValue(String value) {
-        return value != null ? new String(Base64Url.decode(value), StandardCharsets.UTF_8) : null;
     }
 
     private static String stringValue(Object value) {

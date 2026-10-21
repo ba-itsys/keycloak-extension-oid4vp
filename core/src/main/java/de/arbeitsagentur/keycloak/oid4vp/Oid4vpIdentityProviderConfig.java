@@ -30,6 +30,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 import org.jboss.logging.Logger;
 import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.models.RealmModel;
@@ -69,6 +70,9 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final String RESPONSE_MODE = "responseMode";
     public static final String REJECTION_RESPONSE = "rejectionResponse";
     public static final String X509_CERTIFICATE_PEM = "x509CertificatePem";
+    // OpenSSL writes EC keys as SEC1 blocks (RFC 5915) unless asked for PKCS#8.
+    public static final Pattern PRIVATE_KEY_BLOCK =
+            Pattern.compile("-----BEGIN ((?:EC )?)PRIVATE KEY-----.*?-----END \\1PRIVATE KEY-----", Pattern.DOTALL);
     public static final String X509_SIGNING_KEY_JWK = "x509SigningKeyJwk";
 
     public static final String VERIFIER_INFO = "verifierInfo";
@@ -269,10 +273,10 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         if (getResolvedClientIdScheme().isCertificateBound()
                 && StringUtil.isNotBlank(getX509CertificatePem())
                 && StringUtil.isBlank(getX509SigningKeyJwk())
-                && !getX509CertificatePem().contains("-----BEGIN PRIVATE KEY-----")) {
+                && !PRIVATE_KEY_BLOCK.matcher(getX509CertificatePem()).find()) {
             throw new IllegalArgumentException("The verifier certificate PEM contains no private key. A"
                     + " certificate-bound client_id_scheme signs the request object with the certificate's key, so the"
-                    + " PEM must include the PRIVATE KEY block.");
+                    + " PEM must include a PRIVATE KEY or EC PRIVATE KEY block.");
         }
 
         AggregatedCredentials aggregated = configuredCredentials(realm);

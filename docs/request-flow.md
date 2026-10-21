@@ -127,27 +127,26 @@ Oid4vpIdentityProviderEndpoint.handlePost(state, vpToken, encryptedResponse, err
 1. **Reads form parameters**: `state`, `vp_token`, `response`, `error`, and `error_description`
 2. **Request-context resolution**: resolves the full request context from `Oid4vpRequestObjectStore` by the posted `state`. When an encrypted response omits the `state` form parameter, the KID from the JWE header is used instead. The response-encryption key's `kid` equals the flow `state`
 3. **Resolves auth session** from the request context's `{rootSessionId, tabId}`
-4. **Decrypts and validates state** (when `response_mode=direct_post.jwt`): decrypts the JWT/JWE from the `response` form parameter using the request context's stored private key. Extracts `vp_token`, `state`, `error`, `error_description`, and `mdocGeneratedNonce`. Requires the decrypted `state` to match the stored request context. Also rejects the callback if a separate posted `state` form parameter is present but differs from the decrypted `state`
+4. **Decrypts and validates state** (when `response_mode=direct_post.jwt`): decrypts the JWT/JWE from the `response` form parameter using the request context's stored private key. Extracts `vp_token`, `state`, `error` and `error_description`. Requires the decrypted `state` to match the stored request context. Also rejects the callback if a separate posted `state` form parameter is present but differs from the decrypted `state`
 5. **Error handling**: if the wallet sent an OAuth error (for example `access_denied`), records it server-side and answers with HTTP 200. In a same-device flow the answer carries the `redirect_uri` the wallet must follow to hand the End-User back to `/failed`
 6. **Derives same-device vs cross-device behavior from the stored request context**: the callback does not trust a `flow` query parameter. It uses the `flow` value anchored behind the resolved request context
 7. **Calls `processVpToken`**:
 
 ```
-processVpToken(authSession, requestContext, state, vpToken, mdocGeneratedNonce, isCrossDeviceFlow)
+processVpToken(authSession, requestContext, state, vpToken, isCrossDeviceFlow)
 ```
 
-8. **Verifies the credential** via `Oid4vpCallbackProcessor.process(requestContext, vpToken, mdocGeneratedNonce)`:
+8. **Verifies the credential** via `Oid4vpCallbackProcessor.process(requestContext, vpToken)`:
 
 ```
-Oid4vpCallbackProcessor.process(requestContext, vpToken, mdocGeneratedNonce)
+Oid4vpCallbackProcessor.process(requestContext, vpToken)
 ```
 
 This:
 - Validates that a request context was resolved for the callback
 - Reads `clientId`, `nonce`, `responseUri`, and `encryptionKey` from that request context
 - Reads the request-scoped configured credential types captured when the request object was created
-- Passes `mdocGeneratedNonce` from the decrypted callback payload when present
-- Calls `VpTokenProcessor.process` with the `vp_token`, the `clientId`, `nonce`, `responseUri` of the request context, the RFC 7638 thumbprint of its `encryptionKey`, the `mdocGeneratedNonce` of the callback, and the requested credentials:
+- Calls `VpTokenProcessor.process` with the `vp_token`, the `clientId`, `nonce`, `responseUri` of the request context, the RFC 7638 thumbprint of its `encryptionKey`, and the requested credentials:
   - SD-JWT: `SdJwtVerifier.verify()` first requires the issuer-signed JWT to have the `typ` `dc+sd-jwt`, or the earlier `vc+sd-jwt` that [SD-JWT VC draft 13, section 3.2.1](https://www.ietf.org/archive/id/draft-ietf-oauth-sd-jwt-vc-13.html#section-3.2.1) recommends accepting for a transitional period. It then delegates to Keycloak's `SdJwtVP.verify()`, which performs:
     1. **Issuer signature verification**: validates the SD-JWT's JWS signature using the issuer's public key. The key is resolved in this order:
        - `x5c` certificate-chain validation against the resolved trust material. Either a pinned trusted leaf certificate satisfying any configured issuer binding, or a PKIX path to the trust anchors that authenticates the leaf certificate's subject (`ResolvedTrust.validateIssuerChain`). With `requireIssuerSanMatch` enabled, `Oid4vpTrustedSdJwtIssuer` also checks the issuer against the validated leaf's SANs
@@ -158,9 +157,7 @@ This:
     4. **KB-JWT signature verification**: verifies the Key Binding JWT signature against the holder's public key from the credential's `cnf.jwk` claim
     5. **KB-JWT claim validation**: `aud` must match `clientId` (falls back to `response_uri` if the primary check fails). `nonce` must match the expected nonce from the request object. `iat` must be fresh (default max age 300s + 60s clock skew). `exp` and `nbf` are checked if present
     6. **KB-JWT `sd_hash` validation**: must equal SHA-256 of the unbound SD-JWT presentation (issuer JWT + disclosures, without the KB-JWT itself)
-  - mDoc: `MdocVerifier.verifyPresentation()` validates the MSO COSE_Sign1 issuer signature. It validates the value digest integrity with the digest algorithm the MSO declares, over the IssuerSignedItems. It validates the MSO validity period (`validFrom`/`validUntil` within the configured clock skew). A presentation whose MSO carries no `validityInfo` is rejected. It validates the device authentication signature via SessionTranscript binding. It then extracts namespace-prefixed claims. The device authentication supports two SessionTranscript formats:
-    - **OID4VP 1.0** (Appendix B.2.6.1): `[null, null, ["OpenID4VPHandover", SHA-256(CBOR([client_id, nonce, jwk_thumbprint, response_uri]))]]`. The `jwk_thumbprint` is the RFC 7638 SHA-256 thumbprint of the response encryption key from `client_metadata.jwks`. It is computed from the `EphemeralKey` stored in the request context
-    - **ISO 18013-7** (Annex B.4.4): `[null, null, [SHA-256(CBOR([client_id, mdoc_generated_nonce])), SHA-256(CBOR([response_uri, mdoc_generated_nonce])), nonce]]`. Used as a fallback when `mdocGeneratedNonce` is present (extracted from the JWE `apu` header) and the OID4VP 1.0 transcript does not verify
+  - mDoc: `MdocVerifier.verifyPresentation()` validates the MSO COSE_Sign1 issuer signature. It validates the value digest integrity with the digest algorithm the MSO declares, over the IssuerSignedItems. It validates the MSO validity period (`validFrom`/`validUntil` within the configured clock skew). A presentation whose MSO carries no `validityInfo` is rejected. It validates the device authentication signature over the SessionTranscript of [OID4VP 1.0 Appendix B.2.6.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#appendix-B.2.6.1), `[null, null, ["OpenID4VPHandover", SHA-256(CBOR([client_id, nonce, jwk_thumbprint, response_uri]))]]`. The `jwk_thumbprint` is the RFC 7638 SHA-256 thumbprint of the response encryption key from `client_metadata.jwks`, computed from the `EphemeralKey` stored in the request context, and null for an unencrypted response. It then extracts namespace-prefixed claims
   - Checks revocation via `StatusListVerifier`. The status list URI has to be an https URL
   - The referenced ETSI trust list identity providers validate their trust list's `LoTEType` against their configured trust domain while resolving trust material
 - Validates issuer is allowed, credential type is allowed
@@ -264,7 +261,7 @@ There is no `GET` handler on the response URI itself. A wallet that redirects an
 | `SdJwtVerifier` | SD-JWT signature + KB-JWT verification, disclosure resolution, verification-order policy (`x5c` first, then the trust domain's issuer keys, then metadata) |
 | `JwtVcIssuerMetadataResolver` | JWT VC issuer metadata discovery (`/.well-known/jwt-vc-issuer`), `jwks`/`jwks_uri` lookup, and bounded caching by response TTL and JWK `exp` |
 | `MdocVerifier` | mDoc issuer/device auth verification, digest/validity checks, claim extraction |
-| `MdocSessionTranscriptBuilder` | Builds OID4VP 1.0 and ISO 18013-7 SessionTranscript structures |
+| `OpenId4VpHandoverInfo` | Builds the OID4VP 1.0 SessionTranscript that the mDoc device signature covers |
 | `StatusListVerifier` | Token Status List fetching, caching, revocation bit checking |
 | `EtsiTrustListIdentityProvider` | Trust material identity provider (`etsi-trust-list`): trust anchors from an ETSI trust list URL and/or a pasted PEM bundle, LoTE type enforcement |
 | `Oid4vpTrustMaterialResolver` | Resolves trust material identity providers by alias and aggregates their trust into `ResolvedTrust`. PKIX chain validation uses Keycloak's `X509CertificateChainValidator`. Anchors may be intermediate CAs (`IssuerTrustAnchors`), unlike Keycloak's `X509TrustMaterial`, which accepts self-signed roots only |

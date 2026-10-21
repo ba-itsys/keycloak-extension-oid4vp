@@ -19,6 +19,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import java.io.ByteArrayInputStream;
 import java.math.BigInteger;
+import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
 import java.security.PublicKey;
@@ -28,8 +29,10 @@ import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
+import java.security.spec.ECPrivateKeySpec;
 import java.security.spec.RSAPrivateKeySpec;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -49,6 +52,9 @@ import org.keycloak.util.JsonSerialization;
 public final class Oid4vpSigningKeyParser {
 
     private static final String PRIVATE_KEY_MEMBER = "d";
+    private static final int DER_SEQUENCE = 0x30;
+    private static final int DER_INTEGER = 0x02;
+    private static final int DER_OCTET_STRING = 0x04;
 
     private Oid4vpSigningKeyParser() {}
 
@@ -80,6 +86,47 @@ public final class Oid4vpSigningKeyParser {
             return JsonSerialization.writeValueAsString(signingJwk);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to serialize signing JWK", e);
+        }
+    }
+
+    /**
+     * Decodes a SEC1 EC private key (RFC 5915 section 3), the format OpenSSL writes as EC PRIVATE KEY.
+     * Only the private key octets are read. The curve comes from the certificate the key signs for.
+     */
+    public static PrivateKey decodeSec1PrivateKey(byte[] der, PublicKey certificateKey)
+            throws GeneralSecurityException {
+        if (!(certificateKey instanceof ECPublicKey ecPublicKey)) {
+            throw new GeneralSecurityException("An EC PRIVATE KEY needs a certificate with an EC key");
+        }
+        DerElement sequence = DerElement.at(der, 0, DER_SEQUENCE);
+        DerElement version = DerElement.at(der, sequence.contentStart(), DER_INTEGER);
+        DerElement privateKey = DerElement.at(der, version.end(), DER_OCTET_STRING);
+        BigInteger s = new BigInteger(1, Arrays.copyOfRange(der, privateKey.contentStart(), privateKey.end()));
+        return KeyFactory.getInstance("EC").generatePrivate(new ECPrivateKeySpec(s, ecPublicKey.getParams()));
+    }
+
+    private record DerElement(int contentStart, int end) {
+
+        static DerElement at(byte[] der, int offset, int tag) throws GeneralSecurityException {
+            if (offset + 2 > der.length || der[offset] != tag) {
+                throw new GeneralSecurityException("Malformed SEC1 EC private key");
+            }
+            int contentStart = offset + 2;
+            int length = der[offset + 1] & 0xff;
+            if (length > 0x7f) {
+                int lengthOctets = length & 0x7f;
+                if (lengthOctets == 0 || lengthOctets > 3 || contentStart + lengthOctets > der.length) {
+                    throw new GeneralSecurityException("Malformed SEC1 EC private key");
+                }
+                length = 0;
+                for (int i = 0; i < lengthOctets; i++) {
+                    length = (length << 8) | (der[contentStart++] & 0xff);
+                }
+            }
+            if (contentStart + length > der.length) {
+                throw new GeneralSecurityException("Malformed SEC1 EC private key");
+            }
+            return new DerElement(contentStart, contentStart + length);
         }
     }
 

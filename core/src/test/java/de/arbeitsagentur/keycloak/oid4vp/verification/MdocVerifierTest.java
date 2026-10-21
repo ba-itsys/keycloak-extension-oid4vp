@@ -366,7 +366,8 @@ class MdocVerifierTest {
     private static final String CLIENT_ID = "https://verifier.example.com";
     private static final String NONCE = "test-nonce-12345";
     private static final String RESPONSE_URI = "https://verifier.example.com/response";
-    private static final String MDOC_GENERATED_NONCE = "mdoc-nonce-67890";
+    private static final OpenId4VpHandoverInfo HANDOVER =
+            new OpenId4VpHandoverInfo(CLIENT_ID, NONCE, null, RESPONSE_URI);
 
     @Nested
     class DeviceAuthVerification {
@@ -380,11 +381,11 @@ class MdocVerifierTest {
         void verifyWithSessionTranscript_oid4vpFormat_passes(MdocDeviceResponseTestHelper.MdocAlgorithmSpec algorithm)
                 throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper(algorithm);
-            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            CBORItemList transcript = HANDOVER.sessionTranscript();
             String token = helper.build(transcript);
 
-            MdocVerificationResult result = verifier.verifyPresentation(
-                    token, TestTrust.ofCertificates(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null);
+            MdocVerificationResult result =
+                    verifier.verifyPresentation(token, TestTrust.ofCertificates(helper.issuerCert), HANDOVER);
 
             assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
             assertThat(namespaceClaims(result, "org.iso.18013.5.1")).containsEntry("given_name", "John");
@@ -399,7 +400,7 @@ class MdocVerifierTest {
         @Test
         void verifyWithSessionTranscript_signerIsTheTrustAnchorItself_passes() throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper().caProfileIssuerCert();
-            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            CBORItemList transcript = HANDOVER.sessionTranscript();
             String token = helper.build(transcript);
 
             ResolvedTrust trust = TestTrust.ofCertificates(helper.issuerCert);
@@ -407,30 +408,7 @@ class MdocVerifierTest {
                     .as("the CA profile signer certificate must not be served as a pinned certificate")
                     .isEmpty();
 
-            MdocVerificationResult result =
-                    verifier.verifyPresentation(token, trust, CLIENT_ID, NONCE, RESPONSE_URI, null, null);
-
-            assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
-            assertThat(namespaceClaims(result, "org.iso.18013.5.1")).containsEntry("given_name", "John");
-        }
-
-        @ParameterizedTest(name = "{0}")
-        @MethodSource("supportedIssuerAlgorithms")
-        void verifyWithSessionTranscript_iso18013_7Format_passes(
-                MdocDeviceResponseTestHelper.MdocAlgorithmSpec algorithm) throws Exception {
-            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper(algorithm);
-            CBORItemList transcript =
-                    MdocSessionTranscriptBuilder.buildIso18013_7(CLIENT_ID, NONCE, RESPONSE_URI, MDOC_GENERATED_NONCE);
-            String token = helper.build(transcript);
-
-            MdocVerificationResult result = verifier.verifyPresentation(
-                    token,
-                    TestTrust.ofCertificates(helper.issuerCert),
-                    CLIENT_ID,
-                    NONCE,
-                    RESPONSE_URI,
-                    MDOC_GENERATED_NONCE,
-                    null);
+            MdocVerificationResult result = verifier.verifyPresentation(token, trust, HANDOVER);
 
             assertThat(result.docType()).isEqualTo("org.iso.18013.5.1.mDL");
             assertThat(namespaceClaims(result, "org.iso.18013.5.1")).containsEntry("given_name", "John");
@@ -439,17 +417,13 @@ class MdocVerifierTest {
         @Test
         void verifyWithSessionTranscript_wrongNonce_fails() throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
-            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            CBORItemList transcript = HANDOVER.sessionTranscript();
             String token = helper.build(transcript);
 
             assertThatThrownBy(() -> verifier.verifyPresentation(
                             token,
                             TestTrust.ofCertificates(helper.issuerCert),
-                            CLIENT_ID,
-                            "wrong-nonce",
-                            RESPONSE_URI,
-                            null,
-                            null))
+                            new OpenId4VpHandoverInfo(CLIENT_ID, "wrong-nonce", null, RESPONSE_URI)))
                     .isInstanceOf(IllegalStateException.class);
         }
 
@@ -457,17 +431,11 @@ class MdocVerifierTest {
         void verifyWithSessionTranscript_deviceSignatureByForeignKey_fails() throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
             MdocDeviceResponseTestHelper foreign = new MdocDeviceResponseTestHelper();
-            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            CBORItemList transcript = HANDOVER.sessionTranscript();
             String token = helper.deviceSignedWith(foreign.deviceKeyPair).build(transcript);
 
-            assertThatThrownBy(() -> verifier.verifyPresentation(
-                            token,
-                            TestTrust.ofCertificates(helper.issuerCert),
-                            CLIENT_ID,
-                            NONCE,
-                            RESPONSE_URI,
-                            null,
-                            null))
+            assertThatThrownBy(() ->
+                            verifier.verifyPresentation(token, TestTrust.ofCertificates(helper.issuerCert), HANDOVER))
                     .as("a device signature not made with the MSO deviceKey does not bind the holder")
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("deviceAuth");
@@ -476,17 +444,11 @@ class MdocVerifierTest {
         @Test
         void verifyWithSessionTranscript_tamperedDeviceSignature_fails() throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
-            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            CBORItemList transcript = HANDOVER.sessionTranscript();
             String token = helper.tamperDeviceSignature().build(transcript);
 
-            assertThatThrownBy(() -> verifier.verifyPresentation(
-                            token,
-                            TestTrust.ofCertificates(helper.issuerCert),
-                            CLIENT_ID,
-                            NONCE,
-                            RESPONSE_URI,
-                            null,
-                            null))
+            assertThatThrownBy(() ->
+                            verifier.verifyPresentation(token, TestTrust.ofCertificates(helper.issuerCert), HANDOVER))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("deviceAuth");
         }
@@ -494,41 +456,14 @@ class MdocVerifierTest {
         @Test
         void verifyWithSessionTranscript_documentDocTypeDiffersFromMso_fails() throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
-            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            CBORItemList transcript = HANDOVER.sessionTranscript();
             String token = helper.msoDocType("eu.europa.ec.eudi.pid.1").build(transcript);
 
-            assertThatThrownBy(() -> verifier.verifyPresentation(
-                            token,
-                            TestTrust.ofCertificates(helper.issuerCert),
-                            CLIENT_ID,
-                            NONCE,
-                            RESPONSE_URI,
-                            null,
-                            null))
+            assertThatThrownBy(() ->
+                            verifier.verifyPresentation(token, TestTrust.ofCertificates(helper.issuerCert), HANDOVER))
                     .as("a wallet must not relabel an issuer-signed credential through the unsigned document docType")
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("docType");
-        }
-
-        @Test
-        void verifyWithSessionTranscript_isoFallbackWhenMdocNoncePresent() throws Exception {
-            // The transcript uses the ISO 18013-7 format. The verifier tries OID4VP 1.0 first and
-            // falls back to ISO 18013-7.
-            MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
-            CBORItemList transcript =
-                    MdocSessionTranscriptBuilder.buildIso18013_7(CLIENT_ID, NONCE, RESPONSE_URI, MDOC_GENERATED_NONCE);
-            String token = helper.build(transcript);
-
-            MdocVerificationResult result = verifier.verifyPresentation(
-                    token,
-                    TestTrust.ofCertificates(helper.issuerCert),
-                    CLIENT_ID,
-                    NONCE,
-                    RESPONSE_URI,
-                    MDOC_GENERATED_NONCE,
-                    null);
-
-            assertThat(result).isNotNull();
         }
     }
 
@@ -538,11 +473,11 @@ class MdocVerifierTest {
         @Test
         void verifyWithDigests_validDigests_passes() throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
-            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            CBORItemList transcript = HANDOVER.sessionTranscript();
             String token = helper.build(transcript);
 
-            MdocVerificationResult result = verifier.verifyPresentation(
-                    token, TestTrust.ofCertificates(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null);
+            MdocVerificationResult result =
+                    verifier.verifyPresentation(token, TestTrust.ofCertificates(helper.issuerCert), HANDOVER);
 
             assertThat(result.claims()).isNotEmpty();
         }
@@ -551,11 +486,11 @@ class MdocVerifierTest {
         @ValueSource(strings = {"SHA-256", "SHA-384", "SHA-512"})
         void verifyWithDigests_digestAlgorithmOfTheMso_passes(String digestAlgorithm) throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper().digestAlgorithm(digestAlgorithm);
-            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            CBORItemList transcript = HANDOVER.sessionTranscript();
             String token = helper.build(transcript);
 
-            MdocVerificationResult result = verifier.verifyPresentation(
-                    token, TestTrust.ofCertificates(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null);
+            MdocVerificationResult result =
+                    verifier.verifyPresentation(token, TestTrust.ofCertificates(helper.issuerCert), HANDOVER);
 
             assertThat(result.claims()).isNotEmpty();
         }
@@ -563,17 +498,11 @@ class MdocVerifierTest {
         @Test
         void verifyWithDigests_unsupportedDigestAlgorithm_fails() throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper().declaredDigestAlgorithm("MD5");
-            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            CBORItemList transcript = HANDOVER.sessionTranscript();
             String token = helper.build(transcript);
 
-            assertThatThrownBy(() -> verifier.verifyPresentation(
-                            token,
-                            TestTrust.ofCertificates(helper.issuerCert),
-                            CLIENT_ID,
-                            NONCE,
-                            RESPONSE_URI,
-                            null,
-                            null))
+            assertThatThrownBy(() ->
+                            verifier.verifyPresentation(token, TestTrust.ofCertificates(helper.issuerCert), HANDOVER))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("Unsupported mDoc digest algorithm: MD5");
         }
@@ -583,17 +512,11 @@ class MdocVerifierTest {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper()
                     .digestAlgorithm("SHA-256")
                     .declaredDigestAlgorithm("SHA-512");
-            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            CBORItemList transcript = HANDOVER.sessionTranscript();
             String token = helper.build(transcript);
 
-            assertThatThrownBy(() -> verifier.verifyPresentation(
-                            token,
-                            TestTrust.ofCertificates(helper.issuerCert),
-                            CLIENT_ID,
-                            NONCE,
-                            RESPONSE_URI,
-                            null,
-                            null))
+            assertThatThrownBy(() ->
+                            verifier.verifyPresentation(token, TestTrust.ofCertificates(helper.issuerCert), HANDOVER))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("Digest mismatch");
         }
@@ -608,17 +531,11 @@ class MdocVerifierTest {
                     .validFrom(Instant.now().minus(2, ChronoUnit.DAYS))
                     .validUntil(Instant.now().minus(1, ChronoUnit.DAYS));
 
-            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            CBORItemList transcript = HANDOVER.sessionTranscript();
             String token = helper.build(transcript);
 
-            assertThatThrownBy(() -> verifier.verifyPresentation(
-                            token,
-                            TestTrust.ofCertificates(helper.issuerCert),
-                            CLIENT_ID,
-                            NONCE,
-                            RESPONSE_URI,
-                            null,
-                            null))
+            assertThatThrownBy(() ->
+                            verifier.verifyPresentation(token, TestTrust.ofCertificates(helper.issuerCert), HANDOVER))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("expired");
         }
@@ -626,17 +543,11 @@ class MdocVerifierTest {
         @Test
         void verifyPresentation_msoWithoutValidityInfo_fails() throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper().withoutValidityInfo();
-            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            CBORItemList transcript = HANDOVER.sessionTranscript();
             String token = helper.build(transcript);
 
-            assertThatThrownBy(() -> verifier.verifyPresentation(
-                            token,
-                            TestTrust.ofCertificates(helper.issuerCert),
-                            CLIENT_ID,
-                            NONCE,
-                            RESPONSE_URI,
-                            null,
-                            null))
+            assertThatThrownBy(() ->
+                            verifier.verifyPresentation(token, TestTrust.ofCertificates(helper.issuerCert), HANDOVER))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("missing the validity information");
         }
@@ -646,17 +557,11 @@ class MdocVerifierTest {
         @Test
         void verifyPresentation_msoWithoutValidUntil_fails() throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper().withoutValidUntil();
-            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            CBORItemList transcript = HANDOVER.sessionTranscript();
             String token = helper.build(transcript);
 
-            assertThatThrownBy(() -> verifier.verifyPresentation(
-                            token,
-                            TestTrust.ofCertificates(helper.issuerCert),
-                            CLIENT_ID,
-                            NONCE,
-                            RESPONSE_URI,
-                            null,
-                            null))
+            assertThatThrownBy(() ->
+                            verifier.verifyPresentation(token, TestTrust.ofCertificates(helper.issuerCert), HANDOVER))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("missing its validUntil timestamp");
         }
@@ -664,17 +569,11 @@ class MdocVerifierTest {
         @Test
         void verifyPresentation_msoWithMalformedValidFrom_fails() throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper().rawValidFrom("not-a-timestamp");
-            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            CBORItemList transcript = HANDOVER.sessionTranscript();
             String token = helper.build(transcript);
 
-            assertThatThrownBy(() -> verifier.verifyPresentation(
-                            token,
-                            TestTrust.ofCertificates(helper.issuerCert),
-                            CLIENT_ID,
-                            NONCE,
-                            RESPONSE_URI,
-                            null,
-                            null))
+            assertThatThrownBy(() ->
+                            verifier.verifyPresentation(token, TestTrust.ofCertificates(helper.issuerCert), HANDOVER))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("unreadable validFrom timestamp");
         }
@@ -685,11 +584,11 @@ class MdocVerifierTest {
                     .validFrom(Instant.now().minus(2, ChronoUnit.DAYS))
                     .validUntil(Instant.now().minusSeconds(10));
 
-            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            CBORItemList transcript = HANDOVER.sessionTranscript();
             String token = helper.build(transcript);
 
-            MdocVerificationResult result = verifier.verifyPresentation(
-                    token, TestTrust.ofCertificates(helper.issuerCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null);
+            MdocVerificationResult result =
+                    verifier.verifyPresentation(token, TestTrust.ofCertificates(helper.issuerCert), HANDOVER);
 
             assertThat(result.claims()).isNotEmpty();
         }
@@ -700,17 +599,11 @@ class MdocVerifierTest {
                     .validFrom(Instant.now().plus(1, ChronoUnit.DAYS))
                     .validUntil(Instant.now().plus(2, ChronoUnit.DAYS));
 
-            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            CBORItemList transcript = HANDOVER.sessionTranscript();
             String token = helper.build(transcript);
 
-            assertThatThrownBy(() -> verifier.verifyPresentation(
-                            token,
-                            TestTrust.ofCertificates(helper.issuerCert),
-                            CLIENT_ID,
-                            NONCE,
-                            RESPONSE_URI,
-                            null,
-                            null))
+            assertThatThrownBy(() ->
+                            verifier.verifyPresentation(token, TestTrust.ofCertificates(helper.issuerCert), HANDOVER))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("not yet valid");
         }
@@ -730,13 +623,7 @@ class MdocVerifierTest {
             String issuerSignedOnly = helper.build();
 
             assertThatThrownBy(() -> verifier.verifyPresentation(
-                            issuerSignedOnly,
-                            TestTrust.ofCertificates(helper.issuerCert),
-                            CLIENT_ID,
-                            NONCE,
-                            RESPONSE_URI,
-                            null,
-                            null))
+                            issuerSignedOnly, TestTrust.ofCertificates(helper.issuerCert), HANDOVER))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("deviceSigned");
         }
@@ -761,8 +648,8 @@ class MdocVerifierTest {
             String token = buildMdocWithForgedTopLevelNamespace(
                     "org.iso.18013.5.1.mDL", "org.iso.18013.5.1", new String[] {"given_name", "Mallory"});
 
-            assertThatThrownBy(() -> verifier.verifyPresentation(
-                            token, TestTrust.ofCertificates(signingCert), CLIENT_ID, NONCE, RESPONSE_URI, null, null))
+            assertThatThrownBy(
+                            () -> verifier.verifyPresentation(token, TestTrust.ofCertificates(signingCert), HANDOVER))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("value digests");
         }
@@ -772,17 +659,11 @@ class MdocVerifierTest {
         @Test
         void verifyPresentation_tamperedElementValue_isRejected() throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();
-            CBORItemList transcript = MdocSessionTranscriptBuilder.buildOid4vp(CLIENT_ID, NONCE, RESPONSE_URI, null);
+            CBORItemList transcript = HANDOVER.sessionTranscript();
             String tampered = helper.buildWithTamperedElementValue(transcript);
 
             assertThatThrownBy(() -> verifier.verifyPresentation(
-                            tampered,
-                            TestTrust.ofCertificates(helper.issuerCert),
-                            CLIENT_ID,
-                            NONCE,
-                            RESPONSE_URI,
-                            null,
-                            null))
+                            tampered, TestTrust.ofCertificates(helper.issuerCert), HANDOVER))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("Digest");
         }

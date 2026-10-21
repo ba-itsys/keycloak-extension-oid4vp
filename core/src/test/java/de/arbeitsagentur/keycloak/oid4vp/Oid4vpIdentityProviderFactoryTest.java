@@ -20,16 +20,19 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpRejectionResponse;
+import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpSigningKeyParser;
 import java.math.BigInteger;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
+import java.security.interfaces.ECPrivateKey;
 import java.security.spec.ECGenParameterSpec;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import javax.security.auth.x500.X500Principal;
+import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.asn1.x509.BasicConstraints;
 import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.GeneralName;
@@ -40,6 +43,8 @@ import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.keycloak.common.crypto.CryptoIntegration;
 import org.keycloak.provider.ProviderConfigProperty;
 
@@ -118,6 +123,22 @@ class Oid4vpIdentityProviderFactoryTest {
         assertThat(config.getX509SigningKeyJwk()).contains("\"x5c\"");
     }
 
+    // OpenSSL writes EC keys in the SEC1 format of RFC 5915 unless told to write PKCS#8.
+    @Test
+    void resolveX509SigningKey_acceptsSec1EcPrivateKey() throws Exception {
+        KeyPair keyPair = generateEcKeyPair();
+        X509Certificate certificate = createCertificate("CN=Leaf", keyPair, null, null, false, "wallet.example.org");
+        Oid4vpIdentityProviderConfig config = new Oid4vpIdentityProviderConfig();
+        config.setX509CertificatePem(toPem(certificate) + toSec1Pem(keyPair.getPrivate()));
+
+        Oid4vpIdentityProviderFactory.resolveX509SigningKey(config);
+
+        assertThat(config.getX509CertificatePem()).doesNotContain("PRIVATE KEY");
+        ECPrivateKey resolved = (ECPrivateKey)
+                Oid4vpSigningKeyParser.parse(config.getX509SigningKeyJwk()).getPrivateKey();
+        assertThat(resolved.getS()).isEqualTo(((ECPrivateKey) keyPair.getPrivate()).getS());
+    }
+
     @Test
     void resolveX509SigningKey_keepsExistingJwk() {
         Oid4vpIdentityProviderConfig config = new Oid4vpIdentityProviderConfig();
@@ -144,6 +165,18 @@ class Oid4vpIdentityProviderFactoryTest {
         Oid4vpIdentityProviderConfig config = new Oid4vpIdentityProviderConfig();
         config.setX509CertificatePem(toPem(createCertificate("CN=Leaf", generateEcKeyPair(), null, null, false, null))
                 + "-----BEGIN PRIVATE KEY-----\ninvalid\n-----END PRIVATE KEY-----\n");
+
+        assertThatThrownBy(() -> Oid4vpIdentityProviderFactory.resolveX509SigningKey(config))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("signing key could not be resolved");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"MAM=", "MIGHAgEB", "MAMCAQEEBQ=="})
+    void resolveX509SigningKey_withMalformedSec1Key_throwsHelpfulException(String der) throws Exception {
+        Oid4vpIdentityProviderConfig config = new Oid4vpIdentityProviderConfig();
+        config.setX509CertificatePem(toPem(createCertificate("CN=Leaf", generateEcKeyPair(), null, null, false, null))
+                + "-----BEGIN EC PRIVATE KEY-----\n" + der + "\n-----END EC PRIVATE KEY-----\n");
 
         assertThatThrownBy(() -> Oid4vpIdentityProviderFactory.resolveX509SigningKey(config))
                 .isInstanceOf(IllegalStateException.class)
@@ -191,6 +224,16 @@ class Oid4vpIdentityProviderFactoryTest {
         return "-----BEGIN CERTIFICATE-----\n"
                 + Base64.getMimeEncoder(64, "\n".getBytes()).encodeToString(certificate.getEncoded())
                 + "\n-----END CERTIFICATE-----\n";
+    }
+
+    private static String toSec1Pem(PrivateKey privateKey) throws Exception {
+        byte[] sec1 = PrivateKeyInfo.getInstance(privateKey.getEncoded())
+                .parsePrivateKey()
+                .toASN1Primitive()
+                .getEncoded();
+        return "-----BEGIN EC PRIVATE KEY-----\n"
+                + Base64.getMimeEncoder(64, "\n".getBytes()).encodeToString(sec1)
+                + "\n-----END EC PRIVATE KEY-----\n";
     }
 
     private static String toPem(PrivateKey privateKey) {

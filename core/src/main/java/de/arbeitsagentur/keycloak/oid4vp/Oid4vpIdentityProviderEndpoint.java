@@ -157,7 +157,6 @@ public class Oid4vpIdentityProviderEndpoint {
                     resolvedRequest.requestContext(),
                     submission.state(),
                     submission.vpToken(),
-                    submission.mdocGeneratedNonce(),
                     FLOW_CROSS_DEVICE.equals(resolvedRequest.requestContext().flow()));
         } catch (IdentityBrokerException e) {
             LOG.warnf(
@@ -177,12 +176,7 @@ public class Oid4vpIdentityProviderEndpoint {
             String state, Oid4vpRequestObjectStore.RequestContextEntry requestContext, EphemeralKey kidBasedKey) {}
 
     private record ResolvedSubmission(
-            String state,
-            String vpToken,
-            String error,
-            String errorDescription,
-            String mdocGeneratedNonce,
-            boolean wasEncrypted) {}
+            String state, String vpToken, String error, String errorDescription, boolean wasEncrypted) {}
 
     private ResolvedRequest resolveRequest(String state, String encryptedResponse) {
         // The response encryption JWK is created with kid == state, so an encrypted callback that
@@ -231,7 +225,6 @@ public class Oid4vpIdentityProviderEndpoint {
                     incomingPost.vpToken(),
                     incomingPost.error(),
                     incomingPost.errorDescription(),
-                    null,
                     false);
         }
         if (resolvedRequest.kidBasedKey() == null) {
@@ -243,12 +236,7 @@ public class Oid4vpIdentityProviderEndpoint {
         String resolvedState = resolveEncryptedResponseState(
                 resolvedRequest.requestContext(), incomingPost.state(), decrypted.state());
         return new ResolvedSubmission(
-                resolvedState,
-                decrypted.vpToken(),
-                decrypted.error(),
-                decrypted.errorDescription(),
-                decrypted.mdocGeneratedNonce(),
-                true);
+                resolvedState, decrypted.vpToken(), decrypted.error(), decrypted.errorDescription(), true);
     }
 
     private String resolveEncryptedResponseState(
@@ -473,12 +461,11 @@ public class Oid4vpIdentityProviderEndpoint {
             Oid4vpRequestObjectStore.RequestContextEntry requestContext,
             String state,
             String vpToken,
-            String mdocGeneratedNonce,
             boolean isCrossDeviceFlow) {
 
         BrokeredIdentityContext context;
         try {
-            context = provider.getCallbackProcessor().process(requestContext, vpToken, mdocGeneratedNonce);
+            context = provider.getCallbackProcessor().process(requestContext, vpToken);
         } catch (IdentityBrokerException e) {
             LOG.warnf(
                     "OID4VP IdP '%s': presentation for state=%s rejected: %s",
