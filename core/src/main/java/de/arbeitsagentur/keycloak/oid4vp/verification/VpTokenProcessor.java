@@ -73,7 +73,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
             String vpToken,
             String clientId,
             String expectedNonce,
-            String alternateResponseUri,
+            String responseUri,
             String encryptionJwkThumbprint,
             List<RequestedCredential> requestedCredentials) {
 
@@ -196,8 +196,8 @@ public class VpTokenProcessor implements VpTokenVerifier {
 
         try {
             if (sdJwtVerifier.isSdJwt(credential)) {
-                SdJwtVerificationResult result = verifySdJwtWithFallback(
-                        credential, request.clientId(), request.expectedNonce(), trust, request.alternateResponseUri());
+                SdJwtVerificationResult result =
+                        sdJwtVerifier.verify(credential, request.clientId(), request.expectedNonce(), trust);
                 statusListVerifier.checkRevocationStatus(result.claims(), trust.revocationCertificates());
                 return new VerifiedCredential(
                         credentialId,
@@ -216,7 +216,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
                                 request.clientId(),
                                 request.expectedNonce(),
                                 decodeJwkThumbprint(request.encryptionJwkThumbprint()),
-                                request.alternateResponseUri()));
+                                request.responseUri()));
                 statusListVerifier.checkRevocationStatus(result.claims(), trust.revocationCertificates());
                 return new VerifiedCredential(
                         credentialId, null, result.docType(), result.claims(), PresentationType.MDOC);
@@ -251,26 +251,6 @@ public class VpTokenProcessor implements VpTokenVerifier {
         } catch (Exception e) {
             LOG.warnf("Failed to decode JWK thumbprint: %s", e.getMessage());
             return null;
-        }
-    }
-
-    // Wallets bind the KB-JWT audience either to client_id or to response_uri. Try the configured
-    // client_id first, then the response_uri once.
-    private SdJwtVerificationResult verifySdJwtWithFallback(
-            String sdJwt, String clientId, String expectedNonce, ResolvedTrust trust, String alternateResponseUri) {
-        try {
-            return sdJwtVerifier.verify(sdJwt, clientId, expectedNonce, trust);
-        } catch (Exception primaryError) {
-            if (StringUtil.isNotBlank(alternateResponseUri)) {
-                try {
-                    LOG.debugf(
-                            "Primary verification failed, retrying with alternate audience: %s", alternateResponseUri);
-                    return sdJwtVerifier.verify(sdJwt, alternateResponseUri, expectedNonce, trust);
-                } catch (Exception fallbackError) {
-                    LOG.warnf("Fallback verification also failed: %s", fallbackError.getMessage());
-                }
-            }
-            throw primaryError;
         }
     }
 

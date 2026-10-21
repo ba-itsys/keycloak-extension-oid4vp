@@ -266,8 +266,9 @@ class VpTokenProcessorTest {
                 .hasMessageContaining("VP token processing failed");
     }
 
+    // OID4VP 1.0 Appendix B.3.6 requires the client_id as the key binding JWT audience.
     @Test
-    void process_sdJwtWithFallback_usesAlternateUri() throws Exception {
+    void process_keyBindingJwtForTheResponseUri_isRejected() throws Exception {
         String credJwt = buildSdJwt(Map.of(
                 "iss",
                 "https://issuer.example",
@@ -275,13 +276,12 @@ class VpTokenProcessorTest {
                 "user1",
                 "cnf",
                 Map.of("jwk", holderKey.toPublicJWK().toJSONObject())));
-        String sdJwt = buildSdJwtVpWithKbJwt(credJwt, "https://alternate.example", "nonce");
+        String sdJwt = buildSdJwtVpWithKbJwt(credJwt, "https://verifier.example/response", "nonce");
 
-        VpTokenResult result = processor.process(request(sdJwt, "client-id", "nonce", "https://alternate.example"));
-
-        VerifiedCredential primary = result.getPrimaryCredential();
-        assertThat(primary.issuer()).isEqualTo("https://issuer.example");
-        assertThat(primary.claims()).containsEntry("sub", "user1");
+        assertThatThrownBy(() ->
+                        processor.process(request(sdJwt, "client-id", "nonce", "https://verifier.example/response")))
+                .isInstanceOf(IdentityBrokerException.class)
+                .hasMessageContaining("Expected audience 'client-id'");
     }
 
     private JWSHeader buildHeaderWithX5c() throws Exception {
@@ -347,17 +347,16 @@ class VpTokenProcessorTest {
     }
 
     private static VpTokenProcessor.Request request(
-            String vpToken, String clientId, String expectedNonce, String alternateResponseUri) {
-        return request(vpToken, clientId, expectedNonce, alternateResponseUri, List.of());
+            String vpToken, String clientId, String expectedNonce, String responseUri) {
+        return request(vpToken, clientId, expectedNonce, responseUri, List.of());
     }
 
     private static VpTokenProcessor.Request request(
             String vpToken,
             String clientId,
             String expectedNonce,
-            String alternateResponseUri,
+            String responseUri,
             List<RequestedCredential> requestedCredentials) {
-        return new VpTokenProcessor.Request(
-                vpToken, clientId, expectedNonce, alternateResponseUri, null, requestedCredentials);
+        return new VpTokenProcessor.Request(vpToken, clientId, expectedNonce, responseUri, null, requestedCredentials);
     }
 }
