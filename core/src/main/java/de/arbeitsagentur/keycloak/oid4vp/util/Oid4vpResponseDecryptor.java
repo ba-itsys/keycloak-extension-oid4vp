@@ -32,16 +32,16 @@ import org.keycloak.util.JsonSerialization;
  * advertises an ephemeral encryption key per flow in the request object's {@code client_metadata},
  * and the JWE header kid of the response names the key the wallet used.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3.1">OID4VP 1.0 §8.3.1, Response Mode direct_post.jwt</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.3.1">OID4VP 1.0 section 8.3.1, Response Mode direct_post.jwt</a>
  */
 public class Oid4vpResponseDecryptor {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpResponseDecryptor.class);
 
     /**
-     * Reads the JWE key id header without decrypting. Since the value only selects a candidate
-     * decryption key, this stays tolerant and returns {@code null} for malformed input, while
-     * {@link #decrypt(String, EphemeralKey)} remains strict and rejects it.
+     * Reads the JWE key id header without decrypting. Returns {@code null} for malformed input,
+     * because the value only selects a candidate decryption key.
+     * {@link #decrypt(String, EphemeralKey)} rejects malformed input.
      */
     public String extractKid(String encryptedResponse) {
         String kid;

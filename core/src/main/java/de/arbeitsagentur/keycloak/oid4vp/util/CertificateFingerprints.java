@@ -29,7 +29,7 @@ public final class CertificateFingerprints {
 
     private CertificateFingerprints() {}
 
-    /** Returns the SHA-256 fingerprints in sorted order, so that the same certificates in any order key the same. */
+    // Sorts the fingerprints, so the same certificates in any order give the same key.
     public static List<String> of(List<X509Certificate> certificates) {
         if (certificates == null || certificates.isEmpty()) {
             return List.of();

@@ -40,7 +40,7 @@ import org.keycloak.broker.oid4vp.mappers.ClaimPath;
  * {@code claim_sets} read like the configuration. A claim without a mapper has no id and is
  * numbered by the query builder.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.3">OID4VP 1.0 §6.3 — Claims Query</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.3">OID4VP 1.0 section 6.3</a>
  */
 public record ClaimSpec(
         String id, String namespace, String path, List<String> alternativePaths, List<String> claimSetIds) {
@@ -84,7 +84,7 @@ public record ClaimSpec(
         return ConfigList.parse(rawAlternativePaths);
     }
 
-    /** Parses the configured path. Returns null when it is malformed, which callers treat as a misconfiguration. */
+    // Returns null for a malformed path, which callers treat as a misconfiguration.
     public ClaimPath claimPath() {
         return ClaimPath.parse(path);
     }

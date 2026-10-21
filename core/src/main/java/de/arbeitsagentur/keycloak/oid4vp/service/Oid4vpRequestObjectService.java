@@ -114,10 +114,9 @@ public class Oid4vpRequestObjectService {
     }
 
     /**
-     * Returns the request object encrypted to the key the wallet's {@code wallet_metadata} names, or
-     * the signed request object itself. A wallet names encryption keys only when it requires the
-     * request object encrypted (OID4VP 1.0 §5.10), so metadata without them is answered with the
-     * signed request object.
+     * Encrypts the request object to the key the wallet's {@code wallet_metadata} names. A wallet names
+     * encryption keys only when it requires an encrypted request object (OID4VP 1.0 section 5.10), so
+     * without them the signed request object goes out as is.
      */
     private String maybeEncryptRequestObject(String responseJwt, String walletMetadataJson) {
         if (StringUtil.isBlank(walletMetadataJson)) {

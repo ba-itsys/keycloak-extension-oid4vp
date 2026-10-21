@@ -256,7 +256,6 @@ class AdminApi {
         this.replaceDcqlMappers(idpPath);
     }
 
-    // Creates or updates the ETSI trust list identity provider serving the wallet's trust list
     configureTrustListIdp() {
         const trustIdpPath = `/admin/realms/${encodeURIComponent(REALM_NAME)}/identity-provider/instances/${encodeURIComponent(TRUST_IDP_ALIAS)}`;
         const trustListUrl = `${trimTrailingSlash(WALLET_INTERNAL_BASE_URI)}/api/trustlist?vct=${encodeURIComponent(SD_JWT_VCT)}`;
@@ -278,7 +277,6 @@ class AdminApi {
         }
     }
 
-    // Replaces DCQL-driving mappers (those with a credential type) with the SD-JWT-only set
     replaceDcqlMappers(idpPath) {
         const mappersPath = `${idpPath}/mappers`;
         for (const mapper of this.getJson(mappersPath)) {

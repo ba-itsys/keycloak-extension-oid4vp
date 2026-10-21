@@ -90,7 +90,6 @@ public final class Oid4vpPresentationSession {
                 returnUrl.toString()));
     }
 
-    /** Returns the latest verified presentation of the authentication session, if any. */
     public static Optional<Oid4vpPresentation> result(AuthenticationSessionModel authSession) {
         String json = authSession.getAuthNote(RESULT_NOTE);
         if (json == null) {
@@ -105,7 +104,6 @@ public final class Oid4vpPresentationSession {
         }
     }
 
-    /** Returns the message key of the failed presentation the execution asked for, if any. */
     public static Optional<String> failure(AuthenticationSessionModel authSession, String execution) {
         if (!execution.equals(authSession.getAuthNote(EXECUTION_NOTE))) {
             return Optional.empty();
@@ -113,7 +111,7 @@ public final class Oid4vpPresentationSession {
         return Optional.ofNullable(authSession.getAuthNote(FAILURE_NOTE));
     }
 
-    /** Forgets the presentation, so the next challenge starts a new one. */
+    // Forgets the presentation, so the next challenge starts a new one.
     public static void clear(AuthenticationSessionModel authSession) {
         authSession.removeAuthNote(RESULT_NOTE);
         authSession.removeAuthNote(FAILURE_NOTE);
@@ -122,7 +120,7 @@ public final class Oid4vpPresentationSession {
         authSession.removeAuthNote(RETURN_URL_NOTE);
     }
 
-    /** Whether an execution of the authentication session waits for a presentation to the identity provider. */
+    // The alias note stays set only while an execution waits for a presentation to the identity provider.
     public static boolean isPending(AuthenticationSessionModel authSession, String identityProviderAlias) {
         return authSession != null && identityProviderAlias.equals(authSession.getAuthNote(ALIAS_NOTE));
     }

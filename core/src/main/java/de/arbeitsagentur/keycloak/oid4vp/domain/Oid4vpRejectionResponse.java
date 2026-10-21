@@ -19,19 +19,19 @@ import org.jboss.logging.Logger;
 import org.keycloak.utils.StringUtil;
 
 /**
- * How the response URI answers a presentation this verifier rejected. OID4VP 1.0 §8.2 ties HTTP
+ * How the response URI answers a presentation this verifier rejected. OID4VP 1.0 section 8.2 ties HTTP
  * 200 to the response URI having "successfully processed" the response without defining that
  * term, so both answers are conformant.
  *
- * <p>This does not cover an error response the wallet reports (§8.5). The response URI processed
- * that whatever the wallet reported, so it is always answered like a completed login.
+ * <p>An error response the wallet reports (section 8.5) is out of scope. The response URI has
+ * processed it, whatever the wallet reported, so it always gets the answer of a completed login.
  */
 public enum Oid4vpRejectionResponse {
 
     /**
      * HTTP 200 and the {@code redirect_uri} that hands the End-User back, the same answer a
      * completed login gets. A wallet reads the status before the body, so this makes it follow the
-     * redirect rather than show an error of its own and strand the End-User.
+     * redirect. Otherwise it shows an error of its own and strands the End-User.
      */
     REDIRECT("redirect"),
 

@@ -52,8 +52,8 @@ class IssuerTrustAnchorsTest {
 
     @Test
     void acceptsIntermediateCaAnchor() throws Exception {
-        // ETSI trust lists commonly list the issuing (intermediate) CA of a trust domain, not the
-        // root. Such anchors are CA certificates that are neither self-issued nor self-signed.
+        // ETSI trust lists commonly list the intermediate CA that issues the credentials of a trust domain.
+        // Such an anchor is a CA certificate that is neither self-issued nor self-signed.
         KeyPair rootKp = generateKeyPair();
         KeyPair intermediateKp = generateKeyPair();
         X509Certificate intermediate = generateCert(intermediateKp, rootKp, "CN=Issuing CA", "CN=Root CA", true, null);

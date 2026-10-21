@@ -230,9 +230,8 @@ class Oid4vpCallbackProcessorTest {
 
     @Test
     void process_mdocSubjectIsNotTakenFromANamespaceTheQueryDidNotAskFor() {
-        // The elements of an mDoc are issuer signed, so which namespace they live in is not the
-        // verifier's choice. Reading the subject out of any namespace that happens to carry it would
-        // let a credential answer with an identity out of a namespace this verifier never asked for.
+        // Reading the subject out of any namespace that happens to carry it would let a credential
+        // answer with an identity out of a namespace this verifier never asked for.
         config.setPrincipalAttributes("cred-1:sub");
         VerifiedCredential mdoc = new VerifiedCredential(
                 "cred-1",
@@ -292,7 +291,7 @@ class Oid4vpCallbackProcessorTest {
                 .hasMessageContaining("given_name");
     }
 
-    // Without credential_sets every requested credential is required (OID4VP 1.0, section 6.1).
+    // Without credential_sets every requested credential is required (OID4VP 1.0 section 6.4.2).
     @Test
     void process_rejectsPresentationOmittingARequestedCredential() {
         Oid4vpCallbackProcessor processor = processor(resultOf(sdJwtCredential(Map.of("sub", "user1"))));
@@ -452,6 +451,24 @@ class Oid4vpCallbackProcessorTest {
     }
 
     @Test
+    void process_readsTheReferenceBindingFromTheConfiguredClaim() {
+        config.setPrincipalAttributes("cred-1:sub");
+        config.setAllowMissingSubjectCredential(true);
+        config.setReferenceBindingClaim("binding");
+        VerifiedCredential pid = new VerifiedCredential(
+                "pid", "https://pid.example", "IdentityCredential", Map.of(), PresentationType.SD_JWT);
+        VerifiedCredential boundElsewhere = sdJwtCredential(Map.of("sub", "subject-of-another-holder", "binding", "x"));
+        Map<String, VerifiedCredential> credentials = new LinkedHashMap<>();
+        credentials.put(pid.credentialId(), pid);
+        credentials.put(boundElsewhere.credentialId(), boundElsewhere);
+
+        BrokeredIdentityContext result = processor(new VpTokenResult(credentials), ISSUED_FOR_ANOTHER_PRESENTATION)
+                .process(requestContext("state", "nonce"), "vp-token");
+
+        assertThat(result.getContextData()).containsKey(Oid4vpMapperUtils.CONTEXT_GENERATED_SUBJECT_KEY);
+    }
+
+    @Test
     void process_subjectCredentialOfAnotherPresentation_isNotMappedEither() {
         // A credential this verifier refuses must not reach the mappers. Otherwise the claims of
         // somebody else's credential would be written onto the account that signs in afterwards.
@@ -529,7 +546,10 @@ class Oid4vpCallbackProcessorTest {
                 Map.of("given_name", "Erika"),
                 PresentationType.SD_JWT);
         VerifiedCredential boundElsewhere = sdJwtCredential(Map.of(
-                "sub", "subject-of-another-holder", ReferenceCredentialBinding.REFERENCE_BINDING_CLAIM, "other"));
+                "sub",
+                "subject-of-another-holder",
+                ReferenceCredentialBinding.DEFAULT_REFERENCE_BINDING_CLAIM,
+                "other"));
         Map<String, VerifiedCredential> credentials = new LinkedHashMap<>();
         credentials.put(pid.credentialId(), pid);
         credentials.put(boundElsewhere.credentialId(), boundElsewhere);

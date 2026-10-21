@@ -148,7 +148,7 @@ public class Oid4vpPresentationRequiredAction implements RequiredActionProvider 
         return config == null ? Map.of() : config.getConfig();
     }
 
-    /** Resumes this required action with a GET without session code, as Keycloak's broker does. */
+    // Resumes this required action with a GET without session code, as Keycloak's broker does.
     protected URI returnUrl(RequiredActionContext context) {
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
         return LoginActionsService.loginActionsBaseUrl(context.getUriInfo())

@@ -17,7 +17,7 @@ Arguments:
   <verifier-info-file>   Path to JSON file containing verifier attestations
   [trust-list-url]       Optional trust list URL override (default: BMI test trust list)
 
-The generated files are gitignored and specific to your local environment.
+The generated file is gitignored and specific to your local environment.
 
 Example:
   scripts/setup-local-realm.sh /path/to/combined.pem /path/to/verifier-info.json
@@ -531,4 +531,4 @@ echo "Usage:"
 echo "  mvn package -DskipTests"
 echo "  scripts/run-keycloak-ngrok.sh"
 echo ""
-echo "The local realm will be auto-imported on Keycloak startup."
+echo "Keycloak imports the local realm on startup."

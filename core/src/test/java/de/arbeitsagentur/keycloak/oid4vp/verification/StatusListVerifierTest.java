@@ -426,7 +426,7 @@ class StatusListVerifierTest {
         };
     }
 
-    /** Builds a statuslist+jwt whose single status entry is 0, meaning not revoked. */
+    // Its single status entry is 0, which means not revoked.
     private static String signedStatusListJwt(KeyPair signer, String uri) throws Exception {
         return signedStatusListJwt(signer, uri, Instant.now().plusSeconds(600));
     }

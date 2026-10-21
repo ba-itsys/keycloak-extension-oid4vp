@@ -104,11 +104,11 @@ class KeycloakOid4vpClaimSetsE2eIT extends AbstractOid4vpE2eTest {
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
 
-        // The German PID rulebook calls the birth name birth_name while the EUDI rulebook, which the
+        // The German PID rulebook calls the birth name birth_name. The EUDI rulebook, which the
         // wallet's PID follows, calls it birth_family_name. The mapper reads birth_name with
         // birth_family_name as its alternative, so only the alternative gets an answer. Together with
-        // the claim set ids of the email mapper that makes four generated options, of which the
-        // wallet can satisfy only the two that ask for the alternative without email.
+        // the claim set ids of the email mapper that makes four generated options. The wallet can
+        // satisfy only the one that asks for the alternative without email.
         IdentityProviderMapperRepresentation birthName =
                 sdJwtAttributeMapper("cs-birth-name", SD_JWT_PID_VCT, "birth_name", "lastName", null);
         birthName.getConfig().put("claim.alternatives", "birth_family_name");

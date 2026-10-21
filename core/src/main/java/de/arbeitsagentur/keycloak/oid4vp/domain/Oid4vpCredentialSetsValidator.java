@@ -72,7 +72,7 @@ public final class Oid4vpCredentialSetsValidator {
         return problems;
     }
 
-    /** Checks that every combination a wallet may present yields a subject. */
+    // Checks that every combination a wallet may present yields a subject.
     private static List<String> subjectProblems(
             List<CredentialSet> credentialSets,
             Map<String, CredentialTypeSpec> credentials,

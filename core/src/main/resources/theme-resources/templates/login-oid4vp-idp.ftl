@@ -3,7 +3,6 @@
     <#if section = "header">
         ${msg("oid4vpLoginTitle")}
     <#elseif section = "form">
-        <#-- Same-device redirect button -->
         <#if (sameDeviceEnabled!false) && (sameDeviceWalletUrl!'')?has_content>
             <div class="${properties.kcFormGroupClass!}">
                 <a id="oid4vp-open-wallet"
@@ -15,7 +14,6 @@
             </div>
         </#if>
 
-        <#-- Cross-device QR code -->
         <#if (crossDeviceEnabled!false) && (qrCodeBase64!'')?has_content>
             <div class="${properties.kcFormGroupClass!}" style="text-align: center; margin-top: 20px;">
                 <#if (sameDeviceEnabled!false)>

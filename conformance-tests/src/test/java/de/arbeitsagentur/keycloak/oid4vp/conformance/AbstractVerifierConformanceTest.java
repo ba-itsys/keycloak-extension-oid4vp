@@ -71,9 +71,8 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
     @InjectKeycloakUrls
     protected KeycloakUrls keycloakUrls;
 
-    // The variant dimension values the suite declares. Only the x509 client identifier prefixes are
-    // listed because the provider supports no others; every remaining combination is enumerated and
-    // the suite decides during discovery which ones apply.
+    // Only the x509 client identifier prefixes are listed because the provider supports no others.
+    // Every other combination is enumerated, and the suite decides during discovery which ones apply.
     private static final List<String> CREDENTIAL_FORMATS = List.of("sd_jwt_vc", "iso_mdl");
     private static final List<String> CLIENT_ID_PREFIXES = List.of("x509_san_dns", "x509_hash");
     private static final List<String> REQUEST_METHODS = List.of("url_query", "request_uri_signed");
@@ -86,7 +85,7 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
     private record PlanVariant(String plan, Map<String, String> variant) {}
 
     /**
-     * Runs a negative module with both answers to a rejection, which OID4VP 1.0 §8.2 permits alike.
+     * Runs a negative module with both answers to a rejection, which OID4VP 1.0 section 8.2 permits alike.
      * Under {@code error} the suite reads the refusal from the 4xx status. Under {@code redirect} it
      * cannot, so it asks for verification evidence and finishes as REVIEW, which counts as the
      * expected result once that evidence is uploaded.
@@ -100,8 +99,8 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
 
     /**
      * Returns every module and module variant the suite offers for one module name across all
-     * enumerated plan variants. The combinations are not fabricated here: the suite reports which
-     * modules and variants apply, and a plan variant that does not apply yields nothing.
+     * enumerated plan variants. The suite reports which modules and variants apply, and a plan
+     * variant that does not apply yields nothing.
      */
     protected Stream<ConformanceModuleVariant> verifierModuleVariants(
             String moduleName, ConformanceResult expectedResult) {
@@ -279,8 +278,8 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
         Map<String, String> config = new LinkedHashMap<>();
         config.put(EtsiTrustListIdentityProviderConfig.TRUST_LIST_URL, trustListUrl);
         config.put(EtsiTrustListIdentityProviderConfig.TRUST_LIST_LOTE_TYPE, TrustListServer.PID_LOTE_TYPE);
-        // Nothing is advertised, because the conformance suite's wallet is driven without a
-        // trusted_authorities constraint.
+        // Leave the trust list unadvertised, because the conformance suite's wallet is driven without
+        // a trusted_authorities constraint.
         idp.setConfig(config);
         return idp;
     }

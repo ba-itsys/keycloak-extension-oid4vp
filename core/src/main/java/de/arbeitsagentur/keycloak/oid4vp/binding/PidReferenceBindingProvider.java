@@ -28,9 +28,9 @@ import org.keycloak.broker.oid4vp.mappers.ClaimPath;
 
 /**
  * Binds an issued credential to the person a PID names, by the claims that identify them. Claims are
- * read the way the OID4VP mappers read them, so a path in dot notation resolves against the claims of
- * an SD-JWT credential and against the namespace of an mDoc, and means here what it means in a mapper
- * and in the principal attribute.
+ * read the way the OID4VP mappers read them. A path in dot notation resolves against the claims of an
+ * SD-JWT credential and against the namespace of an mDoc, and means the same here as in a mapper and in
+ * the principal attribute.
  */
 public class PidReferenceBindingProvider implements ReferenceCredentialBindingProvider {
 
@@ -62,7 +62,7 @@ public class PidReferenceBindingProvider implements ReferenceCredentialBindingPr
         return material;
     }
 
-    /** Selects by type hierarchy, so the German PID binds under the EUDI PID type it derives from. */
+    // Selects by type hierarchy, so the German PID binds under the EUDI PID type it derives from.
     protected boolean isSelected(PresentedCredential credential) {
         return credentialTypes.isEmpty() || credentialTypes.stream().anyMatch(credential::isOfType);
     }

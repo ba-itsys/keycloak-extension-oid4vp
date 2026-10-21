@@ -33,7 +33,7 @@ import java.util.stream.IntStream;
  * @param format the credential format ({@code dc+sd-jwt} or {@code mso_mdoc})
  * @param types the accepted types (VCTs for SD-JWT, the doctype for mDoc), in request order
  * @param claimSpecs the claims to request, one per mapper
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6">OID4VP 1.0 §6 — DCQL Query</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6">OID4VP 1.0 section 6</a>
  */
 public record CredentialTypeSpec(String format, List<String> types, List<ClaimSpec> claimSpecs) {
 
@@ -49,7 +49,7 @@ public record CredentialTypeSpec(String format, List<String> types, List<ClaimSp
         this(format, List.of(type), claimSpecs);
     }
 
-    /** Returns the first accepted type. The default credential id is derived from it. */
+    // The default credential id is derived from the first type.
     public String firstType() {
         return types.get(0);
     }
@@ -103,7 +103,7 @@ public record CredentialTypeSpec(String format, List<String> types, List<ClaimSp
         return options;
     }
 
-    /** Builds one option per claim set id, as indexes into {@link #claimSpecs()}. */
+    // Builds one option per claim set id, as indexes into claimSpecs.
     private List<List<Integer>> optionsByClaimSetId() {
         SortedSet<String> claimSetIds = new TreeSet<>();
         for (ClaimSpec claimSpec : claimSpecs) {
@@ -123,7 +123,7 @@ public record CredentialTypeSpec(String format, List<String> types, List<ClaimSp
         return options;
     }
 
-    /** Combines the path choices of the given specs into every option, as indexes into {@link #requestedClaims()}. */
+    // Combines the path choices of the given specs into every option, as indexes into requestedClaims.
     private List<List<Integer>> pathCombinations(List<Integer> specIndexes, int[] offsets) {
         List<List<Integer>> combinations = new ArrayList<>();
         combinations.add(List.of());

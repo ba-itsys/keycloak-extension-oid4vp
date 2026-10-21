@@ -28,9 +28,9 @@ import org.keycloak.models.IdentityProviderSyncMode;
 
 /**
  * Covers value conversion and target application, mirroring the test cases of upstream Keycloak's
- * {@code OID4VPSdJwtUserAttributeMapperTest}. Claim path semantics are covered by
- * {@link ClaimPathTest}. Credential matching is covered here because this extension supports
- * several credentials per request.
+ * {@code OID4VPSdJwtUserAttributeMapperTest}. Upstream Keycloak tests the claim path semantics of
+ * {@code ClaimPath}. Credential matching is covered here because this extension supports several
+ * credentials per request.
  */
 class OID4VPSdJwtUserAttributeMapperTest {
 

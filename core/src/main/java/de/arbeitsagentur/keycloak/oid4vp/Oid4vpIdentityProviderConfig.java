@@ -15,6 +15,7 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp;
 
+import de.arbeitsagentur.keycloak.oid4vp.binding.ReferenceCredentialBinding;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpClientIdScheme;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
@@ -52,15 +53,12 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final String CROSS_DEVICE_ENABLED = "crossDeviceEnabled";
 
     /**
-     * The level of authentication a presentation over the same-device flow reaches, empty for none.
-     * The level is an integer of the realm or client ACR-to-LoA mapping. The flow is offered only to
-     * requests of this level or below, and a login whose presentation identified the user records it
-     * in the Keycloak session, so tokens carry the matching acr and single sign-on satisfies later
-     * requests of that level.
+     * The login records the level in the Keycloak session, so tokens carry the matching acr and
+     * single sign-on satisfies later requests of that level. {@link #CROSS_DEVICE_LOA} works the
+     * same way for the cross-device flow.
      */
     public static final String SAME_DEVICE_LOA = "sameDeviceLoa";
 
-    /** The same level for the cross-device flow. See {@link #SAME_DEVICE_LOA}. */
     public static final String CROSS_DEVICE_LOA = "crossDeviceLoa";
 
     public static final String WALLET_SCHEME = "walletScheme";
@@ -80,15 +78,12 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public static final String CREDENTIAL_SETS = "credentialSets";
     public static final String PRINCIPAL_ATTRIBUTES = "principalAttributes";
 
-    /** Comma separated aliases of trust material identity providers. Same key as upstream. */
+    // Uses the same key as the upstream Keycloak OID4VP identity provider.
     public static final String TRUST_MATERIAL_IDPS = "trustMaterialIdps";
 
-    /**
-     * Whether a presentation without the subject credential is expected, in which case the verifier
-     * generates a pseudonymous subject and the login that follows establishes which user it belongs
-     * to. Otherwise the login fails because nothing identified the user.
-     */
     public static final String ALLOW_MISSING_SUBJECT_CREDENTIAL = "allowMissingSubjectCredential";
+
+    public static final String REFERENCE_BINDING_CLAIM = "referenceBindingClaim";
 
     public static final String ALLOWED_ISSUERS = "allowedIssuers";
     public static final String REQUIRE_ISSUER_SAN_MATCH = "requireIssuerSanMatch";
@@ -177,12 +172,10 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     }
 
     /**
-     * Whether the authorization request advertises {@code request_uri_method=post}, so that a
-     * conforming wallet retrieves the request object with POST (OID4VP 1.0 §5.10) and sends its
-     * {@code wallet_metadata} and {@code wallet_nonce} along, which is what enables request object
-     * encryption and wallet nonce replay protection. Without the parameter the wallet has to use
-     * GET and those features stay unreachable, but it is off by default because a wallet that
-     * cannot POST the request object would be unable to start the flow at all.
+     * Defaults to off because a wallet that cannot POST to the request URI cannot start the flow at
+     * all. Only the POST carries the wallet's {@code wallet_metadata} and {@code wallet_nonce}
+     * (OID4VP 1.0 section 5.10), which request object encryption and wallet nonce replay protection
+     * depend on.
      */
     public boolean isRequestUriMethodPost() {
         return getBoolConfig(REQUEST_URI_METHOD_POST, false);
@@ -356,6 +349,16 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
 
     public void setAllowMissingSubjectCredential(boolean allow) {
         getConfig().put(ALLOW_MISSING_SUBJECT_CREDENTIAL, String.valueOf(allow));
+    }
+
+    @Override
+    public String getReferenceBindingClaim() {
+        String claim = getConfig().get(REFERENCE_BINDING_CLAIM);
+        return StringUtil.isBlank(claim) ? ReferenceCredentialBinding.DEFAULT_REFERENCE_BINDING_CLAIM : claim.trim();
+    }
+
+    public void setReferenceBindingClaim(String claim) {
+        getConfig().put(REFERENCE_BINDING_CLAIM, claim);
     }
 
     @Override

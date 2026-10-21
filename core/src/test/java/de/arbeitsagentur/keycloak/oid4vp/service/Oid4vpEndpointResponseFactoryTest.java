@@ -30,7 +30,7 @@ class Oid4vpEndpointResponseFactoryTest {
 
     private final Oid4vpEndpointResponseFactory factory = new Oid4vpEndpointResponseFactory();
 
-    /** §8.2 defines {@code redirect_uri} as the single parameter of this response. */
+    // OID4VP 1.0 section 8.2 defines redirect_uri as the single parameter of this response.
     @Test
     void redirectResponseIsHttp200CarryingOnlyTheRedirectUri() throws IOException {
         Response response = factory.jsonRedirectResponse(REDIRECT_URI, false);
@@ -42,7 +42,7 @@ class Oid4vpEndpointResponseFactoryTest {
         assertThat(body.get("redirect_uri").asText()).isEqualTo(REDIRECT_URI);
     }
 
-    /** A cross-device wallet is on the wrong device to be redirected, so it gets no URL. */
+    // A cross-device wallet runs on another device than the browser, so it gets no redirect URL.
     @Test
     void crossDeviceRedirectResponseIsHttp200CarryingAnEmptyObject() throws IOException {
         Response response = factory.jsonRedirectResponse(REDIRECT_URI, true);
@@ -52,7 +52,7 @@ class Oid4vpEndpointResponseFactoryTest {
         assertThat(response.getEntity()).isEqualTo("{}");
     }
 
-    /** §8.2 lets an Error Response carry the redirect the End-User follows beside the error. */
+    // OID4VP 1.0 section 8.2 lets an error response carry the redirect the End-User follows.
     @Test
     void errorRedirectResponseIsHttp400CarryingTheErrorAndTheRedirectUri() throws IOException {
         Response response = factory.jsonErrorRedirectResponse(

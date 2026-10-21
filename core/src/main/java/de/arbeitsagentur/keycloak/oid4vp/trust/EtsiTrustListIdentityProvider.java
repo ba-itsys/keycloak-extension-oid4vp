@@ -33,8 +33,8 @@ import org.keycloak.utils.StringUtil;
 
 /**
  * Trust material identity provider backed by an ETSI TS 119 602 trust list URL, a pasted PEM
- * certificate bundle, or both. CA certificates become X.509 trust anchors for credential issuer
- * chain validation, while end entity certificates are trusted directly through
+ * certificate bundle, or both. CA certificates become X.509 trust anchors for issuer chain
+ * validation. End entity certificates are trusted directly through
  * {@link #directIssuerCertificates()} for pinned leaf or chainless credentials.
  */
 public class EtsiTrustListIdentityProvider
@@ -45,9 +45,9 @@ public class EtsiTrustListIdentityProvider
     private final TrustListProvider staticTrustList;
 
     // Several methods ask for the same certificates during one trust resolution, once per credential
-    // type, and a trust list without freshness metadata cannot be cached across requests, so without
-    // memoising here every one of those asks would be another fetch. A failed fetch is memoised as an
-    // empty list for this instance alone; a LoTE type mismatch throws and is not memoised.
+    // type. A trust list without freshness metadata cannot be cached across requests, so without these
+    // memos every ask would be another fetch. A failed fetch is memoised as an empty list for this
+    // instance alone. A LoTE type mismatch throws and is not memoised.
     private List<X509Certificate> issuanceCertificates;
     private List<X509Certificate> revocationCertificates;
     private List<String> authorityKeyIdentifiers;
@@ -108,9 +108,8 @@ public class EtsiTrustListIdentityProvider
 
     @Override
     public List<X509Certificate> directIssuerCertificates() {
-        // CA certificates are exposed as PKIX trust anchors through issuerTrustAnchors instead. The
-        // pinned leaf fast path skips the end entity certificate checks, so a CA certificate must
-        // never pass it.
+        // The pinned leaf path skips the end entity certificate checks, so a CA certificate must never
+        // pass it. CA certificates serve as PKIX trust anchors through issuerTrustAnchors.
         return issuanceCertificates().stream()
                 .filter(certificate -> !X5cChainValidator.isCaCertificate(certificate))
                 .toList();
@@ -142,10 +141,10 @@ public class EtsiTrustListIdentityProvider
     }
 
     /**
-     * Returns the advertised entry of this trust domain, when the configuration names one: either
-     * the trust list URL as {@code etsi_tl} or the key identifiers of the issuance certificates as
-     * {@code aki}. Both describe the same anchors and a wallet matches any advertised entry, so at
-     * most one is advertised, and nothing at all by default.
+     * Returns the advertised entry of this trust domain, when the configuration names one: the trust
+     * list URL as {@code etsi_tl} or the key identifiers of the issuance certificates as {@code aki}.
+     * Both describe the same anchors and a wallet matches any advertised entry, so at most one is
+     * advertised. The default advertises nothing. See OID4VP 1.0 section 6.1.1.
      */
     @Override
     public List<TrustedAuthority> trustedAuthorities() {

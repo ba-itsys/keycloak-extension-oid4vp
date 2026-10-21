@@ -38,10 +38,10 @@ import org.junit.jupiter.api.Test;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
 /**
- * End to end coverage of the DCQL {@code trusted_authorities} constraint (OID4VP 1.0 §6.1.1).
+ * End to end coverage of the DCQL {@code trusted_authorities} constraint (OID4VP 1.0 section 6.1.1).
  *
  * <p>The entries come from the trust material identity providers serving a credential, one entry per
- * trust domain, so every test configures the trust provider rather than the verifier. A provider
+ * trust domain, so every test configures the trust provider. A provider
  * backed by a trust list advertises either its URL as {@code etsi_tl} or the key identifiers of its
  * issuance certificates as {@code aki}, and advertises nothing by default.
  */
@@ -174,7 +174,7 @@ class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
     /**
      * Runs a login and asserts that the wallet refused to present because none of its credentials
      * satisfies the query. The advertised entry is checked before the wallet is driven, so a login
-     * that never carried the constraint under test fails there instead of passing as a refusal.
+     * that never carried the constraint under test fails at that check.
      */
     @SafeVarargs
     private void assertPresentationIsRefused(Map<String, Object>... expectedTrustedAuthorities) throws Exception {

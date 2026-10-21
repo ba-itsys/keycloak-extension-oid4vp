@@ -24,8 +24,8 @@ import java.util.List;
  * One DCQL {@code credential_sets} entry, listing the alternative combinations of credential ids
  * that satisfy the verifier. The wallet has to satisfy one option of every required set.
  *
- * <p>The identity provider configures it verbatim in DCQL syntax, so that an admin writes what the
- * specification defines rather than a translated dialect:
+ * <p>The identity provider takes it verbatim in DCQL syntax, so an admin writes what the specification
+ * defines:
  *
  * <pre>{@code
  * [{"purpose": "Login", "options": [["pid", "mdl"], ["pid"]]},
@@ -35,7 +35,7 @@ import java.util.List;
  * @param options alternative credential id combinations, most preferred first
  * @param required whether the wallet has to satisfy one of the options. DCQL defaults this to true.
  * @param purpose description the wallet shows to the user
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.2">OID4VP 1.0 §6.2 — Credential Set Query</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.2">OID4VP 1.0 section 6.2</a>
  */
 public record CredentialSet(List<List<String>> options, boolean required, String purpose) {
 
@@ -47,9 +47,8 @@ public record CredentialSet(List<List<String>> options, boolean required, String
     }
 
     /**
-     * Parses the configured DCQL {@code credential_sets} value, rejecting everything the DCQL
-     * schema does not allow so that a misconfiguration surfaces as a config error instead of an
-     * opaque rejection by the wallet.
+     * Parses the configured DCQL {@code credential_sets} value. Rejects everything the DCQL schema
+     * does not allow, because the wallet would reject such a request without saying why.
      *
      * @throws IllegalArgumentException with an admin readable message naming the first problem
      */

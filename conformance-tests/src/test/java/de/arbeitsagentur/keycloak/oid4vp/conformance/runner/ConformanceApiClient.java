@@ -80,8 +80,8 @@ public final class ConformanceApiClient {
 
     /**
      * Discovers every module and its variant combination from the suite for the given plan variant.
-     * The suite decides which modules and module variants exist, so a plan variant that does not apply
-     * yields an empty list rather than fabricated combinations.
+     * The suite decides which modules and module variants exist, and a plan variant that does not
+     * apply yields an empty list.
      */
     public List<DiscoveredModule> discoverPlanModules(
             String planName, Map<String, String> planVariant, JsonNode suiteConfig) {
@@ -150,8 +150,8 @@ public final class ConformanceApiClient {
 
     /**
      * Waits for the module to finish. A module whose flow succeeds logs a screenshot placeholder and
-     * waits for verification evidence, finishing as REVIEW once that evidence arrives, so unfilled
-     * placeholders are filled with a minimal image while waiting.
+     * waits for verification evidence. It finishes as REVIEW once that evidence arrives, so every
+     * unfilled placeholder gets a minimal image while waiting.
      */
     private ModuleCompletion waitForFinishedFillingEvidencePlaceholders(String moduleId, Duration timeout) {
         long deadline = System.nanoTime() + timeout.toNanos();

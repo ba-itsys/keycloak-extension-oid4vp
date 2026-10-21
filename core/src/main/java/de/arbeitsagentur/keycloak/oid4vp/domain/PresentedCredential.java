@@ -41,7 +41,7 @@ public record PresentedCredential(
         this(format, type, claims, List.of());
     }
 
-    /** Returns whether this credential is of the given type or derives from it. */
+    // A credential of a derived type also counts as its base type.
     public boolean isOfType(String requestedType) {
         return CredentialTypeHierarchy.isOfType(type, alsoKnownAsTypes, requestedType);
     }

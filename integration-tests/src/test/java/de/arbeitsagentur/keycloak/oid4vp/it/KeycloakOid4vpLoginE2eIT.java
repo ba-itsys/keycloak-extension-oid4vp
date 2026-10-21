@@ -85,8 +85,8 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
     }
 
     /**
-     * With transient users the subject never comes from the presentation, so the configuration naming
-     * where to read it from is not needed and an empty {@code principalAttributes} has to save and to
+     * With transient users the subject never comes from the presentation. The configuration naming
+     * where to read it from is not needed, and an empty {@code principalAttributes} has to save and to
      * log in. Requiring it would make operators configure a claim that is then ignored, and would
      * reject a valid transient-only verifier at save time.
      */
@@ -187,7 +187,7 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
             String walletUrl = flow.getSameDeviceWalletUrl();
             Oid4vpLoginFlowHelper.WalletResponse walletResponse = flow.submitToWallet(walletUrl);
 
-            // OID4VP 1.0 §8.2 lets the response URI answer an Authorization Error Response with a
+            // OID4VP 1.0 section 8.2 lets the response URI answer an Authorization Error Response with a
             // redirect_uri that the wallet MUST follow. Without one the wallet has nowhere to send the
             // End-User and the login stalls with the browser still on the wallet page.
             assertThat(Oid4vpLoginFlowHelper.verifierResponseBody(walletResponse.rawBody()))
@@ -394,8 +394,8 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
 
     /**
      * A wallet-reported error ends the attempt it belongs to once the End-User is back on the login
-     * page, so the abandoned state has to stop serving its request object rather than stay answerable
-     * for the rest of the login timeout.
+     * page. The abandoned state stops serving its request object, so it does not stay answerable for
+     * the rest of the login timeout.
      */
     @Test
     void aDeclinedPresentationEndsTheAttemptItBelongsTo() throws Exception {
@@ -442,7 +442,7 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
 
     /**
      * The response URI answers posts. A GET carries nothing that proves it comes from the End-User's
-     * browser and anybody who knows the state could send one, so it must not be answered and the login
+     * browser, and anybody who knows the state could send one. It must not be answered, and the login
      * it names has to survive it.
      */
     @Test

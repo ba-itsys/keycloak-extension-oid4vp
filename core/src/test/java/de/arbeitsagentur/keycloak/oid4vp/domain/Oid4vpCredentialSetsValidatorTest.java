@@ -45,7 +45,7 @@ class Oid4vpCredentialSetsValidatorTest {
         assertThat(sets.get(0).options()).containsExactly(List.of(PID, MDL), List.of(PID));
         assertThat(sets.get(0).purpose()).isEqualTo("Login");
         assertThat(sets.get(0).required())
-                .as("required defaults to true per DCQL")
+                .as("OID4VP 1.0 section 6.2 defaults required to true")
                 .isTrue();
     }
 

@@ -39,7 +39,7 @@ import org.keycloak.jose.jwk.JWKParser;
 import org.keycloak.jose.jwk.JWKUtil;
 import org.keycloak.util.JsonSerialization;
 
-/** An EC JWK that can carry its private key, as signing keys and wallet encryption keys do. */
+// An EC JWK that can carry its private key, as signing keys and wallet encryption keys do.
 public class Oid4vpJwk extends ECPublicJWK {
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
@@ -193,7 +193,6 @@ public class Oid4vpJwk extends ECPublicJWK {
         }
     }
 
-    /** Translates a JOSE curve name to the SEC name JCA expects, {@code P-256} to {@code secp256r1}. */
     private static String toJcaCurveName(String joseCurve) {
         return switch (joseCurve) {
             case JOSE_CURVE_P_256 -> JCA_CURVE_SECP256R1;

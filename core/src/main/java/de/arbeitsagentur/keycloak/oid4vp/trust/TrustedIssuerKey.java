@@ -28,12 +28,11 @@ import org.keycloak.utils.StringUtil;
  */
 public record TrustedIssuerKey(String issuer, JWK jwk) {
 
-    /** Returns a key trusted for any issuer, as exposed by providers that only implement the upstream contract. */
+    // Upstream providers expose keys this way, because the upstream contract binds no issuer.
     public static TrustedIssuerKey ofAnyIssuer(JWK jwk) {
         return new TrustedIssuerKey(null, jwk);
     }
 
-    /** Returns whether this key may verify a credential issued by the given issuer. */
     public boolean trustedFor(String credentialIssuer) {
         return StringUtil.isBlank(issuer) || issuer.equals(credentialIssuer);
     }

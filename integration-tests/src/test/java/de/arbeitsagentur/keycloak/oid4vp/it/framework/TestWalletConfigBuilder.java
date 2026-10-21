@@ -36,15 +36,15 @@ public final class TestWalletConfigBuilder {
      * wallet container before the wallet starts.
      *
      * <p>{@link EudiWalletContainer#withHostAccess()} adds a {@code <gateway> localhost} entry via
-     * {@code --add-host}, but Docker writes the built-in {@code 127.0.0.1 localhost} and
+     * {@code --add-host}. Docker writes the built-in {@code 127.0.0.1 localhost} and
      * {@code ::1 localhost} lines first, and the wallet's Go HTTP client takes the first match and
-     * dials its own loopback. The wrapper therefore runs as root to strip the loopback
-     * {@code localhost} lines, leaving only the gateway entry, then drops back to the unprivileged
-     * {@code app} user and execs the original wallet command. Passing that command through as
-     * {@code "$*"} is safe because every serve flag value is a single token.
+     * dials its own loopback. The wrapper runs as root and strips the loopback {@code localhost}
+     * lines, which leaves only the gateway entry. It then drops back to the unprivileged {@code app}
+     * user and execs the original wallet command. Passing that command through as {@code "$*"} is
+     * safe because every serve flag value is a single token.
      *
      * <p>Without this the wallet cannot fetch the {@code request_uri} or POST to the
-     * {@code response_uri} of Keycloak running on the host. That fails on Linux CI, while on Docker
+     * {@code response_uri} of Keycloak running on the host. That fails on Linux CI. On Docker
      * Desktop it happens to work through gateway fallthrough.
      */
     private static final String LOCALHOST_TO_HOST_GATEWAY_ENTRYPOINT =

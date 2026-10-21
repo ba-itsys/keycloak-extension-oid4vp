@@ -38,13 +38,13 @@ import org.keycloak.util.JsonSerialization;
  * alongside, and a credential presented next to the credentials of somebody else is not accepted as the
  * subject of a login. This is not the holder binding of OID4VC, which ties a credential to a wallet key.
  *
- * <p>Both are keyed HMACs over a realm secret rather than plain hashes, because the values travel in a
- * credential the wallet shows to other verifiers and a plain hash of a name and a date of birth is
- * recovered from a candidate list in seconds.
+ * <p>Both are HMACs keyed with a realm secret, because the values travel in a credential the wallet
+ * shows to other verifiers, and a plain hash of a name and a date of birth is recovered from a
+ * candidate list in seconds.
  */
 public final class ReferenceCredentialBinding {
 
-    public static final String REFERENCE_BINDING_CLAIM = "oid4vp_reference_binding";
+    public static final String DEFAULT_REFERENCE_BINDING_CLAIM = "oid4vp_reference_binding";
 
     public static final String SUBJECT_ATTRIBUTE = "oid4vp.subject";
 
@@ -130,9 +130,9 @@ public final class ReferenceCredentialBinding {
 
     /**
      * Reports whether the presentation is the one the credential was issued for. Passive realm keys are
-     * accepted as well, so a key rotation does not invalidate every issued credential at once, and a
-     * credential carrying no binding is accepted in any presentation, which covers a credential of
-     * another issuer and every credential issued without a binding.
+     * accepted as well, so a key rotation does not invalidate every issued credential at once. A
+     * credential carrying no binding is accepted in any presentation. That covers a credential of another
+     * issuer and every credential issued without a binding.
      */
     public boolean matches(PresentedCredentials credentials, String subjectCredentialId, String claimedBinding) {
         if (claimedBinding == null || claimedBinding.isBlank()) {

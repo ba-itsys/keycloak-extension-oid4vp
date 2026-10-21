@@ -155,7 +155,7 @@ public final class KeycloakVerifierBrowser {
                     .orElseThrow(
                             () -> new IllegalStateException("Redirect without Location header from " + requested)));
             // A redirect to the suite's results page means the wallet interaction is complete. The
-            // module verdict comes from the suite's module status, not from this browser response.
+            // suite's module status carries the verdict.
             if (next.getPath() != null && next.getPath().contains("log-detail")) {
                 return response;
             }

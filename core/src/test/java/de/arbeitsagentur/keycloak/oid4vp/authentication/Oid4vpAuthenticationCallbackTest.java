@@ -29,7 +29,7 @@ import org.keycloak.broker.provider.UserAuthenticationIdentityProvider.Authentic
 import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
-/** The returns to a waiting execution are covered by {@code KeycloakOid4vpPresentationE2eIT}. */
+// KeycloakOid4vpPresentationE2eIT covers the returns to a waiting execution.
 class Oid4vpAuthenticationCallbackTest {
 
     private final RecordingBroker broker = new RecordingBroker();

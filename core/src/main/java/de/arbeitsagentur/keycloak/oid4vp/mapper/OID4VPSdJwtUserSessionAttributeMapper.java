@@ -40,7 +40,7 @@ public class OID4VPSdJwtUserSessionAttributeMapper extends AbstractOID4VPClaimMa
 
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES = ProviderConfigurationBuilder.create()
             .property(credentialTypeProperty("VCT of the SD-JWT credential this claim is requested from. "
-                    + "A comma-separated list accepts a credential of any of the VCTs, i.e. "
+                    + "A comma-separated list accepts a credential of any of the VCTs, for example "
                     + "'urn:eudi:pid:1, urn:eudi:pid:de:1' for the EUDI and the German PID, requested as one "
                     + "credential entry. Mappers sharing a credential id accept every VCT any of them names."))
             .property(claimProperty())
@@ -88,9 +88,9 @@ public class OID4VPSdJwtUserSessionAttributeMapper extends AbstractOID4VPClaimMa
     }
 
     /**
-     * The note is per login state, so preprocessing sets it too because it runs for every login,
-     * while the user centric hooks below never run for an existing user whose effective sync mode
-     * is IMPORT.
+     * Sets the note during preprocessing too, because the note belongs to the login and preprocessing
+     * runs for every login. The user hooks below never run for an existing user whose effective sync
+     * mode is IMPORT.
      */
     @Override
     public void preprocessFederatedIdentity(

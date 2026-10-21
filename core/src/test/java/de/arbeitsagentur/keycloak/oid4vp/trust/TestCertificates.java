@@ -41,7 +41,7 @@ public final class TestCertificates {
         return generator.generateKeyPair();
     }
 
-    /** Issues a self-signed end entity certificate, the shape a generated Keycloak realm key carries. */
+    // A generated Keycloak realm key carries a self-signed end entity certificate.
     public static X509Certificate selfSigned(String subject) throws Exception {
         KeyPair keyPair = generateKeyPair();
         return issue(keyPair, keyPair, subject, subject, false);

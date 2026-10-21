@@ -28,9 +28,9 @@ import java.util.Set;
  * credential.
  *
  * <p>A credential matches when it matches one value of one entry, so several entries of different
- * types are alternatives and not a conjunction.
+ * types are alternatives.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1.1">OID4VP 1.0 §6.1.1 — Trusted Authorities Query</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1.1">OID4VP 1.0 section 6.1.1</a>
  */
 public record TrustedAuthority(TrustedAuthorityType type, List<String> values) {
 

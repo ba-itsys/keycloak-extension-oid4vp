@@ -74,11 +74,7 @@ public class CredentialTrustPlan {
                 .anyMatch(provider -> !provider.servedCredentialTypes().isEmpty());
     }
 
-    /**
-     * Returns the trust material serving the given credential type, see {@link #servingType}.
-     * Resolution happens on first use, because pulling trust material can involve a trust list
-     * fetch and that fetch must not run while a login page is only being rendered.
-     */
+    // Resolves on first use, because resolving can fetch a trust list and rendering the login page must not.
     public ResolvedTrust forCredentialType(String credentialType) {
         if (StringUtil.isBlank(credentialType)) {
             return resolvedByCredentialType.computeIfAbsent(UNSCOPED, this::resolve);
@@ -86,7 +82,6 @@ public class CredentialTrustPlan {
         return forServingType(servingType(credentialType, List.of()));
     }
 
-    /** Returns the trust material for a presented credential, chosen by {@link #servingType}. */
     public ResolvedTrust forCredential(ClaimedTypes claimed) {
         return forServingType(servingType(claimed.type(), claimed.alsoKnownAs()));
     }
@@ -111,19 +106,19 @@ public class CredentialTrustPlan {
         return TrustedAuthority.merge(trustedAuthorities);
     }
 
-    /** Returns whether any provider serves the given credential type or a type it derives from. */
+    // Counts a provider for a base type as serving the derived type.
     public boolean serves(String credentialType) {
         String servingType = servingType(credentialType, List.of());
         return providers.stream().anyMatch(provider -> serves(provider, servingType));
     }
 
     /**
-     * Returns the type whose providers judge a credential. It walks the types the credential is of,
-     * nearest first, and takes the first one a provider declares, so a provider for the derived type
-     * wins over one for the base type while a base type's provider still covers derived types that
-     * have none of their own. A type named in {@code aka_vcts} only counts when no provider declares
-     * the credential's own type or one of its base types. Falling back to the type itself leaves the
-     * credential to the unscoped providers.
+     * Returns the type whose providers judge a credential: the first type of the credential, nearest
+     * first, that a provider declares. A provider for a derived type thus wins over one for its base
+     * type, and a base type's provider covers derived types without a provider of their own. A type
+     * named in {@code aka_vcts} counts only when no provider declares the credential's own type or
+     * one of its base types. When no provider declares any of them, the unscoped providers judge
+     * the credential.
      */
     public String servingType(String credentialType, List<String> alsoKnownAs) {
         return CredentialTypeHierarchy.typesOf(credentialType, alsoKnownAs).stream()

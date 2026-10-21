@@ -24,35 +24,35 @@ public final class Oid4vpMessages {
 
     public static final String PRESENTATION_REJECTED = "oid4vpPresentationRejected";
 
-    /** A login through an identity provider without principal attributes. */
+    // Shown for a login through an identity provider without principal attributes.
     public static final String PRESENTATION_ONLY = "oid4vpPresentationOnly";
 
-    /** A presentation whose identity is linked to no user. */
+    // Shown when the identity of a presentation is linked to no user.
     public static final String PRESENTATION_NOT_LINKED = "oid4vpPresentationNotLinked";
 
-    /** A presentation whose identity is linked to another user than the one authenticating. */
+    // Shown when the identity of a presentation is linked to another user than the one authenticating.
     public static final String PRESENTATION_OTHER_USER = "oid4vpPresentationOtherUser";
 
-    /** The user declined the presentation in the wallet. */
+    // Shown when the user declines the presentation in the wallet.
     public static final String PRESENTATION_CANCELLED = "oid4vpPresentationCancelled";
 
-    /** Verification broke on the verifier's side, so nothing was decided about the credential. */
+    // Shown when verification fails on the verifier's side, so nothing is decided about the credential.
     public static final String VERIFICATION_FAILED = "oid4vpVerificationFailed";
 
-    /** The login the browser returns to is over, for example because the page was reloaded. */
+    // Shown when the login the browser returns to is over, for example because the page was reloaded.
     public static final String LOGIN_ENDED = "oid4vpLoginEnded";
 
     public static final String LOGIN_EXPIRED = "oid4vpLoginExpired";
 
-    /** The browser arrived without the parameters that identify its login. */
+    // Shown when the browser arrives without the parameters that identify its login.
     public static final String INVALID_LOGIN_RESPONSE = "oid4vpInvalidLoginResponse";
 
     public static final String BROWSER_SESSION_MISMATCH = "oid4vpBrowserSessionMismatch";
 
-    /** The deferred identity of the login is gone, so the login cannot be completed. */
+    // Shown when the deferred identity of the login is gone, so the login cannot be completed.
     public static final String LOGIN_DATA_MISSING = "oid4vpLoginDataMissing";
 
-    /** No flow is offered at the level of authentication the client requested. */
+    // Shown when no flow is offered at the level of authentication the client requested.
     public static final String NOT_AVAILABLE_FOR_REQUESTED_LEVEL = "oid4vpNotAvailableForRequestedLevel";
 
     private Oid4vpMessages() {}

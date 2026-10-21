@@ -31,6 +31,8 @@ import org.keycloak.protocol.ProtocolMapper;
 import org.keycloak.protocol.oid4vc.issuance.mappers.OID4VCMapper;
 import org.keycloak.protocol.oid4vc.model.VerifiableCredential;
 import org.keycloak.provider.ProviderConfigProperty;
+import org.keycloak.provider.ProviderConfigurationBuilder;
+import org.keycloak.utils.StringUtil;
 
 /**
  * Writes the subject and the reference credential binding of an OID4VP login into the credential this
@@ -43,7 +45,17 @@ public class Oid4vpBoundSubjectMapper extends OID4VCMapper {
     public static final String MAPPER_ID = "oid4vp-bound-subject-mapper";
 
     private static final Logger LOG = Logger.getLogger(Oid4vpBoundSubjectMapper.class);
-    private static final List<ProviderConfigProperty> CONFIG_PROPERTIES = List.of();
+    private static final String REFERENCE_BINDING_CLAIM = "referenceBindingClaim";
+    private static final List<ProviderConfigProperty> CONFIG_PROPERTIES = ProviderConfigurationBuilder.create()
+            .property()
+            .name(REFERENCE_BINDING_CLAIM)
+            .label("Reference Binding Claim")
+            .helpText("Claim the reference credential binding is written to. Set the same name in the "
+                    + "'Reference Binding Claim' of the OID4VP identity provider that reads it.")
+            .type(ProviderConfigProperty.STRING_TYPE)
+            .defaultValue(ReferenceCredentialBinding.DEFAULT_REFERENCE_BINDING_CLAIM)
+            .add()
+            .build();
 
     private final KeycloakSession session;
 
@@ -82,7 +94,7 @@ public class Oid4vpBoundSubjectMapper extends OID4VCMapper {
         claims.put(claimPath.get(claimPath.size() - 1), subject);
         String referenceBinding = first(attributes, ReferenceCredentialBinding.REFERENCE_BINDING_ATTRIBUTE);
         if (referenceBinding != null) {
-            claims.put(ReferenceCredentialBinding.REFERENCE_BINDING_CLAIM, referenceBinding);
+            claims.put(referenceBindingClaim(), referenceBinding);
         }
     }
 
@@ -107,6 +119,11 @@ public class Oid4vpBoundSubjectMapper extends OID4VCMapper {
     private boolean containsThisMapper(ClientScopeModel scope) {
         return scope.getProtocolMappersStream()
                 .anyMatch(mapper -> mapperModel.getId().equals(mapper.getId()));
+    }
+
+    private String referenceBindingClaim() {
+        String claim = mapperModel.getConfig().get(REFERENCE_BINDING_CLAIM);
+        return StringUtil.isBlank(claim) ? ReferenceCredentialBinding.DEFAULT_REFERENCE_BINDING_CLAIM : claim.trim();
     }
 
     private static String first(Map<String, List<String>> attributes, String name) {
@@ -141,8 +158,8 @@ public class Oid4vpBoundSubjectMapper extends OID4VCMapper {
 
     @Override
     public String getHelpText() {
-        return "Writes the subject an OID4VP login was bound to, and the reference credential binding of that login, into the "
-                + "credential. Use it on the credential scope the 'oid4vp-subject-binding' authenticator offers.";
+        return "Writes the subject and the reference credential binding of an OID4VP login into the credential. "
+                + "Add it to the credential scope the 'oid4vp-subject-binding' authenticator offers.";
     }
 
     @Override

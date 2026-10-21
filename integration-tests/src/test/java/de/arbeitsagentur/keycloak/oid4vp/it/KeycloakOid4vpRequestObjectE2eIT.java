@@ -434,9 +434,9 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
         HttpResponse<String> directPostResponse = postDirectPostWithRetry(httpClient, endpointUri, formBody);
 
         assertThat(directPostResponse.statusCode()).isEqualTo(200);
-        // OID4VP 1.0 §8.2 lets an Error Response be answered with 200 and a redirect_uri the wallet
-        // MUST follow. That redirect leads to the failure endpoint, not to the completion URL the
-        // successful path returns.
+        // OID4VP 1.0 section 8.2 lets an Error Response be answered with 200 and a redirect_uri the
+        // wallet MUST follow. That redirect leads to the failure endpoint. Only the successful path
+        // returns the completion URL.
         assertThat(directPostResponse.body())
                 .contains("/failed")
                 .doesNotContain("access_denied")
@@ -446,8 +446,8 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
     }
 
     /**
-     * The rejection response setting applies to presentations this verifier refuses, not to errors a
-     * wallet reports, which the response URI processes successfully per §8.2 whatever they say.
+     * The rejection response setting covers presentations this verifier refuses. The response URI
+     * processes an error a wallet reports successfully whatever it says (OID4VP 1.0 section 8.2).
      */
     @Test
     void walletReportedErrorStaysHttp200WhenRejectionsAreReportedToTheWallet() throws Exception {

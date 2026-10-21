@@ -25,10 +25,10 @@ import org.keycloak.utils.StringUtil;
  * for, stored as a comma separated value in the configuration of that provider. An empty value
  * serves every credential type.
  *
- * <p>The setting lives on the configured provider instance rather than on the Java contract it
- * implements, so a provider this extension does not own can be scoped as well. Keycloak's
- * {@code default-trust}, the provider for an issuer that publishes plain JWKs instead of a trust
- * list, would otherwise be trusted for every credential of every request that references it.
+ * <p>The setting lives on the configured provider instance, so a provider this extension does not
+ * own can be scoped as well. Keycloak's {@code default-trust}, the provider for an issuer that
+ * publishes plain JWKs instead of a trust list, would otherwise be trusted for every credential of
+ * every request that references it.
  */
 public final class ServedCredentialTypes {
 

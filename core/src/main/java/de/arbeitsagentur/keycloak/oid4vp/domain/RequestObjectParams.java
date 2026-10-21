@@ -24,7 +24,7 @@ import org.keycloak.broker.oid4vp.EphemeralKey;
  * {@code state}, {@code nonce}, {@code responseUri} and the response encryption key of
  * {@code direct_post.jwt} are bound to a single request object.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5">OID4VP 1.0 §5 — Authorization Request</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5">OID4VP 1.0 section 5</a>
  */
 public record RequestObjectParams(
         String dcqlQuery,

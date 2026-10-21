@@ -114,8 +114,8 @@ class TrustListProviderTest {
 
     @Test
     void parseTrustListJwt_withNextUpdateMissingSeconds_isRejected() throws Exception {
-        // Clause 6.1.3 does not allow this date-time. How long the list stays fresh is not something
-        // to guess at. The list is refused rather than read as one without an expiry.
+        // Clause 6.1.3 does not allow this date-time. The verifier does not guess how long the list stays
+        // fresh, so it refuses the list.
         String jwt = buildSignedJwt(new JWTClaimsSet.Builder()
                 .claim("ListAndSchemeInformation", Map.of("NextUpdate", "2035-01-02T03:04Z"))
                 .claim("TrustedEntitiesList", List.of())
@@ -562,7 +562,7 @@ class TrustListProviderTest {
         return new JcaX509CertificateConverter().getCertificate(certBuilder.build(contentSigner));
     }
 
-    /** Generates a CA certificate, the kind the issuance services of a trust list carry. */
+    // The issuance services of a trust list carry CA certificates.
     private static X509Certificate generateTestCert(boolean includeSubjectKeyIdentifier) throws Exception {
         return generateTestCert(includeSubjectKeyIdentifier, true);
     }

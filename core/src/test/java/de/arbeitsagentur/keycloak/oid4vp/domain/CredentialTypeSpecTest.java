@@ -76,7 +76,7 @@ class CredentialTypeSpecTest {
                 ClaimSpec.sdJwt("birth_family_name").withAlternativePaths(List.of("birth_name")));
 
         assertThat(spec.claimSetOptionIndexes())
-                .as("the claim itself is preferred, the alternative is the fallback")
+                .as("the claim itself comes first and the alternative is the fallback")
                 .containsExactly(List.of(0, 1), List.of(0, 2));
     }
 
@@ -118,8 +118,7 @@ class CredentialTypeSpecTest {
                 ClaimSpec.sdJwt("birthdate"));
 
         assertThat(spec.claimSetOptionIndexes())
-                .as(
-                        "the first option asks for every claim under its own path; the last claim's alternative varies fastest")
+                .as("every claim under its own path comes first, and the last alternative varies fastest")
                 .containsExactly(List.of(0, 2, 4), List.of(0, 3, 4), List.of(1, 2, 4), List.of(1, 3, 4));
     }
 

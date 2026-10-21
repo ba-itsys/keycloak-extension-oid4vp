@@ -31,14 +31,13 @@ public record TrustedIssuerCertificate(String issuer, X509Certificate certificat
 
     /**
      * Returns a certificate trusted for any issuer, as exposed by providers that do not know whose
-     * it is. A trust list names services rather than SD-JWT issuer identifiers, so its end entity
+     * it is. A trust list names services and no SD-JWT issuer identifiers, so its end entity
      * certificates arrive this way.
      */
     public static TrustedIssuerCertificate ofAnyIssuer(X509Certificate certificate) {
         return new TrustedIssuerCertificate(null, certificate);
     }
 
-    /** Returns whether this certificate may verify a credential issued by the given issuer. */
     public boolean trustedFor(String credentialIssuer) {
         return StringUtil.isBlank(issuer) || issuer.equals(credentialIssuer);
     }

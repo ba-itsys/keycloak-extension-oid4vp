@@ -20,9 +20,10 @@ import de.arbeitsagentur.keycloak.oid4vp.conformance.runner.ConformanceResult;
 import java.util.stream.Stream;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
-// request_uri_method=post is optional in OID4VP 1.0, so the module runs and has to pass only if the
-// verifier advertises it. The provider retrieves the request_uri with GET, which makes the suite
-// skip the module as not applicable, and this module alone therefore accepts a SKIPPED result.
+// request_uri_method=post is optional in OID4VP 1.0 section 5.10, so the module has to pass only if
+// the verifier advertises it. The conformance setup leaves it unadvertised, the wallet retrieves the
+// request object with GET, and the suite skips the module as not applicable. This module alone
+// therefore accepts a SKIPPED result.
 @KeycloakIntegrationTest(config = AbstractVerifierConformanceTest.VerifierServerConfig.class)
 class RequestUriMethodPostConformanceTest extends AbstractVerifierConformanceTest {
 

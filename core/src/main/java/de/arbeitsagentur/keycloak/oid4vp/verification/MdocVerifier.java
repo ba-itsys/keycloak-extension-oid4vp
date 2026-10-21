@@ -63,10 +63,6 @@ public class MdocVerifier {
 
     private final int clockSkewSeconds;
 
-    /**
-     * @param clockSkewSeconds tolerance applied to the validity window of the MSO. A credential is
-     *     then not rejected over a clock difference between issuer and verifier.
-     */
     public MdocVerifier(int clockSkewSeconds) {
         this.clockSkewSeconds = clockSkewSeconds;
     }
@@ -96,19 +92,17 @@ public class MdocVerifier {
     }
 
     /**
-     * Verifies only the issuer signature of an mDoc, plus its value digests and validity window when
-     * the MSO carries them. This is not a presentation check: it performs no device authentication
-     * and does not bind the credential to a session, so it must never be used to accept a presented
-     * credential. Use {@link #verifyPresentation} for that.
+     * Verifies the issuer signature of an mDoc, plus its value digests and validity window when the
+     * MSO carries them. It skips device authentication and session binding, so it must never accept a
+     * presented credential. {@link #verifyPresentation} covers presentations.
      */
     MdocVerificationResult verifyIssuerSigned(String deviceResponseToken, ResolvedTrust trust) {
         return verify(deviceResponseToken, trust, null);
     }
 
     /**
-     * Fully verifies an mDoc presented in a VP token, covering the issuer signature, the MSO
-     * validity window, the value digests, and the device authentication that binds the presentation
-     * to this session.
+     * Verifies an mDoc presented in a VP token, including the device authentication that binds the
+     * presentation to this request (OID4VP 1.0 Appendix B.2.6.1).
      *
      * <p>ISO/IEC 18013-5 9.1.2 makes device authentication and value digests mandatory, so a
      * {@code DeviceResponse} is rejected when it omits {@code deviceSigned}, omits the Mobile Security
@@ -156,9 +150,8 @@ public class MdocVerifier {
     }
 
     /**
-     * Resolves the docType, which the document level and the issuer-signed MSO must agree on
-     * (ISO/IEC 18013-5, 9.1.2). The MSO value wins because only it is covered by the issuer
-     * signature.
+     * Requires the document level and the MSO docType to agree (ISO/IEC 18013-5 9.1.2). The MSO
+     * value wins because only the MSO is covered by the issuer signature.
      */
     private String resolveDocType(CBORPairList document, CBORPairList mso) {
         String documentDocType = str(document, "docType");
@@ -239,9 +232,9 @@ public class MdocVerifier {
     }
 
     /**
-     * Unwraps CBOR tag 24, "encoded CBOR data item", whose tag content is a byte string holding
-     * another CBOR structure. mdoc issuer-signed items commonly use this wrapper, so the inner bytes
-     * have to be decoded before fields like {@code elementIdentifier} or {@code digestID} are read.
+     * Unwraps CBOR tag 24, an encoded CBOR data item whose content is a byte string holding another
+     * CBOR structure (RFC 8949 section 3.4.5.1). Issuer-signed items arrive in this wrapper, so the
+     * inner bytes are decoded before {@code elementIdentifier} or {@code digestID} can be read.
      */
     private CBORPairList unwrapTag24(CBORItem element) {
         if (element instanceof CBORTaggedItem tagged && tagged.getTagNumber().intValue() == 24) {
@@ -288,8 +281,8 @@ public class MdocVerifier {
                 if (leafKey != null && new COSEVerifier(leafKey).verify(sign1)) return;
             }
 
-            // An mDoc names no issuer, so every pinned certificate is tried and the doctype scope of
-            // the trust material is what keeps the trust domains apart here.
+            // An mDoc names no issuer, so every pinned certificate is tried. The doctype scope of the
+            // trust material keeps the trust domains apart.
             List<X509Certificate> pinned = trust.pinnedCertificates();
             List<String> skippedCertificates = new ArrayList<>();
             for (X509Certificate cert : pinned) {
@@ -416,10 +409,9 @@ public class MdocVerifier {
     }
 
     /**
-     * Returns the algorithm the value digests are computed with, declared by the Mobile Security
-     * Object and covered by the issuer signature. ISO/IEC 18013-5 defines SHA-256, SHA-384 and
-     * SHA-512 for it. A document that declares none is read as SHA-256, and one that declares
-     * anything else is rejected rather than judged by an algorithm its issuer did not use.
+     * Reads the digest algorithm from the MSO, where the issuer signature covers it. ISO/IEC 18013-5
+     * defines SHA-256, SHA-384 and SHA-512. A missing value reads as SHA-256. Any other value is
+     * rejected, because judging the digests with an algorithm the issuer did not use proves nothing.
      */
     private String digestAlgorithm(CBORPairList mso) {
         String declared = str(mso, "digestAlgorithm");
@@ -461,12 +453,10 @@ public class MdocVerifier {
     }
 
     /**
-     * Enforces the validity window the issuer signed, held in the MSO {@code validityInfo}. A
-     * presentation without it states no validity at all and is rejected in presentation mode rather
-     * than accepted as valid forever. ISO/IEC 18013-5 makes {@code validFrom} and
-     * {@code validUntil} mandatory in {@code ValidityInfo}, so validity information that omits a
-     * timestamp or carries an unreadable one is rejected as well. The readable window is judged
-     * within the configured clock skew.
+     * Enforces the validity window the issuer signed in the MSO {@code validityInfo}. A presentation
+     * without it states no validity at all, so presentation mode rejects it. ISO/IEC 18013-5 makes
+     * {@code validFrom} and {@code validUntil} mandatory in {@code ValidityInfo}, so a missing or
+     * unreadable timestamp is rejected as well.
      */
     private void validateValidity(CBORPairList mso, boolean mandatory) {
         CBORPairList validityInfo = map(mso, "validityInfo");
@@ -493,7 +483,6 @@ public class MdocVerifier {
         }
     }
 
-    /** Reads a mandatory ValidityInfo timestamp, failing verification when it is missing or unreadable. */
     private Instant requireInstant(CBORPairList validityInfo, String field) {
         CBORItem value = val(validityInfo, field);
         if (value == null) {

@@ -25,8 +25,8 @@ import org.keycloak.util.JsonSerialization;
 public class Oid4vpEndpointResponseFactory {
 
     /**
-     * Returns HTTP 200 with the {@code redirect_uri} the wallet must follow, or an empty object in a
-     * cross-device flow, where the browser is moved over the SSE stream instead. §8.2 makes
+     * Returns HTTP 200 with the {@code redirect_uri} the wallet must follow. A cross-device flow gets
+     * an empty object because the SSE stream moves the browser on. OID4VP 1.0 section 8.2 makes
      * {@code redirect_uri} optional, so a wallet served none stops there.
      *
      * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-8.2">OID4VP 1.0 §8.2, Response Mode direct_post</a>
@@ -39,8 +39,9 @@ public class Oid4vpEndpointResponseFactory {
     }
 
     /**
-     * Returns HTTP 400 with the error beside the {@code redirect_uri} that hands the End-User back,
-     * which §8.2 permits for Error Responses.
+     * Returns HTTP 400 with the error and the {@code redirect_uri} that hands the End-User back.
+     * OID4VP 1.0 section 8.2 permits a {@code redirect_uri} in an error response. A cross-device flow
+     * gets the error alone.
      */
     public Response jsonErrorRedirectResponse(
             String error, String description, String redirectUri, boolean isCrossDevice) {

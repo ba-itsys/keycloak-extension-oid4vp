@@ -43,7 +43,7 @@ public final class CredentialTypeHierarchy {
 
     private static final String URN_SCHEME = "urn";
     private static final String URN_SEPARATOR = ":";
-    /** Scheme, namespace, name, at least one qualifier, version. */
+    // Scheme, namespace, name, at least one qualifier, version.
     private static final int MIN_DERIVED_URN_SEGMENTS = 5;
 
     private static final int NAME_SEGMENTS = 3;

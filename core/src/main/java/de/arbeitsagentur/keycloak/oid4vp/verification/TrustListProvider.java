@@ -45,10 +45,9 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.util.JsonSerialization;
 
 /**
- * Fetches and caches an ETSI TS 119 602 trust list JWT from a configured URL and extracts the X.509
- * issuer certificates and public keys used for credential verification. When a signing certificate
- * is configured, the trust list JWT signature is verified before any certificate is extracted;
- * without one the JWT is accepted unverified and a warning is logged.
+ * Fetches and caches an ETSI TS 119 602 trust list JWT and extracts its issuance and revocation
+ * service certificates. A configured signing certificate verifies the JWT signature before any
+ * certificate is extracted. Without one the JWT is accepted unverified and a warning is logged.
  */
 public class TrustListProvider {
 
@@ -72,9 +71,8 @@ public class TrustListProvider {
     }
 
     /**
-     * @param signingCertificates when non-null and non-empty, the trust list JWT signature is
-     *     verified: its x5c chain is validated against these certificates, or the signature is
-     *     checked directly against each certificate's public key.
+     * @param signingCertificates the certificates that verify the trust list JWT signature, as
+     *     {@link X5cChainValidator} describes. Null or empty leaves the signature unverified.
      */
     TrustListProvider(
             KeycloakSession session,
@@ -103,7 +101,7 @@ public class TrustListProvider {
         this.signingCertificates = signingCertificates;
     }
 
-    /** Creates a provider serving a fixed certificate list, such as a pasted PEM bundle. */
+    // Serves a fixed certificate list, such as a pasted PEM bundle.
     public TrustListProvider(List<X509Certificate> staticCertificates) {
         this.session = null;
         this.trustListUrl = null;
@@ -127,10 +125,6 @@ public class TrustListProvider {
         return getTrustedTrustList().revocationCertificates();
     }
 
-    /**
-     * Returns the trusted X.509 certificates of the configured trust list, cached according to the
-     * freshness metadata the list carries.
-     */
     List<X509Certificate> getTrustedCertificates() {
         if (staticCertificates != null) return staticCertificates;
         return getTrustedTrustList().certificates();
@@ -210,19 +204,16 @@ public class TrustListProvider {
     }
 
     /**
-     * Returns trusted authority key identifiers for DCQL {@code trusted_authorities} entries.
+     * Returns the {@code aki} values for DCQL {@code trusted_authorities} entries.
      *
-     * <p>An advertised {@code aki} value has to equal the AuthorityKeyIdentifier of a certificate in
-     * the chain of a matching credential (OID4VP 1.0 §6.1.1.1), and that identifier names the
-     * authority that issued the certificate. Only the certificate authorities of the trust list are
-     * therefore advertised, since the certificates they issue point at their Subject Key Identifier.
-     * End entity certificates are left out because a credential chain points at their issuer rather
-     * than at them, so their identifier would match nothing.
+     * <p>OID4VP 1.0 section 6.1.1.1 matches an {@code aki} against the AuthorityKeyIdentifier of a
+     * certificate in the credential chain. That identifier names the issuing authority, so only the
+     * certificate authorities of the trust list are advertised. An end entity certificate is left out
+     * because no certificate in a credential chain points at it.
      *
-     * <p>The preferred identifier is the Subject Key Identifier, falling back to the explicit AKI
-     * extension, the value a subordinate certificate authority points at its own issuer with. No
-     * synthetic identifier is derived, because {@code aki} values stand for certificate extension
-     * values.
+     * <p>The value is the Subject Key Identifier of the CA. A CA without one falls back to its AKI
+     * extension, which names its own issuer. No synthetic identifier is derived, because {@code aki}
+     * values stand for certificate extension values.
      */
     public List<String> getTrustedAuthorityKeyIdentifiers() {
         return authorityKeyIdentifiersOf(getIssuanceCertificates().stream()
@@ -479,15 +470,12 @@ public class TrustListProvider {
     }
 
     /**
-     * Reads a LoTE date-time such as {@code NextUpdate}. ETSI TS 119 602 V1.1.1 clause 6.1.3
-     * requires such a value to be an ISO 8601 character string expressed as UTC, carrying "year
-     * with four digits, month, day, hour, minute, second (without decimal fraction) and the UTC
-     * designator 'Z'". {@link Instant#parse} reads every value written that way, and also tolerates
-     * the fractional seconds and numeric offsets ISO 8601 allows but the clause does not. A value
-     * without a seconds field is none of these, and the whole list is rejected rather than guessed
-     * at, because {@code NextUpdate} is the freshness this trust list promises and reading an
-     * unparseable one as absent would turn a possibly long expired list into one with no expiry at
-     * all.
+     * Reads a LoTE date-time such as {@code NextUpdate}. ETSI TS 119 602 V1.1.1 clause 6.1.3 requires
+     * an ISO 8601 UTC string with "year with four digits, month, day, hour, minute, second (without
+     * decimal fraction) and the UTC designator 'Z'". {@link Instant#parse} reads those, and also
+     * accepts fractional seconds and numeric offsets. A value without seconds fails to parse and
+     * rejects the whole list. {@code NextUpdate} is the freshness the list promises, so reading an
+     * unparseable value as absent would turn a long expired list into one that never expires.
      *
      * @see <a href="https://www.etsi.org/deliver/etsi_ts/119600_119699/119602/01.01.01_60/ts_119602v010101p.pdf">ETSI TS 119 602 V1.1.1 clause 6.1.3, Date-time indication</a>
      */
@@ -537,12 +525,12 @@ public class TrustListProvider {
         return instant != null ? instant.toString() : "none";
     }
 
-    /** Clears the static cache, for tests only. */
+    // For tests only.
     static void clearCache() {
         CACHE.clear();
     }
 
-    /** Seeds the cache with an already expired entry, for testing the stale cache fallback. */
+    // For tests of the stale cache fallback.
     static void seedExpiredCache(
             TrustListProvider provider, List<X509Certificate> certificates, Instant expiredAt, Instant fetchedAt) {
         CACHE.put(

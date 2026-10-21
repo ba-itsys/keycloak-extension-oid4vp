@@ -128,7 +128,7 @@ public final class Oid4vpTestKeycloakSetup {
                 : PRINCIPAL_CLAIM;
     }
 
-    /** Builds a credential set that accepts any one of the given credentials, each as its own option. */
+    // Builds a credential set that accepts any one of the given credentials, each as its own option.
     public static String alternativeCredentialSets(String... credentialIds) {
         String options = Arrays.stream(credentialIds)
                 .map(credentialId -> "[\"" + credentialId + "\"]")
@@ -262,7 +262,7 @@ public final class Oid4vpTestKeycloakSetup {
         return mapper;
     }
 
-    /** Registers the OID4VP presentation required action once and replaces its configuration. */
+    // Registers the OID4VP presentation required action once and replaces its configuration.
     static void configurePresentationRequiredAction(RealmResource realm, Map<String, String> config) {
         AuthenticationManagementResource flows = realm.flows();
         boolean registered = flows.getRequiredActions().stream()

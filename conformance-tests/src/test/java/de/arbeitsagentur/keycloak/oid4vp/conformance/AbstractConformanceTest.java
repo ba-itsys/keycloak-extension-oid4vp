@@ -53,7 +53,6 @@ public abstract class AbstractConformanceTest {
 
     protected abstract JsonNode suiteConfig(ConformanceModuleVariant moduleVariant);
 
-    // Prepares the system under test for the given variant before the module runs.
     protected void prepareModule(ConformanceModuleVariant moduleVariant) {}
 
     // Drives the system under test once the module waits for it.

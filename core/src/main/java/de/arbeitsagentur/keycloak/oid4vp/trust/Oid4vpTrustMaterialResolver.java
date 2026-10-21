@@ -32,14 +32,14 @@ import org.keycloak.services.resources.IdentityBrokerService;
  * Resolves trust material identity providers by alias into a {@link CredentialTrustPlan} for the
  * OID4VP verifier, the counterpart of the upstream {@code TrustMaterialResolver}. Providers that
  * only implement the upstream {@code TrustMaterialIdentityProvider} contract, for example
- * Keycloak's {@code default-trust}, are adapted at lookup time so that the plan works uniformly on
- * {@link Oid4vpTrustMaterialIdentityProvider}.
+ * Keycloak's {@code default-trust}, are adapted at lookup time, so the plan handles every provider
+ * as an {@link Oid4vpTrustMaterialIdentityProvider}.
  */
 public class Oid4vpTrustMaterialResolver {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpTrustMaterialResolver.class);
 
-    /** Provider lookup seam, replaced by a typed double in tests. */
+    // Lets tests replace the provider lookup with a typed double.
     public interface ProviderLookup {
         Oid4vpTrustMaterialIdentityProvider<?> byAlias(KeycloakSession session, String alias);
     }
@@ -55,11 +55,9 @@ public class Oid4vpTrustMaterialResolver {
     }
 
     /**
-     * Resolves the trust material identity providers referenced by the comma separated alias list
-     * into a plan that answers per credential type, skipping unknown or disabled aliases with a
-     * warning. A non-blank alias list always declares a trust source, so when none of the aliases
-     * resolve the plan rejects every credential instead of falling back to issuer published
-     * metadata.
+     * Skips unknown or disabled aliases with a warning. A non-blank alias list always declares a
+     * trust source, so when none of the aliases resolve, the plan rejects every credential. A broken
+     * configuration must not fall back to the metadata the issuer publishes itself.
      */
     public CredentialTrustPlan resolvePlan(KeycloakSession session, String aliases) {
         List<String> configuredAliases = splitAliases(aliases);

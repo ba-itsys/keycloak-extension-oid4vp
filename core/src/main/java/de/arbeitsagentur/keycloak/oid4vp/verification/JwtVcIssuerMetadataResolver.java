@@ -45,10 +45,9 @@ import org.keycloak.util.JWKSUtils;
 import org.keycloak.util.JsonSerialization;
 
 /**
- * Resolves issuer signing keys for SD-JWT VCs using JWT VC Issuer Metadata. Given an HTTPS issuer
- * identifier and a JOSE {@code kid}, it fetches the issuer's metadata from
- * {@code /.well-known/jwt-vc-issuer}, optionally follows {@code jwks_uri}, caches the discovered
- * key material for a bounded time, and returns the matching public key.
+ * Resolves SD-JWT VC issuer signing keys by {@code kid} from the JWT VC Issuer Metadata the issuer
+ * publishes at {@code /.well-known/jwt-vc-issuer} (draft-ietf-oauth-sd-jwt-vc-13). Caches the keys
+ * for at most the configured TTL so each presentation does not cost a metadata round trip.
  */
 public class JwtVcIssuerMetadataResolver {
 
@@ -299,9 +298,9 @@ public class JwtVcIssuerMetadataResolver {
     }
 
     /**
-     * Computes the expiry the HTTP responses allow for the cache entry, capped by the configured
-     * maximum cache TTL. It returns {@code null} when either response forbids caching through a
-     * non-positive {@code max-age}, and the result must then not be cached at all.
+     * Returns the earlier expiry the two HTTP responses allow, capped at the configured maximum cache
+     * TTL. Returns {@code null} when either response sends a non-positive {@code max-age}, which
+     * forbids caching the keys.
      */
     private Instant computeBaseExpiry(FetchResult metadataResult, FetchResult jwksResult) {
         Instant metadataExpiry = responseExpiry(metadataResult);

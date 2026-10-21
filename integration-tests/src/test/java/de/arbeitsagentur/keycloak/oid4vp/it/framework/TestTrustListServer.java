@@ -44,7 +44,7 @@ import java.util.Map;
  * trust material identity provider at a list that does not name the wallet's credential issuer and
  * see the DCQL {@code trusted_authorities} constraint go unsatisfiable.
  *
- * <p>It binds all interfaces because Keycloak runs on the host while the wallet runs in a container
+ * <p>It binds all interfaces because Keycloak runs on the host and the wallet runs in a container
  * where {@code localhost} resolves to the Docker host gateway.
  */
 public final class TestTrustListServer implements AutoCloseable {
@@ -72,7 +72,7 @@ public final class TestTrustListServer implements AutoCloseable {
         }
     }
 
-    /** Returns the trust list URL, which resolves from the Keycloak server and from the wallet container. */
+    // The URL resolves from the Keycloak server and from the wallet container.
     public String url() {
         return "http://localhost:%d%s".formatted(server.getAddress().getPort(), PATH);
     }

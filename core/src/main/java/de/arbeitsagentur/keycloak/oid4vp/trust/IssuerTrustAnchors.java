@@ -26,7 +26,7 @@ import java.util.Set;
  *
  * <p>Relaxed variant of {@link org.keycloak.broker.provider.X509TrustMaterial}: anchors must be CA
  * certificates but need not be self-issued roots, because ETSI trust lists commonly list the
- * issuing (intermediate) CA of a trust domain. Upstream still mandates self-signed roots.
+ * issuing (intermediate) CA of a trust domain. Upstream requires self-signed roots.
  *
  * @param trustAnchors              CA certificates anchoring one trust domain
  * @param requiredExtendedKeyUsages extended key usage OIDs. The end entity certificate must contain

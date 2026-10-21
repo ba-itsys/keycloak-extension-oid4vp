@@ -22,7 +22,7 @@ import org.keycloak.OID4VCConstants;
  * {@code credential_sets} constraints and is the key under which the wallet returns the matching
  * presentation in the {@code vp_token}, so it has to stay stable across mapper changes.
  *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1">OID4VP 1.0 §6.1 — Credential Query</a>
+ * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.1">OID4VP 1.0 section 6.1</a>
  */
 public final class CredentialId {
 

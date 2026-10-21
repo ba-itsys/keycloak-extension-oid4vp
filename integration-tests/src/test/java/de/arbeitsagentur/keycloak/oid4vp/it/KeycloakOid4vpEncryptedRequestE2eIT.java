@@ -51,8 +51,8 @@ class KeycloakOid4vpEncryptedRequestE2eIT extends AbstractOid4vpE2eTest {
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
         wallet.client().clearActivityLog();
-        // OID4VP 1.0 §5.10: the wallet sends its encryption key in wallet_metadata, which only a
-        // POST to the request_uri carries.
+        // The wallet sends its encryption key in wallet_metadata, which only a POST to the
+        // request_uri carries (OID4VP 1.0 section 5.10).
         setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.REQUEST_URI_METHOD_POST, "true"));
 
         performSameDeviceLogin("enc-request-user");

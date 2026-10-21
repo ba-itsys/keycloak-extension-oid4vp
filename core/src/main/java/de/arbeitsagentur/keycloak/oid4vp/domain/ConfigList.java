@@ -19,7 +19,6 @@ import java.util.Arrays;
 import java.util.List;
 import org.keycloak.utils.StringUtil;
 
-/** Comma separated lists in the mapper configuration. */
 public final class ConfigList {
 
     private static final String SEPARATOR = ",";

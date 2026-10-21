@@ -132,7 +132,7 @@ class MdocDeviceResponseTestHelper {
         return this;
     }
 
-    /** Signs deviceAuth with the given key instead of the deviceKey the MSO announces. */
+    // Signs deviceAuth with the given key instead of the deviceKey the MSO announces.
     MdocDeviceResponseTestHelper deviceSignedWith(KeyPair keyPair) {
         this.deviceSigningKeyPair = keyPair;
         return this;
@@ -168,19 +168,19 @@ class MdocDeviceResponseTestHelper {
         return this;
     }
 
-    /** Computes and declares the value digests with the given algorithm instead of SHA-256. */
+    // Computes and declares the value digests with the given algorithm instead of SHA-256.
     MdocDeviceResponseTestHelper digestAlgorithm(String digestAlgorithm) {
         this.digestAlgorithm = digestAlgorithm;
         return this;
     }
 
-    /** Declares a digest algorithm the value digests are not computed with. */
+    // Declares a digest algorithm the value digests are not computed with.
     MdocDeviceResponseTestHelper declaredDigestAlgorithm(String declaredDigestAlgorithm) {
         this.declaredDigestAlgorithm = declaredDigestAlgorithm;
         return this;
     }
 
-    /** Builds a complete DeviceResponse; a null session transcript leaves deviceAuth out. */
+    // A null session transcript leaves deviceAuth out.
     String build(CBORItemList sessionTranscript) throws Exception {
         return build(sessionTranscript, false);
     }
@@ -205,7 +205,7 @@ class MdocDeviceResponseTestHelper {
                     new CBORPair(new CBORString("elementIdentifier"), new CBORString(claimPairs[i][0])),
                     new CBORPair(new CBORString("elementValue"), new CBORString(claimPairs[i][1]))));
 
-            // Wrap in tag-24 (as per ISO 18013-5)
+            // ISO 18013-5 wraps each IssuerSignedItem in tag 24.
             byte[] itemBytes = item.encode();
             CBORTaggedItem taggedItem = new CBORTaggedItem(24, new CBORByteArray(itemBytes));
 
@@ -255,7 +255,6 @@ class MdocDeviceResponseTestHelper {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(root.encode());
     }
 
-    /** Builds without deviceAuth (issuer signature only). */
     String build() throws Exception {
         return build(null);
     }
@@ -317,12 +316,13 @@ class MdocDeviceResponseTestHelper {
     }
 
     private CBORItem buildDeviceSigned(CBORItemList sessionTranscript) throws Exception {
+        // ISO 18013-5 section 9.1.3.4:
         // DeviceAuthentication = ["DeviceAuthentication", SessionTranscript, DocType, DeviceNameSpacesBytes]
         CBORItemList deviceAuthentication = new CBORItemList(
                 new CBORString("DeviceAuthentication"),
                 sessionTranscript,
                 new CBORString(docType),
-                new CBORPairList(List.of())); // empty device nameSpaces
+                new CBORPairList(List.of()));
 
         byte[] payload = new CBORTaggedItem(24, new CBORByteArray(deviceAuthentication.encode())).encode();
 

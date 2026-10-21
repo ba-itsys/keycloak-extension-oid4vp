@@ -55,13 +55,12 @@ public class OID4VPMdocUserAttributeMapper extends OID4VPSdJwtUserAttributeMappe
         ProviderConfigProperty property = new ProviderConfigProperty();
         property.setName(NAMESPACE);
         property.setLabel("Namespace");
-        property.setHelpText("ISO 18013-5 namespace of the data element, i.e. 'org.iso.18013.5.1'. "
+        property.setHelpText("ISO 18013-5 namespace of the data element, for example 'org.iso.18013.5.1'. "
                 + "Defaults to the credential type (doctype) when left empty.");
         property.setType(ProviderConfigProperty.STRING_TYPE);
         return property;
     }
 
-    /** Returns the configured namespace, falling back to the doctype. */
     static String namespace(IdentityProviderMapperModel mapperModel) {
         String namespace = mapperModel.getConfig().get(NAMESPACE);
         if (StringUtil.isNotBlank(namespace)) {

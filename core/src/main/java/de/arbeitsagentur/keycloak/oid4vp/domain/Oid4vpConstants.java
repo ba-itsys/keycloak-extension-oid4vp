@@ -39,10 +39,9 @@ public final class Oid4vpConstants {
 
     public static final String PROVIDER_ID = "oid4vp";
 
-    // Credential formats
     public static final String FORMAT_MSO_MDOC = "mso_mdoc";
 
-    // COSE signature algorithms
+    // COSE algorithm values of RFC 9053 section 2.1
     public static final int COSE_ALG_ES256 = -7;
     public static final int COSE_ALG_ES384 = -35;
     public static final int COSE_ALG_ES512 = -36;
@@ -56,7 +55,6 @@ public final class Oid4vpConstants {
     public static final List<String> SUPPORTED_REQUEST_OBJECT_ENCRYPTION_METHODS =
             List.of(JWEConstants.A128GCM, JWEConstants.A256GCM);
 
-    // OID4VP protocol parameters
     public static final String REQUEST_URI = "request_uri";
     public static final String REQUEST_URI_METHOD = "request_uri_method";
     public static final String REQUEST_URI_METHOD_POST = "post";
@@ -85,13 +83,10 @@ public final class Oid4vpConstants {
     public static final String DCQL_VCT_VALUES = "vct_values";
     public static final String DCQL_DOCTYPE_VALUE = "doctype_value";
 
-    // Flow types
     public static final String FLOW_SAME_DEVICE = "same_device";
     public static final String FLOW_CROSS_DEVICE = "cross_device";
 
-    // Query/form parameter names
     public static final String PARAM_TAB_ID = "tab_id";
 
-    // Default wallet scheme
     public static final String DEFAULT_WALLET_SCHEME = "openid4vp://";
 }

@@ -143,7 +143,7 @@ class PidReferenceBindingProviderTest {
                 new PidReferenceBindingProvider(Set.of(PID_VCT), List.of("place_of_birth.locality"));
 
         assertThat(provider.bindingMaterial(presentation(), EMPLOYEE).get(PID).claims())
-                .as("SD-JWT claims nest, so the path addresses the claim rather than its name alone")
+                .as("SD-JWT claims nest, so the full path addresses the claim")
                 .containsExactly(Map.entry("place_of_birth.locality", "Köln"));
     }
 
