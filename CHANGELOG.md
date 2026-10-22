@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.16.0...v0.16.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* set session code to enable "log in with other provider" in the oid4vp ui ([0a17329](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/0a1732921cb7a6ea065f8f025897200c5e194587))
+
 ## [0.16.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.15.0...v0.16.0) (2026-10-21)
 
 
