@@ -72,6 +72,7 @@ import org.keycloak.models.UserModel;
 import org.keycloak.models.UserSessionModel;
 import org.keycloak.models.utils.SessionExpiration;
 import org.keycloak.services.ErrorPage;
+import org.keycloak.services.managers.ClientSessionCode;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.utils.StringUtil;
 
@@ -516,8 +517,12 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                         getConfig().getMaxLiveRequestsPerLogin())
                 .forEach(state -> Oid4vpDirectPostService.endAttempt(session, requestObjectStore, authSession, state));
 
+        // The links to alternative identity providers need the session code to start their login.
+        String sessionCode =
+                new ClientSessionCode<>(session, session.getContext().getRealm(), authSession).getOrGenerateCode();
         return session.getProvider(LoginFormsProvider.class)
                 .setAuthenticationSession(authSession)
+                .setClientSessionCode(sessionCode)
                 .setAttribute("currentBrokerAlias", getConfig().getAlias())
                 .setAttribute(
                         "alternativeProvidersOffered",

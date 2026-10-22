@@ -152,6 +152,19 @@ class KeycloakOid4vpPresentationE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
+    void walletPageStartsTheLoginOfAnAlternativeIdentityProvider() {
+        realm.updateIdentityProvider(PRESENTATION_IDP_ALIAS, idp -> idp.setHideOnLogin(false));
+        flow.navigateToLoginPage();
+        flow.clickOid4vpIdpButton();
+        flow.getSameDeviceWalletUrl();
+
+        page.locator("a#social-" + PRESENTATION_IDP_ALIAS).click();
+
+        page.waitForURL("**/broker/" + PRESENTATION_IDP_ALIAS + "/login**");
+        assertThat(flow.getSameDeviceWalletUrl()).isNotBlank();
+    }
+
+    @Test
     void requiredActionLinksTheWalletSoTheAuthenticatorLogsInWithoutPassword() throws Exception {
         linkWalletTo(ALICE);
         assertThat(links(ALICE))
