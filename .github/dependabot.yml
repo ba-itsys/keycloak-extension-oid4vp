@@ -16,6 +16,8 @@ updates:
     groups:
       keycloak:
         patterns: [ "org.keycloak*" ]
+      bouncycastle:
+        patterns: [ "org.bouncycastle*" ]
 
   - package-ecosystem: "github-actions"
     directory: "/"
