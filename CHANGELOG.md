@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.16.2](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.16.1...v0.16.2) (2026-10-30)
+
+
+### Dependencies
+
+* **deps-dev:** Bump com.microsoft.playwright:playwright ([6e44270](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/6e4427084b664be1fe577edd8b8f01770223de59))
+* **deps-dev:** Bump io.github.dominikschlosser:testcontainers-eudi ([874b665](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/874b66550b13180c71df9d22cd90c71b264b2e6a))
+* **deps-dev:** Bump net.bytebuddy:byte-buddy-agent ([e326954](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/e3269542e6867d749cb60e46a0e0c4d1df13022d))
+* **deps-dev:** Bump org.apache.httpcomponents.client5:httpclient5 ([ad43e0a](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/ad43e0a7b0fb2467a33d19482ba0fb095ed604e6))
+* **deps-dev:** Bump org.apache.maven.plugins:maven-failsafe-plugin ([6edd56e](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/6edd56e0795fbc9b7910ec759f6a971344b4943a))
+* **deps-dev:** Bump org.jacoco:jacoco-maven-plugin ([3f2bd54](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/3f2bd54d4766108b20f5a7d054deb960aba48038))
+* **deps:** Bump ch.qos.logback:logback-classic from 1.6.3 to 1.6.6 ([9532879](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/9532879371300611f1e31ba66d975be8748ff039))
+* **deps:** Bump org.apache.maven.plugins:maven-surefire-plugin ([2d34f89](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/2d34f89ad12417f445a01043c9f7afdf93541691))
+* **deps:** Bump org.junit.jupiter:junit-jupiter from 6.1.1 to 6.1.3 ([f162ba2](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/f162ba2ab0a6f42d9c814534f9bad41c33165234))
+* **deps:** Bump org.projectlombok:lombok from 1.18.44 to 1.18.48 ([73cf3ff](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/73cf3ff8c97e23d682ff86a8e144071cda4aa8a7))
+* **deps:** Bump the bouncycastle group with 4 updates ([e04e477](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/e04e47753f8476fe4d005f7a29fffc0ebb3dea67))
+
 ## [0.16.1](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.16.0...v0.16.1) (2026-10-22)
 
 
