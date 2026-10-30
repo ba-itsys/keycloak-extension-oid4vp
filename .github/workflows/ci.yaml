@@ -64,24 +64,23 @@ jobs:
           mvn --batch-mode verify -pl conformance-tests -am -Pconformance-tests
           -Djacoco.skip=true
 
-  # Single required status check that succeeds only when every test job passes.
-  status-check:
-    name: Status check
+  # Note: The name `automerge-check` is configured in the ruleset (repo settings) as a required merge check
+  automerge-check:
     runs-on: ubuntu-latest
-    if: always()
     needs:
       - build
       - integration-tests
       - conformance-tests
+    if: always()
     steps:
-      - name: Verify all test jobs succeeded
+      - name: Verify all jobs succeeded
         run: |
           results="${{ needs.build.result }} ${{ needs.integration-tests.result }} ${{ needs.conformance-tests.result }}"
           echo "Job results: $results"
           for result in $results; do
             if [ "$result" != "success" ]; then
-              echo "At least one test job did not succeed"
+              echo "At least one job did not succeed"
               exit 1
             fi
           done
-          echo "All test jobs succeeded"
+          echo "All jobs succeeded"
