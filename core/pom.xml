@@ -169,26 +169,26 @@
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcpkix-jdk18on</artifactId>
-      <version>1.83</version>
+      <version>1.86</version>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcutil-jdk18on</artifactId>
-      <version>1.84</version>
+      <version>1.86</version>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcprov-jdk18on</artifactId>
-      <version>1.83</version>
+      <version>1.86</version>
       <scope>test</scope>
     </dependency>
     <!-- keycloak-crypto-default needs the BouncyCastle JSSE provider on the test classpath -->
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bctls-jdk18on</artifactId>
-      <version>1.85</version>
+      <version>1.86.2</version>
       <scope>test</scope>
     </dependency>
 
