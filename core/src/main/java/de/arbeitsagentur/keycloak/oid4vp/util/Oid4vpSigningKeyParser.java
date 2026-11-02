@@ -73,15 +73,12 @@ public final class Oid4vpSigningKeyParser {
 
     public static String serialize(PublicKey publicKey, PrivateKey privateKey, List<X509Certificate> certificateChain) {
         try {
-            JWK signingJwk =
-                    switch (publicKey) {
-                        case ECPublicKey ecPublicKey -> createEcSigningJwk(ecPublicKey, privateKey, certificateChain);
-                        case RSAPublicKey rsaPublicKey ->
-                            createRsaSigningJwk(rsaPublicKey, privateKey, certificateChain);
-                        default ->
-                            throw new IllegalArgumentException(
-                                    "Unsupported certificate key type: " + publicKey.getAlgorithm());
-                    };
+            JWK signingJwk = switch (publicKey) {
+                case ECPublicKey ecPublicKey -> createEcSigningJwk(ecPublicKey, privateKey, certificateChain);
+                case RSAPublicKey rsaPublicKey -> createRsaSigningJwk(rsaPublicKey, privateKey, certificateChain);
+                default ->
+                    throw new IllegalArgumentException("Unsupported certificate key type: " + publicKey.getAlgorithm());
+            };
             signingJwk.setKeyId(computeKid(signingJwk));
             return JsonSerialization.writeValueAsString(signingJwk);
         } catch (Exception e) {
