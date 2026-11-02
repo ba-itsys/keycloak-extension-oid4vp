@@ -573,23 +573,29 @@ class SdJwtVerifierTest {
     }
 
     private static Stream<Arguments> issuerSanCases() {
-        return Stream.of(false, true).flatMap(enabled -> Stream.of(false, true)
-                .flatMap(pinned -> Stream.of(
-                        Arguments.of(null, false, enabled, pinned),
-                        Arguments.of(
-                                new GeneralName(GeneralName.uniformResourceIdentifier, ISSUER), true, enabled, pinned),
-                        Arguments.of(new GeneralName(GeneralName.dNSName, "ISSUER.EXAMPLE"), true, enabled, pinned),
-                        Arguments.of(
-                                new GeneralName(GeneralName.uniformResourceIdentifier, "https://other.example"),
-                                false,
-                                enabled,
-                                pinned),
-                        Arguments.of(new GeneralName(GeneralName.dNSName, "other.example"), false, enabled, pinned),
-                        Arguments.of(
-                                new GeneralName(GeneralName.uniformResourceIdentifier, ISSUER + "/other"),
-                                false,
-                                enabled,
-                                pinned))));
+        return Stream.of(false, true)
+                .flatMap(enabled -> Stream.of(false, true)
+                        .flatMap(pinned -> Stream.of(
+                                Arguments.of(null, false, enabled, pinned),
+                                Arguments.of(
+                                        new GeneralName(GeneralName.uniformResourceIdentifier, ISSUER),
+                                        true,
+                                        enabled,
+                                        pinned),
+                                Arguments.of(
+                                        new GeneralName(GeneralName.dNSName, "ISSUER.EXAMPLE"), true, enabled, pinned),
+                                Arguments.of(
+                                        new GeneralName(GeneralName.uniformResourceIdentifier, "https://other.example"),
+                                        false,
+                                        enabled,
+                                        pinned),
+                                Arguments.of(
+                                        new GeneralName(GeneralName.dNSName, "other.example"), false, enabled, pinned),
+                                Arguments.of(
+                                        new GeneralName(GeneralName.uniformResourceIdentifier, ISSUER + "/other"),
+                                        false,
+                                        enabled,
+                                        pinned))));
     }
 
     private static ResolvedTrust anchorsOnly(X509Certificate caCert) {

@@ -105,14 +105,15 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
     protected Stream<ConformanceModuleVariant> verifierModuleVariants(
             String moduleName, ConformanceResult expectedResult) {
         ensureDiscovered();
-        return DISCOVERED.entrySet().stream().flatMap(entry -> entry.getValue().stream()
-                .filter(module -> module.name().equals(moduleName))
-                .map(module -> new ConformanceModuleVariant(
-                        entry.getKey().plan(),
-                        entry.getKey().variant(),
-                        module.name(),
-                        module.variant(),
-                        expectedResult)));
+        return DISCOVERED.entrySet().stream()
+                .flatMap(entry -> entry.getValue().stream()
+                        .filter(module -> module.name().equals(moduleName))
+                        .map(module -> new ConformanceModuleVariant(
+                                entry.getKey().plan(),
+                                entry.getKey().variant(),
+                                module.name(),
+                                module.variant(),
+                                expectedResult)));
     }
 
     private static synchronized void ensureDiscovered() {

@@ -154,11 +154,10 @@ public class OID4VPEidasLoaUserSessionAttributeMapper extends AbstractIdentityPr
             logger.warnf("No presentation flow in the brokered context, mapper %s sets nothing", mapperModel.getName());
             return;
         }
-        String value =
-                switch (flow) {
-                    case SAME_DEVICE -> configOrDefault(mapperModel, SAME_DEVICE_LOA, DEFAULT_SAME_DEVICE_LOA);
-                    case CROSS_DEVICE -> configOrDefault(mapperModel, CROSS_DEVICE_LOA, DEFAULT_CROSS_DEVICE_LOA);
-                };
+        String value = switch (flow) {
+            case SAME_DEVICE -> configOrDefault(mapperModel, SAME_DEVICE_LOA, DEFAULT_SAME_DEVICE_LOA);
+            case CROSS_DEVICE -> configOrDefault(mapperModel, CROSS_DEVICE_LOA, DEFAULT_CROSS_DEVICE_LOA);
+        };
         context.setSessionNote(configOrDefault(mapperModel, ATTRIBUTE, DEFAULT_ATTRIBUTE), value);
     }
 
