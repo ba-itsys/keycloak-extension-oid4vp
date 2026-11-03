@@ -251,7 +251,7 @@ public class TrustListProvider {
         }
 
         try {
-            X5cChainValidator.verifyJwtSignature(jwt, signingCertificates);
+            X5cChainValidator.verifyJwtSignatureWithPinnedKeys(jwt, signingCertificates);
         } catch (Exception e) {
             throw new IllegalStateException(
                     "Trust list JWT from " + trustListUrl + " failed signature verification against "

@@ -40,7 +40,8 @@ public class EtsiTrustListIdentityProviderFactory
             .property()
             .name(EtsiTrustListIdentityProviderConfig.TRUST_LIST_SIGNING_CERT_PEM)
             .label("Trust List Signing Certificate (PEM)")
-            .helpText("PEM-encoded X.509 certificate that verifies the trust list JWT signature. "
+            .helpText("PEM-encoded X.509 certificates of the list signer, several for key rotation. Only their "
+                    + "keys verify the trust list JWT signature, so a CA certificate does not vouch for what it issues. "
                     + "Without it, the signature is not verified and the fetched trust list is trusted as is. "
                     + "Use that for local testing only. "
                     + "Accepts the value verbatim or Base64-encoded as a whole, for single-line sources such as "
