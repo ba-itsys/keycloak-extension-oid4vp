@@ -371,6 +371,19 @@ class EtsiTrustListIdentityProviderTest {
         }
     }
 
+    @Test
+    void listWithoutLoTETypeFailsAnExpectedType() throws Exception {
+        KeyPair caKp = generateKeyPair();
+        X509Certificate ca = generateCert(caKp, caKp, "CN=TL CA", "CN=TL CA", true);
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
+        config.setTrustListUrl("https://tl.example/list.jwt");
+        config.setTrustListLoTEType("http://uri.etsi.org/19602/LoTEType/EUWalletProvidersList");
+        EtsiTrustListIdentityProvider provider =
+                new EtsiTrustListIdentityProvider(config, new FixedTrustListProvider(List.of(ca), null), null);
+
+        assertThatThrownBy(provider::issuerTrustAnchors).hasMessageContaining("LoTE type mismatch");
+    }
+
     private static class FixedTrustListProvider extends TrustListProvider {
 
         private final List<X509Certificate> certificates;

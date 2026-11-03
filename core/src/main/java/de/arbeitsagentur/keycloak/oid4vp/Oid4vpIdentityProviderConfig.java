@@ -248,6 +248,9 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
     public void validate(RealmModel realm) {
         super.validate(realm);
 
+        ConfigValues.requireSeconds(getConfig(), STATUS_LIST_MAX_CACHE_TTL_SECONDS);
+        ConfigValues.requireSeconds(getConfig(), ISSUER_METADATA_MAX_CACHE_TTL_SECONDS);
+
         // Parsing the levels here rejects a mistyped value when the provider is saved, instead
         // of failing every login afterwards.
         getSameDeviceLoa();

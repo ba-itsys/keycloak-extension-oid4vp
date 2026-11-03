@@ -115,6 +115,15 @@ class EtsiTrustListIdentityProviderConfigTest {
     }
 
     @Test
+    void validate_rejectsACacheTimeThatIsNoNumber() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
+        config.setTrustListUrl("https://example.com/list.jwt");
+        config.getConfig().put(EtsiTrustListIdentityProviderConfig.TRUST_LIST_MAX_CACHE_TTL_SECONDS, "1h");
+
+        assertThatThrownBy(() -> config.validate(null)).hasMessageContaining("number of seconds");
+    }
+
+    @Test
     void validate_acceptsTrustListUrlOnly() {
         EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
         config.setTrustListUrl("https://tl.example/list.jwt");
