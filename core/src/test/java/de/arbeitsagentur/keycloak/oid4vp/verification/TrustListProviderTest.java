@@ -446,6 +446,20 @@ class TrustListProviderTest {
         }
 
         @Test
+        void cacheKey_keepsProvidersSharingATrustListApart() throws Exception {
+            X509Certificate cachedCert = generateTestCert(true);
+
+            TrustListProvider owner = new TrustListProvider(null, "provider-a", TEST_URL, null, null, null);
+            TrustListProvider other = new TrustListProvider(null, "provider-b", TEST_URL, null, null, null);
+
+            TrustListProvider.seedExpiredCache(
+                    owner, List.of(cachedCert), Instant.now().plusSeconds(300), Instant.now());
+
+            assertThat(owner.getTrustedCertificates()).containsExactly(cachedCert);
+            assertThat(other.getTrustedCertificates()).isEmpty();
+        }
+
+        @Test
         void cacheKey_includesCachePolicy() throws Exception {
             X509Certificate cachedCert = generateTestCert(true);
 

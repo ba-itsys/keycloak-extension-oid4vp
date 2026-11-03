@@ -58,6 +58,7 @@ public class EtsiTrustListIdentityProvider
                 StringUtil.isNotBlank(config.getTrustListUrl())
                         ? new TrustListProvider(
                                 session,
+                                config.getInternalId(),
                                 config.getTrustListUrl(),
                                 config.getTrustListMaxCacheTtl(),
                                 config.getTrustListMaxStaleAge(),
