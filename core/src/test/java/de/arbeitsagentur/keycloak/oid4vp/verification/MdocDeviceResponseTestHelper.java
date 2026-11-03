@@ -53,10 +53,6 @@ import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 
-/**
- * Builds complete mDoc DeviceResponse CBOR structures for tests, with issuerAuth, deviceAuth and
- * an MSO carrying valueDigests, validityInfo and deviceKeyInfo.
- */
 class MdocDeviceResponseTestHelper {
 
     record MdocAlgorithmSpec(
@@ -185,10 +181,6 @@ class MdocDeviceResponseTestHelper {
         return build(sessionTranscript, false);
     }
 
-    /**
-     * Builds a complete DeviceResponse whose first presented element value differs from the value the
-     * MSO digest is computed over. Digest verification must reject it.
-     */
     String buildWithTamperedElementValue(CBORItemList sessionTranscript) throws Exception {
         return build(sessionTranscript, true);
     }

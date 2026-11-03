@@ -52,11 +52,6 @@ import org.keycloak.testframework.server.KeycloakServerConfigBuilder;
 import org.keycloak.testframework.server.KeycloakUrls;
 import org.keycloak.util.JsonSerialization;
 
-/**
- * Base class for the OID4VP verifier conformance modules. Each subclass targets one module and runs
- * it across every variant combination the provider supports, with Keycloak reconfigured for the
- * variant before the module starts.
- */
 public abstract class AbstractVerifierConformanceTest extends AbstractConformanceTest {
 
     static final String IDP_ALIAS = "oid4vp";
@@ -85,10 +80,10 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
     private record PlanVariant(String plan, Map<String, String> variant) {}
 
     /**
-     * Runs a negative module with both answers to a rejection, which OID4VP 1.0 section 8.2 permits alike.
-     * Under {@code error} the suite reads the refusal from the 4xx status. Under {@code redirect} it
-     * cannot, so it asks for verification evidence and finishes as REVIEW, which counts as the
-     * expected result once that evidence is uploaded.
+     * Runs a negative module with both answers to a rejection. OID4VP 1.0 section 8.2 permits both.
+     * Under {@code error} the suite reads the refusal from the 4xx status. Under {@code redirect}
+     * it cannot, so it asks for verification evidence and finishes as REVIEW, which the runner accepts
+     * once that evidence is uploaded.
      */
     protected Stream<ConformanceModuleVariant> negativeVerifierModuleVariants(String moduleName) {
         return verifierModuleVariants(moduleName, ConformanceResult.PASSED)
@@ -97,11 +92,6 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
                         variant.withRejectionResponse(Oid4vpRejectionResponse.REDIRECT)));
     }
 
-    /**
-     * Returns every module and module variant the suite offers for one module name across all
-     * enumerated plan variants. The suite reports which modules and variants apply, and a plan
-     * variant that does not apply yields nothing.
-     */
     protected Stream<ConformanceModuleVariant> verifierModuleVariants(
             String moduleName, ConformanceResult expectedResult) {
         ensureDiscovered();
@@ -128,10 +118,8 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
 
     /**
      * Runs the final verifier plan with vp_profile=plain_vp, because the suite otherwise defaults to
-     * haip and that default excludes the unencrypted direct_post response mode the provider supports
-     * as well. Every verifier identification and response delivery dimension is crossed, and the suite
-     * filters out the combinations it does not support, such as url_query with an x509 client
-     * identifier prefix.
+     * haip and that default excludes the unencrypted direct_post response mode the provider supports as
+     * well.
      */
     private static void discoverNonHaipProfile(ConformanceApiClient client) {
         for (String format : CREDENTIAL_FORMATS) {
@@ -261,9 +249,9 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
         if (scenario.profile().includeMdlIssuer()) {
             trustedCertificates.add(CredentialProfile.MDL_ISSUER_CERTIFICATE_PEM);
         }
-        // One list per credential profile, since the profiles of a class differ in their certificate
-        // set. The previous module may still be verifying and refetches the list on every use, so a
-        // republish under a shared URL would race that verification.
+        // Each credential profile gets its own list, since the profiles of a class differ in their
+        // certificate set. The previous module may still be verifying, and its provider fetches the list
+        // on first use, so a republish under a shared URL would race that verification.
         String trustListUrl = TrustListServer.instance()
                 .publish(
                         "trustlist-" + getClass().getSimpleName() + "-"
@@ -323,7 +311,7 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
         @Override
         public KeycloakServerConfigBuilder configure(KeycloakServerConfigBuilder config) {
             return config.dependency("de.arbeitsagentur.opdt", "keycloak-extension-oid4vp", true)
-                    // Runtime dependency of the provider, which the production jar shades in.
+                    // The provider needs this at runtime and the production jar shades it in.
                     .dependency("com.authlete", "cbor")
                     .features(Profile.Feature.TRANSIENT_USERS)
                     .option("hostname", OpenIdConformanceSuite.KEYCLOAK_BASE_URI.toString());

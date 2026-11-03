@@ -206,8 +206,7 @@ abstract class AbstractOid4vpE2eTest {
     }
 
     /**
-     * Applies a DCQL {@code credential_sets} configuration to the OID4VP identity provider. The
-     * framework does not restore this write. {@link #ensureIdentityProviderConfigured()} puts the
+     * The framework does not restore this write, so {@link #ensureIdentityProviderConfigured()} puts the
      * default credential sets back before the next test.
      */
     protected void setCredentialSets(String credentialSetsJson) {
@@ -269,9 +268,8 @@ abstract class AbstractOid4vpE2eTest {
     }
 
     /**
-     * Updates the OID4VP identity provider config. The framework restores the original configuration
-     * after the test, so apply all changes of a test in a single call to keep the restore order
-     * correct.
+     * The framework restores the original configuration after the test, so apply all changes of a test
+     * in a single call to keep the restore order correct.
      */
     protected void setIdpConfig(Map<String, String> entries) {
         realm.updateIdentityProvider(
@@ -301,7 +299,6 @@ abstract class AbstractOid4vpE2eTest {
         flow.completeFirstBrokerLoginIfNeeded(usernamePrefix);
     }
 
-    // Starts a same device login and returns the request object the wallet would fetch.
     protected SignedJWT fetchCurrentRequestObject() throws Exception {
         flow.navigateToLoginPage();
         flow.clickOid4vpIdpButton();
@@ -309,8 +306,8 @@ abstract class AbstractOid4vpE2eTest {
     }
 
     /**
-     * Fetches the request object behind a wallet URL of a login already in progress. Fetching it does
-     * not consume the request context, so the wallet can still be driven through the same URL.
+     * Fetching the request object does not consume the request context, so the wallet can still be
+     * driven through the same URL.
      */
     protected SignedJWT fetchRequestObject(String walletUrl) throws Exception {
         HttpResponse<String> response = requestObjectResponse(walletUrl);

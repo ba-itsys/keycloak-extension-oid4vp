@@ -27,10 +27,10 @@ import org.keycloak.models.IdentityProviderMapperModel;
 import org.keycloak.models.IdentityProviderSyncMode;
 
 /**
- * Covers value conversion and target application, mirroring the test cases of upstream Keycloak's
- * {@code OID4VPSdJwtUserAttributeMapperTest}. Upstream Keycloak tests the claim path semantics of
- * {@code ClaimPath}. Credential matching is covered here because this extension supports several
- * credentials per request.
+ * Mirrors the test cases of upstream Keycloak's {@code OID4VPSdJwtUserAttributeMapperTest} for value
+ * conversion and target application. Upstream Keycloak tests the claim path semantics of {@code
+ * ClaimPath}. Credential matching is covered here because this extension supports several credentials
+ * per request.
  */
 class OID4VPSdJwtUserAttributeMapperTest {
 
@@ -298,8 +298,8 @@ class OID4VPSdJwtUserAttributeMapperTest {
         assertThat(user.getAttributeStream("birthName")).isEmpty();
     }
 
-    // A malformed alternative misconfigures the mapper as a whole. The DCQL query generation
-    // leaves such a mapper out for the same reason. User state stays untouched.
+    // A malformed alternative misconfigures the mapper as a whole, so the DCQL query generation leaves
+    // such a mapper out and the update leaves user state untouched.
     @Test
     void updateKeepsAttributeWhenAnAlternativePathIsInvalid() throws Exception {
         BrokeredIdentityContext context = contextWithClaims("""

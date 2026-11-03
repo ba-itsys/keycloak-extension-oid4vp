@@ -43,7 +43,7 @@ public class Oid4vpRealmConfig implements RealmConfig {
                         .webOrigins("*")
                         .attribute("pkce.code.challenge.method", "S256")
                         // The level of authentication tests request levels through this ACR to LoA
-                        // mapping. Other tests send no acr_values, so it stays inert for them.
+                        // mapping. Other tests send no acr_values, so it has no effect on them.
                         .attribute(Constants.ACR_LOA_MAP, "{\"STORK-QAA-Level-3\":3,\"STORK-QAA-Level-4\":4}")
                         .protocolMappers(
                                 credentialFamilyNameIdTokenMapper(),

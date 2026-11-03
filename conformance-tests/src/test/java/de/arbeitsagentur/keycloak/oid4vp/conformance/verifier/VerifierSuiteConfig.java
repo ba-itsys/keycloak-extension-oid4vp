@@ -19,10 +19,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.keycloak.util.JsonSerialization;
 
-/**
- * The test configuration uploaded to the conformance suite when creating a verifier plan. The suite
- * defines the structure.
- */
+// The conformance suite defines this structure, which is uploaded when creating a verifier plan.
 public record VerifierSuiteConfig(
         String alias, String description, String publish, Client client, Credential credential) {
 

@@ -19,8 +19,6 @@ import java.util.List;
 import java.util.Map;
 import org.keycloak.representations.idm.IdentityProviderMapperRepresentation;
 
-// The credential format profile a verifier conformance scenario runs with. Its mappers drive both
-// the generated DCQL query and the claim to attribute mapping.
 public enum CredentialProfile {
     SD_JWT_VC(
             "sdjwt_urn_eudi_pid_1:given_name",
@@ -75,7 +73,6 @@ public enum CredentialProfile {
         this.mappers = mappers;
     }
 
-    // Names the credential the subject is read from and the claim of that credential carrying it.
     public String principalAttributes() {
         return principalAttributes;
     }

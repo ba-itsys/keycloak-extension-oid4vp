@@ -24,7 +24,7 @@ public class Oid4vpServerConfig implements KeycloakServerConfig {
     @Override
     public KeycloakServerConfigBuilder configure(KeycloakServerConfigBuilder config) {
         return config.dependency("de.arbeitsagentur.opdt", "keycloak-extension-oid4vp", true)
-                // Runtime dependency of the provider, which the production jar shades in.
+                // The provider needs this at runtime and the production jar shades it in.
                 .dependency("com.authlete", "cbor")
                 .features(
                         Profile.Feature.TRANSIENT_USERS,

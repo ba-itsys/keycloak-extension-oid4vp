@@ -43,10 +43,9 @@ import org.keycloak.protocol.oidc.utils.PkceUtils;
 import org.keycloak.util.JsonSerialization;
 
 /**
- * Plays the user's browser in the same-device flow: it requests the Keycloak login page, follows the
- * wallet link parameters into the conformance suite, and follows the redirects back to Keycloak on
- * one shared cookie session. Both sides advertise container network hostnames, which it rewrites to
- * their host reachable counterparts.
+ * Drives the same-device flow in place of the user's browser, on one shared cookie session. Keycloak and
+ * the suite both advertise container network hostnames, so it rewrites them to addresses the host can
+ * reach.
  */
 public final class KeycloakVerifierBrowser {
 
@@ -155,7 +154,7 @@ public final class KeycloakVerifierBrowser {
                     .orElseThrow(
                             () -> new IllegalStateException("Redirect without Location header from " + requested)));
             // A redirect to the suite's results page means the wallet interaction is complete. The
-            // suite's module status carries the verdict.
+            // module status reports the outcome.
             if (next.getPath() != null && next.getPath().contains("log-detail")) {
                 return response;
             }

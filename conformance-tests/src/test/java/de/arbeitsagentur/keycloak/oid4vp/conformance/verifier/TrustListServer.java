@@ -33,7 +33,6 @@ import org.keycloak.common.util.Base64Url;
 import org.keycloak.common.util.PemUtils;
 import org.keycloak.util.JsonSerialization;
 
-// Serves ETSI trust list JWTs from a local port to the Keycloak server under test, which runs on the host.
 public final class TrustListServer implements AutoCloseable {
 
     public static final String PID_LOTE_TYPE = "http://uri.etsi.org/19602/LoTEType/EUPIDProvidersList";
@@ -88,8 +87,6 @@ public final class TrustListServer implements AutoCloseable {
         }
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/jwt");
-        // The certificate set behind a per-class URL changes between publishes, so Keycloak must not
-        // serve a later module from a cached copy of this list.
         exchange.getResponseHeaders().add("Cache-Control", "no-store");
         exchange.sendResponseHeaders(200, bytes.length);
         try (OutputStream os = exchange.getResponseBody()) {
@@ -117,9 +114,9 @@ public final class TrustListServer implements AutoCloseable {
             ObjectNode lote = payload.putObject("LoTE");
             ObjectNode listInformation = lote.putObject("ListAndSchemeInformation");
             listInformation.put("LoTEType", PID_LOTE_TYPE);
-            // ETSI TS 119 602 V1.1.1 clause 6.1.3 wants the seconds written and no decimal fraction,
-            // which is exactly what a second-truncated Instant prints. OffsetDateTime.toString() drops
-            // the seconds whenever they are zero, and the provider rejects such a list as unparseable.
+            // Prints a second-truncated Instant, because ETSI TS 119 602 V1.1.1 clause 6.1.3 requires the
+            // seconds to be written with no decimal fraction. OffsetDateTime.toString() drops the
+            // seconds whenever they are zero, and the provider rejects such a list as unparseable.
             listInformation.put(
                     "NextUpdate",
                     Instant.now()

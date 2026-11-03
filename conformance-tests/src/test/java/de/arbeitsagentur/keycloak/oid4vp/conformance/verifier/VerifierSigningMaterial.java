@@ -47,10 +47,6 @@ import org.keycloak.common.util.Base64Url;
 import org.keycloak.crypto.JavaAlgorithm;
 import org.keycloak.jose.jws.crypto.HashUtils;
 
-/**
- * Verifier signing material for the conformance run, built around a leaf certificate that carries the
- * Keycloak public host as its SAN and the CA that issued it.
- */
 public final class VerifierSigningMaterial {
 
     private static VerifierSigningMaterial instance;

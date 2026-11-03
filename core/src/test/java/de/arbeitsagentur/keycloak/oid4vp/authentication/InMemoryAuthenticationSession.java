@@ -24,7 +24,6 @@ import org.keycloak.models.UserModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.sessions.RootAuthenticationSessionModel;
 
-// An authentication session that keeps its auth notes and supports nothing else.
 final class InMemoryAuthenticationSession implements AuthenticationSessionModel {
 
     final Map<String, String> authNotes = new HashMap<>();

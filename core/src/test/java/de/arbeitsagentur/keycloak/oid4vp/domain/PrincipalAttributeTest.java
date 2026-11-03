@@ -33,8 +33,6 @@ class PrincipalAttributeTest {
 
     @Test
     void everyCredentialCarriesItsOwnClaim() {
-        // An SD-JWT credential carries the subject as a claim of its own, an mDoc as a data element
-        // of a namespace, and a credential this Keycloak issues wherever its mapper wrote it.
         assertThat(PrincipalAttribute.parse("pid:personal_administrative_number, employee:sub"))
                 .containsExactly(
                         new PrincipalAttribute("pid", "personal_administrative_number"),
@@ -49,8 +47,8 @@ class PrincipalAttributeTest {
 
     @Test
     void anMdocPathNamesItsNamespaceBeforeTheElement() {
-        // DCQL asks for the namespace and the element separately. The presentation nests the
-        // element inside the namespace. Both halves are read off the one configured path.
+        // DCQL asks for the namespace and the element separately, while the presentation nests the
+        // element inside the namespace. Both values come from the one configured path.
         PrincipalAttribute mdocPid = PrincipalAttribute.parse("pid_mdoc:eu\\.europa\\.ec\\.eudi\\.pid\\.1.family_name")
                 .get(0);
 

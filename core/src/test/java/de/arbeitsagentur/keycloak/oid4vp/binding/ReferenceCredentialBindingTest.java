@@ -33,9 +33,9 @@ import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
 
 /**
- * The values that decide whether a credential this Keycloak issued belongs to the presentation it
- * is shown in. Both sides of that decision run in different logins, so the same presentation has
- * to yield the same digest every time, and a different presentation never yields it.
+ * Tests the values that decide whether a credential this Keycloak issued belongs to the presentation it
+ * is shown in. Both sides of that decision run in different logins, so the same presentation has to
+ * yield the same digest every time, and a different presentation never yields it.
  */
 class ReferenceCredentialBindingTest {
 

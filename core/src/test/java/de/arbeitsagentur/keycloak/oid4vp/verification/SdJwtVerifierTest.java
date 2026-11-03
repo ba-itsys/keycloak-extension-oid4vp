@@ -196,7 +196,6 @@ class SdJwtVerifierTest {
         String disclosureB64 = Base64URL.encode(disclosureJson.getBytes(StandardCharsets.UTF_8))
                 .toString();
 
-        // The _sd array does not contain this disclosure's digest.
         String jwt = buildSignedJwt(Map.of(
                 "iss", "https://issuer.example",
                 "_sd", List.of("wrong_digest"),
@@ -212,7 +211,7 @@ class SdJwtVerifierTest {
     void verify_nestedDisclosures_resolvesAddressSubClaims() throws Exception {
         ObjectMapper objectMapper = new ObjectMapper();
 
-        // Nested disclosures like the EUDI PID. The address has its own _sd array.
+        // This fixture nests disclosures like the EUDI PID, where the address has its own _sd array.
         String localityDisclosure = "[\"salt1\",\"locality\",\"BERLIN\"]";
         String localityB64 = Base64URL.encode(localityDisclosure.getBytes(StandardCharsets.UTF_8))
                 .toString();
@@ -827,7 +826,6 @@ class SdJwtVerifierTest {
             throws Exception {
         String unboundPresentation = credJwt + "~";
 
-        // sd_hash = base64url(SHA-256(unbound_presentation))
         MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
         byte[] hash = sha256.digest(unboundPresentation.getBytes(StandardCharsets.US_ASCII));
         String sdHash = Base64URL.encode(hash).toString();
