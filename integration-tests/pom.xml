@@ -17,9 +17,9 @@
   <properties>
     <integration.tests.skip>true</integration.tests.skip>
     <testcontainers.version>2.0.3</testcontainers.version>
-    <testcontainers-eudi.version>3.0.1</testcontainers-eudi.version>
+    <testcontainers-eudi.version>3.6.0</testcontainers-eudi.version>
     <playwright.version>1.64.0</playwright.version>
-    <eudi-dev.version>v3.1.4</eudi-dev.version>
+    <eudi-dev.version>v3.6.0</eudi-dev.version>
   </properties>
 
   <dependencyManagement>
