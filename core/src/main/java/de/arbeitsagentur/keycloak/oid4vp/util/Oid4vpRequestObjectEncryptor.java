@@ -18,16 +18,17 @@ package de.arbeitsagentur.keycloak.oid4vp.util;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpJwk;
 import de.arbeitsagentur.keycloak.oid4vp.domain.WalletMetadata;
 import java.nio.charset.StandardCharsets;
-import org.keycloak.OID4VCConstants;
 import org.keycloak.jose.jwe.JWE;
 import org.keycloak.jose.jwe.JWEHeader;
 
 /**
  * Encrypts a signed request object into a JWE for the wallet's key from {@code wallet_metadata}.
- * The result is a nested JWT, so it carries {@code cty: oauth-authz-req+jwt} to declare the inner
- * content type per RFC 7516 section 4.1.12.
+ * The result is a Nested JWT (RFC 9101 section 4), so it carries {@code cty: JWT} (RFC 7519 section
+ * 5.2). The inner JWS carries the {@code oauth-authz-req+jwt} type.
  */
 public final class Oid4vpRequestObjectEncryptor {
+
+    private static final String NESTED_JWT_CONTENT_TYPE = "JWT";
 
     private Oid4vpRequestObjectEncryptor() {}
 
@@ -38,7 +39,7 @@ public final class Oid4vpRequestObjectEncryptor {
                     walletMetadata.encryptionKey(),
                     walletMetadata.algorithm(),
                     walletMetadata.encryptionMethod(),
-                    OID4VCConstants.REQUEST_OBJECT_TYPE);
+                    NESTED_JWT_CONTENT_TYPE);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to encrypt request object: " + e.getMessage(), e);
         }

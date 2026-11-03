@@ -22,7 +22,6 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.WalletMetadata;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.keycloak.OID4VCConstants;
 import org.keycloak.broker.oid4vp.ResponseEncryption;
 import org.keycloak.common.crypto.CryptoIntegration;
 
@@ -67,7 +66,7 @@ class Oid4vpRequestObjectEncryptorTest {
         String encrypted = Oid4vpRequestObjectEncryptor.encrypt(signedJwt, metadata);
 
         assertThat(ResponseEncryption.parse(encrypted).header().getContentType())
-                .isEqualTo(OID4VCConstants.REQUEST_OBJECT_TYPE);
+                .isEqualTo("JWT");
     }
 
     @Test
