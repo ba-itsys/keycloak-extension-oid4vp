@@ -55,6 +55,7 @@ public final class TestTrustListServer implements AutoCloseable {
     private static final Duration VALIDITY = Duration.ofHours(24);
 
     private final HttpServer server;
+    private volatile String trustListJwt;
 
     private TestTrustListServer(HttpServer server) {
         this.server = server;
@@ -62,13 +63,22 @@ public final class TestTrustListServer implements AutoCloseable {
 
     public static TestTrustListServer serving(X509Certificate... certificates) {
         try {
-            String trustListJwt = buildTrustListJwt(List.of(certificates));
-            HttpServer server = HttpServer.create(new InetSocketAddress("0.0.0.0", 0), 0);
-            server.createContext(PATH, exchange -> respondWithTrustList(exchange, trustListJwt));
-            server.start();
-            return new TestTrustListServer(server);
+            TestTrustListServer trustList =
+                    new TestTrustListServer(HttpServer.create(new InetSocketAddress("0.0.0.0", 0), 0));
+            trustList.serve(certificates);
+            trustList.server.createContext(PATH, trustList::respondWithTrustList);
+            trustList.server.start();
+            return trustList;
         } catch (Exception e) {
             throw new IllegalStateException("Failed to start the trust list server", e);
+        }
+    }
+
+    public void serve(X509Certificate... certificates) {
+        try {
+            trustListJwt = buildTrustListJwt(List.of(certificates));
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to build the trust list", e);
         }
     }
 
@@ -82,7 +92,7 @@ public final class TestTrustListServer implements AutoCloseable {
         server.stop(0);
     }
 
-    private static void respondWithTrustList(HttpExchange exchange, String trustListJwt) throws IOException {
+    private void respondWithTrustList(HttpExchange exchange) throws IOException {
         byte[] body = trustListJwt.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/jwt");
         // Forbids caching, so the wallet does not serve a later test from a cached copy of this list.

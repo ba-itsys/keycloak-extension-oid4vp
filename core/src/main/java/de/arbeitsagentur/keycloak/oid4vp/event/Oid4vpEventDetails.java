@@ -38,7 +38,9 @@ public final class Oid4vpEventDetails {
     public static final String REFERENCE = "oid4vp_reference";
     public static final String REFUSAL = "oid4vp_refusal";
     public static final String REJECTION = "oid4vp_rejection";
+    public static final String STALE_DATA_IN_USE = "oid4vp_stale_data_in_use";
     public static final String STATE = "oid4vp_state";
+    public static final String TRUST_PROVIDER = "oid4vp_trust_provider";
 
     private static final int MAX_VALUE_LENGTH = 1024;
 

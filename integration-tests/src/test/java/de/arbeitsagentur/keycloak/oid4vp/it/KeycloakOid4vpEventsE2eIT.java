@@ -22,10 +22,13 @@ import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.event.Oid4vpEventDetails;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
+import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestTrustListServer;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
+import de.arbeitsagentur.keycloak.oid4vp.trust.EtsiTrustListIdentityProviderConfig;
 import java.net.http.HttpClient;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.keycloak.common.util.PemUtils;
 import org.keycloak.events.EventType;
 import org.keycloak.representations.idm.EventRepresentation;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
@@ -165,6 +168,74 @@ class KeycloakOid4vpEventsE2eIT extends AbstractOid4vpE2eTest {
         EventRepresentation event = eventsOfType("PRESENTATION_REFUSED", 1).get(0);
         assertThat(event.getType()).isEqualTo(EventType.IDENTITY_PROVIDER_LOGIN_ERROR.name());
         assertThat(event.getDetails()).containsEntry(Oid4vpEventDetails.REFUSAL, "LEVEL_NOT_OFFERED");
+    }
+
+    @Test
+    void unknownTrustProviderFiresTrustMaterialFailed() throws Exception {
+        setIdpConfig(Map.of(Oid4vpIdentityProviderConfig.TRUST_MATERIAL_IDPS, "no-such-provider"));
+
+        openWalletPage();
+
+        assertThat(eventsOfType("TRUST_MATERIAL_FAILED", 1).get(0).getDetails())
+                .containsEntry(Oid4vpEventDetails.FAILURE, "UNAVAILABLE")
+                .containsEntry(Oid4vpEventDetails.REFERENCE, "no-such-provider");
+    }
+
+    @Test
+    void failedTrustListDownloadFiresOncePerRequest() throws Exception {
+        String unreachable;
+        try (TestTrustListServer stopped = TestTrustListServer.serving()) {
+            unreachable = stopped.url();
+        }
+        setTrustIdpConfig(Map.of(EtsiTrustListIdentityProviderConfig.TRUST_LIST_URL, unreachable));
+        String walletUrl = openWalletPage();
+        realm.admin().clearEvents();
+
+        flow.submitToWallet(walletUrl);
+
+        // Expects two downloads, because the request reads the list for issuers and for revocation.
+        assertThat(eventsOfType("PRESENTATION_FAILED", 1).get(0).getDetails())
+                .containsEntry(Oid4vpEventDetails.ORIGIN, "SERVER");
+        assertThat(eventsOfType("TRUST_MATERIAL_FAILED", 1))
+                .filteredOn(event -> "REFRESH_FAILED".equals(event.getDetails().get(Oid4vpEventDetails.FAILURE)))
+                .singleElement()
+                .satisfies(event -> assertThat(event.getDetails())
+                        .containsEntry(Oid4vpEventDetails.REFERENCE, unreachable)
+                        .containsEntry(Oid4vpEventDetails.STALE_DATA_IN_USE, "false"));
+    }
+
+    @Test
+    void trustListWithoutASignerFiresTrustMaterialFailed() throws Exception {
+        try (TestTrustListServer trustList = TestTrustListServer.serving(
+                PemUtils.decodeCertificate(wallet.client().getCaCertificatePem()))) {
+            setTrustIdpConfig(Map.of(EtsiTrustListIdentityProviderConfig.TRUST_LIST_URL, trustList.url()));
+
+            flow.submitToWallet(openWalletPage());
+
+            assertThat(eventsOfType("TRUST_MATERIAL_FAILED", 1)).anySatisfy(event -> assertThat(event.getDetails())
+                    .containsEntry(Oid4vpEventDetails.FAILURE, "UNSIGNED")
+                    .containsEntry(Oid4vpEventDetails.REFERENCE, trustList.url()));
+        }
+    }
+
+    @Test
+    void outageWithAStaleCopyIsReportedAndTheLoginPasses() throws Exception {
+        TestTrustListServer trustList = TestTrustListServer.serving(
+                PemUtils.decodeCertificate(wallet.client().getCaCertificatePem()));
+        setTrustIdpConfig(Map.of(
+                EtsiTrustListIdentityProviderConfig.TRUST_LIST_URL,
+                trustList.url(),
+                EtsiTrustListIdentityProviderConfig.TRUST_LIST_MAX_CACHE_TTL_SECONDS,
+                "0"));
+        login("event-list-fresh");
+        trustList.close();
+
+        login("event-list-stale");
+
+        flow.assertLoginSucceeded();
+        assertThat(eventsOfType("TRUST_MATERIAL_FAILED", 2)).anySatisfy(event -> assertThat(event.getDetails())
+                .containsEntry(Oid4vpEventDetails.FAILURE, "REFRESH_FAILED")
+                .containsEntry(Oid4vpEventDetails.STALE_DATA_IN_USE, "true"));
     }
 
     private String openWalletPage() {

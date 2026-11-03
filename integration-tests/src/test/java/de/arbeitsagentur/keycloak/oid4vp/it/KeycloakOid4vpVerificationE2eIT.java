@@ -22,6 +22,7 @@ import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpRejectionResponse;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestCertificates;
+import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestTrustListServer;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.trust.EtsiTrustListIdentityProviderConfig;
 import io.github.dominikschlosser.eudi.CredentialFormat;
@@ -74,7 +75,8 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
         flow.assertLoginSucceeded();
 
         KeyPair wrongKeyPair = TestCertificates.generateEcKeyPair();
-        X509Certificate wrongCert = TestCertificates.generateCaCert(wrongKeyPair);
+        X509Certificate wrongCert =
+                TestCertificates.generateLeafCertWithSan(wrongKeyPair, wrongKeyPair, "wrong-signer.example.com");
         String wrongCertPem = TestCertificates.toPem("CERTIFICATE", wrongCert.getEncoded());
         setTrustIdpConfig(Map.of(EtsiTrustListIdentityProviderConfig.TRUST_LIST_SIGNING_CERT_PEM, wrongCertPem));
 
@@ -86,10 +88,33 @@ class KeycloakOid4vpVerificationE2eIT extends AbstractOid4vpE2eTest {
         String walletUrl = flow.getSameDeviceWalletUrl();
         var walletResponse = flow.submitToWallet(walletUrl);
 
-        // The trust list cannot be verified, so the credential has no trust anchors left.
-        // Verification fails with "No trusted keys available for ... signature verification" or
-        // "no trusted key matched". The login event records that message as the error_description.
-        assertLoginFailed(walletResponse, "no trusted key");
+        // Expects an outage, because the list fails verification and no copy exists for this signer.
+        assertLoginFailed(walletResponse, "no trust material is available");
+    }
+
+    @Test
+    void credentialOfAWithdrawnCaIsRejectedAfterTheNextListRefresh() throws Exception {
+        X509Certificate walletCa =
+                TestCertificates.parseCertificate(wallet().client().getCaCertificatePem());
+        try (TestTrustListServer trustList = TestTrustListServer.serving(walletCa)) {
+            setTrustIdpConfig(Map.of(
+                    EtsiTrustListIdentityProviderConfig.TRUST_LIST_URL,
+                    trustList.url(),
+                    EtsiTrustListIdentityProviderConfig.TRUST_LIST_MAX_CACHE_TTL_SECONDS,
+                    "0"));
+            performSameDeviceLogin("withdrawn-ca-user");
+            flow.assertLoginSucceeded();
+
+            trustList.serve(TestCertificates.generateCaCert(TestCertificates.generateEcKeyPair()));
+            flow.clearBrowserSession();
+            deleteAllOid4vpUsers();
+
+            flow.navigateToLoginPage();
+            flow.clickOid4vpIdpButton();
+            var walletResponse = flow.submitToWallet(flow.getSameDeviceWalletUrl());
+
+            assertLoginFailed(walletResponse, "against the configured trust anchors");
+        }
     }
 
     @Test

@@ -15,6 +15,8 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.verification;
 
+import de.arbeitsagentur.keycloak.oid4vp.event.Oid4vpEventService;
+import de.arbeitsagentur.keycloak.oid4vp.event.TrustMaterialFailedEvent;
 import de.arbeitsagentur.keycloak.oid4vp.util.CertificateFingerprints;
 import de.arbeitsagentur.keycloak.oid4vp.util.FailureDetails;
 import de.arbeitsagentur.keycloak.oid4vp.verification.trustlist.ServiceDigitalIdentity;
@@ -53,6 +55,10 @@ public class TrustListProvider {
     static final Duration DEFAULT_MAX_STALE_AGE = Duration.ofDays(1);
     private static final String SERVICE_TYPE_SUFFIX_ISSUANCE = "/Issuance";
     private static final String SERVICE_TYPE_SUFFIX_REVOCATION = "/Revocation";
+    private static final Duration FAILED_REFRESH_RETRY = Duration.ofMinutes(1);
+    private static final int CONNECT_TIMEOUT_MILLIS = 3000;
+    private static final String UNAVAILABLE_ATTRIBUTE = "oid4vp.trust-list.unavailable";
+    private static final Map<CacheKey, Instant> RETRY_AFTER = new ConcurrentHashMap<>();
 
     private final KeycloakSession session;
     private final String providerId;
@@ -146,6 +152,16 @@ public class TrustListProvider {
             LOG.debugf("Using cached trust list for %s (expires %s)", trustListUrl, cached.expiresAt);
             return cached;
         }
+        // Skips the download only with a copy to use, so a login never fails on a past failure.
+        boolean staleCopy = cached != null && !cached.certificates.isEmpty() && staleCopyUsable(cached);
+        if (staleCopy && Instant.now().isBefore(RETRY_AFTER.getOrDefault(cacheKey, Instant.MIN))) {
+            currentLoTEType = cached.loTEType;
+            return cached;
+        }
+        // Lets one login download while the others use the copy, because the download can hang.
+        if (staleCopy) {
+            RETRY_AFTER.put(cacheKey, Instant.now().plus(FAILED_REFRESH_RETRY));
+        }
 
         try {
             String jwt = fetchTrustListJwt();
@@ -170,6 +186,7 @@ public class TrustListProvider {
                     result.expiresAt,
                     result.loTEType);
             CACHE.put(cacheKey, refreshed);
+            RETRY_AFTER.remove(cacheKey);
 
             if (refreshed.certificates.isEmpty()) {
                 LOG.warnf(
@@ -185,7 +202,7 @@ public class TrustListProvider {
                     formatInstant(effectiveExpiry));
             return refreshed;
         } catch (Exception e) {
-            if (cached != null && !cached.certificates.isEmpty() && staleCopyUsable(cached)) {
+            if (staleCopy) {
                 currentLoTEType = cached.loTEType;
                 LOG.warnf(
                         e,
@@ -195,6 +212,7 @@ public class TrustListProvider {
                         cached.certificates.size(),
                         cached.fetchedAt,
                         cached.expiresAt);
+                fireRefreshFailed(true, e);
                 return cached;
             }
             LOG.warnf(
@@ -202,6 +220,10 @@ public class TrustListProvider {
                     "Failed to fetch trust list from %s: %s. No stale copy is available, so it trusts nothing",
                     trustListUrl,
                     FailureDetails.causeChain(e));
+            fireRefreshFailed(false, e);
+            if (session != null) {
+                session.setAttribute(UNAVAILABLE_ATTRIBUTE, Boolean.TRUE);
+            }
             return CachedTrustList.empty();
         }
     }
@@ -211,6 +233,7 @@ public class TrustListProvider {
     private CachedTrustList closedList(CacheKey cacheKey) {
         CACHE.remove(cacheKey);
         LOG.warnf("Trust list from %s has no NextUpdate, so it is closed and trusts nothing", trustListUrl);
+        fireRefreshFailed(false, new IllegalStateException("The trust list is closed: it has no NextUpdate"));
         return CachedTrustList.empty();
     }
 
@@ -219,6 +242,24 @@ public class TrustListProvider {
         Instant now = Instant.now();
         return now.isBefore(cached.validUntil)
                 || (!Duration.ZERO.equals(maxStaleAge) && now.isBefore(cached.fetchedAt.plus(maxStaleAge)));
+    }
+
+    // Tells whether a list of this request had no usable copy.
+    static boolean unavailableIn(KeycloakSession session) {
+        return session != null && session.getAttribute(UNAVAILABLE_ATTRIBUTE) != null;
+    }
+
+    private void fireRefreshFailed(boolean staleDataInUse, Exception e) {
+        Oid4vpEventService.fireOnce(
+                session,
+                "oid4vp.event.trust-list-failed." + cacheKey(),
+                new TrustMaterialFailedEvent(
+                        Oid4vpEventService.realmId(session),
+                        providerId,
+                        TrustMaterialFailedEvent.Failure.REFRESH_FAILED,
+                        trustListUrl,
+                        staleDataInUse,
+                        FailureDetails.causeChain(e)));
     }
 
     /**
@@ -260,6 +301,15 @@ public class TrustListProvider {
                 LOG.warnf(
                         "Trust list JWT signature not verified for %s: no signing certificate configured",
                         trustListUrl);
+                Oid4vpEventService.fire(
+                        session,
+                        new TrustMaterialFailedEvent(
+                                Oid4vpEventService.realmId(session),
+                                providerId,
+                                TrustMaterialFailedEvent.Failure.UNSIGNED,
+                                trustListUrl,
+                                false,
+                                "No signing certificate is configured"));
             }
             return;
         }
@@ -288,6 +338,7 @@ public class TrustListProvider {
     protected String fetchTrustListJwt() throws Exception {
         if (session != null) {
             try (SimpleHttp.Response response = SimpleHttp.doGet(trustListUrl, session)
+                    .connectTimeoutMillis(CONNECT_TIMEOUT_MILLIS)
                     .header("Accept", "application/jwt")
                     .asResponse()) {
                 if (response.getStatus() / 100 != 2) {
@@ -524,6 +575,7 @@ public class TrustListProvider {
     // Exists for tests only.
     static void clearCache() {
         CACHE.clear();
+        RETRY_AFTER.clear();
     }
 
     // Exists for tests of the stale cache fallback.
