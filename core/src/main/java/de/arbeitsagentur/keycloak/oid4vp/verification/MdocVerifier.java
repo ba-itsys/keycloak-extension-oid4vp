@@ -169,9 +169,10 @@ public class MdocVerifier {
             throw new IllegalStateException("mDoc docType '" + documentDocType
                     + "' does not match the Mobile Security Object docType '" + msoDocType + "'");
         }
-        if (msoDocType != null) return msoDocType;
-        if (documentDocType != null) return documentDocType;
-        return "mso_mdoc";
+        if (msoDocType == null) {
+            throw new IllegalStateException("The Mobile Security Object carries no docType");
+        }
+        return msoDocType;
     }
 
     private CBORPairList parseDocument(byte[] bytes) {
