@@ -21,4 +21,5 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record TrustedServiceInformation(
         @JsonProperty("ServiceTypeIdentifier") String serviceTypeIdentifier,
+        @JsonProperty("ServiceStatus") String serviceStatus,
         @JsonProperty("ServiceDigitalIdentity") ServiceDigitalIdentity serviceDigitalIdentity) {}

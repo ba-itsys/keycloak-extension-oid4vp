@@ -57,18 +57,29 @@ public class EtsiTrustListIdentityProviderFactory
             .type(ProviderConfigProperty.STRING_TYPE)
             .add()
             .property()
+            .name(EtsiTrustListIdentityProviderConfig.TRUST_LIST_SERVICE_STATUSES)
+            .label("Trust List Service Statuses")
+            .helpText("Comma separated service statuses that count as current. A service without a status is "
+                    + "always trusted, because most LoTE types have none. A service with any other status adds "
+                    + "no certificates. A Pub-EAA providers list needs "
+                    + "http://uri.etsi.org/19602/PubEAAProvidersList/SvcStatus/notified.")
+            .type(ProviderConfigProperty.STRING_TYPE)
+            .add()
+            .property()
             .name(EtsiTrustListIdentityProviderConfig.TRUST_LIST_MAX_CACHE_TTL_SECONDS)
             .label("Trust List Cache TTL (seconds)")
-            .helpText("Maximum time to cache the trust list. "
-                    + "Leave empty to use ETSI NextUpdate and HTTP cache headers.")
+            .helpText("Maximum time to cache the trust list. A list is cached until its ETSI NextUpdate and never "
+                    + "longer than this value, so it decides how soon a withdrawn CA stops being trusted. HTTP cache "
+                    + "headers do not apply. A list without NextUpdate is closed and trusts nothing. "
+                    + "Set to 0 to fetch on every use.")
             .type(ProviderConfigProperty.STRING_TYPE)
+            .defaultValue(String.valueOf(EtsiTrustListIdentityProviderConfig.DEFAULT_TRUST_LIST_MAX_CACHE_TTL_SECONDS))
             .add()
             .property()
             .name(EtsiTrustListIdentityProviderConfig.TRUST_LIST_MAX_STALE_AGE_SECONDS)
             .label("Trust List Max Stale Age (seconds)")
-            .helpText("Maximum age of a stale (expired) trust list cache entry that can be used as fallback "
-                    + "when a trust list refresh fails (e.g., network timeout). "
-                    + "Set to 0 to disable stale cache usage entirely.")
+            .helpText("How long after its last download a list past NextUpdate stays in use when a refresh "
+                    + "fails. Set to 0 to stop using a list past NextUpdate.")
             .type(ProviderConfigProperty.STRING_TYPE)
             .defaultValue(String.valueOf(EtsiTrustListIdentityProviderConfig.DEFAULT_TRUST_LIST_MAX_STALE_AGE_SECONDS))
             .add()
