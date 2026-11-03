@@ -55,6 +55,27 @@ class KeycloakOid4vpEventsE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
+    void revokedCredentialFiresDetectedAndFailedWithTheSameState() throws Exception {
+        assertRevokedCredentialIsRejected("SD-JWT");
+
+        String state =
+                eventsOfType("REVOCATION_DETECTED", 1).get(0).getDetails().get(Oid4vpEventDetails.STATE);
+        assertThat(eventsOfType("PRESENTATION_FAILED", 1)).anySatisfy(event -> assertThat(event.getDetails())
+                .containsEntry(Oid4vpEventDetails.STATE, state)
+                .containsEntry(Oid4vpEventDetails.ORIGIN, "VERIFIER"));
+    }
+
+    @Test
+    void revokedCredentialNamesTheStatusList() throws Exception {
+        assertRevokedCredentialIsRejected("SD-JWT");
+
+        assertThat(eventsOfType("REVOCATION_DETECTED", 1).get(0).getDetails())
+                .containsEntry(Oid4vpEventDetails.MECHANISM, "STATUS_LIST")
+                .hasEntrySatisfying(Oid4vpEventDetails.REFERENCE, reference -> assertThat(reference)
+                        .contains(" index "));
+    }
+
+    @Test
     void walletErrorFailsThePresentationWithItsCode() throws Exception {
         String walletUrl = openWalletPage();
         SignedJWT requestObject = fetchRequestObject(walletUrl);

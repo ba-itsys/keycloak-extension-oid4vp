@@ -30,6 +30,7 @@ import de.arbeitsagentur.keycloak.oid4vp.util.FailureDetails;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpResponseDecryptor;
+import de.arbeitsagentur.keycloak.oid4vp.verification.RevocationStatusUnavailableException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.FormParam;
 import jakarta.ws.rs.GET;
@@ -521,6 +522,7 @@ public class Oid4vpIdentityProviderEndpoint {
             LOG.warnf(
                     "OID4VP IdP '%s': presentation for state=%s rejected: %s",
                     provider.getConfig().getAlias(), FailureDetails.singleLine(state), FailureDetails.causeChain(e));
+            boolean serverFailure = noVerdictPossible(e);
             Oid4vpEventService.fire(
                     session,
                     new PresentationFailedEvent(
@@ -529,10 +531,14 @@ public class Oid4vpIdentityProviderEndpoint {
                             authSession.getClient().getClientId(),
                             requestContext.state(),
                             requestContext.flow(),
-                            PresentationFailedEvent.Origin.VERIFIER,
+                            serverFailure
+                                    ? PresentationFailedEvent.Origin.SERVER
+                                    : PresentationFailedEvent.Origin.VERIFIER,
                             null,
                             FailureDetails.causeChain(e)));
-            return handleVerificationFailure(e.getMessage(), requestContext, isCrossDeviceFlow);
+            return serverFailure
+                    ? handleServerFailure(e.getMessage(), requestContext, isCrossDeviceFlow)
+                    : handleVerificationFailure(e.getMessage(), requestContext, isCrossDeviceFlow);
         } catch (Exception e) {
             LOG.errorf(e, "Failed to process VP token: %s", e.getMessage());
             Oid4vpEventService.fire(
@@ -555,6 +561,15 @@ public class Oid4vpIdentityProviderEndpoint {
                 requestContext.responseUri(),
                 context,
                 isCrossDeviceFlow);
+    }
+
+    private static boolean noVerdictPossible(Throwable failure) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof RevocationStatusUnavailableException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private Response rejectIncompleteLink(String state) {

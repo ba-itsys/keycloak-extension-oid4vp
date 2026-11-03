@@ -88,6 +88,19 @@ class KeycloakEventMappingTest {
     }
 
     @Test
+    void revocationCheckFailureNamesTheMechanismAndTheState() {
+        KeycloakEventMapping event = KeycloakEventMapping.of(new RevocationCheckFailedEvent(
+                "realm", RevocationMechanism.STATUS_LIST, "https://issuer.example/status", "state", "HTTP 503"));
+
+        assertThat(event.type()).isEqualTo(EventType.IDENTITY_PROVIDER_RESPONSE_ERROR);
+        assertThat(event.error()).isEqualTo("oid4vp_revocation_check_failed");
+        assertThat(event.details())
+                .containsEntry(Oid4vpEventDetails.MECHANISM, "STATUS_LIST")
+                .containsEntry(Oid4vpEventDetails.REFERENCE, "https://issuer.example/status")
+                .containsEntry(Oid4vpEventDetails.STATE, "state");
+    }
+
+    @Test
     void valuesAreBounded() {
         KeycloakEventMapping event = KeycloakEventMapping.of(new CompletionRejectedEvent(
                 "realm", "wallet", "x".repeat(5000), CompletionRejectedEvent.Rejection.RESPONSE_CODE, "no record"));

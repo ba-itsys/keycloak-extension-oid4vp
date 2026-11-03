@@ -19,7 +19,13 @@ import java.util.Map;
 
 // Seals the security events of the extension, so the Keycloak event mapping covers every type.
 public sealed interface Oid4vpEvent
-        permits PresentationVerifiedEvent, PresentationFailedEvent, PresentationRefusedEvent, CompletionRejectedEvent {
+        permits PresentationVerifiedEvent,
+                PresentationFailedEvent,
+                PresentationRefusedEvent,
+                CompletionRejectedEvent,
+                RevocationDetectedEvent,
+                RevocationCheckFailedEvent,
+                TrustMaterialFailedEvent {
 
     // Returns one of the values of `Oid4vpEventDetails.EventTypes`.
     String eventType();

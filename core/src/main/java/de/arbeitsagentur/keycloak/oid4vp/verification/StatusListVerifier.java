@@ -17,6 +17,11 @@ package de.arbeitsagentur.keycloak.oid4vp.verification;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
+import de.arbeitsagentur.keycloak.oid4vp.event.Oid4vpEventService;
+import de.arbeitsagentur.keycloak.oid4vp.event.RevocationCheckFailedEvent;
+import de.arbeitsagentur.keycloak.oid4vp.event.RevocationDetectedEvent;
+import de.arbeitsagentur.keycloak.oid4vp.event.RevocationMechanism;
+import de.arbeitsagentur.keycloak.oid4vp.event.TrustMaterialFailedEvent;
 import de.arbeitsagentur.keycloak.oid4vp.util.BoundedLruMap;
 import de.arbeitsagentur.keycloak.oid4vp.util.CertificateFingerprints;
 import de.arbeitsagentur.keycloak.oid4vp.util.FailureDetails;
@@ -56,6 +61,8 @@ public class StatusListVerifier {
      */
     private static final Map<CacheKey, CachedStatusList> CACHE = BoundedLruMap.withMaxEntries(MAX_CACHE_ENTRIES);
 
+    private static final int CONNECT_TIMEOUT_MILLIS = 3000;
+
     private final KeycloakSession session;
     private final Duration maxCacheTtl;
     private final int clockSkewSeconds;
@@ -87,18 +94,10 @@ public class StatusListVerifier {
         }
         LOG.infof("Checking revocation status: uri=%s, idx=%d", FailureDetails.singleLine(ref.uri), ref.idx);
 
+        int status;
         try {
             DecodedStatusList statusList = fetchAndDecodeStatusList(ref.uri, revocationCertificates);
-            int status = getStatusAtIndex(statusList.statusBits, ref.idx, statusList.bitsPerStatus);
-
-            if (status != 0) {
-                throw new IllegalStateException("Credential has been revoked (status=" + status + " at index " + ref.idx
-                        + " of status list " + ref.uri + ")");
-            }
-
-            LOG.infof("Revocation check passed: status=%d at index %d", status, ref.idx);
-        } catch (IllegalStateException e) {
-            throw e;
+            status = getStatusAtIndex(statusList.statusBits, ref.idx, statusList.bitsPerStatus);
         } catch (Exception e) {
             LOG.warnf(
                     e,
@@ -106,11 +105,33 @@ public class StatusListVerifier {
                     FailureDetails.singleLine(ref.uri),
                     ref.idx,
                     FailureDetails.causeChain(e));
-            throw new IllegalStateException(
+            Oid4vpEventService.fire(
+                    session,
+                    new RevocationCheckFailedEvent(
+                            Oid4vpEventService.realmId(session),
+                            RevocationMechanism.STATUS_LIST,
+                            ref.uri,
+                            Oid4vpEventService.state(session),
+                            FailureDetails.causeChain(e)));
+            throw new RevocationStatusUnavailableException(
                     "Unable to verify credential revocation status from " + ref.uri + ": "
                             + FailureDetails.causeChain(e),
                     e);
         }
+
+        if (status != 0) {
+            Oid4vpEventService.fire(
+                    session,
+                    new RevocationDetectedEvent(
+                            Oid4vpEventService.realmId(session),
+                            RevocationMechanism.STATUS_LIST,
+                            ref.uri + " index " + ref.idx + " status " + status,
+                            Oid4vpEventService.state(session)));
+            throw new IllegalStateException(
+                    "Credential has been revoked (status=" + status + " in status list " + ref.uri + ")");
+        }
+
+        LOG.infof("Revocation check passed: status=%d at index %d", status, ref.idx);
     }
 
     StatusReference extractStatusReference(Map<String, Object> claims) {
@@ -120,6 +141,19 @@ public class StatusListVerifier {
         if (statusObj == null) return null;
         if (!(statusObj instanceof Map<?, ?> statusMap)) {
             throw new IllegalStateException("Credential status claim must be an object");
+        }
+
+        if (statusMap.containsKey("identifier_list")) {
+            LOG.warn("Credential uses an identifier list for revocation, which is not supported. "
+                    + "Its revocation status stays unchecked.");
+            Oid4vpEventService.fire(
+                    session,
+                    new RevocationCheckFailedEvent(
+                            Oid4vpEventService.realmId(session),
+                            RevocationMechanism.IDENTIFIER_LIST,
+                            null,
+                            Oid4vpEventService.state(session),
+                            "Identifier lists are not supported"));
         }
 
         Object statusListObj = statusMap.get("status_list");
@@ -197,9 +231,16 @@ public class StatusListVerifier {
             throws Exception {
         List<X509Certificate> trustedCerts = revocationCertificates != null ? revocationCertificates : List.of();
         if (trustedCerts.isEmpty()) {
-            LOG.debugf(
+            LOG.warnf(
                     "Status list JWT signature not verified: no trusted keys configured (issuer=%s)",
                     stringClaim(claims, OID4VCConstants.CLAIM_NAME_ISSUER));
+            Oid4vpEventService.fire(
+                    session,
+                    new TrustMaterialFailedEvent(
+                            Oid4vpEventService.realmId(session),
+                            TrustMaterialFailedEvent.Failure.UNSIGNED,
+                            uri,
+                            "No revocation certificates are available"));
             return;
         }
 
@@ -269,6 +310,7 @@ public class StatusListVerifier {
     String fetchStatusListJwt(String uri) throws Exception {
         if (session != null) {
             try (SimpleHttp.Response response = SimpleHttp.doGet(uri, session)
+                    .connectTimeoutMillis(CONNECT_TIMEOUT_MILLIS)
                     .header("Accept", "application/statuslist+jwt")
                     .asResponse()) {
                 if (response.getStatus() / 100 != 2) {
