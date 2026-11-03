@@ -15,10 +15,6 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.domain;
 
-/**
- * How the presentation reached the verifier, either from a wallet on the device of the browser
- * session or from a wallet on another device that scanned the QR code.
- */
 public enum Oid4vpPresentationFlow {
     SAME_DEVICE(Oid4vpConstants.FLOW_SAME_DEVICE),
     CROSS_DEVICE(Oid4vpConstants.FLOW_CROSS_DEVICE);

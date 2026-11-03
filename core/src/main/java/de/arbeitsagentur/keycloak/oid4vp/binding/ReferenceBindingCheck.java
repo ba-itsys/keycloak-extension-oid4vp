@@ -18,8 +18,8 @@ package de.arbeitsagentur.keycloak.oid4vp.binding;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredentials;
 
 /**
- * Whether a credential offered as the subject of a login was issued for a presentation like this one.
- * The identity provider always wires {@link ReferenceCredentialBinding#checkOf}, so this interface is
+ * Answers whether a credential offered as the subject of a login was issued for a presentation like
+ * this one. The identity provider always wires {@link ReferenceCredentialBinding#checkOf}, so this interface is
  * not a variation point. It exists so the verifier can ask for an answer that needs the realm keys
  * without holding a session of its own.
  */

@@ -34,7 +34,6 @@ import java.util.List;
  *
  * @param options alternative credential id combinations, most preferred first
  * @param required whether the wallet has to satisfy one of the options. DCQL defaults this to true.
- * @param purpose description the wallet shows to the user
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6.2">OID4VP 1.0 section 6.2</a>
  */
 public record CredentialSet(List<List<String>> options, boolean required, String purpose) {
@@ -49,8 +48,6 @@ public record CredentialSet(List<List<String>> options, boolean required, String
     /**
      * Parses the configured DCQL {@code credential_sets} value. Rejects everything the DCQL schema
      * does not allow, because the wallet would reject such a request without saying why.
-     *
-     * @throws IllegalArgumentException with an admin readable message naming the first problem
      */
     public static List<CredentialSet> parse(ObjectMapper objectMapper, String credentialSetsJson) {
         JsonNode root;

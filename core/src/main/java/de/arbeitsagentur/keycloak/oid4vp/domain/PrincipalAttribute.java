@@ -40,9 +40,6 @@ public record PrincipalAttribute(String credentialId, String claimPath) {
     private static final String ENTRY_SEPARATOR = ",";
     private static final char CLAIM_SEPARATOR = ':';
 
-    /**
-     * @throws IllegalArgumentException when an entry is malformed or names a credential twice
-     */
     public static List<PrincipalAttribute> parse(String configured) {
         if (StringUtil.isBlank(configured)) {
             return List.of();
@@ -103,7 +100,6 @@ public record PrincipalAttribute(String credentialId, String claimPath) {
         return separator < 0 ? null : unescape(claimPath.substring(0, separator));
     }
 
-    // Returns the whole path when it names no namespace.
     public String mdocElementPath() {
         int separator = unescapedDot(claimPath);
         return separator < 0 ? claimPath : claimPath.substring(separator + 1);

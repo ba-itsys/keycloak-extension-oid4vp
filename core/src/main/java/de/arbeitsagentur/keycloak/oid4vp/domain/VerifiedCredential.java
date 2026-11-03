@@ -23,7 +23,7 @@ import org.keycloak.util.JsonSerialization;
 /**
  * A credential whose issuer signature, key binding and revocation status are checked and whose
  * claims are extracted. {@code alsoKnownAsTypes} are the further types an SD-JWT VC names in its
- * {@code aka_vcts} claim, which an mDoc has none of.
+ * {@code aka_vcts} claim, and an mDoc has none.
  */
 public record VerifiedCredential(
         String credentialId,

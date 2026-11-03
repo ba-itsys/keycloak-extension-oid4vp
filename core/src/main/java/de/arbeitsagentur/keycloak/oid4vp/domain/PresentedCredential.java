@@ -27,7 +27,6 @@ import org.keycloak.util.JsonSerialization;
  *
  * @param type the VCT for SD-JWT and the doctype for mDoc
  * @param claims the claims of this credential alone. mDoc claims stay nested under their namespace.
- * @param alsoKnownAsTypes the further types an SD-JWT VC names in its {@code aka_vcts} claim
  */
 public record PresentedCredential(
         String format, String type, Map<String, Object> claims, List<String> alsoKnownAsTypes) {
@@ -41,7 +40,7 @@ public record PresentedCredential(
         this(format, type, claims, List.of());
     }
 
-    // A credential of a derived type also counts as its base type.
+    // Matches the base types of a derived type as well.
     public boolean isOfType(String requestedType) {
         return CredentialTypeHierarchy.isOfType(type, alsoKnownAsTypes, requestedType);
     }

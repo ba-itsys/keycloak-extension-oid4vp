@@ -33,10 +33,11 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.util.JsonSerialization;
 
 /**
- * Values that tie a credential this Keycloak issues to the login it was issued for. The subject is what
- * the account is recognised by, the reference credential binding is what the credential was issued
- * alongside, and a credential presented next to the credentials of somebody else is not accepted as the
- * subject of a login. This is not the holder binding of OID4VC, which ties a credential to a wallet key.
+ * Computes the values that tie a credential this Keycloak issues to the login it was issued for. The
+ * subject identifies the account. The reference credential binding records the credentials that were
+ * presented when it was issued, so a credential presented next to the credentials of somebody else is
+ * not accepted as the subject of a login. This differs from the holder binding of OID4VC, which ties a credential to a
+ * wallet key.
  *
  * <p>Both are HMACs keyed with a realm secret, because the values travel in a credential the wallet
  * shows to other verifiers, and a plain hash of a name and a date of birth is recovered from a
@@ -55,18 +56,12 @@ public final class ReferenceCredentialBinding {
     private static final String SUBJECT_CONTEXT = "oid4vp:subject:";
     private static final String REFERENCE_CONTEXT = "oid4vp:reference:";
 
-    /**
-     * The HMAC secrets of one realm. That is all this class needs of a Keycloak session, so a typed
-     * double can replace it.
-     */
+    // Narrows the Keycloak session to the HMAC secrets of one realm, so a typed double can replace it.
     public interface RealmSecrets {
 
         SecretKey active();
 
-        /**
-         * Returns every secret a value may have been computed with, so that a key rotation does not
-         * invalidate the credentials that are already in wallets.
-         */
+        // Returns every secret a value may have been computed with, so a key rotation keeps issued credentials valid.
         List<SecretKey> allAccepted();
     }
 
@@ -100,11 +95,6 @@ public final class ReferenceCredentialBinding {
         };
     }
 
-    /**
-     * Reports whether the presentation carries credentials a reference credential binding would bind to,
-     * other than the subject credential itself, so that a subject credential which should have been
-     * bound to them but carries no binding claim can be rejected.
-     */
     public boolean bindsToOtherCredentials(PresentedCredentials credentials, String subjectCredentialId) {
         return material(credentials, subjectCredentialId) != null;
     }
@@ -120,8 +110,8 @@ public final class ReferenceCredentialBinding {
 
     /**
      * Computes the reference credential binding of a presentation over what the {@link
-     * ReferenceCredentialBindingProvider} selects, and returns null when it selects nothing, in which
-     * case the issued credential is unbound.
+     * ReferenceCredentialBindingProvider} selects. Returns null when it selects nothing, and the issued
+     * credential is then unbound.
      */
     public String referenceBindingOf(PresentedCredentials credentials, String subjectCredentialId) {
         String material = material(credentials, subjectCredentialId);

@@ -22,15 +22,15 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Which types a credential counts as. A credential of a derived type also answers a request for
- * its base type. The German PID {@code urn:eudi:pid:de:1} answers a request for
+ * Resolves the types of a credential. A credential of a derived type also answers a request for its
+ * base type, so the German PID {@code urn:eudi:pid:de:1} answers a request for
  * {@code urn:eudi:pid:1}. The other direction never applies.
  *
  * <p>The relationship comes from two places. An SD-JWT VC can list additional types in its
  * {@code aka_vcts} claim (SD-JWT VC, section 2.2.2.2). For a URN type the identifier itself tells
- * it. {@code urn:eudi:pid:de:1} is {@code urn:eudi:pid:1} with a qualifier inserted before the
- * version. That is how the ARF names national PID types. Type metadata is not looked up. PID
- * types are URNs and have no metadata document.
+ * it, because {@code urn:eudi:pid:de:1} is {@code urn:eudi:pid:1} with a qualifier inserted before
+ * the version, which is how the ARF names national PID types. Type metadata is not looked up,
+ * because PID types are URNs and have no metadata document.
  *
  * <p>This only says what a credential is. The signature and trust checks decide whether the
  * issuer was allowed to issue it (SD-JWT VC, section 6.6).
@@ -65,7 +65,7 @@ public final class CredentialTypeHierarchy {
     }
 
     /**
-     * Lists every type this credential counts as, so a request can be matched against all of them.
+     * Lists every type of this credential, so a request can be matched against all of them.
      * The type itself comes first with its URN base types, nearest first. The {@code aka_vcts}
      * types follow, each with its base types. Trust selection takes the first declared type, so
      * the type the issuer signed as the credential's own comes before what it claims to also be.

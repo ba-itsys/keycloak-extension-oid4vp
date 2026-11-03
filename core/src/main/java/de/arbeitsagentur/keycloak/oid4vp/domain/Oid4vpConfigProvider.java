@@ -54,7 +54,6 @@ public interface Oid4vpConfigProvider {
      */
     boolean isAllowMissingSubjectCredential();
 
-    // Names the claim that carries the reference credential binding in a credential this realm issued.
     String getReferenceBindingClaim();
 
     boolean isTransientUsersEnabled();

@@ -42,10 +42,6 @@ public record TrustedAuthority(TrustedAuthorityType type, List<String> values) {
         return values == null || values.isEmpty() ? List.of() : List.of(new TrustedAuthority(type, values));
     }
 
-    /**
-     * Merges the entries of several providers into one entry per type. Types and values keep the
-     * order of their first occurrence.
-     */
     public static List<TrustedAuthority> merge(List<TrustedAuthority> entries) {
         Map<TrustedAuthorityType, Set<String>> valuesByType = new LinkedHashMap<>();
         for (TrustedAuthority entry : entries) {

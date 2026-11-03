@@ -27,13 +27,10 @@ public final class Oid4vpMessages {
     // Shown for a login through an identity provider without principal attributes.
     public static final String PRESENTATION_ONLY = "oid4vpPresentationOnly";
 
-    // Shown when the identity of a presentation is linked to no user.
     public static final String PRESENTATION_NOT_LINKED = "oid4vpPresentationNotLinked";
 
-    // Shown when the identity of a presentation is linked to another user than the one authenticating.
     public static final String PRESENTATION_OTHER_USER = "oid4vpPresentationOtherUser";
 
-    // Shown when the user declines the presentation in the wallet.
     public static final String PRESENTATION_CANCELLED = "oid4vpPresentationCancelled";
 
     // Shown when verification fails on the verifier's side, so nothing is decided about the credential.
@@ -52,7 +49,6 @@ public final class Oid4vpMessages {
     // Shown when the deferred identity of the login is gone, so the login cannot be completed.
     public static final String LOGIN_DATA_MISSING = "oid4vpLoginDataMissing";
 
-    // Shown when no flow is offered at the level of authentication the client requested.
     public static final String NOT_AVAILABLE_FOR_REQUESTED_LEVEL = "oid4vpNotAvailableForRequestedLevel";
 
     private Oid4vpMessages() {}
