@@ -345,6 +345,35 @@ class TrustListProviderTest {
         }
 
         @Test
+        void failedRefreshWithAStaleCopyPausesTheDownloads() throws Exception {
+            X509Certificate cert = generateTestCert(true);
+            StubTrustListProvider provider =
+                    new StubTrustListProvider(TEST_URL, List.of(new IOException("down"), new IOException("down")));
+            TrustListProvider.seedExpiredCache(
+                    provider,
+                    List.of(cert),
+                    Instant.now().minusSeconds(10),
+                    Instant.now().minusSeconds(5),
+                    Instant.now().plusSeconds(3600));
+
+            assertThat(provider.getTrustedCertificates()).containsExactly(cert);
+            assertThat(provider.getTrustedCertificates()).containsExactly(cert);
+
+            assertThat(provider.responses).hasSize(1);
+        }
+
+        @Test
+        void failedDownloadWithoutACopyIsRetriedByTheNextLogin() throws Exception {
+            StubTrustListProvider provider =
+                    new StubTrustListProvider(TEST_URL, List.of(new IOException("down"), new IOException("down")));
+
+            assertThat(provider.getTrustedCertificates()).isEmpty();
+            assertThat(provider.getTrustedCertificates()).isEmpty();
+
+            assertThat(provider.responses).isEmpty();
+        }
+
+        @Test
         void fetchFailure_withMaxStaleAgeZero_returnsEmpty() throws Exception {
             X509Certificate cert = generateTestCert(true);
 

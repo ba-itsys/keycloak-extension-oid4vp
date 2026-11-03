@@ -31,6 +31,7 @@ import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpResponseDecryptor;
 import de.arbeitsagentur.keycloak.oid4vp.verification.RevocationStatusUnavailableException;
+import de.arbeitsagentur.keycloak.oid4vp.verification.TrustMaterialUnavailableException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.FormParam;
 import jakarta.ws.rs.GET;
@@ -565,7 +566,8 @@ public class Oid4vpIdentityProviderEndpoint {
 
     private static boolean noVerdictPossible(Throwable failure) {
         for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
-            if (cause instanceof RevocationStatusUnavailableException) {
+            if (cause instanceof RevocationStatusUnavailableException
+                    || cause instanceof TrustMaterialUnavailableException) {
                 return true;
             }
         }

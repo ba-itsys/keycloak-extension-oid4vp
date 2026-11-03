@@ -238,8 +238,10 @@ public class StatusListVerifier {
                     session,
                     new TrustMaterialFailedEvent(
                             Oid4vpEventService.realmId(session),
+                            null,
                             TrustMaterialFailedEvent.Failure.UNSIGNED,
                             uri,
+                            false,
                             "No revocation certificates are available"));
             return;
         }
