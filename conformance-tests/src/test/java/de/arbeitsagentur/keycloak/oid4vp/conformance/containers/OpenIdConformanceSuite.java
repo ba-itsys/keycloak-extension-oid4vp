@@ -46,8 +46,8 @@ public final class OpenIdConformanceSuite implements AutoCloseable {
     // The URL at which the suite containers reach Keycloak, set as the Keycloak hostname option.
     public static final URI KEYCLOAK_BASE_URI = URI.create("https://host.testcontainers.internal:8443");
 
-    // Fallback for running outside Maven, where the pom property of the same name sets the tag.
-    private static final String DEFAULT_IMAGE_TAG = "release-v5.2.4";
+    // Maven passes the tag from the pom, so this value only applies outside Maven.
+    private static final String DEFAULT_IMAGE_TAG = "release-v5.3.4";
     private static final String NGINX_CERTIFICATE_PATH = "/etc/ssl/certs/nginx-selfsigned.crt";
 
     private static OpenIdConformanceSuite instance;
