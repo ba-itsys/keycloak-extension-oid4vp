@@ -38,6 +38,7 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -651,5 +652,65 @@ class StatusListVerifierTest {
         Instant expiry = verifier.resolveExpiry(null, -60);
         assertThat(expiry).isAfterOrEqualTo(before);
         assertThat(expiry).isBefore(Instant.now().plusSeconds(2));
+    }
+
+    private static String listWithBits(KeyPair signer, String uri, Object bits) throws Exception {
+        Deflater deflater = new Deflater(Deflater.DEFAULT_COMPRESSION, true);
+        deflater.setInput(new byte[] {0x04});
+        deflater.finish();
+        byte[] compressed = new byte[64];
+        int length = deflater.deflate(compressed);
+        deflater.end();
+        Map<String, Object> list = new HashMap<>();
+        list.put("lst", Base64.getUrlEncoder().withoutPadding().encodeToString(Arrays.copyOf(compressed, length)));
+        if (bits != null) {
+            list.put("bits", bits);
+        }
+        SignedJWT jwt = new SignedJWT(
+                new JWSHeader.Builder(JWSAlgorithm.ES256)
+                        .type(new JOSEObjectType("statuslist+jwt"))
+                        .build(),
+                new JWTClaimsSet.Builder()
+                        .subject(uri)
+                        .expirationTime(Date.from(Instant.now().plusSeconds(600)))
+                        .claim("status_list", list)
+                        .build());
+        jwt.sign(new ECDSASigner((ECPrivateKey) signer.getPrivate()));
+        return jwt.serialize();
+    }
+
+    @Test
+    void readsARevokedEntryWithTwoBitsPerStatus() throws Exception {
+        String uri = "https://issuer.example/status/bits-two";
+        StatusListVerifier verifier = verifierServing(listWithBits(generateEcKeyPair(), uri, 2));
+
+        assertThatThrownBy(() -> verifier.checkRevocationStatus(
+                        Map.of("status", Map.of("status_list", Map.of("uri", uri, "idx", 1)))))
+                .hasMessageContaining("revoked");
+    }
+
+    @Test
+    void readsBitsGivenAsAString() throws Exception {
+        String uri = "https://issuer.example/status/bits-string";
+        StatusListVerifier verifier = verifierServing(listWithBits(generateEcKeyPair(), uri, "2"));
+
+        assertThatThrownBy(() -> verifier.checkRevocationStatus(
+                        Map.of("status", Map.of("status_list", Map.of("uri", uri, "idx", 1)))))
+                .hasMessageContaining("revoked");
+    }
+
+    static Stream<Arguments> looseBits() {
+        return Stream.of(Arguments.of("fraction", 1.5), Arguments.of("missing", null));
+    }
+
+    @ParameterizedTest
+    @MethodSource("looseBits")
+    void looseBitsAreRejected(String name, Object bits) throws Exception {
+        String uri = "https://issuer.example/status/bits-" + name;
+        StatusListVerifier verifier = verifierServing(listWithBits(generateEcKeyPair(), uri, bits));
+
+        assertThatThrownBy(() -> verifier.checkRevocationStatus(
+                        Map.of("status", Map.of("status_list", Map.of("uri", uri, "idx", 1)))))
+                .hasMessageContaining("status_list.bits");
     }
 }
