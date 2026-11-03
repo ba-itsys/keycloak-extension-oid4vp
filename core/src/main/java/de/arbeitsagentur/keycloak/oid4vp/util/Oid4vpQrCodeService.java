@@ -24,11 +24,6 @@ import java.io.ByteArrayOutputStream;
 import java.util.Base64;
 import java.util.Map;
 
-/**
- * Renders the wallet authorization URL as the QR code the user scans with a wallet on another device.
- *
- * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5">OID4VP 1.0 section 5, Authorization Request</a>
- */
 public class Oid4vpQrCodeService {
 
     private static final int QR_CODE_MARGIN = 1;

@@ -36,8 +36,8 @@ import org.keycloak.utils.StringUtil;
 
 /**
  * Base for the OID4VP identity provider mappers, each of which reads one claim of the verified
- * credential presentation. Beyond mapping, the credential type and the optional claim sets a mapper
- * declares are what the generated DCQL query is built from.
+ * credential presentation. The generated DCQL query is built from the credential type and the
+ * optional claim sets a mapper declares.
  *
  * <p>Kept in sync with upstream Keycloak's {@code AbstractOID4VPClaimMapper}.
  */
@@ -131,9 +131,9 @@ public abstract class AbstractOID4VPClaimMapper extends AbstractIdentityProvider
 
     /**
      * Returns the presented credential named by this mapper's credential id, or the first presented
-     * credential of the mapper's format when the mapper declares no credential type, and null when
-     * neither is part of the presentation. No type comparison happens here, because the callback
-     * has already checked that a presented credential is of a requested type.
+     * credential of the mapper's format when the mapper declares no credential type. No type comparison
+     * happens here, because the callback checks that a presented credential is of a
+     * requested type.
      */
     protected PresentedCredential presentedCredential(
             IdentityProviderMapperModel mapperModel, BrokeredIdentityContext context) {
@@ -152,21 +152,18 @@ public abstract class AbstractOID4VPClaimMapper extends AbstractIdentityProvider
         return credential != null && credentialFormat().equals(credential.format()) ? credential : null;
     }
 
-    /**
-     * Resolves the credential id this mapper reads under, mirroring how the DCQL query generation
-     * derives it.
-     */
+    // Resolves the credential id the same way the DCQL query generation derives it.
     protected String credentialId(IdentityProviderMapperModel mapperModel, String firstCredentialType) {
         return CredentialId.resolve(
                 mapperModel.getConfig().get(CREDENTIAL_ID), credentialFormat(), firstCredentialType);
     }
 
-    // mDoc mappers override this to narrow the root to a namespace.
+    // Lets mDoc mappers narrow the root to a namespace.
     protected JsonNode claimsRoot(IdentityProviderMapperModel mapperModel, PresentedCredential credential) {
         return credential.claimsNode();
     }
 
-    // mDoc mappers override this because they require a namespace.
+    // Lets mDoc mappers require a namespace.
     protected boolean claimSourceConfigured(IdentityProviderMapperModel mapperModel) {
         return true;
     }

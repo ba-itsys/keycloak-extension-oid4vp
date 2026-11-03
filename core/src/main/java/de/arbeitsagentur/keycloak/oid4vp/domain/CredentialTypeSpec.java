@@ -22,17 +22,13 @@ import java.util.TreeSet;
 import java.util.stream.IntStream;
 
 /**
- * One credential entry of the DCQL query. It holds the format, the accepted types and the claims
- * to request. The identity provider mappers are aggregated into it.
+ * One credential entry of the DCQL query, into which the identity provider mappers are aggregated.
  *
- * <p>An SD-JWT entry can accept several types. DCQL sends them as one {@code vct_values} array.
- * The wallet answers with a credential of any of them. That covers types that differ per country
- * or rulebook version, like {@code urn:eudi:pid:1} and {@code urn:eudi:pid:de:1}. An mDoc entry
- * has exactly one doctype. {@code doctype_value} is a single string.
+ * <p>An SD-JWT entry can accept several types, which DCQL sends as one {@code vct_values} array, and
+ * the wallet answers with a credential of any of them. That covers types that differ per country or
+ * rulebook version, like {@code urn:eudi:pid:1} and {@code urn:eudi:pid:de:1}. An mDoc entry has
+ * exactly one doctype, because {@code doctype_value} is a single string.
  *
- * @param format the credential format ({@code dc+sd-jwt} or {@code mso_mdoc})
- * @param types the accepted types (VCTs for SD-JWT, the doctype for mDoc), in request order
- * @param claimSpecs the claims to request, one per mapper
  * @see <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-6">OID4VP 1.0 section 6</a>
  */
 public record CredentialTypeSpec(String format, List<String> types, List<ClaimSpec> claimSpecs) {
@@ -49,7 +45,6 @@ public record CredentialTypeSpec(String format, List<String> types, List<ClaimSp
         this(format, List.of(type), claimSpecs);
     }
 
-    // The default credential id is derived from the first type.
     public String firstType() {
         return types.get(0);
     }
@@ -58,10 +53,7 @@ public record CredentialTypeSpec(String format, List<String> types, List<ClaimSp
         return ConfigList.parse(rawTypes);
     }
 
-    /**
-     * Lists every claim the query asks for. Each spec contributes its own path and its
-     * alternatives, in spec order. The claim set options index this list.
-     */
+    // Lists every claim of the query in spec order, because the claim set options index this list.
     public List<ClaimSpec> requestedClaims() {
         return claimSpecs.stream()
                 .flatMap(claimSpec -> claimSpec.expand().stream())

@@ -56,10 +56,10 @@ public class Oid4vpRequestObjectStore {
     private final String idpAlias;
 
     /**
-     * @param idpAlias the identity provider this store serves. The state index is shared by every
-     *     identity provider of the realm. An entry records the alias that created it and resolves
-     *     for that alias only, so a presentation posted to another OID4VP identity provider of the
-     *     realm cannot complete this one's login under that provider's policy.
+     * Scopes this store to {@code idpAlias}, because every identity provider of the realm shares the
+     * state index. An entry records the alias that created it and resolves for that alias only, so a
+     * presentation posted to another OID4VP identity provider of the realm cannot complete this
+     * one's login under that provider's policy.
      */
     public Oid4vpRequestObjectStore(Duration ttl, String idpAlias) {
         this.ttl = ttl;
@@ -67,9 +67,9 @@ public class Oid4vpRequestObjectStore {
     }
 
     /**
-     * @param dcqlQuery the query snapshot taken when the login page was rendered and served to the
-     *     wallet, so callback enforcement judges the response against the query the wallet answered,
-     *     even when the mapper configuration changes mid-flow
+     * Keeps {@code dcqlQuery} as the snapshot taken when the login page was rendered and served to
+     * the wallet, so callback enforcement judges the response against the query the wallet answered,
+     * even when the mapper configuration changes mid-flow.
      */
     // Entries outlive a deployment, so fields a previous version stored must not fail the lookup.
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -87,7 +87,7 @@ public class Oid4vpRequestObjectStore {
             String dcqlQuery,
             long requestUriExpiresAtEpochSeconds) {
 
-        // Entries stored by a version without this deadline carry 0 and never expire.
+        // Treats 0 as no deadline, because a record without one deserializes to 0.
         public boolean isRequestUriExpired(long currentEpochSeconds) {
             return requestUriExpiresAtEpochSeconds > 0 && currentEpochSeconds >= requestUriExpiresAtEpochSeconds;
         }

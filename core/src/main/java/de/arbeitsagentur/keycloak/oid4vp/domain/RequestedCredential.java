@@ -64,10 +64,7 @@ public record RequestedCredential(
         this(id, format, List.of(type), claims, claimSets);
     }
 
-    /**
-     * Builds the requirements of an aggregated credential entry from its expanded claims, so that
-     * the claim set indexes match the generated query.
-     */
+    // Builds the requirements from the expanded claims, so that the claim set indexes match the generated query.
     public static RequestedCredential of(String credentialId, CredentialTypeSpec spec) {
         List<RequestedClaim> claims = spec.requestedClaims().stream()
                 .map(claimSpec -> new RequestedClaim(claimSpec.namespace(), claimSpec.path()))
@@ -95,9 +92,9 @@ public record RequestedCredential(
     }
 
     /**
-     * Returns the requested claims the presentation does not satisfy. Without claim sets every
-     * claim is required. With claim sets the presentation has to satisfy one option. When it
-     * satisfies none, the result names the missing claims of the most preferred option.
+     * Returns the requested claims the presentation does not satisfy. With claim sets the presentation
+     * has to satisfy one option, and when it satisfies none, the result names the missing claims of the
+     * most preferred option.
      */
     public List<String> missingClaims(JsonNode presentedClaims) {
         if (claimSets.isEmpty()) {

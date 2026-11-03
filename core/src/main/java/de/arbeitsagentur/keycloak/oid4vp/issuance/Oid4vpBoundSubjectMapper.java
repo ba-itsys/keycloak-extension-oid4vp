@@ -139,8 +139,8 @@ public class Oid4vpBoundSubjectMapper extends OID4VCMapper {
         // This extension issues SD-JWT. It does not use the W3C credential model of Keycloak.
     }
 
-    // The subject comes from the entitlement the subject binding authenticator records, never from
-    // a user attribute, so the reserved sub claim is the issuer's own value.
+    // Allows the reserved sub claim, because the subject comes from the entitlement the subject binding
+    // authenticator records and never from a user attribute.
     @Override
     protected Set<String> getAllowedReservedClaims() {
         return Set.of(OID4VCConstants.CLAIM_NAME_SUB);

@@ -18,11 +18,7 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
 import java.util.List;
 import java.util.Map;
 
-/**
- * The result of verifying an SD-JWT VC from a {@code vp_token}. The claims are the disclosed ones
- * after selective disclosure resolution, the credential type is the VCT, and
- * {@code alsoKnownAsTypes} are the further types the {@code aka_vcts} claim names.
- */
+// Holds the disclosed claims of a verified SD-JWT VC, its VCT and the further types its `aka_vcts` claim names.
 public record SdJwtVerificationResult(
         Map<String, Object> claims, String issuer, String credentialType, List<String> alsoKnownAsTypes) {
 

@@ -32,13 +32,11 @@ public final class Oid4vpCredentialSetsValidator {
     private Oid4vpCredentialSetsValidator() {}
 
     /**
-     * @param credentials the credentials aggregated from the mappers, keyed by credential id. An
-     *     empty map checks only what the identity provider configuration says on its own.
-     * @param principalClaimRequested false when the subject comes from a transient user, so that no
-     *     credential has to carry the principal claim
-     * @param subjectCredentialMayBeMissing lifts the rule that every required credential set option
-     *     carries the subject credential, because the login that follows establishes the subject
-     *     instead of the presentation
+     * Lists the problems of the configuration. {@code principalClaimRequested} is false when the subject
+     * comes from a transient user, so that no credential has to carry the principal claim.
+     * {@code subjectCredentialMayBeMissing} lifts the rule that every required credential set option
+     * carries the subject credential, because the login that follows establishes the subject instead of
+     * the presentation.
      */
     public static List<String> problems(
             List<CredentialSet> credentialSets,

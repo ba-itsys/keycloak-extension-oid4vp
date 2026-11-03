@@ -30,8 +30,7 @@ public enum Oid4vpRejectionResponse {
 
     /**
      * HTTP 200 and the {@code redirect_uri} that hands the End-User back, the same answer a
-     * completed login gets. A wallet reads the status before the body, so this makes it follow the
-     * redirect. Otherwise it shows an error of its own and strands the End-User.
+     * completed login gets. A wallet that stops on a non-2xx status follows this redirect.
      */
     REDIRECT("redirect"),
 

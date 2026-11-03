@@ -35,10 +35,7 @@ public final class Oid4vpIdentityKey {
         return hash(normalize(subject));
     }
 
-    /**
-     * Returns the identity key of a subject, ignoring case, because human readable credential
-     * claims vary in casing across formats and still mean the same user.
-     */
+    // Ignores case, because human readable credential claims vary in casing across formats.
     public static String caseInsensitive(String subject) {
         return hash(normalize(subject).toLowerCase(Locale.ROOT));
     }
