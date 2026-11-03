@@ -17,7 +17,11 @@ package de.arbeitsagentur.keycloak.oid4vp.service;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpMessages;
+import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredentials;
+import de.arbeitsagentur.keycloak.oid4vp.event.CompletionRejectedEvent;
+import de.arbeitsagentur.keycloak.oid4vp.event.Oid4vpEventService;
+import de.arbeitsagentur.keycloak.oid4vp.event.PresentationVerifiedEvent;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpAuthSessionResolver;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
@@ -26,6 +30,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.jboss.logging.Logger;
 import org.keycloak.OAuth2Constants;
@@ -110,6 +115,7 @@ public class Oid4vpDirectPostService {
     public Response storeAndSignal(
             AuthenticationSessionModel authSession,
             String state,
+            String flow,
             String endpointBaseUrl,
             BrokeredIdentityContext context,
             boolean isCrossDevice) {
@@ -171,6 +177,19 @@ public class Oid4vpDirectPostService {
                             Map.of(KEY_COMPLETE_AUTH_URL, completeAuthUrl));
         }
 
+        Oid4vpEventService.fire(
+                session,
+                new PresentationVerifiedEvent(
+                        Oid4vpEventService.realmId(session),
+                        aliasOrEmpty(),
+                        authSession.getClient().getClientId(),
+                        state,
+                        flow,
+                        credentials != null
+                                ? credentials.byCredentialId().values().stream()
+                                        .map(PresentedCredential::type)
+                                        .toList()
+                                : List.of()));
         return responseFactory.jsonRedirectResponse(completeAuthUrl, isCrossDevice);
     }
 
@@ -184,6 +203,10 @@ public class Oid4vpDirectPostService {
         // wrong code must neither complete the flow nor burn the legitimate user's single-use signal.
         Map<String, String> deferredSignal = ownSignal(DEFERRED_AUTH_PREFIX + state);
         if (deferredSignal == null || !responseCodeMatches(deferredSignal.get(KEY_RESPONSE_CODE), responseCode)) {
+            fireCompletionRejected(
+                    state,
+                    CompletionRejectedEvent.Rejection.RESPONSE_CODE,
+                    "No completion recorded for the state, or the response code did not match");
             return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, Oid4vpMessages.INVALID_LOGIN_RESPONSE);
         }
 
@@ -196,12 +219,18 @@ public class Oid4vpDirectPostService {
         // to recover the deferred broker state serialized earlier.
         AuthenticationSessionModel activeAuthSession = authSessionResolver.sameBrowserSession(storedAuthSession);
         if (activeAuthSession == null) {
+            fireCompletionRejected(
+                    state,
+                    CompletionRejectedEvent.Rejection.BROWSER_MISMATCH,
+                    "The browser is not the one that started the login");
             return ErrorPage.error(session, null, Response.Status.BAD_REQUEST, Oid4vpMessages.BROWSER_SESSION_MISMATCH);
         }
 
         session.singleUseObjects().remove(CROSS_DEVICE_COMPLETE_PREFIX + state);
         Map<String, String> consumedSignal = session.singleUseObjects().remove(DEFERRED_AUTH_PREFIX + state);
         if (consumedSignal == null) {
+            fireCompletionRejected(
+                    state, CompletionRejectedEvent.Rejection.RESPONSE_CODE, "The response code was already used");
             return ErrorPage.error(
                     session, activeAuthSession, Response.Status.BAD_REQUEST, Oid4vpMessages.LOGIN_EXPIRED);
         }
@@ -259,6 +288,13 @@ public class Oid4vpDirectPostService {
         authSession.removeAuthNote(deferredIdentityNote(state));
         authSession.removeAuthNote(deferredClaimsNote(state));
         requestObjectStore.removeRequestContext(session, state);
+    }
+
+    public void fireCompletionRejected(String state, CompletionRejectedEvent.Rejection rejection, String reason) {
+        Oid4vpEventService.fire(
+                session,
+                new CompletionRejectedEvent(
+                        Oid4vpEventService.realmId(session), aliasOrEmpty(), state, rejection, reason));
     }
 
     /**

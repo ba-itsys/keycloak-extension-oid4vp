@@ -49,9 +49,6 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
         return wallet;
     }
 
-    private static final int DIRECT_POST_ATTEMPTS = 2;
-    private static final long DIRECT_POST_RETRY_DELAY_MS = 200L;
-
     @Test
     void requestObjectCanBeFetchedMultipleTimes() throws Exception {
         testApp().reset();
@@ -431,7 +428,7 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
         String endpointUri = requestUri.replaceFirst("/request-object/[^/?]+.*$", "");
         String formBody = "response=" + urlEncode(encryptedResponse);
 
-        HttpResponse<String> directPostResponse = postDirectPostWithRetry(httpClient, endpointUri, formBody);
+        HttpResponse<String> directPostResponse = postDirectPost(httpClient, endpointUri, formBody);
 
         assertThat(directPostResponse.statusCode()).isEqualTo(200);
         // OID4VP 1.0 section 8.2 lets an Error Response be answered with 200 and a redirect_uri the
@@ -473,7 +470,7 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
                 Map.of("state", state, "error", "access_denied", "error_description", "wallet rejected"));
         String endpointUri = requestUri.replaceFirst("/request-object/[^/?]+.*$", "");
         HttpResponse<String> directPostResponse =
-                postDirectPostWithRetry(httpClient, endpointUri, "response=" + urlEncode(encryptedResponse));
+                postDirectPost(httpClient, endpointUri, "response=" + urlEncode(encryptedResponse));
 
         assertThat(directPostResponse.statusCode())
                 .as("A wallet-reported error is processed successfully: %s", directPostResponse.body())
@@ -482,39 +479,5 @@ class KeycloakOid4vpRequestObjectE2eIT extends AbstractOid4vpE2eTest {
                 .contains("/failed")
                 .doesNotContain("access_denied")
                 .doesNotContain("wallet rejected");
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> encryptionJwkOf(SignedJWT requestObject) throws Exception {
-        Map<String, Object> clientMetadata =
-                (Map<String, Object>) requestObject.getJWTClaimsSet().getClaim("client_metadata");
-        Map<String, Object> jwks = (Map<String, Object>) clientMetadata.get("jwks");
-        return ((List<Map<String, Object>>) jwks.get("keys")).get(0);
-    }
-
-    private HttpResponse<String> postDirectPostWithRetry(HttpClient httpClient, String endpointUri, String formBody)
-            throws Exception {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(endpointUri))
-                .header("Content-Type", "application/x-www-form-urlencoded")
-                .POST(HttpRequest.BodyPublishers.ofString(formBody))
-                .build();
-
-        HttpResponse<String> response = null;
-        for (int attempt = 1; attempt <= DIRECT_POST_ATTEMPTS; attempt++) {
-            response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (!isSessionExpiredResponse(response) || attempt == DIRECT_POST_ATTEMPTS) {
-                return response;
-            }
-            Thread.sleep(DIRECT_POST_RETRY_DELAY_MS);
-        }
-
-        return response;
-    }
-
-    private boolean isSessionExpiredResponse(HttpResponse<String> response) {
-        return response.statusCode() == 400
-                && response.body() != null
-                && response.body().contains("\"error\":\"session_expired\"");
     }
 }

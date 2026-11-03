@@ -611,7 +611,7 @@ class Oid4vpCallbackProcessorTest {
     private Oid4vpCallbackProcessor processor(
             VpTokenResult verificationResult, ReferenceBindingCheck referenceBindingCheck) {
         VpTokenVerifier verifier = request -> verificationResult;
-        return new Oid4vpCallbackProcessor(config, config, null, verifier, referenceBindingCheck);
+        return new Oid4vpCallbackProcessor(null, config, config, null, verifier, referenceBindingCheck);
     }
 
     private record FixedReferenceBindingCheck(boolean bound, boolean bindsToOthers) implements ReferenceBindingCheck {
