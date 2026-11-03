@@ -50,7 +50,6 @@ import org.keycloak.models.KeycloakSession;
 public class StatusListVerifier {
 
     private static final Logger LOG = Logger.getLogger(StatusListVerifier.class);
-    private static final int DEFAULT_BITS_PER_STATUS = 1;
     private static final int MAX_CACHE_ENTRIES = 256;
     private static final int MAX_INFLATED_BYTES = 16 * 1024 * 1024;
 
@@ -210,10 +209,9 @@ public class StatusListVerifier {
             throw new IllegalStateException("Status list JWT missing status_list.lst claim");
         }
 
-        int bitsPerStatus = DEFAULT_BITS_PER_STATUS;
-        Object bitsObj = statusListClaim.get("bits");
-        if (bitsObj instanceof Number num) {
-            bitsPerStatus = num.intValue();
+        Integer bitsPerStatus = integerValue(statusListClaim.get("bits"));
+        if (bitsPerStatus == null) {
+            throw new IllegalStateException("Status list JWT has no integer status_list.bits claim");
         }
         validateBitsPerStatus(bitsPerStatus);
 
