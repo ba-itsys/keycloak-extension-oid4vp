@@ -705,4 +705,15 @@ class MdocVerifierTest {
                 new CBORPair(new CBORString("issuerSigned"), issuerSigned)));
         return wrapInDeviceResponse(document);
     }
+
+    @Test
+    void msoWithoutDocTypeIsRejected() throws Exception {
+        CBORPairList nameSpaces =
+                new CBORPairList(List.of(new CBORPair(new CBORString("ns"), buildElements(new String[] {"a", "b"}))));
+        CBORPairList mso = new CBORPairList(List.of(new CBORPair(new CBORString("version"), new CBORString("1.0"))));
+        String token = buildSignedMdocWithMso("org.iso.18013.5.1.mDL", nameSpaces, mso);
+
+        assertThatThrownBy(() -> verifier.verifyIssuerSigned(token, TestTrust.ofCertificates(signingCert)))
+                .hasMessageContaining("no docType");
+    }
 }
