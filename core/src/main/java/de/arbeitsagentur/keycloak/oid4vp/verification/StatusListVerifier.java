@@ -70,20 +70,11 @@ public class StatusListVerifier {
         this.clockSkewSeconds = clockSkewSeconds;
     }
 
-    // Leaves the status list JWT signature unverified.
     void checkRevocationStatus(Map<String, Object> claims) {
         checkRevocationStatus(claims, List.of());
     }
 
-    /**
-     * Checks the revocation status of a credential from its payload claims, returning silently when
-     * the credential carries no status claim.
-     *
-     * @param revocationCertificates the status list service certificates of the trust domain serving
-     *                               this credential. An empty list leaves the status list JWT
-     *                               signature unverified.
-     * @throws IllegalStateException if the credential is revoked or status check fails
-     */
+    // Leaves the status list JWT signature unverified when revocationCertificates is empty.
     public void checkRevocationStatus(Map<String, Object> claims, List<X509Certificate> revocationCertificates) {
         StatusReference ref = extractStatusReference(claims);
         if (ref == null) {
@@ -249,8 +240,9 @@ public class StatusListVerifier {
     }
 
     /**
-     * Caches a Status List Token until the earlier of {@code exp} and fetch time plus {@code ttl},
-     * capped at {@code maxCacheTtl} when one is configured. A token with neither is not cached.
+     * Returns the cache expiry of a Status List Token, which is the earlier of {@code exp} and fetch
+     * time plus {@code ttl}, capped at {@code maxCacheTtl} when one is configured. A token with
+     * neither is not cached.
      *
      * @see <a href="https://datatracker.ietf.org/doc/html/draft-ietf-oauth-status-list">Section 13.7</a>
      */
@@ -338,7 +330,7 @@ public class StatusListVerifier {
         }
     }
 
-    // For tests only.
+    // Exists for tests only.
     static void clearCache() {
         CACHE.clear();
     }

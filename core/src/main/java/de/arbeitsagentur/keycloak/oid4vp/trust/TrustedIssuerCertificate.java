@@ -19,20 +19,15 @@ import java.security.cert.X509Certificate;
 import org.keycloak.utils.StringUtil;
 
 /**
- * A directly trusted issuer certificate together with the issuer it is trusted for, the counterpart
- * of {@link TrustedIssuerKey} for credentials that pin a certificate instead of naming a key. It
- * keeps trust domains apart the same way, so a certificate published for one issuer must not verify
- * a credential that claims to come from another.
- *
- * @param issuer the credential {@code iss} this certificate is trusted for. Null when the provider
- *               does not identify an issuer. The certificate is then trusted for any issuer.
+ * Binds a directly trusted certificate to the issuer it is trusted for, so a certificate published
+ * for one issuer must not verify a credential that claims to come from another. A null issuer means
+ * the provider does not identify one, and the certificate is then trusted for any issuer.
  */
 public record TrustedIssuerCertificate(String issuer, X509Certificate certificate) {
 
     /**
-     * Returns a certificate trusted for any issuer, as exposed by providers that do not know whose
-     * it is. A trust list names services and no SD-JWT issuer identifiers, so its end entity
-     * certificates arrive this way.
+     * Trusts a certificate for any issuer. A trust list names services and no SD-JWT issuer
+     * identifiers, so its end entity certificates arrive this way.
      */
     public static TrustedIssuerCertificate ofAnyIssuer(X509Certificate certificate) {
         return new TrustedIssuerCertificate(null, certificate);

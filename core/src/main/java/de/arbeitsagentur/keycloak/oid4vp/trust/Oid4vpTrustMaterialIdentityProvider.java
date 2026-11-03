@@ -63,7 +63,7 @@ public interface Oid4vpTrustMaterialIdentityProvider<C extends IdentityProviderM
 
     /**
      * Returns the credential types (SD-JWT VCT, mDoc doctype) this provider is trusted for. An empty
-     * list serves every credential type.
+     * list means it serves every credential type.
      */
     default List<String> servedCredentialTypes() {
         return List.of();

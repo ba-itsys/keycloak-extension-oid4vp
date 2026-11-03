@@ -21,9 +21,9 @@ import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.utils.StringUtil;
 
 /**
- * The credential types (SD-JWT VCT, mDoc doctype) a trust material identity provider is trusted
- * for, stored as a comma separated value in the configuration of that provider. An empty value
- * serves every credential type.
+ * Reads the credential types (SD-JWT VCT, mDoc doctype) a trust material identity provider is
+ * trusted for from the comma separated value in the configuration of that provider. An empty value
+ * means the provider serves every credential type.
  *
  * <p>The setting lives on the configured provider instance, so a provider this extension does not
  * own can be scoped as well. Keycloak's {@code default-trust}, the provider for an issuer that

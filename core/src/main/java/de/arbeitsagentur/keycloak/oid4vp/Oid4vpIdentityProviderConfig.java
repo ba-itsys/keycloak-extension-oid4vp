@@ -39,7 +39,7 @@ import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Typed accessors for the OID4VP settings of a Keycloak {@link IdentityProviderModel}. Implementing
+ * Gives typed access to the OID4VP settings of a Keycloak {@link IdentityProviderModel}. Implementing
  * {@link Oid4vpConfigProvider} lets the domain services read the configuration without depending on
  * the Keycloak model.
  */
@@ -292,9 +292,6 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         }
     }
 
-    /**
-     * @throws IllegalArgumentException when the configured value is not a valid credential set list
-     */
     public List<CredentialSet> getParsedCredentialSets() {
         return StringUtil.isBlank(getCredentialSets())
                 ? List.of()
@@ -324,11 +321,6 @@ public class Oid4vpIdentityProviderConfig extends IdentityProviderModel implemen
         getConfig().put(PRINCIPAL_ATTRIBUTES, principalAttributes);
     }
 
-    /**
-     * Returns the credentials the subject may be read from, in the configured order.
-     *
-     * @throws IllegalArgumentException when the configured value is not a valid entry list
-     */
     @Override
     public List<PrincipalAttribute> getPrincipalAttributes() {
         return PrincipalAttribute.parse(getPrincipalAttributesValue());

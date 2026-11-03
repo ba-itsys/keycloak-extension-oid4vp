@@ -69,10 +69,7 @@ public final class Oid4vpSubjectCredentialOffer {
 
     private Oid4vpSubjectCredentialOffer() {}
 
-    /**
-     * Entitles the user to the configured credential and ends the authentication in Keycloak's
-     * credential offer required action. Does nothing without a configured credential configuration.
-     */
+    // Entitles the user to the credential and ends the authentication in Keycloak's credential offer required action.
     public static void offer(
             KeycloakSession session,
             RealmModel realm,
@@ -129,11 +126,10 @@ public final class Oid4vpSubjectCredentialOffer {
 
     /**
      * Entitles the user to the credential, because Keycloak only offers a credential to a user who is
-     * entitled to it. The entitlement records the subject of this account and the reference credential
-     * binding of this presentation, and since the pre-authorized code is redeemed in a session of its
-     * own, the entitlement is the only thing of this login the issuance sees. An entitlement that exists
-     * already is replaced, so a login after a change of the bound claims issues a credential that
-     * matches the current presentation.
+     * entitled to it. The pre-authorized code is redeemed in a session of its own, so the issuance sees
+     * nothing of this login except the entitlement. It therefore records the subject and the reference
+     * credential binding. An existing entitlement is replaced, so a login after a change of
+     * the bound claims issues a credential that matches the current presentation.
      */
     private static void entitle(
             KeycloakSession session,

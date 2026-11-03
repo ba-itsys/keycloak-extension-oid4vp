@@ -21,15 +21,10 @@ import java.util.Objects;
 /**
  * A verified OID4VP presentation that an authenticator or required action asked for.
  *
- * @param identityProviderAlias the OID4VP identity provider that verified it
- * @param execution the authenticator execution or required action that asked for it
  * @param identityKey the identity key a login through the identity provider links, null when the
  *     presentation identifies nobody
  * @param subjectCredentialMissing whether the presentation lacked the subject credential that
  *     {@code allowMissingSubjectCredential} lets a wallet leave out
- * @param credentials the verified credentials, keyed by DCQL credential id
- * @param issuer the issuer of the primary credential, may be null
- * @param presentationFlow {@code same_device} or {@code cross_device}, may be null
  */
 public record Oid4vpPresentation(
         String identityProviderAlias,

@@ -65,8 +65,8 @@ public class Oid4vpRedirectFlowService {
     }
 
     /**
-     * {@code walletScheme} is a custom URL scheme such as {@code openid4vp://} or the {@code http(s)}
-     * authorization endpoint of a wallet reachable at a web URL, such as
+     * Accepts as {@code walletScheme} a custom URL scheme such as {@code openid4vp://} or the
+     * {@code http(s)} authorization endpoint of a wallet reachable at a web URL, such as
      * {@code http://localhost:8085/authorize}. Both forms receive the same query parameters.
      */
     public URI buildWalletAuthorizationUrl(
@@ -96,7 +96,7 @@ public class Oid4vpRedirectFlowService {
         return URI.create(url.toString());
     }
 
-    // A bare "http://" or "https://" without a host counts as a custom scheme.
+    // Treats a bare "http://" or "https://" without a host as a custom scheme.
     private static boolean isWalletEndpointUrl(String walletScheme) {
         String lower = walletScheme.toLowerCase();
         if (lower.startsWith("http://")) {
@@ -108,10 +108,6 @@ public class Oid4vpRedirectFlowService {
         return false;
     }
 
-    /**
-     * Signs the request object claims as a compact JWS, advertising the stored ephemeral response
-     * encryption key in {@code client_metadata} when the response mode is {@code direct_post.jwt}.
-     */
     public SignedRequestObject buildSignedRequestObject(RequestObjectParams params) {
         KeyWrapper signingKey = resolveSigningKey(params.x509SigningKeyJwk());
         EphemeralKey responseEncryptionKey = resolveResponseEncryptionKey(params);

@@ -544,10 +544,6 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                 .createForm("login-oid4vp-idp.ftl");
     }
 
-    /**
-     * Counts down to the first request URI on the page to expire, or to the end of the
-     * authentication session when that comes first.
-     */
     protected long requestUriExpiresInSeconds(AuthenticationSessionModel authSession, FlowEntry... flows) {
         long authSessionExpiresAt = SessionExpiration.getAuthSessionExpiration(
                 session.getContext().getRealm(), authSession.getParentSession().getTimestamp());

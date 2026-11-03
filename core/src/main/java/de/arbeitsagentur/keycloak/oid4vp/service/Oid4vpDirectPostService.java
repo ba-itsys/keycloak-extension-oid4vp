@@ -103,10 +103,9 @@ public class Oid4vpDirectPostService {
     }
 
     /**
-     * @param endpointBaseUrl the endpoint base the browser reached when the login page was rendered,
-     *     from the request context. The browser opens the URL handed out here, so it is built from
-     *     that base and not from the wallet's request, whose host the poster chooses when Keycloak
-     *     resolves its hostname dynamically.
+     * Builds the URL handed out here from {@code endpointBaseUrl}, the base the browser reached when
+     * the login page was rendered. The browser opens that URL, so it must not come from the wallet's
+     * request, whose host the poster chooses when Keycloak resolves its hostname dynamically.
      */
     public Response storeAndSignal(
             AuthenticationSessionModel authSession,
@@ -115,7 +114,7 @@ public class Oid4vpDirectPostService {
             BrokeredIdentityContext context,
             boolean isCrossDevice) {
 
-        // The first verified presentation for a state wins. A result whose deferred signal
+        // Keeps only the first verified presentation for a state. A result whose deferred signal
         // /complete-auth has not consumed yet is not overwritten, so a later presentation submitted
         // to a known state, an attacker's own credential for example, cannot replace the identity
         // the first wallet established. Only a successfully verified presentation reaches this
@@ -244,7 +243,7 @@ public class Oid4vpDirectPostService {
 
     /**
      * Removes everything a state of the wallet login holds. A state ends when a presentation
-     * completes the login or when newer states push it out. It must then neither serve a request
+     * completes the login or when newer states evict it. It must then neither serve a request
      * object nor complete or fail the login, and its entries would otherwise stay in the single-use
      * store until the login timeout.
      */
@@ -376,7 +375,7 @@ public class Oid4vpDirectPostService {
     public record LoginFailure(Origin origin, String error, String errorDescription) {
 
         /**
-         * Who ended the login. The origins differ in what the End-User is shown, because a wallet
+         * Says who ended the login. The origins differ in what the End-User is shown, because a wallet
          * that declines acts on the End-User's own choice and ends the login the way Keycloak ends
          * any refused brokered login, while a presentation this verifier rejected is a failure the
          * End-User cannot know about unless it is named.
@@ -384,7 +383,6 @@ public class Oid4vpDirectPostService {
         public enum Origin {
             // The wallet reported an error response (OID4VP 1.0 section 8.5).
             WALLET,
-            // The verifier refused what the wallet presented.
             VERIFIER,
             // Verification broke on this side. The presentation was never judged.
             SERVER;

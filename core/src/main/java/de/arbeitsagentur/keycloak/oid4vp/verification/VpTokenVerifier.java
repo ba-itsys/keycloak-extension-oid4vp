@@ -17,10 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp.verification;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
 
-/**
- * Verifies a {@code vp_token} response. {@link VpTokenProcessor} implements it in production. Callback
- * processing depends on this interface so tests can supply canned results.
- */
+// Verifies a `vp_token` response. Callback processing depends on this interface so tests can supply canned results.
 @FunctionalInterface
 public interface VpTokenVerifier {
 

@@ -27,21 +27,11 @@ import org.keycloak.common.util.PemUtils;
 import org.keycloak.crypto.X509CertificateChainValidator;
 
 /**
- * Trust material aggregated from the trust material identity providers that serve one credential.
- *
- * @param issuerTrustAnchors        X.509 trust anchors and policy for credential issuer chains
- *                                  (SD-JWT x5c, mDoc x5chain)
- * @param directIssuerCertificates  end entity certificates trusted directly. Their keys verify a
- *                                  credential that carries no chain. Each is bound to the issuer it
- *                                  is trusted for.
- * @param trustedIssuerKeys         trusted issuer keys from providers that expose keys instead of
- *                                  X.509 anchors, each bound to the issuer it is trusted for
- * @param hasDeclaredTrustSource    whether any trust material provider is configured. It comes
- *                                  from the configuration alone and holds even when the trust
- *                                  material is unreachable. A credential type no provider serves
- *                                  and a declared source without anchors both leave the lists
- *                                  empty. Verification then fails and does not fall back to the
- *                                  metadata the issuer publishes itself.
+ * Holds the trust material of the identity providers that serve one credential.
+ * {@code hasDeclaredTrustSource} comes from the configuration alone, so it holds even when the trust
+ * material is unreachable. A credential type no provider serves and a declared source without
+ * anchors both leave the lists empty. Verification then fails and does not fall back to the metadata
+ * the issuer publishes itself.
  */
 public record ResolvedTrust(
         List<IssuerTrustAnchors> issuerTrustAnchors,
@@ -75,20 +65,10 @@ public record ResolvedTrust(
         return !issuerTrustAnchors.isEmpty();
     }
 
-    /**
-     * Returns whether a credential without a certificate chain can be verified. Pinned issuer
-     * certificates and published issuer keys both identify the issuer key directly, so a provider
-     * exposing either expects chainless credentials.
-     */
     public boolean hasChainlessIssuerTrust() {
         return !directIssuerCertificates.isEmpty() || !trustedIssuerKeys.isEmpty();
     }
 
-    /**
-     * Returns whether an issuer key route is configured for this credential. A provider that
-     * publishes keys makes the {@code kid} route legitimate, so keys need not be discovered from
-     * the credential's own issuer metadata.
-     */
     public boolean hasIssuerKeyTrust() {
         return !trustedIssuerKeys.isEmpty();
     }
@@ -101,9 +81,9 @@ public record ResolvedTrust(
     }
 
     /**
-     * Returns the directly trusted certificates usable for a credential of the given issuer. Serves
-     * credentials that name no certificate, whose bare key is taken on trust. The issuer must match
-     * there, because nothing else ties the key to the credential.
+     * Returns the directly trusted certificates usable for a credential of the given issuer. A
+     * chainless credential depends on this match, because nothing else ties the bare key to the
+     * credential.
      */
     public List<X509Certificate> issuerCertificatesFor(String issuer) {
         return directIssuerCertificates.stream()
@@ -123,12 +103,6 @@ public record ResolvedTrust(
                 .toList();
     }
 
-    /**
-     * Validates a credential issuer certificate chain and returns the leaf key. A chain whose leaf
-     * is a directly trusted issuer certificate is accepted after a validity check. Otherwise the
-     * chain must build a PKIX path to one of the issuer trust anchor sets, and that set's extended
-     * key usage policy applies.
-     */
     public PublicKey validateIssuerChain(List<X509Certificate> chain) throws VerificationException {
         return validateIssuerChain(chain, null);
     }

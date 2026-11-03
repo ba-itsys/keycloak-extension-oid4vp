@@ -56,7 +56,6 @@ public class KeycloakRealmIssuerIdentityProvider
     // Lets tests replace the realm key material with a typed double.
     public interface RealmKeyMaterial {
 
-        // Returns the realm issuer identifier the credentials carry as iss, or null when unknown.
         String issuer();
 
         List<JWK> signatureKeys();
