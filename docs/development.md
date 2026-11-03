@@ -24,7 +24,7 @@ This mode:
 - starts the `oid4vc-dev` debugging proxy
 - launches Keycloak behind that proxy
 
-Typical access points:
+Access points:
 
 - Keycloak: `http://localhost:9090`
 - Admin Console: `http://localhost:9090/admin`
@@ -38,9 +38,14 @@ Typical access points:
 scripts/dev.sh
 ```
 
-This mode builds the extension and generates a realm config from sandbox certificate material. It starts `ngrok` and runs Keycloak with a public HTTPS base URL. That setup suits real cross-device wallet tests.
+Use this mode to test the cross-device flow with real wallets. It:
 
-Expected sandbox inputs:
+- builds the extension
+- generates a realm config from sandbox certificate material
+- starts `ngrok`
+- runs Keycloak with a public HTTPS base URL
+
+Sandbox inputs:
 
 | File | Description |
 |------|-------------|
@@ -76,7 +81,7 @@ Then either:
 - run `docker compose up` for localhost-only testing, or
 - run `scripts/run-keycloak-ngrok.sh --domain <your-ngrok-domain>` for public HTTPS testing.
 
-## Running Tests
+## Tests
 
 ```bash
 mvn test
@@ -84,33 +89,41 @@ mvn verify
 mvn spotless:apply verify
 ```
 
-- `mvn verify` runs the unit tests. Unit test coverage is reported at `core/target/site/jacoco`.
-  The build enforces a coverage of at least 80%.
-- The integration and conformance tests are heavyweight. They start a distribution Keycloak and
-  a wallet container. The conformance tests also start the OpenID conformance suite. Both are
-  skipped by default. Opt in with the `integration-tests` and `conformance-tests` Maven profiles:
-  `mvn verify -pl integration-tests -am -Pintegration-tests` and
-  `mvn verify -pl conformance-tests -am -Pconformance-tests`. Both run as separate jobs on pull
-  requests.
+`mvn verify` runs the unit tests and writes the unit test coverage report to
+`core/target/site/jacoco`. The build enforces a coverage of at least 80%.
 
-The build is a multi-module Maven project. `core` contains the extension and its unit tests.
-`integration-tests` contains the integration tests. They are built on the official
-[Keycloak Test Framework](https://github.com/keycloak/keycloak/tree/main/test-framework).
+The integration tests start a distribution Keycloak and a wallet container. The conformance tests
+start a distribution Keycloak and the OpenID conformance suite. Maven skips both by default, and
+both run as separate jobs on pull requests:
 
-The framework runs Keycloak as a local distribution (`kc.test.server=distribution`, configured in
-`.env.test` and the failsafe plugin). It deploys the provider from the `core` module's class
-output (`kc.test.server.hot.deploy=true`). The oid4vc-dev test wallet runs as a Docker container.
-It is injected into tests with `@InjectTestWallet`. Alternative wallet behaviour is declared with
-a `TestWalletConfig`. The framework replaces the running wallet when a test class requests an
-incompatible configuration. All wallets share one certificate authority seeded by the test setup.
-That authority is added to the Keycloak truststore. The server can then fetch issuer metadata and
-status lists over HTTPS. The wallet image and ports can be overridden with the
-`kc.test.wallet.image` and `kc.test.wallet.port` properties.
+- `mvn verify -pl integration-tests -am -Pintegration-tests`
+- `mvn verify -pl conformance-tests -am -Pconformance-tests`
+
+### Project Layout
+
+- `core`: the extension and its unit tests.
+- `integration-tests`: the integration tests, on the official
+  [Keycloak Test Framework](https://github.com/keycloak/keycloak/tree/main/test-framework).
+- `conformance-tests`: the [OIDF conformance tests](conformance.md).
+
+### Integration Test Setup
+
+- **Keycloak:** The framework runs a local distribution (`kc.test.server=distribution`, configured
+  in `.env.test` and the failsafe plugin) and deploys the provider from the `core` module's class
+  output (`kc.test.server.hot.deploy=true`).
+- **Wallet:** The eudi-dev test wallet runs as a Docker container, and tests receive it through
+  `@InjectTestWallet`. A test class declares alternative wallet behaviour with a
+  `TestWalletConfig`. The framework replaces the running wallet when a test class requests an
+  incompatible configuration.
+- **Certificates:** All wallets share one certificate authority seeded by the test setup. The setup
+  adds it to the Keycloak truststore, so the server can fetch issuer metadata and status lists over
+  HTTPS.
+- **Overrides:** `kc.test.wallet.image` and `kc.test.wallet.port` set the wallet image and port.
 
 ## Conformance
 
-For OIDF verifier conformance setup and execution, see [conformance.md](conformance.md).
+See [conformance.md](conformance.md).
 
 ## Load Testing
 
-For clustered browser+SSE load testing of the cross-device flow, see [../loadtest/README.md](../loadtest/README.md).
+Clustered browser+SSE load testing of the cross-device flow: [../loadtest/README.md](../loadtest/README.md).

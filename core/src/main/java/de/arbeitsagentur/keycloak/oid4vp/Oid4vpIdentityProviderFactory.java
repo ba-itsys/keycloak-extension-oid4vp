@@ -75,8 +75,8 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
 
     private static String requestUriLifetimeHelpText(String flow) {
         return "How long a wallet can fetch the " + flow + " request object after the login page loads. "
-                + "The login page then offers a new link. A wallet that already fetched the request "
-                + "object can still send its presentation until the Keycloak authentication session expires.";
+                + "The login page then offers a new link. A wallet that fetched the request object "
+                + "in time can send its presentation until the Keycloak authentication session expires.";
     }
 
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES;
@@ -97,9 +97,10 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                 .name(Oid4vpIdentityProviderConfig.REJECTION_RESPONSE)
                 .label("Rejected Presentation Response")
                 .helpText("How the response URI answers a presentation this verifier rejects. 'redirect' answers "
-                        + "with HTTP 200 and the redirect_uri that returns the user to the login page. 'error' "
-                        + "answers with HTTP 400 and the error next to that redirect_uri. A wallet that stops on a "
-                        + "non-2xx status then leaves the user in the wallet. Errors the wallet reports are always "
+                        + "with HTTP 200 and the redirect_uri that returns the user to the login page, or an empty "
+                        + "object in a cross-device flow. 'error' answers with HTTP 400 and the error next to "
+                        + "that redirect_uri, or the error alone in a cross-device flow. A wallet that stops on "
+                        + "a non-2xx status then leaves the user in the wallet. Errors the wallet reports are always "
                         + "answered with HTTP 200.")
                 .type(ProviderConfigProperty.LIST_TYPE)
                 .defaultValue(Oid4vpRejectionResponse.REDIRECT.configValue())
@@ -218,7 +219,7 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                         + "request object, as a PKCS#8 PRIVATE KEY or SEC1 EC PRIVATE KEY block. Required for the "
                         + "x509_san_dns and x509_hash client ID schemes. The key block may be left out when "
                         + "x509SigningKeyJwk supplies the key. Wallets following the high assurance profile expect "
-                        + "a CA-issued chain and are likely to reject a self-signed leaf. Accepts the value verbatim "
+                        + "a CA-issued chain. Accepts the value verbatim "
                         + "or Base64-encoded as a whole, for single-line sources such as environment variables.")
                 .type(ProviderConfigProperty.TEXT_TYPE)
                 .add()
