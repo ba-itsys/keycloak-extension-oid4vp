@@ -30,6 +30,7 @@ import com.nimbusds.jose.util.Base64URL;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.domain.SdJwtVerificationResult;
+import de.arbeitsagentur.keycloak.oid4vp.trust.CrlPolicy;
 import de.arbeitsagentur.keycloak.oid4vp.trust.IssuerTrustAnchors;
 import de.arbeitsagentur.keycloak.oid4vp.trust.ResolvedTrust;
 import de.arbeitsagentur.keycloak.oid4vp.trust.TestCertificates;
@@ -599,7 +600,7 @@ class SdJwtVerifierTest {
 
     private static ResolvedTrust anchorsOnly(X509Certificate caCert) {
         return new ResolvedTrust(
-                List.of(new IssuerTrustAnchors(Set.of(caCert), List.of())),
+                List.of(new IssuerTrustAnchors(Set.of(caCert), List.of(), CrlPolicy.DEFAULT)),
                 List.of(),
                 List.of(),
                 List.of(),
@@ -645,7 +646,8 @@ class SdJwtVerifierTest {
                                 "CN=CA",
                                 "CN=CA",
                                 true)),
-                        List.of())),
+                        List.of(),
+                        CrlPolicy.DEFAULT)),
                 List.of(),
                 List.of(),
                 List.of(),

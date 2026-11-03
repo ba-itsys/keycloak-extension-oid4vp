@@ -45,7 +45,7 @@ class IssuerTrustAnchorsTest {
         KeyPair rootKp = generateKeyPair();
         X509Certificate root = generateCert(rootKp, rootKp, "CN=Root CA", "CN=Root CA", true, null);
 
-        IssuerTrustAnchors material = new IssuerTrustAnchors(Set.of(root), List.of());
+        IssuerTrustAnchors material = new IssuerTrustAnchors(Set.of(root), List.of(), CrlPolicy.DEFAULT);
 
         assertThat(material.trustAnchors()).containsExactly(root);
     }
@@ -58,7 +58,7 @@ class IssuerTrustAnchorsTest {
         KeyPair intermediateKp = generateKeyPair();
         X509Certificate intermediate = generateCert(intermediateKp, rootKp, "CN=Issuing CA", "CN=Root CA", true, null);
 
-        IssuerTrustAnchors material = new IssuerTrustAnchors(Set.of(intermediate), List.of());
+        IssuerTrustAnchors material = new IssuerTrustAnchors(Set.of(intermediate), List.of(), CrlPolicy.DEFAULT);
 
         assertThat(material.trustAnchors()).containsExactly(intermediate);
     }
@@ -69,7 +69,7 @@ class IssuerTrustAnchorsTest {
         KeyPair leafKp = generateKeyPair();
         X509Certificate leaf = generateCert(leafKp, rootKp, "CN=Leaf", "CN=Root CA", false, null);
 
-        assertThatThrownBy(() -> new IssuerTrustAnchors(Set.of(leaf), List.of()))
+        assertThatThrownBy(() -> new IssuerTrustAnchors(Set.of(leaf), List.of(), CrlPolicy.DEFAULT))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("CA certificates");
     }
@@ -80,14 +80,14 @@ class IssuerTrustAnchorsTest {
         X509Certificate root =
                 generateCert(rootKp, rootKp, "CN=Root CA", "CN=Root CA", true, new KeyUsage(KeyUsage.digitalSignature));
 
-        assertThatThrownBy(() -> new IssuerTrustAnchors(Set.of(root), List.of()))
+        assertThatThrownBy(() -> new IssuerTrustAnchors(Set.of(root), List.of(), CrlPolicy.DEFAULT))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("certificate signing");
     }
 
     @Test
     void rejectsEmptyAnchors() {
-        assertThatThrownBy(() -> new IssuerTrustAnchors(Set.of(), List.of()))
+        assertThatThrownBy(() -> new IssuerTrustAnchors(Set.of(), List.of(), CrlPolicy.DEFAULT))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("At least one");
     }

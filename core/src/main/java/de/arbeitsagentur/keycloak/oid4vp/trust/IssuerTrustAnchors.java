@@ -28,7 +28,8 @@ import java.util.Set;
  * certificate must contain at least one of the extended key usages, and an empty list imposes no
  * restriction.
  */
-public record IssuerTrustAnchors(Set<X509Certificate> trustAnchors, List<String> requiredExtendedKeyUsages) {
+public record IssuerTrustAnchors(
+        Set<X509Certificate> trustAnchors, List<String> requiredExtendedKeyUsages, CrlPolicy crlPolicy) {
 
     public IssuerTrustAnchors {
         trustAnchors = Set.copyOf(trustAnchors);

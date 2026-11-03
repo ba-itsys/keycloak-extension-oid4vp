@@ -44,6 +44,9 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
     public static final String REQUIRED_EXTENDED_KEY_USAGES = "requiredExtendedKeyUsages";
     public static final String SERVED_CREDENTIAL_TYPES = ServedCredentialTypes.CONFIG_KEY;
     public static final String ADVERTISE_TRUSTED_AUTHORITIES = "advertiseTrustedAuthorities";
+    public static final String CRL_ENDPOINT = "crlEndpoint";
+    public static final String CRL_MAX_CACHE_TTL_SECONDS = "crlMaxCacheTtlSeconds";
+    public static final String CRL_REQUIRED = "crlRequired";
 
     public static final int DEFAULT_TRUST_LIST_MAX_CACHE_TTL_SECONDS = 3600;
     public static final int DEFAULT_TRUST_LIST_MAX_STALE_AGE_SECONDS = 86400;
@@ -75,6 +78,13 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
         getAdvertisedTrustedAuthorityType();
         ConfigValues.requireSeconds(getConfig(), TRUST_LIST_MAX_CACHE_TTL_SECONDS);
         ConfigValues.requireSeconds(getConfig(), TRUST_LIST_MAX_STALE_AGE_SECONDS);
+        ConfigValues.requireSeconds(getConfig(), CRL_MAX_CACHE_TTL_SECONDS);
+        String crlEndpoint = getCrlEndpoint();
+        if (crlEndpoint != null
+                && !crlEndpoint.regionMatches(true, 0, "http://", 0, 7)
+                && !crlEndpoint.regionMatches(true, 0, "https://", 0, 8)) {
+            throw new IllegalArgumentException("The CRL endpoint must be an http(s) URL");
+        }
     }
 
     public String getTrustListUrl() {
@@ -192,6 +202,32 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
 
     public void setAdvertisedTrustedAuthorityType(String type) {
         getConfig().put(ADVERTISE_TRUSTED_AUTHORITIES, type);
+    }
+
+    public String getCrlEndpoint() {
+        String value = getConfig().get(CRL_ENDPOINT);
+        return StringUtil.isBlank(value) ? null : value.trim();
+    }
+
+    public void setCrlEndpoint(String endpoint) {
+        getConfig().put(CRL_ENDPOINT, endpoint);
+    }
+
+    public Duration getCrlMaxCacheTtl() {
+        Duration parsed = parseDurationSeconds(getConfig().get(CRL_MAX_CACHE_TTL_SECONDS));
+        return parsed != null ? parsed : CrlPolicy.DEFAULT.maxCacheTtl();
+    }
+
+    public void setCrlMaxCacheTtlSeconds(int seconds) {
+        getConfig().put(CRL_MAX_CACHE_TTL_SECONDS, String.valueOf(seconds));
+    }
+
+    public boolean isCrlRequired() {
+        return Boolean.parseBoolean(getConfig().get(CRL_REQUIRED));
+    }
+
+    public void setCrlRequired(boolean required) {
+        getConfig().put(CRL_REQUIRED, String.valueOf(required));
     }
 
     public List<X509Certificate> parseTrustedCertificates() {

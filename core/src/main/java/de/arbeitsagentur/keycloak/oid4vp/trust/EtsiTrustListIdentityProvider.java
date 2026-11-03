@@ -98,7 +98,7 @@ public class EtsiTrustListIdentityProvider
         if (anchors.isEmpty()) {
             return List.of();
         }
-        return List.of(new IssuerTrustAnchors(anchors, config.getRequiredExtendedKeyUsages()));
+        return List.of(new IssuerTrustAnchors(anchors, config.getRequiredExtendedKeyUsages(), crlPolicy()));
     }
 
     // Returns no keys, because end entity certificates are served through directIssuerCertificates.
@@ -157,6 +157,11 @@ public class EtsiTrustListIdentityProvider
                     case AKI -> TrustedAuthority.of(TrustedAuthorityType.AKI, authorityKeyIdentifiers());
                 })
                 .orElse(List.of());
+    }
+
+    CrlPolicy crlPolicy() {
+        return new CrlPolicy(
+                config.getInternalId(), config.getCrlEndpoint(), config.getCrlMaxCacheTtl(), config.isCrlRequired());
     }
 
     private List<String> authorityKeyIdentifiers() {

@@ -20,6 +20,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthority;
 import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthorityType;
+import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.IdentityProviderModel;
@@ -48,6 +49,18 @@ class EtsiTrustListIdentityProviderFactoryTest {
                 .containsExactly(
                         new TrustedAuthority(TrustedAuthorityType.ETSI_TL, List.of("https://tl.example/list.jwt")));
         provider.close();
+    }
+
+    @Test
+    void crlPolicyComesFromTheProviderConfig() {
+        IdentityProviderModel model = new IdentityProviderModel();
+        model.setInternalId("provider");
+        model.getConfig().put(EtsiTrustListIdentityProviderConfig.CRL_ENDPOINT, "https://ca.example/ca.crl");
+        model.getConfig().put(EtsiTrustListIdentityProviderConfig.CRL_MAX_CACHE_TTL_SECONDS, "60");
+        model.getConfig().put(EtsiTrustListIdentityProviderConfig.CRL_REQUIRED, "true");
+
+        assertThat(factory.create(null, model).crlPolicy())
+                .isEqualTo(new CrlPolicy("provider", "https://ca.example/ca.crl", Duration.ofSeconds(60), true));
     }
 
     @Test

@@ -44,7 +44,10 @@ public interface Oid4vpTrustMaterialIdentityProvider<C extends IdentityProviderM
      */
     default List<IssuerTrustAnchors> issuerTrustAnchors() {
         return resolveX509Trust(TrustMaterialRequest.builder().build())
-                .map(material -> new IssuerTrustAnchors(material.trustAnchors(), material.requiredExtendedKeyUsages()))
+                .map(material -> new IssuerTrustAnchors(
+                        material.trustAnchors(),
+                        material.requiredExtendedKeyUsages(),
+                        new CrlPolicy(getConfig().getInternalId(), null, CrlPolicy.DEFAULT.maxCacheTtl(), false)))
                 .toList();
     }
 
