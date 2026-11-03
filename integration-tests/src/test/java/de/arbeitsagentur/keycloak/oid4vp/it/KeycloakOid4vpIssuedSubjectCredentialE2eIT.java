@@ -201,9 +201,10 @@ class KeycloakOid4vpIssuedSubjectCredentialE2eIT extends AbstractOid4vpE2eTest {
         assertThat(page.locator("input[name='password']").count())
                 .as("the credential was issued for another person's PID, so it identifies nobody here")
                 .isPositive();
-        assertThat(eventsOfType("PRESENTATION_REFUSED", 1)).anySatisfy(event -> assertThat(event.getDetails())
-                .containsEntry(Oid4vpEventDetails.REFUSAL, "CREDENTIAL_IGNORED")
-                .containsKey(Oid4vpEventDetails.STATE));
+        assertThat(eventsOfType("PRESENTATION_REFUSED", 1))
+                .anySatisfy(event -> assertThat(event.getDetails())
+                        .containsEntry(Oid4vpEventDetails.REFUSAL, "CREDENTIAL_IGNORED")
+                        .containsKey(Oid4vpEventDetails.STATE));
     }
 
     /**

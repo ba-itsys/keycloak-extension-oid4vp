@@ -95,9 +95,10 @@ class KeycloakOid4vpEventsE2eIT extends AbstractOid4vpE2eTest {
 
         String state =
                 eventsOfType("REVOCATION_DETECTED", 1).get(0).getDetails().get(Oid4vpEventDetails.STATE);
-        assertThat(eventsOfType("PRESENTATION_FAILED", 1)).anySatisfy(event -> assertThat(event.getDetails())
-                .containsEntry(Oid4vpEventDetails.STATE, state)
-                .containsEntry(Oid4vpEventDetails.ORIGIN, "VERIFIER"));
+        assertThat(eventsOfType("PRESENTATION_FAILED", 1))
+                .anySatisfy(event -> assertThat(event.getDetails())
+                        .containsEntry(Oid4vpEventDetails.STATE, state)
+                        .containsEntry(Oid4vpEventDetails.ORIGIN, "VERIFIER"));
     }
 
     @Test
@@ -106,8 +107,9 @@ class KeycloakOid4vpEventsE2eIT extends AbstractOid4vpE2eTest {
 
         assertThat(eventsOfType("REVOCATION_DETECTED", 1).get(0).getDetails())
                 .containsEntry(Oid4vpEventDetails.MECHANISM, "STATUS_LIST")
-                .hasEntrySatisfying(Oid4vpEventDetails.REFERENCE, reference -> assertThat(reference)
-                        .contains(" index "));
+                .hasEntrySatisfying(
+                        Oid4vpEventDetails.REFERENCE,
+                        reference -> assertThat(reference).contains(" index "));
     }
 
     @Test
@@ -276,9 +278,10 @@ class KeycloakOid4vpEventsE2eIT extends AbstractOid4vpE2eTest {
 
             flow.submitToWallet(openWalletPage());
 
-            assertThat(eventsOfType("TRUST_MATERIAL_FAILED", 1)).anySatisfy(event -> assertThat(event.getDetails())
-                    .containsEntry(Oid4vpEventDetails.FAILURE, "UNSIGNED")
-                    .containsEntry(Oid4vpEventDetails.REFERENCE, trustList.url()));
+            assertThat(eventsOfType("TRUST_MATERIAL_FAILED", 1))
+                    .anySatisfy(event -> assertThat(event.getDetails())
+                            .containsEntry(Oid4vpEventDetails.FAILURE, "UNSIGNED")
+                            .containsEntry(Oid4vpEventDetails.REFERENCE, trustList.url()));
         }
     }
 
@@ -297,9 +300,10 @@ class KeycloakOid4vpEventsE2eIT extends AbstractOid4vpE2eTest {
         login("event-list-stale");
 
         flow.assertLoginSucceeded();
-        assertThat(eventsOfType("TRUST_MATERIAL_FAILED", 2)).anySatisfy(event -> assertThat(event.getDetails())
-                .containsEntry(Oid4vpEventDetails.FAILURE, "REFRESH_FAILED")
-                .containsEntry(Oid4vpEventDetails.STALE_DATA_IN_USE, "true"));
+        assertThat(eventsOfType("TRUST_MATERIAL_FAILED", 2))
+                .anySatisfy(event -> assertThat(event.getDetails())
+                        .containsEntry(Oid4vpEventDetails.FAILURE, "REFRESH_FAILED")
+                        .containsEntry(Oid4vpEventDetails.STALE_DATA_IN_USE, "true"));
     }
 
     private String openWalletPage() {

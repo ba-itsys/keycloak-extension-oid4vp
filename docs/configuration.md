@@ -1,103 +1,88 @@
-# Configuration
+# Configuration Reference
 
-The extension is configured as a Keycloak identity provider. All settings are stored in the IdP provider config. They can be managed through the Admin UI or realm import JSON.
+For step-by-step instructions, see the [Setup Guide](setup.md).
 
-## Adding the Identity Provider
+## Configuration Locations
 
-1. Open the Keycloak Admin Console.
-2. Go to **Identity Providers**.
-3. Select **OID4VP**.
-4. Configure the provider settings.
-
-Transient wallet logins require Keycloak to be started with the `transient-users` feature enabled. Then enable the IdP's built-in **Do not store users** option in Keycloak.
-
-Keycloak's experimental `oid4vc-vp` feature ships its own OID4VP identity provider and SD-JWT mappers under the same provider ids (`oid4vp`, `oid4vp-sd-jwt-user-attribute-idp-mapper`, `oid4vp-sd-jwt-user-session-attribute-idp-mapper`). The extension overrides them, so leave that feature disabled.
-
-Example realm import fragment:
-
-```json
-{
-  "identityProviders": [
-    {
-      "alias": "oid4vp",
-      "displayName": "Sign in with Wallet",
-      "providerId": "oid4vp",
-      "enabled": true,
-      "config": {
-        "clientIdScheme": "x509_san_dns",
-        "responseMode": "direct_post.jwt",
-        "x509CertificatePem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
-        "walletScheme": "openid4vp://"
-      }
-    }
-  ]
-}
-```
+| Configuration | Where to set |
+|---------------|--------------|
+| Extension settings | Keycloak identity provider config, through the Admin UI, a realm import JSON or the Admin API. `allowedIssuers`, `clockSkewSeconds`, `kbJwtMaxAgeSeconds`, `x509SigningKeyJwk`, `sse*` and `crossDeviceCompleteTtlSeconds` have no Admin UI field |
+| Reference credential binding | Keycloak SPI options, see the [SPI Reference](spi-reference.md) |
 
 ## Settings
 
 ### Credential Request
 
-The DCQL query is generated from the configured OID4VP mappers. The mapper type determines the credential format. The mapper configuration contributes the credential type and claim path. The [IdP mappers](#idp-mappers) section describes how claim sets are formed. At least one mapper with a credential type is required.
+The extension generates the DCQL query from the [OID4VP mappers](#idp-mappers). The mapper type sets the credential format, and the mapper configuration sets the credential type and claim path. At least one mapper with a credential type is required.
 
-| Key | Description | Default |
-|-----|-------------|---------|
-| `credentialSets` | DCQL `credential_sets` constraints in specification syntax, referencing credential ids. Empty requires every configured credential. | *(none)* |
-| `requestObjectLifespanSeconds` | Lifespan of the signed request object JWT used by the wallet fetch. | `10` |
-| `sameDeviceRequestUriLifetimeSeconds` | How long a wallet can fetch the same-device request object after the login page loads. The page then offers a new link. A wallet that fetched it in time can send its presentation until the authentication session expires. | `300` |
-| `crossDeviceRequestUriLifetimeSeconds` | The same for the cross-device request object behind the QR code. | `300` |
-| `maxLiveRequestsPerLogin` | How many wallet requests of one login stay valid when the page offers new links. Each page issues one per enabled flow. Beyond this the oldest end, and a wallet still answering one is rejected. At least `2`. | `10` |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `credentialSets` | none | DCQL `credential_sets` in specification syntax, referencing credential ids |
+| `requestObjectLifespanSeconds` | `10` | Lifespan of the signed request object JWT |
+| `sameDeviceRequestUriLifetimeSeconds` | `300` | Time after page load in which a wallet can fetch the same-device request object. After that, the page offers a fresh link |
+| `crossDeviceRequestUriLifetimeSeconds` | `300` | The same for the cross-device request object behind the QR code |
+| `maxLiveRequestsPerLogin` | `10` | Wallet requests of one login that stay valid across fresh links. Minimum `2` |
 
-Each mapper contributes to the credential named by its `credential.id`. Mappers sharing an id form one credential entry. That entry accepts every credential type any of them names. This allows requesting the same credential type twice with different claims. It also allows one entry to accept several VCTs. A credential of a type derived from a requested type satisfies the request as well, see [Credential Type Inheritance](#credential-type-inheritance). An empty `credential.id` derives the id from the format and the first credential type: `sdjwt_urn_eudi_pid_1`, `mdoc_org_iso_18013_5_1_mDL`. DCQL restricts ids to letters, digits, `_` and `-`.
+- A wallet that fetched the request object in time can present until the authentication session expires.
+- The page issues one request per enabled flow each time. Beyond `maxLiveRequestsPerLogin` the oldest requests end, and the verifier rejects a wallet still answering one.
 
-`credentialSets` lists alternative credential combinations in preference order. To request a PID together with an mDL but accept the PID alone:
+Mapper `credential.id`:
+
+- Mappers sharing an id form one credential entry, which accepts every credential type they name. Use this to request a type twice with different claims, or to accept several VCTs.
+- A [derived type](#credential-type-inheritance) satisfies the request too.
+- An empty id derives from the format and first credential type, for example `sdjwt_urn_eudi_pid_1` or `mdoc_org_iso_18013_5_1_mDL`.
+- DCQL allows letters, digits, `_` and `-`.
+
+`credentialSets` lists alternative combinations in order of preference. This example requests a PID with an mDL and accepts the PID alone:
 
 ```json
 [{"purpose": "Login", "options": [["sdjwt_urn_eudi_pid_1", "mdoc_org_iso_18013_5_1_mDL"], ["sdjwt_urn_eudi_pid_1"]]}]
 ```
 
-`required` defaults to `true`. An entry with `"required": false` describes an optional extra credential. Without `credentialSets` the query carries no `credential_sets` member. DCQL then requires every credential in the query.
-
-The configuration is validated when the identity provider is saved. It is validated again when the DCQL query is built, because identity provider mappers have no validation hook of their own. A presented credential set that satisfies no option of a required set rejects the login.
+- `required` defaults to `true`. `"required": false` marks an optional extra credential.
+- Without `credentialSets`, DCQL requires every credential in the query.
+- Keycloak validates on save. The extension validates again at query build, because IdP mappers have no validation hook.
+- The verifier rejects a login that satisfies no option of a required set.
 
 ### User Mapping
 
-| Key | Description | Default |
-|-----|-------------|---------|
-| `principalAttributes` | The claims that identify the user, as a comma separated list of `credentialId:claimPath` entries in the order they are tried. See [Which Claim Carries the Subject](#which-claim-carries-the-subject). Required for logins unless OID4VP transient users are enabled. Without it the identity provider refuses logins and only serves the [presentation authenticator and required action](#presentation-authenticator-and-required-action). | *(none)* |
-| `allowMissingSubjectCredential` | Accepts a presentation that does not carry the subject credential. Requires `principalAttributes`, because the setting says which credentials may be missing. See [Subject Credential Issued by This Keycloak](#subject-credential-issued-by-this-keycloak). | `false` |
-| `referenceBindingClaim` | Claim that carries the [reference credential binding](#reference-credential-binding) of a credential this Keycloak issues. Set the same name on the `oid4vp-bound-subject-mapper`. | `oid4vp_reference_binding` |
-| `doNotStoreUsers` | Native Keycloak IdP setting. When enabled, OID4VP switches to transient per-login identities, ignores configured identifying claims, and relies on Keycloak transient users. Requires the Keycloak `transient-users` feature to be enabled. | `false` |
-| `clockSkewSeconds` | Allowed clock skew for ID token time checks. | `60` |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `principalAttributes` | none | Claims that identify the user, as comma separated `credentialId:claimPath` entries in the order tried, see [Subject Claim](#subject-claim) |
+| `allowMissingSubjectCredential` | `false` | Accepts a presentation without the [subject credential](#keycloak-issued-subject-credential). Requires `principalAttributes`, which names the credentials that may be missing |
+| `referenceBindingClaim` | `oid4vp_reference_binding` | Claim carrying the [reference credential binding](spi-reference.md#reference-credential-binding-spi) of a credential this Keycloak issues. Set the same name on `oid4vp-bound-subject-mapper` |
+| `doNotStoreUsers` | `false` | Native Keycloak IdP setting. Enables [transient login](#transient-login-mode) and ignores configured identifying claims. Requires the `transient-users` feature |
 
-### Which Claim Carries the Subject
+Logins require `principalAttributes` unless transient users are enabled. Without it, the identity provider refuses logins and only serves the [presentation authenticator and required action](#presentation-authenticator-and-required-action).
 
-`principalAttributes` says which claim of which credential identifies the user. A login needs it because nothing else identifies the user. Which claim carries the subject depends on the credential, not on the identity provider. A single verifier-wide claim name cannot serve a query of several credentials.
+### Subject Claim
+
+`principalAttributes` names the subject claim per credential, because the claim differs between credentials.
 
 ```properties
 principalAttributes = sdjwt_urn_eudi_pid_1:sub, mdoc_eu_europa_ec_eudi_pid_1:eu\.europa\.ec\.eudi\.pid\.1.family_name
 ```
 
-Each entry is a DCQL credential id, a colon, and the claim of that credential.
+| Format | Claim path | Example |
+|--------|------------|---------|
+| SD-JWT | The claim | `employee:sub`, nested `employee:credential_subject.id` |
+| mDoc | Namespace, then data element. Escape namespace dots with a backslash | `eu\.europa\.ec\.eudi\.pid\.1` for `eu.europa.ec.eudi.pid.1` |
 
-The claim path starts at the root of what the credential presented.
+- Paths start at the root of what the credential presented.
+- The verifier never infers the namespace, so a credential carrying a second namespace cannot supply the subject.
+- The verifier tries entries in order, and the first credential the wallet presented supplies the subject. The wallet has no say.
 
-- An SD-JWT credential presents its claims directly. The path is the claim: `employee:sub`, or `employee:credential_subject.id` for a nested one.
-- An mDoc presents its data elements inside namespaces. The path names the namespace before the element. The dots inside a namespace are escaped with a backslash. The doctype namespace `eu.europa.ec.eudi.pid.1` is written `eu\.europa\.ec\.eudi\.pid\.1`. The namespace is never inferred from the presentation. A credential carrying a second namespace cannot answer for the subject.
+Keycloak checks on save:
 
-The entries are tried in order. The first one a wallet actually presented supplies the subject. A wallet holding the PID in one of two formats reaches the same account either way. Which credential answers is the verifier's decision, not the wallet's.
+- Every required credential set option contains a named credential. `allowMissingSubjectCredential` lifts this rule.
+- Every named credential requests its claim in every claim set option. The generated query adds that claim to the credential's entry.
+- Each credential is named once.
 
-The rules that are checked when the identity provider is saved:
+### Keycloak-Issued Subject Credential
 
-- Every required credential set option has to contain one of the named credentials. Otherwise a combination a wallet may present could identify nobody. `allowMissingSubjectCredential` lifts this rule.
-- Every named credential has to request its claim in every claim set option. A wallet answering another option then still presents a subject. The generated DCQL query adds that claim to the credential's entry.
-- A credential may be named once. Naming it twice leaves it unclear which claim carries the subject.
+This mode suits a PID without an identifier of its own, such as the German PID. The PID carries the attributes, and a credential this Keycloak issues carries the user identifier.
 
-### Subject Credential Issued by This Keycloak
-
-A verifier can ask for a PID together with a credential that this Keycloak issued itself. The PID carries the attributes. The issued credential carries the identifier of the user. This split is needed when the PID has no identifier of its own. That is the case for the German PID.
-
-Configure the identity provider like this:
+Identity provider:
 
 ```properties
 credentialSets                = [{"options": [["pid", "employee"], ["pid"]]}]
@@ -105,28 +90,31 @@ principalAttributes           = employee:sub
 allowMissingSubjectCredential = true
 ```
 
-Configure the authenticator `oid4vp-subject-binding` like this:
+Authenticator `oid4vp-subject-binding`:
 
 ```properties
 credentialConfigurationId = employee-credential
 offerClientId             = wallet-vci
 ```
 
-The wallet may present both credentials or the PID alone. The second option of the credential set allows the PID alone.
+| Key | Description |
+|-----|-------------|
+| `credentialConfigurationId` | Issuer credential configuration of the offer. Empty means no offer |
+| `offerClientId` | Client the offer addresses. The wallet requests the credential as this client |
 
-**The user presents both credentials.** The principal claim of the employee credential holds the subject of the account. It identifies the user. The login proceeds like any other wallet login.
+The first broker login flow must authenticate the user: `idp-username-password-form` followed by `oid4vp-subject-binding`, both required. The default flow creates a user when nothing matches, and a German PID matches nothing.
 
-Which claim that is comes from the `employee` entry of `principalAttributes`. In this example it is `sub`. Any other claim works as long as the issuer writes the subject into it. The claim named there and `claim.name` on the issuing mapper have to be the same.
+| Presented | Result |
+|-----------|--------|
+| Both credentials | The employee credential's principal claim holds the account subject. Normal wallet login |
+| PID alone | The verifier generates a subject `oid4vp-<uuid>`. Keycloak runs the first broker login flow, and the user signs in with username and password. `oid4vp-subject-binding` sets the brokered identity to that user before Keycloak stores the link, entitles the user, and ends the login in the Keycloak credential offer required action |
 
-**The user presents the PID alone.** Nothing in the presentation says who the user is. The verifier generates a subject of the form `oid4vp-<uuid>` and continues the login with it. Keycloak runs the first broker login flow. There the user signs in with username and password. The authenticator `oid4vp-subject-binding` then sets the brokered identity to the identity of that user, before Keycloak stores the link. The same authenticator entitles the user to the employee credential. It ends the login in the Keycloak credential offer required action, which offers the credential.
-
-The issued credential carries a subject of its own in that claim. The mapper `oid4vp-bound-subject-mapper` of this extension writes it. The subject is derived from the Keycloak user id with a realm secret. The wallet and every verifier the credential is shown to read an opaque value rather than an internal identifier. The next presentation of that credential derives the same identity and reaches the same account.
-
-The authenticator records that subject on the entitlement it grants. The mapper reads it back when the credential is issued. Keycloak redeems the pre-authorized code in a session of its own. The entitlement is the only thing of the login the issuance sees.
-
-The offer is bound to the login that created it. Keycloak accepts the pre-authorized code only while the session of that login is still logged in, the user is unchanged, and the password of the user is unchanged. An offer cannot be redeemed after the user logs out.
-
-The user signs in with a password only until the credential is issued. A user who loses the credential signs in with a password again and receives a new one.
+- The claim named in `principalAttributes` can be any claim the issuer writes the subject into. It must equal `claim.name` on the issuing mapper.
+- `oid4vp-bound-subject-mapper` writes the reference credential binding and a subject derived from the Keycloak user id with a realm secret, so wallets and verifiers read an opaque value.
+- The offer is bound to its login. Keycloak accepts the pre-authorized code only while that session is logged in and the user and password are unchanged.
+- Keycloak offers a credential only to an entitled user. The authenticator grants the entitlement and records the subject and reference credential binding on it. An entitlement granted by an administrator yields a credential that identifies nobody.
+- The authenticator offers on every login it binds, even for an entitled user. It only runs when the presentation carried no subject credential.
+- A user who lost the credential signs in with a password again and receives a replacement. The authenticator replaces the existing link with the same identity.
 
 ```mermaid
 sequenceDiagram
@@ -172,162 +160,155 @@ sequenceDiagram
     end
 ```
 
-Both logins reach the same account because both derive the same brokered identity. The identity is `Base64Url(SHA-256(subject))` over the trimmed and lowercased subject. Neither the issuer nor the credential format is part of it. Keycloak scopes it to the identity provider alias on its own. Every credential named in `principalAttributes` therefore has to come from an issuer that assigns the subject. A credential whose holder chooses the subject claim at issuance can name the subject of another credential and reach that account. The credential this Keycloak issues carries a subject derived from the user id and the reference credential binding described below, so it identifies one account and one person.
+- The brokered identity is `Base64Url(SHA-256(subject))` over the trimmed, lowercased subject, without issuer or format. Keycloak scopes it to the identity provider alias.
+- Keycloak stores it in the federated identity link when the first broker login flow finishes. No user attribute is written, and the user id is never stored, not even inside the link.
 
-That identity is stored in the Keycloak federated identity link of this identity provider. The first broker login flow writes the link when it finishes. Nothing is written to a user attribute. The user id is never stored, not even inside the link.
+**Warning:** every credential named in `principalAttributes` must come from an issuer that assigns the subject. A credential whose holder chooses the subject claim at issuance can name another credential's subject and reach that account. The credential this Keycloak issues avoids this with its derived subject and reference credential binding.
 
-`allowMissingSubjectCredential` accepts the presentation without the subject credential. It lifts the rule that every required credential set option has to contain one of the named credentials.
+Issuer side of the realm:
 
-The realm needs a first broker login flow that authenticates the user instead of creating one. Use a flow with `idp-username-password-form` followed by `oid4vp-subject-binding`, both required. The default flow creates a user when nothing matches an existing account. A German PID matches nothing.
+1. Keycloak features `oid4vc-vci` and `oid4vc-vci-preauth-code`.
+2. Verifiable credentials enabled on the realm. Keycloak refuses the `oid4vc` protocol otherwise.
+3. A realm signing key with a CA-issued certificate. Keycloak refuses to issue an SD-JWT credential with a self-signed signing certificate.
+4. A credential scope of protocol `oid4vc` with the credential configuration id, credential type, format `dc+sd-jwt` and a signing algorithm. Set `vc.binding_required` to `true` and `vc.binding_required_proof_types` to `jwt`, so the wallet can present with a key binding JWT.
+5. `oid4vp-bound-subject-mapper` on that scope. `claim.name` equals the claim `principalAttributes` names (`sub` here). Its `referenceBindingClaim` (default `oid4vp_reference_binding`) equals `referenceBindingClaim` of the identity provider.
+6. `vc.credential_build_config.sd_jwt.visible_claims` set to `id,iat,nbf,exp,jti,oid4vp_reference_binding`, with your binding claim if it differs. This replaces Keycloak's default visible claims, so they stay in the list.
+7. A client with OID4VCI enabled and the credential scope, named by `offerClientId`.
 
-A user who lost the credential runs that flow a second time. Keycloak refuses to link a user it has linked before. The authenticator replaces the existing link of this identity provider for that reason. The subject is derived from the user. The link written a moment later holds the same identity.
-
-The credential offer is configured on `oid4vp-subject-binding`, because that is where the login is bound to the user. `credentialConfigurationId` names the credential configuration of the issuer. That configuration is what the offer offers. An empty value means no offer. `offerClientId` names the client the offer is addressed to. The wallet asks for the credential as that client.
-
-The issuer side of the realm needs the following.
-
-1. The Keycloak features `oid4vc-vci` and `oid4vc-vci-preauth-code`, because the offer is pre-authorized.
-2. Verifiable credentials enabled on the realm. Keycloak refuses the `oid4vc` protocol for a realm that does not have them enabled.
-3. A realm signing key whose certificate a certificate authority issued. Keycloak refuses to issue an SD-JWT credential with a self-signed signing certificate.
-4. A credential scope for the employee credential, of protocol `oid4vc`, with the credential configuration id, the credential type, the format `dc+sd-jwt` and a signing algorithm. Set `vc.binding_required` to `true` and `vc.binding_required_proof_types` to `jwt`. The wallet then proves possession of its key and receives a credential it can present with a key binding JWT.
-5. The mapper `oid4vp-bound-subject-mapper` on that scope, with `claim.name` set to the claim `principalAttributes` names for this credential (`sub` in this example). It writes the subject the login was bound to and the reference credential binding of that login. The binding goes to the claim named by the mapper's `referenceBindingClaim` (default `oid4vp_reference_binding`), which has to match `referenceBindingClaim` of the identity provider.
-6. `vc.credential_build_config.sd_jwt.visible_claims` set to `id,iat,nbf,exp,jti,oid4vp_reference_binding`, with the configured binding claim in place of `oid4vp_reference_binding` when it differs. The verifier reads the reference credential binding of every credential it is offered as a subject. The binding may not sit behind selective disclosure. Suppose it does, and the subject credential is presented alongside credentials the binding would cover. The verifier then does not accept that credential as the subject. The login falls back to a fresh subject and issues a bound credential again, as on a first login. It does not trust a subject credential whose binding was withheld. The claims Keycloak keeps visible by default have to stay in that list, because the setting replaces them.
-7. A client with OID4VCI enabled that has the credential scope, named by `offerClientId`. The wallet has to ask for the credential as this client.
-
-Keycloak only offers a credential to a user who is entitled to it. The authenticator grants that entitlement during the login. It records the subject and the reference credential binding on it. An entitlement granted by an administrator instead would yield a credential that identifies nobody.
-
-The offer is made on every login the authenticator binds, even when the user holds the entitlement. Arriving there means the presentation carried no subject credential.
-
-#### Reference Credential Binding
-
-The credential this Keycloak issues identifies an account on its own. Without more, an employee credential of one person and a PID of another would sign in as the first person. The PID is verified but compared to nothing.
-
-The issued credential carries a reference credential binding for that reason. The binding is a keyed digest of the credential types and claims it was issued alongside. The verifier recomputes that digest from the credentials of the presentation in front of it. When the two differ, it treats the credential as not presented. Neither its subject nor its claims reach the login. This is not the holder binding of OID4VC, which ties a credential to a wallet key. It ties a credential to the other credentials of a presentation.
-
-What it recognises is the person those credentials name, not the credential instances themselves. Binding to an instance is impossible. A PID is re-issued regularly and issued in batches. Every copy carries a different key and different dates. Two people who share every bound claim share a binding. That is why the credential type is part of the digest. It is also why the selection should name the claims that identify a person.
-
-The digest is an HMAC over a realm secret. The value rides in a credential the wallet shows to other verifiers. A plain hash of names and dates is recovered from a candidate list within seconds. Passive realm keys are accepted when the binding is checked. A key rotation does not invalidate credentials that were issued before it.
-
-Which claims of which credentials the digest covers is a deployment decision. It is made through the `oid4vp-reference-credential-binding` provider. The `pid` provider ships with the extension. It binds the issued credential to the mandatory attributes of the SD-JWT PID. It takes its selection from the server configuration. The login that issues a credential and the login that presents it again share no other configuration.
-
-```properties
---spi-oid4vp-reference-credential-binding-pid-credential-types=urn:eudi:pid:1
---spi-oid4vp-reference-credential-binding-pid-claims=given_name,family_name,birthdate,personal_administrative_number
-```
-
-Those are the defaults. A deployment presenting an SD-JWT PID needs no configuration. Credentials are selected by type. The type is the VCT of an SD-JWT credential and the doctype of an mDoc. A deployment binding to the mDoc PID configures its doctype `eu.europa.ec.eudi.pid.1` together with the mDoc element names, for example `birth_date` rather than `birthdate`. The default selection includes `personal_administrative_number`. It distinguishes two people who share a name and a date of birth. It is only bound when the PID actually carries it. A deployment whose PIDs omit it should name another claim that is unique to the person.
-
-Claims are read exactly as the [IdP mappers](#idp-mappers) read them, by a path in dot notation. A nested claim of an SD-JWT credential is addressed as `place_of_birth.locality`. An array is addressed as `nationalities[]`. An mDoc path resolves inside the namespace of the credential. One selection covers both formats. A path means the same thing here as in a mapper.
-
-An object or array claim is read with its keys ordered. A wallet that renders the same claim differently on the next login still produces the same binding. Mappers write their values the same way.
-
-At least one claim path is required. An empty `claims` is refused at startup. Binding to everything a credential carries would cover its issuance metadata as well. A re-issued PID, or another copy of a batch issued one, would then break the binding on the very next login.
-
-Every bound claim is one whose change costs the user a password login. The verifier treats the credential as not presented. The user signs in with a password and receives a credential bound to the PID of today. Selecting fewer claims makes that rarer and the binding weaker. A deployment binding to something other than a PID writes its own provider for this SPI.
-
-A credential carrying no reference binding is accepted in any presentation. A credential of another issuer is such a credential.
+**Warning:** the binding must not sit behind selective disclosure. The verifier does not trust a subject credential whose binding was withheld. If such a credential is presented alongside credentials the binding would cover, the login falls back to a fresh subject and issues a bound credential again, as on a first login.
 
 ### Presentation Authenticator and Required Action
 
-The extension provides an authenticator and a required action, both with the id `oid4vp-presentation`. They ask for a presentation with an existing OID4VP identity provider, named in their configuration (`identityProvider`). Its mappers define the DCQL query, and its verifier settings, response mode and trust material verify the presentation. The mappers' session notes reach the authentication session, and the browser returns to the execution that asked. A declined or rejected presentation shows the error message of the identity provider.
-
-Both identify the user through the identity provider link, the link a login through that identity provider reads and writes. A user linked by one of them also logs in with the identity provider, and the other way round.
+Both have the id `oid4vp-presentation` and ask for a presentation with the OID4VP identity provider named in their `identityProvider` configuration. That provider's mappers define the query, and its verifier settings, response mode and trust material verify the presentation.
 
 | Provider | Behavior |
 |----------|----------|
-| Authenticator | Without a user in the flow it sets the linked user, so a flow of this authenticator alone logs in without a password. With a user it accepts only a presentation linked to that user, as second factor or step-up. It never links, because a user set by a username form alone is identified but not authenticated. |
-| Required action | Links the presentation to the authenticated user, also as application initiated action (`kc_action=oid4vp-presentation`). It replaces an earlier link of the user to the identity provider and refuses a presentation linked to another user. |
+| Authenticator | Without a user in the flow: sets the linked user, so this authenticator alone logs in without a password. With a user: accepts only a presentation linked to that user, as second factor or step-up. Never links, because a username form identifies a user without authenticating them |
+| Required action | Links the presentation to the authenticated user, also as application initiated action (`kc_action=oid4vp-presentation`). Replaces the user's earlier link to the identity provider and refuses a presentation linked to another user |
 
-A presentation without the subject credential (`allowMissingSubjectCredential`) identifies nobody. The required action binds it to the user like the [subject binding authenticator](#subject-credential-issued-by-this-keycloak): it links a subject derived from the user and offers the subject credential configured with `credentialConfigurationId` and `offerClientId`.
+- Both use the same identity provider link as a login through that provider. A user linked by either can log in with the provider, and the other way round.
+- The mappers' session notes reach the authentication session, and the browser returns to the execution that asked.
+- A declined or rejected presentation shows the identity provider's error message.
+- For a presentation without the subject credential (`allowMissingSubjectCredential`), the required action acts like the [subject binding authenticator](#keycloak-issued-subject-credential): it links a subject derived from the user and offers the credential configured with `credentialConfigurationId` and `offerClientId`.
 
-An identity provider without `principalAttributes` identifies nobody. Both providers then keep the claims without touching links. Such an identity provider refuses logins with "This wallet presentation cannot be used to log in" and stays hidden on the login page with `hideOnLogin`. Saving it without `hideOnLogin` logs a warning. Each presentation gets a random subject that is never stored, so presentations of the same person stay unlinkable.
+Identity provider without `principalAttributes`:
 
-Later executions read the presentation with `Oid4vpPresentationSession.result(authSession)`. It holds the verified credentials (`PresentedCredentials`), the identity key, the issuer, the presentation flow and the execution that asked for it. Derived implementations of `Oid4vpPresentationAuthenticator` and `Oid4vpPresentationRequiredAction` decide in `verify(...)` whether a verified presentation completes the execution, and override `identify(...)`, `link(...)` and `identityLinks(...)` to change how users are found and linked. A custom provider starts a presentation with `Oid4vpPresentationSession.start(...)`.
+- Both providers keep the claims without touching links.
+- The provider refuses logins with "This wallet presentation cannot be used to log in" and stays hidden on the login page with `hideOnLogin`. Saving it without `hideOnLogin` logs a warning.
+- Each presentation gets a random unstored subject, so presentations of one person stay unlinkable.
+
+Extension points:
+
+| Method | Use |
+|--------|-----|
+| `Oid4vpPresentationSession.result(authSession)` | Later executions read the verified credentials (`PresentedCredentials`), identity key, issuer, presentation flow and requesting execution |
+| `Oid4vpPresentationSession.start(...)` | A custom provider starts a presentation |
+| `verify(...)` | Derived `Oid4vpPresentationAuthenticator` and `Oid4vpPresentationRequiredAction` decide whether a verified presentation completes the execution |
+| `identify(...)`, `link(...)`, `identityLinks(...)` | Derived implementations change how users are found and linked |
 
 ### Transient Login Mode
 
-To use this extension as a wallet connector without creating persisted Keycloak users:
+This mode suits a wallet connector without persisted Keycloak users, for credentials without a stable account identifier, such as German PID variants.
 
-1. Start Keycloak with the `transient-users` feature enabled.
+1. Start Keycloak with the `transient-users` feature.
 2. Enable the IdP's built-in **Do not store users** setting.
-3. Keep using the normal first broker login flow. Keycloak creates a `LightweightUserAdapter` and a transient user session instead of a stored user.
+3. Keep the normal first broker login flow. Keycloak creates a `LightweightUserAdapter` and a transient user session.
 
-Behavior in this mode:
-
-- The extension always generates a random per-login transient identifier.
-- `principalAttributes` is ignored for subject resolution.
-- OID4VP user-attribute mappers still apply. The target user is transient and is not persisted after the session ends.
-- Session-note mappers are often the best fit when relying parties only need token-time claim propagation.
-
-This mode is intended for credentials that do not carry a stable account identifier, such as German PID variants.
+- The extension generates a random per-login identifier and ignores `principalAttributes`.
+- OID4VP user-attribute mappers apply to the transient user, which is gone after the session ends.
+- Session-note mappers fit best when relying parties only need claims in the token.
 
 ### Flow Control
 
-| Key | Description | Default |
-|-----|-------------|---------|
-| `sameDeviceEnabled` | Enables same-device wallet login. | `true` |
-| `crossDeviceEnabled` | Enables cross-device QR-code wallet login. | `true` |
-| `sameDeviceLoa` | Level of authentication a presentation over the same-device flow reaches, as the integer of the realm or client ACR-to-LoA mapping. The flow is offered only to requests of this level or below, and a login records the level in the Keycloak session. Empty means no level. | *(none)* |
-| `crossDeviceLoa` | Level of authentication a presentation over the cross-device flow reaches, with the same semantics as `sameDeviceLoa`. | *(none)* |
-| `walletScheme` | URI scheme used to invoke the wallet app, for the same-device and cross-device flows alike. | `openid4vp://` |
-| `responseMode` | Wallet callback response mode. `direct_post.jwt` encrypts the wallet response and is what wallets following the high assurance profile expect. | `direct_post.jwt` |
-| `rejectionResponse` | How the response URI answers a presentation the verifier rejects. `redirect` answers with HTTP 200 and the `redirect_uri` that returns the End-User to the login page. `error` answers with HTTP 400 and the error beside that `redirect_uri`. A wallet aborting on a non-2xx status never follows that `redirect_uri`. Wallet-reported errors are answered with HTTP 200 either way. | `redirect` |
-| `requestUriMethodPost` | Advertises `request_uri_method=post`. A conforming wallet then retrieves the request object with POST (OID4VP 1.0 §5.10) and sends its `wallet_metadata` and `wallet_nonce`. This enables request-object encryption and `wallet_nonce` replay protection. Leave off for wallets that retrieve the request object with GET only. | `false` |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `sameDeviceEnabled` | `true` | Enables same-device wallet login |
+| `crossDeviceEnabled` | `true` | Enables cross-device QR-code wallet login |
+| `sameDeviceLoa` | none | Level of a same-device presentation, as the integer of the realm or client ACR-to-LoA mapping. Empty means no level |
+| `crossDeviceLoa` | none | The same for a cross-device presentation |
+| `walletScheme` | `openid4vp://` | Custom URI scheme, or the https authorization endpoint of a web wallet, for both flows |
+| `responseMode` | `direct_post.jwt` | Wallet callback response mode. `direct_post.jwt` encrypts the response and is what high assurance profile wallets expect |
+| `rejectionResponse` | `redirect` | Response URI answer to a rejected presentation |
+| `requestUriMethodPost` | `false` | Advertises `request_uri_method=post` |
 
-A flow whose level is below the requested level is not offered on the login page. Its state is never created. No request object exists for it, and nothing a wallet posts can complete it. When the requested level exceeds the level of every enabled flow, the login ends on an error page. A request that names no level reaches every enabled flow. A level that is not an integer is rejected when the provider is saved.
+| `rejectionResponse` | Answer |
+|---------------------|--------|
+| `redirect` | HTTP 200 and the `redirect_uri` back to the login page. A cross-device flow gets an empty object |
+| `error` | HTTP 400 and the error beside that `redirect_uri`. A cross-device flow gets the error alone |
 
-A login records the level of the flow its presentation arrived over the way a `conditional-level-of-authentication` condition of the browser flow does: the token of the login carries the matching `acr`, and the user session keeps the level with its time. A later request for that level is then satisfied by single sign-on, within the max age the realm's browser flow configures for the level (a level the browser flow has no condition for counts with max age 0). A login whose presentation lacked the subject credential (`allowMissingSubjectCredential`) records no level, because the presentation identified nobody and the first broker login flow found the user. Presentation steps in other flows (the `oid4vp-presentation` authenticator and required action) record nothing, their flows' own conditions do.
+- A wallet that aborts on a non-2xx status never follows that `redirect_uri`.
+- Wallet-reported errors get HTTP 200 either way.
 
-The requested level comes from the request as Keycloak maps it. An `acr` value the ACR-to-LoA mapping does not name counts as the minimum level. A request naming several `acr` values counts as the lowest of them.
+With `requestUriMethodPost`, a conforming wallet fetches the request object with POST (OID4VP 1.0 §5.10) and sends `wallet_metadata` and `wallet_nonce`, which enables request-object encryption and `wallet_nonce` replay protection. Leave it off for GET-only wallets.
+
+Level of authentication:
+
+- Keycloak offers a flow only to requests of its level or below. A flow below the requested level has no state and no request object, and nothing a wallet posts can complete it.
+- A requested level above every enabled flow ends on an error page. A request without a level reaches every enabled flow.
+- Keycloak rejects a non-integer level on save.
+- A login records its flow's level like a `conditional-level-of-authentication` condition. The token carries the matching `acr`, and the user session keeps the level with its time.
+- Single sign-on satisfies a later request for that level within the max age of the realm's browser flow. A level without a browser flow condition counts with max age 0.
+- A login without the subject credential (`allowMissingSubjectCredential`) records no level, because the first broker login flow found the user.
+- The `oid4vp-presentation` authenticator and required action record nothing. The conditions of their flows do.
+- An `acr` value the mapping does not name counts as the minimum level. Several `acr` values count as the lowest.
 
 ### Client Authentication (X.509)
 
-| Key | Description | Default |
-|-----|-------------|---------|
-| `clientIdScheme` | Wallet/verifier client ID scheme: `plain`, `x509_san_dns`, or `x509_hash`. `x509_hash` identifies the verifier by the hash of its certificate and is what wallets following the high assurance profile expect. | `x509_hash` |
-| `x509CertificatePem` | PEM-encoded verifier certificate material used for client ID derivation and request-object header material. | *(required for x509 schemes)* |
-| `x509SigningKeyJwk` | Explicit signing JWK override. Normally derived automatically. | *(auto-derived)* |
-| `verifierInfo` | JSON value for the request object's `verifier_info` claim. | *(none)* |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `clientIdScheme` | `x509_hash` | Client ID scheme: `plain`, `x509_san_dns` or `x509_hash`. `x509_hash` identifies the verifier by its certificate hash and is what high assurance profile wallets expect |
+| `x509CertificatePem` | required for x509 schemes | PEM verifier certificate material that derives the client ID and fills the request object header |
+| `x509SigningKeyJwk` | auto-derived | Explicit signing JWK override |
+| `verifierInfo` | none | JSON value of the request object's `verifier_info` claim |
 
-`x509CertificatePem` supports two practical layouts:
+`x509CertificatePem` layouts:
 
-1. Combined PEM with the leaf certificate, optional intermediate certificates, and the private key as a PKCS#8 `PRIVATE KEY` or SEC1 `EC PRIVATE KEY` block. OpenSSL writes EC keys in the SEC1 format unless asked for PKCS#8.
-2. Certificate-only PEM, with the private key given as `x509SigningKeyJwk`.
+1. Combined PEM with the leaf certificate, optional intermediates and the private key as a PKCS#8 `PRIVATE KEY` or SEC1 `EC PRIVATE KEY` block.
+2. Certificate-only PEM, with the private key in `x509SigningKeyJwk`.
 
-Multi-line values stay usable in single-line sources such as environment variables from Kubernetes secrets. `x509CertificatePem`, `x509SigningKeyJwk`, `verifierInfo`, `trustListSigningCertPem`, and `trustedCertificates` accept their value verbatim or Base64-encoded as a whole. The PEM values additionally accept `\n` escape sequences instead of line breaks.
+For single-line sources such as Kubernetes secret environment variables, `x509CertificatePem`, `x509SigningKeyJwk`, `verifierInfo`, `trustListSigningCertPem` and `trustedCertificates` accept their value verbatim or Base64-encoded as a whole. PEM values also accept `\n` escapes.
 
 ### Trust and Verification
 
-| Key | Description | Default |
-|-----|-------------|---------|
-| `trustMaterialIdps` | Comma-separated aliases of trust material identity providers (see below). Each referenced provider contributes trust anchors, directly trusted issuer certificates, issuer keys, and revocation trust for the credential types it serves. | *(none)* |
-| `allowedIssuers` | Comma-separated list of allowed SD-JWT issuer (`iss`) values, or `*`. mDoc credentials are not checked against this list. mDoc does not define a standard canonical credential-issuer string equivalent to SD-JWT `iss`. | `*` |
-| `requireIssuerSanMatch` | Require the SD-JWT `iss` value to match a URI SAN of the validated `x5c` leaf certificate, or its HTTPS hostname to match a DNS SAN. Applies to CA chains and directly trusted leaf certificates. | `false` |
-| `clockSkewSeconds` | Clock skew tolerance for credential verification, including the `exp` of status list tokens. | `60` |
-| `kbJwtMaxAgeSeconds` | Maximum accepted age of the SD-JWT KB-JWT `iat` claim. | `300` |
+Trust configuration lives on separate trust material identity providers, referenced by alias.
 
-Trust configuration lives on separate trust material identity providers, referenced by alias. This matches the trust material delegation model of upstream Keycloak's OID4VP work.
+| Key | Default | Description |
+|-----|---------|-------------|
+| `trustMaterialIdps` | none | Comma-separated trust material provider aliases. Each contributes trust anchors, directly trusted issuer certificates, issuer keys and revocation trust for the credential types it serves |
+| `allowedIssuers` | `*` | Comma-separated allowed SD-JWT `iss` values, or `*`. Not checked for mDoc, which defines no canonical issuer string equivalent to `iss` |
+| `requireIssuerSanMatch` | `false` | Requires the SD-JWT `iss` to match a URI SAN of the validated `x5c` leaf, or its HTTPS hostname a DNS SAN. Applies to CA chains and directly trusted leaf certificates |
+| `clockSkewSeconds` | `60` | Clock skew tolerance for credential verification, including the `exp` of status list tokens |
+| `kbJwtMaxAgeSeconds` | `300` | Maximum accepted age of the SD-JWT KB-JWT `iat` claim |
 
 ### Trust per Credential
 
-A response can carry credentials of several trust domains, for example a PID from a national trust list next to a credential this Keycloak issued itself. Trust is resolved per credential, not once per identity provider.
+The verifier resolves trust per credential, so a response can mix trust domains.
 
-Every trust material identity provider declares the credential types it serves in `servedCredentialTypes`. A credential is verified against the material of the providers serving its credential type. Its DCQL entry advertises the `trusted_authorities` those providers expose. A provider that declares no credential types serves all of them.
-
-`servedCredentialTypes` is read from the configuration of the referenced provider, not from the provider type. A trust material provider that knows nothing of this extension is scoped the same way. Add that key to its configuration.
-
-Selection starts from the credential id the wallet answered with and the types requested under it. Both are taken from the request context. A credential id that was not requested is rejected before any signature is verified. The type the presentation names has to be one of the requested types or derive from one (see [Credential Type Inheritance](#credential-type-inheritance)). Otherwise the presentation is rejected before verification. That type selects the trust material. The verified type is checked against the same entry afterwards. A wallet cannot have its credential judged by the trust domain of a type it does not carry. An entry requested with several types advertises the `trusted_authorities` of all of them.
+- Each trust material provider declares its credential types in `servedCredentialTypes`. A provider without types serves all of them.
+- The verifier checks a credential against the providers serving its type. The DCQL entry advertises their `trusted_authorities`, for all types of the entry.
+- The verifier reads `servedCredentialTypes` from any referenced provider. To scope a foreign provider type, add that key to its configuration.
+- The verifier trusts only the credential types this IdP requested through its mappers, and types derived from them.
+- The verifier rejects, before verification, a credential id that was not requested and a type that is neither requested nor [derived from a requested type](#credential-type-inheritance).
+- The presented type selects the trust material, and the verifier checks the verified type against the same entry, so a wallet cannot pick the trust domain of a type its credential does not carry.
 
 ### Credential Type Inheritance
 
-A credential of a derived type satisfies a request for the type it derives from. The German PID `urn:eudi:pid:de:1` answers a request for the EUDI PID `urn:eudi:pid:1`. The reverse does not hold. Two sources state the relationship:
+A derived type satisfies a request for its base type, and the reverse does not hold. The German PID `urn:eudi:pid:de:1` answers a request for the EUDI PID `urn:eudi:pid:1`.
 
-- The `aka_vcts` claim of an SD-JWT VC lists further types the credential is of (SD-JWT VC, section 2.2.2.2).
-- A URN type whose qualifier segments sit between its name and its numeric version derives from the type without them. `urn:eudi:pid:de:1` derives from `urn:eudi:pid:1`, and `urn:eudi:pid:de:bavaria:1` derives from both. This is how the ARF forms domestic PID types. Type metadata is not consulted. The PID types are URNs with no document to retrieve.
+Relationship sources:
 
-Inheritance says what a credential is, not who may issue it. Trust material is selected by the nearest type a provider declares in `servedCredentialTypes`. The credential's own type is tried first, then its base types. The types `aka_vcts` names are tried after that, each with its base types, and only when no provider declares the credential's own type or one of its base types. A provider declared for `urn:eudi:pid:de:1` judges the German PID. Without one, the provider declared for `urn:eudi:pid:1` does. A base type's provider serves every derived type that has no provider of its own. The reverse never happens. The same rule decides which `trusted_authorities` a requested type advertises.
+- The `aka_vcts` claim of an SD-JWT VC lists further types of the credential (SD-JWT VC, section 2.2.2.2).
+- A URN with qualifier segments between its name and numeric version derives from the URN without them. `urn:eudi:pid:de:bavaria:1` derives from `urn:eudi:pid:de:1` and `urn:eudi:pid:1`. The ARF forms domestic PID types this way.
+- Type metadata is not consulted, because PID types are URNs with no document to retrieve.
 
-An issuer is trusted for what its credentials say about themselves. A credential of one type that names a second type in `aka_vcts` satisfies a request for the second type, verified by the trust material of the first. Reference only issuers whose credentials may stand for every type they name.
+The verifier selects trust material, and `trusted_authorities`, by the nearest type in `servedCredentialTypes`:
+
+1. The credential's own type, then its base types.
+2. Only if none matches, the `aka_vcts` types, each with its base types.
+
+A base type's provider serves every derived type without a provider of its own, never the reverse.
+
+**Warning:** a credential naming a second type in `aka_vcts` satisfies a request for that type, verified with the trust material of its own type. Reference only issuers whose credentials may stand for every type they name.
 
 ### Trust Cases
 
@@ -335,134 +316,197 @@ An issuer is trusted for what its credentials say about themselves. A credential
 |------|--------------------|----------------|----------------------------------|---------------|
 | ETSI trust list | `x5c` chain | PKIX path to the anchors of the Issuance services on the list | `etsi_tl` with the list URL or `aki` with the key identifiers, when configured | `etsi-trust-list` with `trustListUrl` |
 | Pinned certificate bundle | `x5c` chain, or nothing | PKIX path to the CA certificates. End entity certificates are trusted directly | `aki` with the key identifiers, when configured | `etsi-trust-list` with `trustedCertificates` |
-| Keycloak-issued, CA-chained realm key | `x5c` chain to the CA that issued the realm key certificate | the realm key certificate as a directly trusted leaf | none | `keycloak-realm-issuer` |
-| Keycloak-issued, chainless | JOSE `kid` only | the realm's published signature keys and the realm key certificates, both trusted for the realm issuer alone | none | `keycloak-realm-issuer` |
-| mDoc | `x5chain` in COSE | PKIX path or a pinned leaf certificate. A chain whose leaf is itself a configured trust anchor is trusted directly. This accepts a self-signed document signer certificate placed on a trust list | `etsi_tl` or `aki` | an X.509 provider. There is no COSE `kid` route for a key-only provider to serve a doctype |
-| Issuer JWKS | JOSE `kid` only | the keys the provider publishes, trusted for any issuer | none | Keycloak's `default-trust` with `jwksUrl` or a pasted JWK |
-| Revocation | status list JWT | the status list certificates of the providers serving that credential | not applicable | follows the credential's trust domain |
+| Keycloak-issued, CA-chained realm key | `x5c` chain to the CA that issued the realm key certificate | The realm key certificate as a directly trusted leaf | none | `keycloak-realm-issuer` |
+| Keycloak-issued, chainless | JOSE `kid` only | The realm's published signature keys and the realm key certificates, both trusted for the realm issuer alone | none | `keycloak-realm-issuer` |
+| mDoc | `x5chain` in COSE | PKIX path or a pinned leaf certificate | `etsi_tl` or `aki` | An X.509 provider |
+| Issuer JWKS | JOSE `kid` only | The keys the provider publishes, trusted for any issuer | none | Keycloak's `default-trust` with `jwksUrl` or a pasted JWK |
+| Revocation | status list JWT | The status list certificates of the providers serving that credential | not applicable | Follows the credential's trust domain |
 
-A credential type that no provider serves has no trust material. Its presentation cannot be verified. This is logged when the query is built. It is only reported once providers declare credential types at all.
+- An mDoc chain whose leaf is a configured trust anchor is trusted directly, which accepts a self-signed document signer on a trust list.
+- mDoc needs an X.509 provider, because COSE has no `kid` route for a key-only provider.
+- A credential type no provider serves cannot be verified. The extension logs this at query build, once providers declare credential types at all.
+
+### SD-JWT Issuer Key Resolution
+
+The verifier tries in this order:
+
+1. `x5c` chain: a pinned trusted leaf satisfying any configured issuer binding, or a PKIX path to the trust anchors authenticating the leaf subject. With `requireIssuerSanMatch`, the leaf must pass the SAN check.
+2. Issuer keys of the credential's trust domain, matched on `iss` and JOSE `kid`.
+3. JWT VC issuer metadata through `iss` and `kid` from `/.well-known/jwt-vc-issuer`, including `jwks_uri`. Only when the identity provider references no trust material providers.
+
+- With trust material providers, the verifier rejects a type none of them serves and a credential whose declared trust domain resolves to nothing.
+- A trust domain of CA anchors alone requires a chain. With pinned certificates or published keys, a chainless credential is a configured case.
 
 ### X.509 Trust for Keycloak Consumers
 
-The trust providers of this extension implement Keycloak's `TrustMaterialIdentityProvider.validateX509Chain` with the rules they apply to credentials. A directly trusted leaf certificate is accepted within its validity period. Any other chain needs a PKIX path to one of the provider's trust anchors, which may be intermediate CAs. Keycloak features that take trust identity provider aliases, such as attestation checks with `attester_trust_idps`, can use an ETSI trusted list this way, for example the list of wallet providers.
+This extension's trust providers implement Keycloak's `TrustMaterialIdentityProvider.validateX509Chain`, so Keycloak features taking trust identity provider aliases can use them. An example is attestation checks with `attester_trust_idps` against an ETSI list of wallet providers.
 
-### Keycloak Default Trust Identity Provider (`default-trust`)
+- A directly trusted leaf is accepted within its validity period.
+- Any other chain needs a PKIX path to a provider trust anchor, which may be an intermediate CA.
 
-An issuer that publishes plain JWKs instead of a trust list is trusted through Keycloak's own `default-trust` provider. Configure it with `jwksUrl` or a pasted JWK. Reference it in `trustMaterialIdps` like the providers of this extension. Two limits follow from the upstream contract, which returns keys without saying whose they are. Its keys are trusted for any issuer. `allowedIssuers` is what restricts them. It advertises no `trusted_authorities`, because a bare key has nothing a wallet could match. Set `servedCredentialTypes` in its configuration. Otherwise its keys verify every credential of every request that references it.
+### `default-trust` Provider
 
-### ETSI Trust List Identity Provider (`etsi-trust-list`)
+Keycloak's provider for an issuer that publishes plain JWKs. Configure `jwksUrl` or a pasted JWK, and reference it in `trustMaterialIdps`. With X.509 roots (`useX509`, `trustedCertificates`), chains are checked against CRLs with default settings: distribution points only, 3600 s cap, `crlRequired` off.
 
-A dedicated identity provider type carries the trust material. It never authenticates users and is hidden from login pages. OID4VP identity providers reference it through `trustMaterialIdps`. Trust anchors come from an ETSI TS 119 602 trust list URL, from a pasted PEM certificate bundle, or both. The trust list is fetched, cached, and refreshed automatically. CA certificates become X.509 trust anchors for credential certificate chains. End entity certificates are trusted directly (pinned leaf or chainless credentials).
+- Its keys are trusted for any issuer. Only `allowedIssuers` restricts them.
+- It advertises no `trusted_authorities`.
+- **Warning:** set `servedCredentialTypes`. Otherwise its keys verify every credential of every request referencing it.
 
-A directly trusted end entity certificate verifies the credentials of the types its provider serves. For a certificate chain validated against the CA anchors, the signer is identified by the subject of the validated leaf certificate. See [SD-JWT VC draft 13, section 3.5](https://www.ietf.org/archive/id/draft-ietf-oauth-sd-jwt-vc-13.html#section-3.5) (6 November 2025), [HAIP 1.0 Final, section 6.1.1](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0.html#section-6.1.1) (24 December 2025), and the PID signing-certificate profile in [ETSI TS 119 412-6 V1.2.1, clause 4](https://www.etsi.org/deliver/etsi_ts/119400_119499/11941206/01.02.01_60/ts_11941206v010201p.pdf) (April 2026).
+### `etsi-trust-list` Provider
 
-The **Require Issuer SAN Match** option (`requireIssuerSanMatch`) checks the issuer name when validating an SD-JWT `x5c` chain. The check succeeds if a URI SAN equals the complete `iss` value or a DNS SAN equals its HTTPS hostname. DNS names are compared without regard to case. The names are matched literally. When enabled, the check rejects credentials whose leaf certificate has no matching SAN. The default is `false`. Verification using configured issuer keys follows the issuer restrictions attached to those keys.
+Carries trust material, never authenticates users and stays hidden from login pages. Use one provider per trust domain.
 
-`allowedIssuers` filters the signed `iss` claim. With an ETSI trust list, every accepted signer for the credential type is trusted to assert that value. Configure trust material scoped to the intended issuers and credential types. Providers that explicitly bind keys or pinned certificates to an issuer, such as `keycloak-realm-issuer`, enforce that binding during verification.
+| Key | Default | Description |
+|-----|---------|-------------|
+| `trustListUrl` | none | URL of an ETSI TS 119 602 trust list JWT |
+| `trustListSigningCertPem` | none | The list signer's own certificates, several for key rotation. Only their keys verify the list, and an `x5c` chain in the list is ignored, so a CA certificate here verifies only what its own key signed. **If omitted, the signature is not verified** |
+| `trustListLoTEType` | empty | Expected LoTE type, matched against `ListAndSchemeInformation.LoTEType`. Leave empty only to accept all types of the list |
+| `trustListServiceStatuses` | empty | Comma separated `ServiceStatus` values that count as current. A Pub-EAA providers list needs `http://uri.etsi.org/19602/PubEAAProvidersList/SvcStatus/notified` |
+| `trustListMaxCacheTtlSeconds` | `3600` | Cap on the list cache, which decides how soon a withdrawn CA stops being trusted. `0` fetches on every use. Keycloak accepts 0 to 315360000 on save |
+| `trustListMaxStaleAgeSeconds` | `86400` | How long after its last download a list past `NextUpdate` stays in use when a refresh fails. `0` disables that. Keycloak accepts 0 to 315360000 on save |
+| `trustedCertificates` | none | PEM X.509 bundle of trusted issuers, instead of or in addition to the list URL |
+| `servedCredentialTypes` | none | Comma-separated VCTs or doctypes of this trust domain. Empty serves every type |
+| `advertiseTrustedAuthorities` | empty, advertise nothing | DCQL `trusted_authorities` entry: `etsi_tl` (list URL) or `aki` (key identifiers). At most one per trust domain. The verifier enforces trust either way |
+| `crlEndpoint` | use distribution points | Fixed CRL URL replacing the distribution points of the credential's signing certificate. Must be an http(s) URL and serve a CRL of that certificate's issuer. Intermediates keep their own |
+| `crlMaxCacheTtlSeconds` | `3600` | Cap on caching until a CRL's `nextUpdate`, which decides how soon a revocation takes effect. Keycloak accepts 0 to 315360000 on save. See [Security](security.md) |
+| `crlRequired` | `false` | Rejects a credential when no CRL is known for a certificate that names one or that `crlEndpoint` covers, or when the check cannot run for a chain. See [Security](security.md). Enable for mDL trust domains |
+| `requiredExtendedKeyUsages` | none | Comma-separated EKU OIDs. Signing certificates must contain one, for example `1.0.18013.5.1.2` for mDL document signers. Pinned certificates are exempt |
 
-| Key | Description | Default |
-|-----|-------------|---------|
-| `trustListUrl` | URL of an ETSI TS 119 602 trust list JWT. | *(none)* |
-| `trustListSigningCertPem` | PEM-encoded certificate chain used to verify the trust list JWT signature. If omitted, the trust list JWT is not signature-verified. | *(none)* |
-| `trustListLoTEType` | Expected trust-list LoTE type. Keep one trust domain per provider instance. Leave empty only to accept all LoTE types from the configured trust list. | empty |
-| `trustListMaxCacheTtlSeconds` | Optional maximum cache TTL for the trust list. The effective lifetime is capped earlier by ETSI `NextUpdate` and HTTP cache headers. | *(use trust-list freshness metadata)* |
-| `trustListMaxStaleAgeSeconds` | Maximum age of an expired trust-list cache entry that may be reused when refresh fails. Set `0` to disable stale fallback. | `86400` |
-| `trustedCertificates` | PEM-encoded X.509 certificate bundle of trusted issuers, used instead of or in addition to the trust list URL. | *(none)* |
-| `servedCredentialTypes` | Comma-separated credential types (SD-JWT VCT or mDoc doctype) this trust domain is responsible for. Empty serves every credential type. | *(none)* |
-| `advertiseTrustedAuthorities` | The `trusted_authorities` entry the DCQL entries of the served credentials advertise. `etsi_tl` advertises the trust list URL, `aki` the key identifiers of the trusted certificates. Empty advertises nothing. At most one entry per trust domain, because both types describe the same anchors. The verifier enforces the trust either way. | *(empty, advertise nothing)* |
-| `requiredExtendedKeyUsages` | Comma-separated extended key usage OIDs. When set, credential signing certificates must contain at least one of them (e.g. `1.0.18013.5.1.2` for mDL document signers). | *(none)* |
+- CA certificates become X.509 trust anchors. End entity certificates are trusted directly, for pinned leaves or chainless credentials, and verify the credential types their provider serves.
+- The provider fetches, caches and refreshes the list.
+- Credential signatures use only `.../SvcType/.../Issuance` services of the list. Status list JWTs use only `.../SvcType/.../Revocation` services.
+- For a chain validated against CA anchors, the validated leaf's subject identifies the signer. See [SD-JWT VC draft 13, section 3.5](https://www.ietf.org/archive/id/draft-ietf-oauth-sd-jwt-vc-13.html#section-3.5) (6 November 2025), [HAIP 1.0 Final, section 6.1.1](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0.html#section-6.1.1) (24 December 2025), and the PID signing-certificate profile in [ETSI TS 119 412-6 V1.2.1, clause 4](https://www.etsi.org/deliver/etsi_ts/119400_119499/11941206/01.02.01_60/ts_11941206v010201p.pdf) (April 2026).
+- **Require Issuer SAN Match** (`requireIssuerSanMatch`) compares a URI SAN with the complete `iss` and a DNS SAN with its HTTPS hostname. DNS names ignore case, otherwise matching is literal. Configured issuer keys follow the issuer restrictions attached to them.
+- **Warning:** `allowedIssuers` filters the signed `iss`, and every accepted trust list signer for the type can assert that value. Scope the trust material to the intended issuers and credential types.
+- Providers binding keys or pinned certificates to an issuer, such as `keycloak-realm-issuer`, enforce that binding during verification.
 
-### Keycloak Realm Issuer Identity Provider (`keycloak-realm-issuer`)
+### `keycloak-realm-issuer` Provider
 
-Trust material for credentials this Keycloak issues itself. The material is the signature key material of the issuing realm, read in process. The published JWKs serve credentials that identify their key by `kid`. The realm key certificates serve as directly trusted issuer certificates for credentials that pin their leaf in `x5c`. Both are bound to the realm's issuer identifier. A credential claiming to come from somewhere else cannot borrow them. Nothing has to be pasted. A key rotation takes effect without reconfiguration, because passive keys stay published while credentials signed with them are still valid.
+Trust material for credentials this Keycloak issues, read in process from the issuing realm.
 
-| Key | Description | Default |
-|-----|-------------|---------|
-| `servedCredentialTypes` | Comma-separated credential types this Keycloak issues. Required. The realm keys are trusted for these credentials only. | *(none, rejected)* |
-| `issuerRealm` | Name of the realm whose signature keys sign the credentials. | *(the realm the OID4VP identity provider runs in)* |
-| `issuer` | The credential `iss` the realm keys are trusted for. | *(derived from the issuer realm, the value its JWT VC issuer metadata publishes)* |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `servedCredentialTypes` | required, empty is rejected | Comma-separated credential types this Keycloak issues. The realm keys are trusted for these only |
+| `issuerRealm` | realm of the OID4VP identity provider | Realm whose signature keys sign the credentials |
+| `issuer` | the value the issuer realm's JWT VC issuer metadata publishes | Credential `iss` the realm keys are trusted for |
 
-A realm key certificate issued by an external CA works the same way. The signing leaf is trusted directly. A credential presenting the full chain validates against the pinned leaf. The CA does not have to be configured anywhere in Keycloak.
-
-For SD-JWT VC verification, the verifier tries issuer-key resolution in this order:
-
-1. `x5c` certificate-chain validation. Either a pinned trusted leaf certificate satisfying any configured issuer binding, or a PKIX path to the trust anchors that authenticates the leaf certificate's subject. With `requireIssuerSanMatch` enabled, the validated leaf must also satisfy the issuer SAN check
-2. The issuer keys the credential's trust domain publishes, matched on the credential's `iss` and JOSE `kid`
-3. JWT VC issuer metadata lookup via `iss` + `kid` from `/.well-known/jwt-vc-issuer`, including `jwks_uri`. This route is used only when the identity provider references no trust material providers at all. With trust material providers configured, a credential type none of them serves is rejected. A credential whose declared trust domain resolves to nothing is rejected as well.
-
-A certificate chain is mandatory when the credential's trust domain consists of CA anchors alone. Pinned issuer certificates and published issuer keys make a chainless credential a configured case rather than a missing chain.
-
-By default, the verifier only trusts the credential types this IdP requested in its DCQL query. Those types come from the credential types declared on the configured OID4VP mappers.
-
-Use one trust material identity provider instance per trust domain. If `trustListLoTEType` is configured, it must match the fetched trust list's `ListAndSchemeInformation.LoTEType`. If it is left empty, all LoTE types from that trust list are accepted.
-Within the accepted trust list, credential signature verification uses only `.../SvcType/.../Issuance` services. Status-list JWT verification uses only `.../SvcType/.../Revocation` services.
+- Published JWKs serve credentials identifying their key by `kid`. Realm key certificates are directly trusted for credentials pinning their leaf in `x5c`.
+- Both are bound to the realm's issuer identifier, so a credential from another issuer cannot borrow them.
+- No key material goes into the configuration. Key rotation needs no reconfiguration, because passive keys stay published while their credentials are valid.
+- A realm key certificate from an external CA works the same way: the leaf is trusted directly, also with the full chain presented. The CA needs no configuration.
 
 ### Caching
 
-Trust lists are cached until the earliest of ETSI `ListAndSchemeInformation.NextUpdate`, HTTP cache headers, and the trust material identity provider's `trustListMaxCacheTtlSeconds` when configured. A trust list whose `NextUpdate` is in the past is discarded as expired. `NextUpdate` is read as an ISO 8601 instant. That is the form ETSI TS 119 602 clause 6.1.3 prescribes: `YYYY-MM-DDThh:mm:ssZ` in UTC, seconds field present, no decimal fraction. A trust list whose `NextUpdate` cannot be read as an instant is rejected as a whole. A value that leaves the seconds out is one example. Trust-list responses without `NextUpdate` are not cached and are not reused as stale fallback. Status lists are cached according to their `ttl` claim when present, capped by `exp` if present. If `ttl` is absent they fall back to `exp`. Status-list responses without both `ttl` and `exp` are treated as immediately expired. A status list token is accepted until `clockSkewSeconds` after its `exp`, because issuers sign lists that outlive their update interval by only a few seconds. A list accepted within that tolerance serves the one check and is not reused from the cache. JWT VC issuer metadata caching is bounded by HTTP cache headers, `issuerMetadataMaxCacheTtlSeconds`, and each JWK's optional `exp`, whichever expires first.
+| Key | Default | Description |
+|-----|---------|-------------|
+| `statusListMaxCacheTtlSeconds` | use status list `ttl` / `exp` | Cap on the token status list cache. Keycloak accepts 0 to 315360000 on save |
+| `issuerMetadataMaxCacheTtlSeconds` | `86400` | Cap on the cache of JWT VC issuer metadata and resolved issuer JWKS. `0` disables it. Keycloak accepts 0 to 315360000 on save |
 
-| Key | Description | Default |
-|-----|-------------|---------|
-| `statusListMaxCacheTtlSeconds` | Optional maximum cache TTL for token status lists. The effective lifetime uses status-list `ttl` when present, capped by `exp`. Otherwise it falls back to `exp`. | *(use status-list ttl / exp)* |
-| `issuerMetadataMaxCacheTtlSeconds` | Optional maximum cache TTL for JWT VC issuer metadata and resolved issuer JWKS. The effective lifetime is capped earlier by HTTP `Cache-Control` and any JWK `exp`. Set `0` to disable issuer-metadata caching. | `86400` |
+| Object | Cached until | Without freshness data |
+|--------|--------------|------------------------|
+| Trust list | ETSI `ListAndSchemeInformation.NextUpdate` or `trustListMaxCacheTtlSeconds`, whichever comes first | No `NextUpdate`: the list is closed and trusts nothing, and the cached copy is dropped (ETSI TS 119 602 clause 6.3.15) |
+| Status list | `ttl`, capped by `exp` | No `ttl`: `exp`. Neither: immediately expired |
+| Issuer metadata | The earliest of HTTP cache headers (`Cache-Control`), `issuerMetadataMaxCacheTtlSeconds` and each JWK's `exp` | |
+
+- Each trust list provider has its own cache and download, even with a shared URL.
+- Trust lists ignore HTTP cache headers, because the signed list states its own freshness.
+- A CA withdrawn from a list stays trusted until the provider's next download, so keep `trustListMaxCacheTtlSeconds` short.
+- When a refresh fails, the provider keeps using its copy until the list's `NextUpdate`, or until `trustListMaxStaleAgeSeconds` after the last download, whichever is later. A withdrawn CA stays trusted during such an outage. With such a copy, one login downloads and the others use the copy for one minute, so a hanging download blocks a single login. Without a copy every login tries again. Trust list and status list downloads have a 3 second connect timeout.
+- A downloaded list with a past `NextUpdate` counts as a failed refresh.
+- A service without `ServiceStatus` counts as approved. ETSI TS 119 602 V1.1.1 forbids the component in every list profile except Pub-EAA, so all services of those lists take this path. A service with a status adds certificates only when `trustListServiceStatuses` lists that status. A Pub-EAA list keeps withdrawn providers listed, so configure only its `notified` status there.
+- `NextUpdate` must be an ISO 8601 instant per ETSI TS 119 602 clause 6.1.3: `YYYY-MM-DDThh:mm:ssZ` in UTC, with seconds, without decimal fraction. The verifier also reads fractional seconds and numeric offsets. An unreadable value, for example without seconds, rejects the whole list.
+- The verifier accepts a status list token until `clockSkewSeconds` after its `exp`. Such a list serves the one check and is not reused from the cache.
 
 ### Cross-Device SSE
 
-| Key | Description | Default |
-|-----|-------------|---------|
-| `ssePollIntervalMs` | How often each SSE connection polls shared completion state. | `2000` |
-| `sseTimeoutSeconds` | Maximum SSE connection lifetime before timeout. | `120` |
-| `ssePingIntervalSeconds` | Keep-alive ping interval. | `10` |
-| `crossDeviceCompleteTtlSeconds` | Lifetime of the cross-device completion marker. The deferred auth record itself uses the realm login timeout. | `300` |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `ssePollIntervalMs` | `2000` | How often each SSE connection polls shared completion state |
+| `sseTimeoutSeconds` | `120` | Maximum SSE connection lifetime |
+| `ssePingIntervalSeconds` | `10` | Keep-alive ping interval |
+| `crossDeviceCompleteTtlSeconds` | `300` | Lifetime of the cross-device completion marker. The deferred auth record uses the realm login timeout |
 
-Every open SSE connection polls from a virtual thread of its own for up to `sseTimeoutSeconds`. The extension sets no limit on how many connections a node holds. The HTTP connection limit of the server bounds them. Set `quarkus.http.limits.max-connections` in `conf/quarkus.properties` to cap concurrent connections on a node. The limit counts every HTTP connection, not only SSE streams.
+- Every open SSE connection polls from its own virtual thread for up to `sseTimeoutSeconds`.
+- The extension sets no connection limit, and the server's HTTP connection limit bounds connections. Set `quarkus.http.limits.max-connections` in `conf/quarkus.properties` to cap a node. That limit counts every HTTP connection, including non-SSE ones.
 
 ## IdP Mappers
 
-The extension provides format-specific mapper types. They follow the mapper design of upstream Keycloak's OID4VP work:
+| Name | Provider id |
+|------|-------------|
+| `SD-JWT Attribute Importer` | `oid4vp-sd-jwt-user-attribute-idp-mapper` |
+| `SD-JWT User Session Attribute Importer` | `oid4vp-sd-jwt-user-session-attribute-idp-mapper` |
+| `mDoc Attribute Importer` | `oid4vp-mdoc-user-attribute-idp-mapper` |
+| `mDoc User Session Attribute Importer` | `oid4vp-mdoc-user-session-attribute-idp-mapper` |
+| `eIDAS LoA User Session Attribute` | `oid4vp-eidas-loa-user-session-attribute-idp-mapper` |
 
-- `SD-JWT Attribute Importer` (`oid4vp-sd-jwt-user-attribute-idp-mapper`)
-- `SD-JWT User Session Attribute Importer` (`oid4vp-sd-jwt-user-session-attribute-idp-mapper`)
-- `mDoc Attribute Importer` (`oid4vp-mdoc-user-attribute-idp-mapper`)
-- `mDoc User Session Attribute Importer` (`oid4vp-mdoc-user-session-attribute-idp-mapper`)
-- `eIDAS LoA User Session Attribute` (`oid4vp-eidas-loa-user-session-attribute-idp-mapper`)
+- Each mapper declares a credential type (VCT or doctype) and a claim path.
+- Every distinct `credential.id` becomes a DCQL credential entry, and every claim path a requested claim. The verifier validates the response against this query.
+- An SD-JWT mapper may declare several comma-separated VCTs, for example `urn:eudi:pid:1, urn:eudi:pid:de:1`. They form one entry whose `vct_values` lists all of them. The default credential id derives from the first.
+- An mDoc mapper declares one doctype, because DCQL defines `doctype_value` as a single string. Request several doctypes under their own credential ids.
 
-Each mapper declares a credential type (VCT or doctype) and a claim path. An SD-JWT mapper may declare several VCTs as a comma-separated list, for example `urn:eudi:pid:1, urn:eudi:pid:de:1` for the EUDI PID and the German PID. They form one credential entry whose `vct_values` lists all of them. The wallet presents a credential of any of these types. Mappers sharing a credential id accept every VCT any of them names. The default credential id is derived from the first type. An mDoc mapper declares exactly one doctype, because DCQL defines `doctype_value` as a single string. Request several doctypes under credential ids of their own. The claim path uses dot notation. `address.locality` selects a nested claim. `nationalities[]` selects all array elements. `nationalities[0]` selects the first presented element. A literal dot is escaped as `\.`. Arrays import as multivalued attributes. Object values import as their JSON representation. Session attribute mappers join multiple values with commas.
+| Claim path | Selects |
+|------------|---------|
+| `address.locality` | A nested claim |
+| `nationalities[]` | All array elements |
+| `nationalities[0]` | The first presented element |
+| `\.` | A literal dot |
 
-mDoc mappers additionally declare the ISO 18013-5 `namespace` of the data element. It defaults to the credential type (doctype). The claim path addresses the element within that namespace. Deeper path steps select into structured element values on the mapper side only. Element values holding serialized JSON objects or arrays become nested structures in the claims JSON. They follow the same path rules as SD-JWT claims.
+- Arrays import as multivalued attributes, object values as JSON. Session attribute mappers join multiple values with commas.
+- mDoc mappers also declare the ISO 18013-5 `namespace`, default the doctype. The claim path addresses the element within it.
+- Deeper path steps select into structured element values on the mapper side only. Element values holding serialized JSON become nested structures and follow the SD-JWT path rules.
 
-The `Alternative Claims` mapper option names claims that stand in for the claim path when the credential does not present it. It is a comma-separated list of paths in the same notation. Issuers name the same claim differently. The German PID rulebook calls the birth name `birth_name`. Credentials in circulation carry `birth_family_name`. A single mapper with the claim `birth_family_name` and the alternative `birth_name` covers both. The mapper reads the claim path first and the alternatives after it in their order. The first one the presentation carries a value for is imported. Every alternative is requested as a claim of its own. The [claim sets](#claim-sets) are generated so that the wallet presents exactly one of them.
+`Alternative Claims` is a comma-separated list of paths that stand in when the credential does not present the claim path. Use it when issuers name a claim differently. One mapper with claim `birth_family_name` and alternative `birth_name` covers both names.
+
+- The mapper imports the first value present, claim path first, then alternatives in order.
+- Every alternative is a requested claim of its own, and generated [claim sets](#claim-sets) make the wallet present exactly one.
 
 ### Presentation Flow
 
-Every completed login stores the flow it finished in as the user session note `oid4vp_presentation_flow`. The value is `same_device` or `cross_device`. Custom identity provider mappers read the same value from the brokered identity context through `Oid4vpMapperUtils.presentationFlow`.
+Every completed login stores `same_device` or `cross_device` in the user session note `oid4vp_presentation_flow`. Custom mappers read it through `Oid4vpMapperUtils.presentationFlow`.
 
-The flow records which login page affordance started the presentation: the same-device link or the cross-device QR code. OID4VP does not bind the wallet to the device the browser runs on. The note describes the login that created the session. A token issued from SSO reuse carries the value of that login.
+- The value records which login page element started the presentation. OID4VP does not bind the wallet to the browser's device.
+- A token issued from SSO reuse carries the value of the login that created the session.
 
-The `eIDAS LoA User Session Attribute` mapper writes a level of assurance chosen by that flow into a configurable user session attribute. The attribute defaults to `eidas_loa`. The values are `STORK-QAA-Level-4` for a same-device and `STORK-QAA-Level-3` for a cross-device completion. Set the mapper's sync mode override to `Force`. The attribute is then also set when a first wallet login links an existing account. Use the `User Session Note` protocol mapper on the client or client scope to surface these values in tokens.
+The `eIDAS LoA User Session Attribute` mapper writes a level to a configurable user session attribute, default `eidas_loa`:
 
-These mappers drive the generated DCQL request. Every distinct `credential.id` present in the mappers becomes a DCQL credential entry. Every claim path becomes a requested claim. The response is validated against this query. All requested claims are known to the verifier.
+| Flow | Value |
+|------|-------|
+| Same-device | `STORK-QAA-Level-4` |
+| Cross-device | `STORK-QAA-Level-3` |
+
+- Set the mapper's sync mode override to `Force`, or a first wallet login that links an existing account does not set the attribute.
+- Add the `User Session Note` protocol mapper to the client or client scope to surface these values in tokens.
 
 ### Claim Sets
 
-The `Claim Set IDs` mapper option controls the DCQL `claim_sets` for a credential. It holds a comma-separated list of identifiers:
+`Claim Set IDs` is a comma-separated mapper option controlling the DCQL `claim_sets` of a credential.
 
-- A mapper without claim set ids marks its claim as always requested. It is part of every claim set.
-- When at least one mapper of a credential defines claim set ids, the generated credential entry contains one `claim_sets` option per distinct id.
-- Options are ordered lexicographically by id. The order expresses the verifier's preference. Wallets use the first option they can satisfy. Use a naming convention such as `1-full`, `2-minimal` to control the order.
-- A claim that belongs to several sets lists all of their ids.
+- A mapper without ids requests its claim in every set.
+- When any mapper of a credential has ids, the entry contains one option per distinct id. A claim in several sets lists all their ids.
+- Options sort lexicographically by id, which is the verifier's preference. Wallets use the first option they can satisfy. Names such as `1-full`, `2-minimal` control the order.
 
-Example: three mappers for `given_name` (ids `1-full`), `family_name` (ids `1-full,2-min`), and `birthdate` (no ids) produce two claim set options. `given_name, family_name, birthdate` is preferred. `family_name, birthdate` is the fallback.
+Example: mappers for `given_name` (ids `1-full`), `family_name` (ids `1-full,2-min`) and `birthdate` (no ids) prefer `given_name, family_name, birthdate` and fall back to `family_name, birthdate`.
 
-Alternative claims multiply these options. Every option is repeated once per combination of the path choices of its members. Each option then asks for exactly one of a claim and its alternatives. The combinations keep the claim paths themselves first and vary the alternatives of the last member fastest. The first option asks for every claim under its own path. The last one asks for every claim under its last alternative. A mapper with alternatives and no claim set ids still produces claim sets, one option per path. The number of options is the product of the path counts of all members of an option, on top of the options the claim set ids define. Three mappers with one alternative each and two claim set ids produce sixteen options. Keep alternatives to the claims that need them.
+Alternative claims:
 
-The DCQL claim ids are derived from the mapper names. They are reduced to the letters, digits, `_` and `-` DCQL allows. The generated `claim_sets` read like the configuration. A mapper `birth-name` requests its claim as `birth-name` and its alternative `birth_name` as `birth-name-birth_name`. Mappers requesting the same claim share one entry under the name of the first mapper. A second mapper name that slugs to an id in use receives a numeric suffix. The subject claim added for a principal attribute is named `principal`.
+- Every option repeats per combination of its members' paths, asking for exactly one of a claim and its alternatives.
+- Claim paths come first, and the last member's alternatives vary fastest. The first option uses every claim's own path, the last every last alternative.
+- A mapper with alternatives and no ids produces one option per path.
+- The count is the product of all members' path counts, on top of the id options. Three mappers with one alternative each and two ids give sixteen options, so keep alternatives to the claims that need them.
 
-Example: the mappers `given-name` (`given_name`, ids `1-full`) and `birth-name` (`birth_family_name`, alternative `birth_name`, no ids) produce the claims `given-name`, `birth-name`, `birth-name-birth_name` and the claim sets `[given-name, birth-name]`, `[given-name, birth-name-birth_name]`.
+Claim ids:
 
-The verifier validates the wallet's response against the request. A presented credential must contain every requested claim. When claim sets are defined, it must contain all claims of at least one claim set option. Presentations that satisfy no option are rejected. A principal attribute has to be read under a claim path in every option. A mapper for the subject claim cannot carry alternatives for that reason.
+- Ids derive from mapper names, reduced to letters, digits, `_` and `-`.
+- A mapper `birth-name` requests its claim as `birth-name` and its alternative `birth_name` as `birth-name-birth_name`.
+- Mappers requesting the same claim share one entry under the first mapper's name.
+- A second mapper name slugging to an id in use gets a numeric suffix.
+- The subject claim added for a principal attribute is named `principal`.
+
+Example: mappers `given-name` (`given_name`, ids `1-full`) and `birth-name` (`birth_family_name`, alternative `birth_name`, no ids) produce the claims `given-name`, `birth-name`, `birth-name-birth_name` and the claim sets `[given-name, birth-name]`, `[given-name, birth-name-birth_name]`.
+
+The verifier rejects a credential that lacks a requested claim. With claim sets, it rejects a credential that satisfies no option. A mapper for the subject claim cannot carry alternatives, because a principal attribute must be readable under its path in every option.
 
 ## Multi-Node Behavior
 
-Cross-device completion depends on a shared Keycloak `SingleUseObjectProvider`. Each node keeps only its local SSE connections. Every open cross-device watcher polls the shared completion marker from a virtual thread on the node serving that browser connection. No cluster notification channel is required. The single-use object store itself must be shared.
+- Cross-device completion needs a shared Keycloak `SingleUseObjectProvider`. No cluster notification channel is required.
+- Each node keeps its local SSE connections. Every open watcher polls the shared completion marker from a virtual thread on the node serving that browser connection.
