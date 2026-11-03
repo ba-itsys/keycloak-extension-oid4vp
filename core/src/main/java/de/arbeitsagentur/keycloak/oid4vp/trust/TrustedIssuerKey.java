@@ -19,16 +19,13 @@ import org.keycloak.jose.jwk.JWK;
 import org.keycloak.utils.StringUtil;
 
 /**
- * A trusted issuer key together with the issuer it is trusted for. Binding the key to an issuer
- * keeps trust domains apart, so a key published by one issuer must not verify a credential that
- * claims to come from another.
- *
- * @param issuer the credential {@code iss} this key is trusted for. Null when the provider does not
- *               identify an issuer. The key is then trusted for any issuer.
+ * Binds a trusted key to the issuer it is trusted for, so a key published by one issuer must not
+ * verify a credential that claims to come from another. A null issuer means the provider does not
+ * identify one, and the key is then trusted for any issuer.
  */
 public record TrustedIssuerKey(String issuer, JWK jwk) {
 
-    // Upstream providers expose keys this way, because the upstream contract binds no issuer.
+    // Trusts a key for any issuer, because the upstream contract binds no issuer to its keys.
     public static TrustedIssuerKey ofAnyIssuer(JWK jwk) {
         return new TrustedIssuerKey(null, jwk);
     }
@@ -37,10 +34,6 @@ public record TrustedIssuerKey(String issuer, JWK jwk) {
         return StringUtil.isBlank(issuer) || issuer.equals(credentialIssuer);
     }
 
-    /**
-     * Returns whether this key answers the given JOSE {@code kid}. A key without an id answers every
-     * kid, and a credential without a kid is answered by every key.
-     */
     public boolean matchesKeyId(String keyId) {
         String ownKeyId = jwk != null ? jwk.getKeyId() : null;
         return StringUtil.isBlank(keyId) || StringUtil.isBlank(ownKeyId) || ownKeyId.equals(keyId);

@@ -45,9 +45,9 @@ public class EtsiTrustListIdentityProvider
     private final TrustListProvider staticTrustList;
 
     // Several methods ask for the same certificates during one trust resolution, once per credential
-    // type. A trust list without freshness metadata cannot be cached across requests, so without these
-    // memos every ask would be another fetch. A failed fetch is memoised as an empty list for this
-    // instance alone. A LoTE type mismatch throws and is not memoised.
+    // type. A closed list or a failed fetch is not cached across requests, so without these memos every
+    // ask would be another fetch. Such a result is memoized as an empty list for this instance alone.
+    // A LoTE type mismatch throws and is not memoized.
     private List<X509Certificate> issuanceCertificates;
     private List<X509Certificate> revocationCertificates;
     private List<String> authorityKeyIdentifiers;
@@ -99,8 +99,8 @@ public class EtsiTrustListIdentityProvider
         return List.of(new IssuerTrustAnchors(anchors, config.getRequiredExtendedKeyUsages()));
     }
 
-    // End entity certificates are served through directIssuerCertificates. Exposing them here as
-    // JWKs as well would duplicate that trust for the extension's consumers.
+    // Returns no keys, because end entity certificates are served through directIssuerCertificates.
+    // Exposing them here as JWKs as well would duplicate that trust for the extension's consumers.
     @Override
     public Stream<JWK> resolveKeys(TrustMaterialRequest request) {
         return Stream.empty();

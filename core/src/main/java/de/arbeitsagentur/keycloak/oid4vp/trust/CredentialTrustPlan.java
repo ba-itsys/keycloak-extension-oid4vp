@@ -37,8 +37,8 @@ import org.keycloak.utils.StringUtil;
 public class CredentialTrustPlan {
 
     /**
-     * Memo key for the trust that serves no particular credential type, contributed to only by the
-     * providers that serve every type. It is the empty string because a map key cannot be null and
+     * Memo key for the trust that serves no particular credential type, which only the providers
+     * serving every type contribute to. It is the empty string because a map key cannot be null and
      * no credential type is empty.
      */
     private static final String UNSCOPED = "";
@@ -51,11 +51,6 @@ public class CredentialTrustPlan {
         this(providers, !providers.isEmpty());
     }
 
-    /**
-     * @param trustDeclared whether the configuration names any trust source. This stays true when
-     *     none of the named providers can be resolved. A broken configuration then rejects
-     *     credentials instead of re-enabling the issuer metadata fallback.
-     */
     public CredentialTrustPlan(List<Oid4vpTrustMaterialIdentityProvider<?>> providers, boolean trustDeclared) {
         this.providers = List.copyOf(providers);
         this.trustDeclared = trustDeclared;
@@ -92,7 +87,7 @@ public class CredentialTrustPlan {
 
     /**
      * Returns the DCQL {@code trusted_authorities} entries the providers serving this credential
-     * type advertise. Only the advertisement is pulled, never the trust anchors, so building the
+     * type advertise. Only the advertisement is read, never the trust anchors, so building the
      * authorization request does not depend on whether the trust material is reachable.
      */
     public List<TrustedAuthority> trustedAuthoritiesFor(String credentialType) {
@@ -106,7 +101,7 @@ public class CredentialTrustPlan {
         return TrustedAuthority.merge(trustedAuthorities);
     }
 
-    // Counts a provider for a base type as serving the derived type.
+    // Treats a provider for a base type as serving the derived type too.
     public boolean serves(String credentialType) {
         String servingType = servingType(credentialType, List.of());
         return providers.stream().anyMatch(provider -> serves(provider, servingType));
@@ -114,11 +109,11 @@ public class CredentialTrustPlan {
 
     /**
      * Returns the type whose providers judge a credential: the first type of the credential, nearest
-     * first, that a provider declares. A provider for a derived type thus wins over one for its base
-     * type, and a base type's provider covers derived types without a provider of their own. A type
-     * named in {@code aka_vcts} counts only when no provider declares the credential's own type or
-     * one of its base types. When no provider declares any of them, the unscoped providers judge
-     * the credential.
+     * first, that a provider declares. A provider for a derived type thus takes precedence over one
+     * for its base type, and a base type's provider covers derived types without a provider of their
+     * own. A type named in {@code aka_vcts} applies only when no provider declares the credential's
+     * own type or one of its base types. When no provider declares any of them, the unscoped providers
+     * judge the credential.
      */
     public String servingType(String credentialType, List<String> alsoKnownAs) {
         return CredentialTypeHierarchy.typesOf(credentialType, alsoKnownAs).stream()

@@ -55,11 +55,9 @@ public final class Oid4vpPresentationSession {
     private Oid4vpPresentationSession() {}
 
     /**
-     * Starts a presentation and returns the identity provider's wallet page as challenge. A new
-     * presentation replaces the outcome of the previous one.
-     *
-     * @param execution the authenticator execution id or required action alias that asks
-     * @param returnUrl the GET URL that resumes that execution
+     * Starts a presentation and returns the identity provider's wallet page as challenge. The execution
+     * is an authenticator execution id or a required action alias, and the return URL is the GET URL
+     * that resumes it.
      */
     public static Response start(
             KeycloakSession session,
@@ -111,7 +109,6 @@ public final class Oid4vpPresentationSession {
         return Optional.ofNullable(authSession.getAuthNote(FAILURE_NOTE));
     }
 
-    // Forgets the presentation, so the next challenge starts a new one.
     public static void clear(AuthenticationSessionModel authSession) {
         authSession.removeAuthNote(RESULT_NOTE);
         authSession.removeAuthNote(FAILURE_NOTE);
@@ -120,7 +117,7 @@ public final class Oid4vpPresentationSession {
         authSession.removeAuthNote(RETURN_URL_NOTE);
     }
 
-    // The alias note stays set only while an execution waits for a presentation to the identity provider.
+    // Reads the alias note, which stays set only while an execution waits for a presentation to the provider.
     public static boolean isPending(AuthenticationSessionModel authSession, String identityProviderAlias) {
         return authSession != null && identityProviderAlias.equals(authSession.getAuthNote(ALIAS_NOTE));
     }

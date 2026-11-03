@@ -94,10 +94,9 @@ public class Oid4vpSubjectBindingAuthenticator implements Authenticator, Authent
 
     /**
      * Removes the link this identity provider already has to the user, so that the first broker login
-     * flow can store the one this login establishes. A user who lost the issued credential arrives here
-     * a second time, and Keycloak fails the first broker login flow with "already linked" for a user it
-     * has linked. Removing the link loses nothing, because the subject is derived from the user and the
-     * link stored a moment later holds the same identity.
+     * flow can store the new one. A user who lost the issued credential arrives here a second time, and
+     * Keycloak fails that flow with "already linked" for a user it has linked. Removing the link loses
+     * nothing, because the subject is derived from the user and the new link holds the same identity.
      */
     private static void clearExistingLink(AuthenticationFlowContext context, UserModel user, String identityProvider) {
         if (StringUtil.isBlank(identityProvider)) {
@@ -110,20 +109,11 @@ public class Oid4vpSubjectBindingAuthenticator implements Authenticator, Authent
         }
     }
 
-    /**
-     * Reports whether this login needs a subject at all. A login that carried its own subject identifies
-     * the user already, and a login of another identity provider is none of this authenticator's
-     * business.
-     */
     static boolean bindsSubjectOf(SerializedBrokeredIdentityContext brokeredContext) {
         return brokeredContext.getContextData().containsKey(Oid4vpMapperUtils.CONTEXT_GENERATED_SUBJECT_KEY);
     }
 
-    /**
-     * Sets the brokered identity to the identity key of the given subject, derived the same way it is
-     * derived from a credential claim, so that the credential the user receives afterwards reaches this
-     * identity.
-     */
+    // Derives the key as for a credential claim, so the credential issued afterwards reaches this identity.
     static void bind(SerializedBrokeredIdentityContext brokeredContext, String subject, String username) {
         brokeredContext.setId(Oid4vpIdentityKey.caseInsensitive(subject));
         brokeredContext.setBrokerUsername(username);

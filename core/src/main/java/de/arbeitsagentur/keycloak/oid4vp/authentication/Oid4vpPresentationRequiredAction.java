@@ -90,10 +90,7 @@ public class Oid4vpPresentationRequiredAction implements RequiredActionProvider 
         requiredActionChallenge(context);
     }
 
-    /**
-     * Decides whether the verified presentation completes the action. Returns the message key that
-     * refuses it, or empty to accept it. The default accepts every verified presentation.
-     */
+    // Decides whether the presentation completes the action. Returns the message key of a refusal, or empty.
     protected Optional<String> verify(RequiredActionContext context, Oid4vpPresentation presentation) {
         return Optional.empty();
     }
@@ -101,8 +98,8 @@ public class Oid4vpPresentationRequiredAction implements RequiredActionProvider 
     /**
      * Links the identity of the presentation to the user, who is authenticated at this point. A
      * presentation without the subject credential gets a subject derived from the user, and the
-     * configured subject credential carrying it is offered. Returns the message key that refuses the
-     * presentation, or empty to accept it.
+     * configured subject credential carrying it is offered. Returns the message key of a refusal, or
+     * empty.
      */
     protected Optional<String> link(RequiredActionContext context, Oid4vpPresentation presentation) {
         UserModel user = context.getUser();
@@ -148,7 +145,7 @@ public class Oid4vpPresentationRequiredAction implements RequiredActionProvider 
         return config == null ? Map.of() : config.getConfig();
     }
 
-    // Resumes this required action with a GET without session code, as Keycloak's broker does.
+    // Builds the GET URL that resumes this required action without a session code, as Keycloak's broker does.
     protected URI returnUrl(RequiredActionContext context) {
         AuthenticationSessionModel authSession = context.getAuthenticationSession();
         return LoginActionsService.loginActionsBaseUrl(context.getUriInfo())

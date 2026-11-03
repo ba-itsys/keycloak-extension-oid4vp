@@ -119,8 +119,7 @@ public class Oid4vpCallbackProcessor {
                 primary.credentialType(),
                 primary.claims().keySet());
 
-        // Every presented credential must come from an allowed issuer, not only the first one,
-        // because in a multi-credential presentation the claims of each credential reach the mappers.
+        // Checks every presented credential, because the claims of each one reach the mappers.
         for (VerifiedCredential presented : vpResult.credentials().values()) {
             String presentedIssuer = presented.issuer();
             if (presentedIssuer != null && !configProvider.isIssuerAllowed(presentedIssuer)) {
@@ -277,11 +276,12 @@ public class Oid4vpCallbackProcessor {
 
     /**
      * Returns whether a credential may identify a returning user. A subject credential this realm
-     * issues is always bound to the credentials present at issuance, so one presented next to
-     * credentials a binding would cover but carrying no binding has had that binding withheld and
-     * must not be trusted to identify a user. The login then falls through to a fresh subject and
-     * issues a bound credential again, exactly as on a first login. A subject credential presented
-     * on its own, or one this realm did not issue, has no such material and is unaffected.
+     * issues is always bound to the credentials present at issuance. One that carries no binding but
+     * is presented next to credentials a binding would cover has had that binding withheld, so it
+     * must not identify a user. The login then falls through to a fresh subject and issues a bound
+     * credential again, exactly as on a first login. The check does not look at the issuer, so an
+     * unbound credential of another issuer is refused as the subject next to such credentials too. A
+     * subject credential presented on its own has no such material and is unaffected.
      */
     private boolean hasUsableSubjectBinding(VpTokenResult vpResult, VerifiedCredential subjectCredential) {
         boolean carriesBinding = subjectCredential.claims().get(configProvider.getReferenceBindingClaim()) != null;
@@ -312,8 +312,6 @@ public class Oid4vpCallbackProcessor {
      * requested, which without claim sets means all of them and with claim sets at least one
      * complete claim_sets option. Entries are looked up by the credential id the wallet answered
      * under, so two entries of the same credential type stay distinguishable.
-     *
-     * @return the credential ids whose presentation satisfied their requested claims
      */
     private Set<String> enforceRequestedClaims(
             Oid4vpRequestObjectStore.RequestContextEntry requestContext, VpTokenResult vpResult) {

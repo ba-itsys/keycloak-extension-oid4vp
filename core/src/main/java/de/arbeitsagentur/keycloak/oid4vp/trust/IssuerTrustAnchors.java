@@ -21,16 +21,12 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * CA certificates and extended key usage policy that validate credential issuer certificate chains
- * of one trust domain.
- *
- * <p>Relaxed variant of {@link org.keycloak.broker.provider.X509TrustMaterial}: anchors must be CA
- * certificates but need not be self-issued roots, because ETSI trust lists commonly list the
- * issuing (intermediate) CA of a trust domain. Upstream requires self-signed roots.
- *
- * @param trustAnchors              CA certificates anchoring one trust domain
- * @param requiredExtendedKeyUsages extended key usage OIDs. The end entity certificate must contain
- *                                  at least one of them, and an empty list imposes no restriction.
+ * Holds the CA certificates and extended key usage policy that validate credential issuer
+ * certificate chains of one trust domain. The upstream {@code X509TrustMaterial} requires
+ * self-signed roots. Anchors here must be CA certificates but need not be self-issued roots, because
+ * ETSI trust lists commonly list the issuing (intermediate) CA of a trust domain. The end entity
+ * certificate must contain at least one of the extended key usages, and an empty list imposes no
+ * restriction.
  */
 public record IssuerTrustAnchors(Set<X509Certificate> trustAnchors, List<String> requiredExtendedKeyUsages) {
 

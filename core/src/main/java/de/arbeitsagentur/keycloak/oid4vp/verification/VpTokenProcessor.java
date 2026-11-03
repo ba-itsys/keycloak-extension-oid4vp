@@ -119,7 +119,6 @@ public class VpTokenProcessor implements VpTokenVerifier {
                 new CredentialTrustSelection(resolveTrustPlan(), request.requestedCredentials());
 
         try {
-            // A JSON object is the credential id keyed wrapper. Anything else is a bare credential.
             if (request.vpToken().trim().startsWith("{")) {
                 return processMultiCredential(request, trust);
             }
@@ -297,7 +296,7 @@ public class VpTokenProcessor implements VpTokenVerifier {
         }
 
         /**
-         * Attributes a VP token that is a bare credential, not the credential id keyed object of
+         * Attributes a VP token that is a bare credential instead of the credential id keyed object of
          * OID4VP 1.0 section 8.1. Only a request for exactly one credential can be attributed. With
          * several, the placeholder id is not among the requested ids and the presentation is rejected.
          */

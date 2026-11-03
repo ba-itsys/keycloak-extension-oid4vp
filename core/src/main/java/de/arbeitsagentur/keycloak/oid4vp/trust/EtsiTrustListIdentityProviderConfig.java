@@ -28,10 +28,9 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Configuration of the OID4VP trust material identity provider. Trust anchors come from an ETSI
- * TS 119 602 trust list URL, from a pasted PEM certificate bundle, or both. The
- * {@code trustedCertificates} and {@code requiredExtendedKeyUsages} keys deliberately match the
- * upstream {@code DefaultTrustIdentityProviderConfig}.
+ * Configuration of the ETSI trust list identity provider. The {@code trustedCertificates} and
+ * {@code requiredExtendedKeyUsages} keys deliberately match the upstream
+ * {@code DefaultTrustIdentityProviderConfig}.
  */
 public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
 
@@ -135,11 +134,6 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
         getConfig().put(REQUIRED_EXTENDED_KEY_USAGES, commaSeparatedOids);
     }
 
-    /**
-     * Returns the credential types (SD-JWT VCT, mDoc doctype) this trust domain is responsible for.
-     * Empty means the provider serves every credential type of the identity providers referencing
-     * it.
-     */
     public List<String> getServedCredentialTypes() {
         return ServedCredentialTypes.of(this);
     }
@@ -165,9 +159,6 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
      * entry describes the same anchors and a wallet matches any of them. Empty, the default, leaves
      * the query without {@code trusted_authorities} for the served credentials. See OID4VP 1.0
      * section 6.1.1.
-     *
-     * @throws IllegalArgumentException when the configured value is neither, or {@code etsi_tl} is
-     *     configured without a trust list URL
      */
     public Optional<TrustedAuthorityType> getAdvertisedTrustedAuthorityType() {
         String configured = getConfig().get(ADVERTISE_TRUSTED_AUTHORITIES);

@@ -19,11 +19,6 @@ import java.util.List;
 import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.models.RealmModel;
 
-/**
- * Configuration of the trust material identity provider for credentials this Keycloak issues
- * itself. The trust material is the signature key material of the issuing realm, so nothing has to
- * be pasted and a key rotation takes effect without reconfiguration.
- */
 public class KeycloakRealmIssuerIdentityProviderConfig extends IdentityProviderModel {
 
     public static final String ISSUER_REALM = "issuerRealm";
@@ -51,7 +46,6 @@ public class KeycloakRealmIssuerIdentityProviderConfig extends IdentityProviderM
         }
     }
 
-    // Empty means the realm the verifier runs in.
     public String getIssuerRealm() {
         return getConfig().get(ISSUER_REALM);
     }
@@ -60,11 +54,7 @@ public class KeycloakRealmIssuerIdentityProviderConfig extends IdentityProviderM
         getConfig().put(ISSUER_REALM, realmName);
     }
 
-    /**
-     * Returns the credential {@code iss} the keys are bound to. Empty derives it from the issuing
-     * realm, which is the value Keycloak's JWT VC issuer metadata publishes. Configure it when the
-     * credentials are issued under a different frontend URL.
-     */
+    // Overrides the issuer derived from the issuing realm when credentials use a different frontend URL.
     public String getIssuer() {
         return getConfig().get(ISSUER);
     }

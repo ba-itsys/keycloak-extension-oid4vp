@@ -79,8 +79,7 @@ public class Oid4vpPresentationAuthenticator implements Authenticator {
 
     /**
      * Decides whether the verified presentation completes the execution, for example by comparing a
-     * claim with the user. Returns the message key that refuses it, or empty to accept it. The
-     * default accepts every verified presentation.
+     * claim with the user. Returns the message key of a refusal, or empty.
      */
     protected Optional<String> verify(AuthenticationFlowContext context, Oid4vpPresentation presentation) {
         return Optional.empty();
@@ -89,7 +88,7 @@ public class Oid4vpPresentationAuthenticator implements Authenticator {
     /**
      * Sets the linked user when the flow has none, and otherwise requires the link to point to the
      * user of the flow. It never links, because a username form alone identifies a user without
-     * authenticating them. Returns the message key that refuses the presentation, or empty.
+     * authenticating them. Returns the message key of a refusal, or empty.
      */
     protected Optional<String> identify(AuthenticationFlowContext context, Oid4vpPresentation presentation) {
         if (presentation.identityKey() == null) {

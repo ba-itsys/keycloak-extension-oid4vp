@@ -417,8 +417,7 @@ public class Oid4vpIdentityProviderEndpoint {
             return browserError(Oid4vpMessages.INVALID_LOGIN_RESPONSE);
         }
 
-        // The browser has to be the one that started the attempt, as at /complete-auth. Checked
-        // before the record is consumed, so another browser cannot burn it.
+        // Checks the browser before consuming the record, so another browser cannot burn it.
         AuthenticationSessionModel storedAuthSession = authSessionResolver.resolveFromStore(state);
         AuthenticationSessionModel authSession = authSessionResolver.sameBrowserSession(storedAuthSession);
         if (storedAuthSession != null && authSession == null) {

@@ -115,7 +115,6 @@ public class MdocVerifier {
         return verify(deviceResponseToken, trust, Objects.requireNonNull(handoverInfo));
     }
 
-    // A null handoverInfo verifies the issuer signature only.
     private MdocVerificationResult verify(
             String deviceResponseToken, ResolvedTrust trust, OpenId4VpHandoverInfo handoverInfo) {
         try {
@@ -151,7 +150,7 @@ public class MdocVerifier {
 
     /**
      * Requires the document level and the MSO docType to agree (ISO/IEC 18013-5 9.1.2). The MSO
-     * value wins because only the MSO is covered by the issuer signature.
+     * value takes precedence because only the MSO is covered by the issuer signature.
      */
     private String resolveDocType(CBORPairList document, CBORPairList mso) {
         String documentDocType = str(document, "docType");
@@ -213,8 +212,8 @@ public class MdocVerifier {
         claims.put(namespace, namespaceClaims);
     }
 
-    // A JSON object or array serialized into a string element becomes a nested structure in the
-    // claims JSON. mDoc claims then follow the same addressing rules as SD-JWT claims.
+    // Parses a JSON object or array serialized into a string element into a nested structure of the
+    // claims JSON, so mDoc claims follow the same addressing rules as SD-JWT claims.
     private Object structuredValue(Object value) {
         if (!(value instanceof String text)) {
             return value;

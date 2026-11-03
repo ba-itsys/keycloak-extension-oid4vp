@@ -23,10 +23,6 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.provider.ProviderConfigurationBuilder;
 
-/**
- * Factory of the ETSI trust list identity provider. OID4VP identity providers reference its
- * instances by alias through their {@code trustMaterialIdps} setting.
- */
 public class EtsiTrustListIdentityProviderFactory
         extends AbstractIdentityProviderFactory<EtsiTrustListIdentityProvider> {
 
