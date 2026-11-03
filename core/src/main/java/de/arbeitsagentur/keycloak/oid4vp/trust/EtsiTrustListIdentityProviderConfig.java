@@ -73,6 +73,8 @@ public class EtsiTrustListIdentityProviderConfig extends IdentityProviderModel {
         }
         parseTrustListSigningCerts();
         getAdvertisedTrustedAuthorityType();
+        ConfigValues.requireSeconds(getConfig(), TRUST_LIST_MAX_CACHE_TTL_SECONDS);
+        ConfigValues.requireSeconds(getConfig(), TRUST_LIST_MAX_STALE_AGE_SECONDS);
     }
 
     public String getTrustListUrl() {

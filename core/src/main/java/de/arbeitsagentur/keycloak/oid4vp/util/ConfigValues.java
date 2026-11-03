@@ -17,6 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp.util;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Map;
 
 /**
  * Normalizes multi-line configuration values that reach the identity provider config through
@@ -27,8 +28,26 @@ import java.util.Base64;
 public final class ConfigValues {
 
     private static final String PEM_MARKER = "-----BEGIN";
+    private static final long MAX_SECONDS = 315_360_000;
 
     private ConfigValues() {}
+
+    // Bounds the value, because a huge time overflows the expiry computed from it.
+    public static void requireSeconds(Map<String, String> config, String key) {
+        String value = config.get(key);
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        try {
+            long seconds = Long.parseLong(value.trim());
+            if (seconds >= 0 && seconds <= MAX_SECONDS) {
+                return;
+            }
+        } catch (NumberFormatException e) {
+            // Reports the value below.
+        }
+        throw new IllegalArgumentException(key + " must be a number of seconds from 0 to " + MAX_SECONDS);
+    }
 
     public static String pem(String value) {
         if (value == null || value.isBlank()) {

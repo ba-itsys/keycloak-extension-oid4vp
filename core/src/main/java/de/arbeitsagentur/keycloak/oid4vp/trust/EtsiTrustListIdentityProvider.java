@@ -129,7 +129,7 @@ public class EtsiTrustListIdentityProvider
         List<X509Certificate> certificates = new ArrayList<>();
         if (urlTrustList != null) {
             certificates.addAll(urlTrustList.getRevocationCertificates());
-            enforceExpectedLoTEType();
+            enforceExpectedLoTEType(certificates);
         }
         if (staticTrustList != null) {
             certificates.addAll(staticTrustList.getRevocationCertificates());
@@ -194,7 +194,7 @@ public class EtsiTrustListIdentityProvider
         List<X509Certificate> certificates = new ArrayList<>();
         if (urlTrustList != null) {
             certificates.addAll(urlTrustList.getIssuanceCertificates());
-            enforceExpectedLoTEType();
+            enforceExpectedLoTEType(certificates);
         }
         if (staticTrustList != null) {
             certificates.addAll(staticTrustList.getIssuanceCertificates());
@@ -202,13 +202,14 @@ public class EtsiTrustListIdentityProvider
         return List.copyOf(certificates);
     }
 
-    private void enforceExpectedLoTEType() {
+    private void enforceExpectedLoTEType(List<X509Certificate> listed) {
         String expected = config.getTrustListLoTEType();
         if (StringUtil.isBlank(expected)) {
             return;
         }
         String actual = urlTrustList.getCurrentLoTEType();
-        if (StringUtil.isNotBlank(actual) && !expected.equals(actual)) {
+        // Skips the check during an outage, because no list exists to judge and the static certificates stay usable.
+        if (!expected.equals(actual) && (StringUtil.isNotBlank(actual) || !listed.isEmpty())) {
             throw new IdentityBrokerException(
                     "Trust list LoTE type mismatch: expected " + expected + " but got " + actual);
         }
