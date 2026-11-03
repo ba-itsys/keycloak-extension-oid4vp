@@ -22,10 +22,12 @@ import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.event.Oid4vpEventDetails;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
+import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestCrlServer;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestTrustListServer;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.trust.EtsiTrustListIdentityProviderConfig;
 import java.net.http.HttpClient;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.keycloak.common.util.PemUtils;
@@ -35,6 +37,8 @@ import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
 @KeycloakIntegrationTest(config = Oid4vpServerConfig.class)
 class KeycloakOid4vpEventsE2eIT extends AbstractOid4vpE2eTest {
+
+    private static final byte[] NOT_A_CRL = {1, 2, 3};
 
     @InjectTestWallet
     TestWallet wallet;
@@ -58,6 +62,34 @@ class KeycloakOid4vpEventsE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
+    void crlFetchFailureFiresInTheLoginAndInTheBackgroundDownload() throws Exception {
+        try (TestTrustListServer trustList = TestTrustListServer.serving(
+                        PemUtils.decodeCertificate(wallet.client().getCaCertificatePem()));
+                TestCrlServer crl = new TestCrlServer(NOT_A_CRL)) {
+            setTrustIdpConfig(Map.of(
+                    EtsiTrustListIdentityProviderConfig.TRUST_LIST_URL,
+                    trustList.url(),
+                    EtsiTrustListIdentityProviderConfig.CRL_ENDPOINT,
+                    crl.url(),
+                    EtsiTrustListIdentityProviderConfig.CRL_MAX_CACHE_TTL_SECONDS,
+                    "0"));
+
+            login("event-crl-login");
+            flow.assertLoginSucceeded();
+
+            List<EventRepresentation> events = eventsOfType("REVOCATION_CHECK_FAILED", 2);
+            assertThat(events).allSatisfy(event -> {
+                assertThat(event.getError()).isEqualTo("oid4vp_revocation_check_failed");
+                assertThat(event.getDetails()).containsEntry(Oid4vpEventDetails.MECHANISM, "CRL");
+            });
+            assertThat(crl.downloads()).isPositive();
+            // Tells the events apart by state, because only an event of the login carries one.
+            assertThat(events).anyMatch(event -> event.getDetails().containsKey(Oid4vpEventDetails.STATE));
+            assertThat(events).anyMatch(event -> !event.getDetails().containsKey(Oid4vpEventDetails.STATE));
+        }
+    }
+
+    @Test
     void revokedCredentialFiresDetectedAndFailedWithTheSameState() throws Exception {
         assertRevokedCredentialIsRejected("SD-JWT");
 
@@ -76,6 +108,26 @@ class KeycloakOid4vpEventsE2eIT extends AbstractOid4vpE2eTest {
                 .containsEntry(Oid4vpEventDetails.MECHANISM, "STATUS_LIST")
                 .hasEntrySatisfying(Oid4vpEventDetails.REFERENCE, reference -> assertThat(reference)
                         .contains(" index "));
+    }
+
+    @Test
+    void unavailableRequiredCrlFailsThePresentationOnTheServerSide() throws Exception {
+        try (TestTrustListServer trustList = TestTrustListServer.serving(
+                        PemUtils.decodeCertificate(wallet.client().getCaCertificatePem()));
+                TestCrlServer crl = new TestCrlServer(NOT_A_CRL)) {
+            setTrustIdpConfig(Map.of(
+                    EtsiTrustListIdentityProviderConfig.TRUST_LIST_URL,
+                    trustList.url(),
+                    EtsiTrustListIdentityProviderConfig.CRL_ENDPOINT,
+                    crl.url(),
+                    EtsiTrustListIdentityProviderConfig.CRL_REQUIRED,
+                    "true"));
+
+            flow.submitToWallet(openWalletPage());
+
+            assertThat(eventsOfType("PRESENTATION_FAILED", 1).get(0).getDetails())
+                    .containsEntry(Oid4vpEventDetails.ORIGIN, "SERVER");
+        }
     }
 
     @Test

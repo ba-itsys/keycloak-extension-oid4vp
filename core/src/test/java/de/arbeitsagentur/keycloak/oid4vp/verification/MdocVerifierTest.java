@@ -59,6 +59,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.keycloak.common.VerificationException;
 
 class MdocVerifierTest {
 
@@ -238,6 +239,27 @@ class MdocVerifierTest {
         Map<String, Object> statusList = (Map<String, Object>) status.get("status_list");
         assertThat(statusList.get("uri")).isEqualTo("https://status.example.com/list/1");
         assertThat(((Number) statusList.get("idx")).intValue()).isEqualTo(42);
+    }
+
+    @Test
+    void verify_revokedChain_throws() throws Exception {
+        String token = buildSignedMdocWithStatus(
+                "eu.europa.ec.eudi.pid.1",
+                "eu.europa.ec.eudi.pid.1",
+                "https://status.example.com/list/1",
+                42,
+                new String[] {"given_name", "Alice"});
+        CrlVerifier crlVerifier = new CrlVerifier(null) {
+            @Override
+            public void check(List<X509Certificate> chain, ResolvedTrust trust) throws VerificationException {
+                throw new VerificationException("Issuer certificate has been revoked");
+            }
+        };
+
+        assertThatThrownBy(() -> new MdocVerifier(Oid4vpIdentityProviderConfig.DEFAULT_CLOCK_SKEW_SECONDS, crlVerifier)
+                        .verifyIssuerSigned(token, TestTrust.ofCertificates(signingCert)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("revoked");
     }
 
     @ParameterizedTest(name = "{0}")

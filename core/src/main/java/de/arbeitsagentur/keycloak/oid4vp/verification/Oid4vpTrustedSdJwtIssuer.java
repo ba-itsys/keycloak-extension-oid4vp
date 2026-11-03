@@ -69,9 +69,15 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
     private final ResolvedTrust trust;
     private final boolean requireIssuerSanMatch;
     private final JwtVcIssuerMetadataResolver issuerMetadataResolver;
+    private final CrlVerifier crlVerifier;
+    private List<X509Certificate> validatedChain = List.of();
 
     public Oid4vpTrustedSdJwtIssuer(
-            ResolvedTrust trust, JwtVcIssuerMetadataResolver issuerMetadataResolver, boolean requireIssuerSanMatch) {
+            ResolvedTrust trust,
+            JwtVcIssuerMetadataResolver issuerMetadataResolver,
+            boolean requireIssuerSanMatch,
+            CrlVerifier crlVerifier) {
+        this.crlVerifier = crlVerifier;
         this.requireIssuerSanMatch = requireIssuerSanMatch;
         this.trust = trust != null ? trust : ResolvedTrust.empty();
         this.issuerMetadataResolver = issuerMetadataResolver;
@@ -173,7 +179,18 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
             requireIssuerMatchesLeafSan(chain.get(0), issuer);
         }
         LOG.debug("SD-JWT x5c chain validated against trust material, using leaf certificate key");
+        validatedChain = chain;
         return List.of(toVerifierContext(leafKey));
+    }
+
+    /**
+     * Checks the chain the credential was verified with against CRLs. Runs after the signature check,
+     * so that a credential nobody signed cannot trigger downloads or revocation events.
+     */
+    void checkRevocation() throws VerificationException {
+        if (!validatedChain.isEmpty()) {
+            crlVerifier.check(validatedChain, trust);
+        }
     }
 
     private static void requireIssuerMatchesLeafSan(X509Certificate leaf, String issuer) throws VerificationException {
@@ -239,6 +256,7 @@ public class Oid4vpTrustedSdJwtIssuer implements TrustedSdJwtIssuer {
                     validatedLeafKey.getEncoded(), issuerKey.publicKey().getEncoded())) {
                 throw new IllegalStateException("Issuer metadata x5c leaf key does not match the resolved JWK");
             }
+            validatedChain = chain;
         } catch (IllegalStateException e) {
             throw e;
         } catch (Exception e) {
