@@ -17,5 +17,6 @@ package de.arbeitsagentur.keycloak.oid4vp.event;
 
 public enum RevocationMechanism {
     STATUS_LIST,
+    CRL,
     IDENTIFIER_LIST
 }

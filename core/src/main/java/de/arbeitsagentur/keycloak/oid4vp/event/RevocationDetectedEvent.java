@@ -17,8 +17,12 @@ package de.arbeitsagentur.keycloak.oid4vp.event;
 
 import java.util.Map;
 
-// Reports a status list that marks a credential as revoked or suspended. `reference` names the entry.
-public record RevocationDetectedEvent(String realmId, RevocationMechanism mechanism, String reference, String state)
+/**
+ * Reports a status list or CRL that marks a credential or an issuer certificate as revoked or
+ * suspended. {@code reference} names the status list entry or the certificate.
+ */
+public record RevocationDetectedEvent(
+        String realmId, String trustProviderId, RevocationMechanism mechanism, String reference, String state)
         implements Oid4vpEvent {
 
     @Override
@@ -29,6 +33,8 @@ public record RevocationDetectedEvent(String realmId, RevocationMechanism mechan
     @Override
     public Map<String, String> details() {
         return Oid4vpEventDetails.of(
+                Oid4vpEventDetails.TRUST_PROVIDER,
+                trustProviderId,
                 Oid4vpEventDetails.MECHANISM,
                 mechanism,
                 Oid4vpEventDetails.REFERENCE,

@@ -109,9 +109,11 @@ public class StatusListVerifier {
                     session,
                     new RevocationCheckFailedEvent(
                             Oid4vpEventService.realmId(session),
+                            null,
                             RevocationMechanism.STATUS_LIST,
                             ref.uri,
                             Oid4vpEventService.state(session),
+                            false,
                             FailureDetails.causeChain(e)));
             throw new RevocationStatusUnavailableException(
                     "Unable to verify credential revocation status from " + ref.uri + ": "
@@ -124,6 +126,7 @@ public class StatusListVerifier {
                     session,
                     new RevocationDetectedEvent(
                             Oid4vpEventService.realmId(session),
+                            null,
                             RevocationMechanism.STATUS_LIST,
                             ref.uri + " index " + ref.idx + " status " + status,
                             Oid4vpEventService.state(session)));
@@ -150,9 +153,11 @@ public class StatusListVerifier {
                     session,
                     new RevocationCheckFailedEvent(
                             Oid4vpEventService.realmId(session),
+                            null,
                             RevocationMechanism.IDENTIFIER_LIST,
                             null,
                             Oid4vpEventService.state(session),
+                            false,
                             "Identifier lists are not supported"));
         }
 

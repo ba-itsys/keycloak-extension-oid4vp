@@ -88,16 +88,15 @@ class KeycloakEventMappingTest {
     }
 
     @Test
-    void revocationCheckFailureNamesTheMechanismAndTheState() {
+    void revocationCheckFailureSaysWhetherStaleDataIsInUse() {
         KeycloakEventMapping event = KeycloakEventMapping.of(new RevocationCheckFailedEvent(
-                "realm", RevocationMechanism.STATUS_LIST, "https://issuer.example/status", "state", "HTTP 503"));
+                "realm", null, RevocationMechanism.CRL, "https://ca.example/ca.crl", "state", false, "HTTP 503"));
 
-        assertThat(event.type()).isEqualTo(EventType.IDENTITY_PROVIDER_RESPONSE_ERROR);
-        assertThat(event.error()).isEqualTo("oid4vp_revocation_check_failed");
         assertThat(event.details())
-                .containsEntry(Oid4vpEventDetails.MECHANISM, "STATUS_LIST")
-                .containsEntry(Oid4vpEventDetails.REFERENCE, "https://issuer.example/status")
-                .containsEntry(Oid4vpEventDetails.STATE, "state");
+                .doesNotContainKey(Oid4vpEventDetails.TRUST_PROVIDER)
+                .containsEntry(Oid4vpEventDetails.MECHANISM, "CRL")
+                .containsEntry(Oid4vpEventDetails.STATE, "state")
+                .containsEntry(Oid4vpEventDetails.STALE_DATA_IN_USE, "false");
     }
 
     @Test

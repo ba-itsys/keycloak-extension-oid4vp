@@ -22,6 +22,7 @@ import java.security.cert.CertificateExpiredException;
 import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.X509Certificate;
 import java.util.List;
+import org.jboss.logging.Logger;
 import org.keycloak.common.VerificationException;
 import org.keycloak.common.util.PemUtils;
 import org.keycloak.crypto.X509CertificateChainValidator;
@@ -40,6 +41,8 @@ public record ResolvedTrust(
         List<X509Certificate> revocationCertificates,
         List<TrustedAuthority> trustedAuthorities,
         boolean hasDeclaredTrustSource) {
+
+    private static final Logger LOG = Logger.getLogger(ResolvedTrust.class);
 
     public ResolvedTrust {
         issuerTrustAnchors = List.copyOf(issuerTrustAnchors);
@@ -93,9 +96,8 @@ public record ResolvedTrust(
     }
 
     /**
-     * Returns every directly trusted certificate, whichever issuer it belongs to. Serves credentials
-     * that present the certificate itself, because a matching certificate is the stronger statement.
-     * Also serves formats that have no issuer identifier to match against.
+     * Returns every directly trusted certificate, whichever issuer it belongs to. Formats without an
+     * issuer identifier use this list, and the CRL check uses it to skip pinned certificates.
      */
     public List<X509Certificate> pinnedCertificates() {
         return directIssuerCertificates.stream()
@@ -156,6 +158,25 @@ public record ResolvedTrust(
         throw new VerificationException(
                 FailureDetails.causeChain(firstFailure) + " (chain=" + FailureDetails.certificates(chain) + ")",
                 firstFailure);
+    }
+
+    /**
+     * Returns the first trust domain that accepts a chain, the same one
+     * {@link #validateIssuerChain} validates it with. Returns null when no domain accepts it, as for
+     * a pinned certificate.
+     */
+    public IssuerTrustAnchors domainAccepting(List<X509Certificate> chain) {
+        List<String> x5c = chain.stream().map(PemUtils::encodeCertificate).toList();
+        for (IssuerTrustAnchors material : issuerTrustAnchors) {
+            try {
+                X509CertificateChainValidator.validate(
+                        x5c, null, material.trustAnchors(), material.requiredExtendedKeyUsages());
+                return material;
+            } catch (VerificationException e) {
+                LOG.debugf("Trust domain does not accept the chain: %s", e.getMessage());
+            }
+        }
+        return null;
     }
 
     private boolean isTrustAnchor(X509Certificate certificate) {

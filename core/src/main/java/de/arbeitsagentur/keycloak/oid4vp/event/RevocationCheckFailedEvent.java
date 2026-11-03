@@ -19,7 +19,13 @@ import java.util.Map;
 
 // Reports a revocation status that could not be determined. `PresentationFailedEvent` shows a rejection.
 public record RevocationCheckFailedEvent(
-        String realmId, RevocationMechanism mechanism, String reference, String state, String reason)
+        String realmId,
+        String trustProviderId,
+        RevocationMechanism mechanism,
+        String reference,
+        String state,
+        boolean staleDataInUse,
+        String reason)
         implements Oid4vpEvent {
 
     @Override
@@ -30,12 +36,16 @@ public record RevocationCheckFailedEvent(
     @Override
     public Map<String, String> details() {
         return Oid4vpEventDetails.of(
+                Oid4vpEventDetails.TRUST_PROVIDER,
+                trustProviderId,
                 Oid4vpEventDetails.MECHANISM,
                 mechanism,
                 Oid4vpEventDetails.REFERENCE,
                 reference,
                 Oid4vpEventDetails.STATE,
                 state,
+                Oid4vpEventDetails.STALE_DATA_IN_USE,
+                staleDataInUse,
                 Oid4vpEventDetails.REASON,
                 reason);
     }
