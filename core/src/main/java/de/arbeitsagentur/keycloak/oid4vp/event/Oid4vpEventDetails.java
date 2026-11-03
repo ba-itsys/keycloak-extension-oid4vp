@@ -29,10 +29,13 @@ public final class Oid4vpEventDetails {
 
     public static final String CREDENTIAL_TYPES = "oid4vp_credential_types";
     public static final String ERROR = "oid4vp_error";
+    public static final String FAILURE = "oid4vp_failure";
     public static final String FLOW = "oid4vp_flow";
     public static final String IDENTITY_PROVIDER = "oid4vp_identity_provider";
+    public static final String MECHANISM = "oid4vp_mechanism";
     public static final String ORIGIN = "oid4vp_origin";
     public static final String REASON = "oid4vp_reason";
+    public static final String REFERENCE = "oid4vp_reference";
     public static final String REFUSAL = "oid4vp_refusal";
     public static final String REJECTION = "oid4vp_rejection";
     public static final String STATE = "oid4vp_state";
@@ -72,6 +75,9 @@ public final class Oid4vpEventDetails {
         public static final String PRESENTATION_FAILED = "PRESENTATION_FAILED";
         public static final String PRESENTATION_REFUSED = "PRESENTATION_REFUSED";
         public static final String COMPLETION_REJECTED = "COMPLETION_REJECTED";
+        public static final String REVOCATION_DETECTED = "REVOCATION_DETECTED";
+        public static final String REVOCATION_CHECK_FAILED = "REVOCATION_CHECK_FAILED";
+        public static final String TRUST_MATERIAL_FAILED = "TRUST_MATERIAL_FAILED";
 
         private EventTypes() {}
     }
