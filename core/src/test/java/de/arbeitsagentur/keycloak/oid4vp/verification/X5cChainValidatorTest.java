@@ -35,6 +35,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import javax.security.auth.x500.X500Principal;
 import org.bouncycastle.asn1.x509.BasicConstraints;
 import org.bouncycastle.asn1.x509.Extension;
@@ -295,6 +296,27 @@ class X5cChainValidatorTest {
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("no trusted key matched");
         }
+    }
+
+    @Test
+    void pinnedKeysIgnoreAChainToAPinnedCa() throws Exception {
+        KeyPair signer = generateKeyPair();
+        X509Certificate sibling = generateCert(
+                signer,
+                caKeyPair,
+                "CN=Sibling",
+                "CN=Test CA",
+                Instant.now().minus(1, ChronoUnit.HOURS),
+                Instant.now().plus(1, ChronoUnit.DAYS),
+                false);
+        SignedJWT jwt = new SignedJWT(
+                JWSHeader.parse(Map.of("alg", "ES256", "x5c", encode(sibling))),
+                new JWTClaimsSet.Builder().subject("trust-list").build());
+        jwt.sign(new ECDSASigner((ECPrivateKey) signer.getPrivate()));
+
+        assertThatThrownBy(() -> X5cChainValidator.verifyJwtSignatureWithPinnedKeys(jwt.serialize(), List.of(caCert)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no trusted key matched");
     }
 
     private static List<String> encode(X509Certificate... certificates) throws Exception {

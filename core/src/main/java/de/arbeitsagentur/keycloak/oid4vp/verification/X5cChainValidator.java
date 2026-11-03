@@ -37,7 +37,8 @@ import org.keycloak.util.KeyWrapperUtil;
 /**
  * Verifies trust list and status list JWTs against pinned trusted certificates. A presented x5c
  * chain is accepted when its leaf is a trusted certificate or when it builds a PKIX path to a trusted
- * CA certificate. Without a usable x5c chain each trusted certificate's key is tried directly.
+ * CA certificate. Without a usable x5c chain each trusted certificate's key is tried directly. A
+ * trust list skips the chain and accepts only the keys of its configured certificates.
  */
 public final class X5cChainValidator {
 
@@ -163,6 +164,19 @@ public final class X5cChainValidator {
             }
         }
 
+        verifyWithKeysOf(jwt, trustedCerts, x5cFailure);
+    }
+
+    /**
+     * Ignores any x5c chain and accepts only the keys of the given certificates. A trust list decides
+     * which issuers count, so a CA among them must not vouch for every certificate it issues.
+     */
+    static void verifyJwtSignatureWithPinnedKeys(String compactJwt, List<X509Certificate> pinned) throws Exception {
+        verifyWithKeysOf(parseJwt(compactJwt), pinned, null);
+    }
+
+    private static void verifyWithKeysOf(JWSInput jwt, List<X509Certificate> trustedCerts, String x5cFailure)
+            throws Exception {
         List<String> skippedCertificates = new ArrayList<>();
         for (X509Certificate cert : trustedCerts) {
             try {
@@ -182,7 +196,7 @@ public final class X5cChainValidator {
 
         throw new IllegalStateException("JWT signature verification failed: no trusted key matched (alg="
                 + jwt.getHeader().getRawAlgorithm() + ", kid=" + jwt.getHeader().getKeyId()
-                + ", x5c leaf=" + describeLeaf(x5c)
+                + ", x5c leaf=" + describeLeaf(jwt.getHeader().getX5c())
                 + (x5cFailure != null ? ", x5c chain rejected: " + x5cFailure : "")
                 + ", " + trustedCerts.size() + " trusted certificates"
                 + (skippedCertificates.isEmpty() ? "" : ", skipped outside their validity: " + skippedCertificates)
@@ -190,7 +204,7 @@ public final class X5cChainValidator {
     }
 
     private static String describeLeaf(List<String> x5c) {
-        if (x5c.isEmpty()) {
+        if (x5c == null || x5c.isEmpty()) {
             return "<none>";
         }
         try {
