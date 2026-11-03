@@ -29,6 +29,7 @@ import org.bouncycastle.asn1.x509.BasicConstraints;
 import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.GeneralName;
 import org.bouncycastle.asn1.x509.GeneralNames;
+import org.bouncycastle.asn1.x509.KeyUsage;
 import org.bouncycastle.asn1.x509.SubjectKeyIdentifier;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
@@ -79,6 +80,8 @@ public final class TestCertificates {
                 subject,
                 caKeyPair.getPublic());
         builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(true));
+        // Grants cRLSign, because the wallet signs its CRL for the root CA with this key.
+        builder.addExtension(Extension.keyUsage, true, new KeyUsage(KeyUsage.keyCertSign | KeyUsage.cRLSign));
         // Certificates signed by this CA derive their authority key identifier from this extension.
         builder.addExtension(
                 Extension.subjectKeyIdentifier,

@@ -48,6 +48,7 @@ public class SdJwtVerifier {
     private final int clockSkewSeconds;
     private final int kbJwtMaxAgeSeconds;
     private final boolean requireIssuerSanMatch;
+    private final CrlVerifier crlVerifier;
     private final JwtVcIssuerMetadataResolver issuerMetadataResolver;
     private final SdJwtPresentationConsumer presentationConsumer = new SdJwtPresentationConsumer();
 
@@ -65,6 +66,16 @@ public class SdJwtVerifier {
             int kbJwtMaxAgeSeconds,
             JwtVcIssuerMetadataResolver issuerMetadataResolver,
             boolean requireIssuerSanMatch) {
+        this(clockSkewSeconds, kbJwtMaxAgeSeconds, issuerMetadataResolver, requireIssuerSanMatch, CrlVerifier.DISABLED);
+    }
+
+    public SdJwtVerifier(
+            int clockSkewSeconds,
+            int kbJwtMaxAgeSeconds,
+            JwtVcIssuerMetadataResolver issuerMetadataResolver,
+            boolean requireIssuerSanMatch,
+            CrlVerifier crlVerifier) {
+        this.crlVerifier = crlVerifier;
         this.requireIssuerSanMatch = requireIssuerSanMatch;
         this.clockSkewSeconds = clockSkewSeconds;
         this.kbJwtMaxAgeSeconds = kbJwtMaxAgeSeconds;
@@ -127,12 +138,11 @@ public class SdJwtVerifier {
                 kbOptsBuilder.withAudCheck(expectedAudience).withNonceCheck(expectedNonce);
             }
 
+            Oid4vpTrustedSdJwtIssuer trustedIssuer =
+                    new Oid4vpTrustedSdJwtIssuer(trust, issuerMetadataResolver, requireIssuerSanMatch, crlVerifier);
             SdJwtVpVerificationResult result = presentationConsumer.verifySdJwtPresentation(
-                    sdJwtVP,
-                    disclosedPayload -> {},
-                    List.of(new Oid4vpTrustedSdJwtIssuer(trust, issuerMetadataResolver, requireIssuerSanMatch)),
-                    issuerOpts,
-                    kbOptsBuilder.build());
+                    sdJwtVP, disclosedPayload -> {}, List.of(trustedIssuer), issuerOpts, kbOptsBuilder.build());
+            trustedIssuer.checkRevocation();
 
             JsonNode claims = result.getClaims();
             return new SdJwtVerificationResult(

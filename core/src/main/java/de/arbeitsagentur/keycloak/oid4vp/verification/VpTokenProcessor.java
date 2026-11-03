@@ -84,17 +84,19 @@ public class VpTokenProcessor implements VpTokenVerifier {
     }
 
     public VpTokenProcessor(ObjectMapper objectMapper, Config config) {
+        CrlVerifier crlVerifier = new CrlVerifier(config.session());
         this.sdJwtVerifier = new SdJwtVerifier(
                 config.clockSkewSeconds(),
                 config.kbJwtMaxAgeSeconds(),
                 new JwtVcIssuerMetadataResolver(config.session(), config.issuerMetadataMaxCacheTtl()),
-                config.requireIssuerSanMatch());
-        this.mdocVerifier = new MdocVerifier(config.clockSkewSeconds());
+                config.requireIssuerSanMatch(),
+                crlVerifier);
+        this.mdocVerifier = new MdocVerifier(config.clockSkewSeconds(), crlVerifier);
         this.trustPlanSupplier = config.trustPlanSupplier();
+        this.session = config.session();
         this.statusListVerifier =
                 new StatusListVerifier(config.session(), config.statusListMaxCacheTtl(), config.clockSkewSeconds());
         this.objectMapper = objectMapper;
-        this.session = config.session();
     }
 
     VpTokenProcessor(
@@ -107,8 +109,8 @@ public class VpTokenProcessor implements VpTokenVerifier {
         this.mdocVerifier = new MdocVerifier(Oid4vpIdentityProviderConfig.DEFAULT_CLOCK_SKEW_SECONDS);
         this.statusListVerifier = statusListVerifier;
         this.trustPlanSupplier = trustPlanSupplier;
-        this.objectMapper = objectMapper;
         this.session = null;
+        this.objectMapper = objectMapper;
     }
 
     private CredentialTrustPlan resolveTrustPlan() {

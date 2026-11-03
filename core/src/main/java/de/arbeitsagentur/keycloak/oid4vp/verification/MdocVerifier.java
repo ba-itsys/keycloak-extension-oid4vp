@@ -62,9 +62,15 @@ public class MdocVerifier {
     private static final int CBOR_TAG_DATE = 1004;
 
     private final int clockSkewSeconds;
+    private final CrlVerifier crlVerifier;
 
     public MdocVerifier(int clockSkewSeconds) {
+        this(clockSkewSeconds, CrlVerifier.DISABLED);
+    }
+
+    public MdocVerifier(int clockSkewSeconds, CrlVerifier crlVerifier) {
         this.clockSkewSeconds = clockSkewSeconds;
+        this.crlVerifier = crlVerifier;
     }
 
     public boolean isMdoc(String token) {
@@ -131,7 +137,7 @@ public class MdocVerifier {
 
             String docType = resolveDocType(document, mso);
 
-            verifyIssuerSignature(document, trust);
+            List<X509Certificate> validatedChain = verifyIssuerSignature(document, trust);
             // Read claims and digests from the same issuer-signed namespaces. A document then cannot
             // present one set of values while a different set is digest checked.
             verifyDigests(mso, issuerSigned, handoverInfo != null);
@@ -140,6 +146,10 @@ public class MdocVerifier {
 
             if (handoverInfo != null) {
                 verifyDeviceAuth(document, mso, docType, handoverInfo.sessionTranscript());
+            }
+            // Runs last, because whoever copied an issuerAuth must not be able to trigger CRL downloads.
+            if (validatedChain != null) {
+                crlVerifier.check(validatedChain, trust);
             }
 
             return new MdocVerificationResult(claims, docType);
@@ -263,7 +273,8 @@ public class MdocVerifier {
         return asMap(decoded);
     }
 
-    private void verifyIssuerSignature(CBORPairList document, ResolvedTrust trust) {
+    // Returns the chain the signature was validated against, or null for a pinned certificate.
+    private List<X509Certificate> verifyIssuerSignature(CBORPairList document, ResolvedTrust trust) {
         if (trust == null || !trust.hasIssuerTrust()) {
             throw new IllegalStateException("No trusted keys available for mDoc signature verification");
         }
@@ -277,7 +288,9 @@ public class MdocVerifier {
             List<X509Certificate> x5chain = extractX5Chain(sign1);
             if (x5chain != null && !x5chain.isEmpty()) {
                 PublicKey leafKey = trust.validateIssuerChain(x5chain);
-                if (leafKey != null && new COSEVerifier(leafKey).verify(sign1)) return;
+                if (leafKey != null && new COSEVerifier(leafKey).verify(sign1)) {
+                    return x5chain;
+                }
             }
 
             // An mDoc names no issuer, so every pinned certificate is tried. The doctype scope of the
@@ -292,7 +305,7 @@ public class MdocVerifier {
                     continue;
                 }
                 try {
-                    if (new COSEVerifier(cert.getPublicKey()).verify(sign1)) return;
+                    if (new COSEVerifier(cert.getPublicKey()).verify(sign1)) return null;
                 } catch (Exception ignored) {
                 }
             }

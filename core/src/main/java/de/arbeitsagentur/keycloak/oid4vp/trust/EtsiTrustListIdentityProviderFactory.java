@@ -112,6 +112,36 @@ public class EtsiTrustListIdentityProviderFactory
             .type(ProviderConfigProperty.STRING_TYPE)
             .add()
             .property()
+            .name(EtsiTrustListIdentityProviderConfig.CRL_ENDPOINT)
+            .label("CRL Endpoint")
+            .helpText("Fixed URL of the CRL for issuer signing certificates. It replaces the CRL distribution "
+                    + "points of the certificate that signed the credential, and it must serve a CRL of that "
+                    + "certificate's issuer. Intermediate certificates keep their own distribution points. Leave "
+                    + "empty to use the distribution points alone.")
+            .type(ProviderConfigProperty.STRING_TYPE)
+            .add()
+            .property()
+            .name(EtsiTrustListIdentityProviderConfig.CRL_MAX_CACHE_TTL_SECONDS)
+            .label("CRL Cache TTL (seconds)")
+            .helpText("Maximum time to cache a CRL. A CRL is cached until its nextUpdate and never longer than "
+                    + "this value. This value decides how soon a revocation takes effect. A background task "
+                    + "downloads CRLs. A login uses the cached CRL and waits up to 3 seconds only when none is known yet. A failed download logs a warning, the last known CRL "
+                    + "stays in use, and the failure is cached for this time. With Require CRL and no known CRL, each "
+                    + "login tries the download again.")
+            .type(ProviderConfigProperty.STRING_TYPE)
+            .defaultValue(String.valueOf(CrlPolicy.DEFAULT_MAX_CACHE_TTL_SECONDS))
+            .add()
+            .property()
+            .name(EtsiTrustListIdentityProviderConfig.CRL_REQUIRED)
+            .label("Require CRL")
+            .helpText("Rejects a credential when no CRL is known for a certificate that names one or that the CRL "
+                    + "endpoint covers, or when the check cannot run for a chain. An unreachable "
+                    + "CA then stops the logins of its issuers until a CRL is known. When off, Keycloak accepts "
+                    + "such a credential unchecked. ISO/IEC 18013-5 requires revocation information for mDL.")
+            .type(ProviderConfigProperty.BOOLEAN_TYPE)
+            .defaultValue("false")
+            .add()
+            .property()
             .name(EtsiTrustListIdentityProviderConfig.REQUIRED_EXTENDED_KEY_USAGES)
             .label("Required Extended Key Usages")
             .helpText("Comma separated extended key usage OIDs. When set, credential signing certificates must "

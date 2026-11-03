@@ -91,6 +91,9 @@ class EtsiTrustListIdentityProviderFactoryTest {
                         EtsiTrustListIdentityProviderConfig.TRUSTED_CERTIFICATES,
                         EtsiTrustListIdentityProviderConfig.SERVED_CREDENTIAL_TYPES,
                         EtsiTrustListIdentityProviderConfig.ADVERTISE_TRUSTED_AUTHORITIES,
+                        EtsiTrustListIdentityProviderConfig.CRL_ENDPOINT,
+                        EtsiTrustListIdentityProviderConfig.CRL_MAX_CACHE_TTL_SECONDS,
+                        EtsiTrustListIdentityProviderConfig.CRL_REQUIRED,
                         EtsiTrustListIdentityProviderConfig.REQUIRED_EXTENDED_KEY_USAGES);
     }
 }
