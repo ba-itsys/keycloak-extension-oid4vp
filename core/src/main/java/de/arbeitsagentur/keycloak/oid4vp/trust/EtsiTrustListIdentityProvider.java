@@ -62,7 +62,8 @@ public class EtsiTrustListIdentityProvider
                                 config.getTrustListUrl(),
                                 config.getTrustListMaxCacheTtl(),
                                 config.getTrustListMaxStaleAge(),
-                                config.parseTrustListSigningCerts())
+                                config.parseTrustListSigningCerts(),
+                                config.getTrustListServiceStatuses())
                         : null,
                 staticTrustListOf(config));
     }

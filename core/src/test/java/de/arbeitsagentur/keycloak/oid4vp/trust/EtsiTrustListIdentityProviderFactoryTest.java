@@ -72,6 +72,7 @@ class EtsiTrustListIdentityProviderFactoryTest {
                         EtsiTrustListIdentityProviderConfig.TRUST_LIST_URL,
                         EtsiTrustListIdentityProviderConfig.TRUST_LIST_SIGNING_CERT_PEM,
                         EtsiTrustListIdentityProviderConfig.TRUST_LIST_LOTE_TYPE,
+                        EtsiTrustListIdentityProviderConfig.TRUST_LIST_SERVICE_STATUSES,
                         EtsiTrustListIdentityProviderConfig.TRUST_LIST_MAX_CACHE_TTL_SECONDS,
                         EtsiTrustListIdentityProviderConfig.TRUST_LIST_MAX_STALE_AGE_SECONDS,
                         EtsiTrustListIdentityProviderConfig.TRUSTED_CERTIFICATES,

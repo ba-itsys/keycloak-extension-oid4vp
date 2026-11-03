@@ -20,36 +20,32 @@ import static org.assertj.core.api.Assertions.*;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class EtsiTrustListIdentityProviderConfigTest {
 
-    private EtsiTrustListIdentityProviderConfig config;
-
-    @BeforeEach
-    void setUp() {
-        config = new EtsiTrustListIdentityProviderConfig();
-    }
-
     @Test
-    void trustListMaxCacheTtl_defaultIsNull() {
-        assertThat(config.getTrustListMaxCacheTtl()).isNull();
+    void trustListMaxCacheTtl_defaultsToOneHour() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
+        assertThat(config.getTrustListMaxCacheTtl()).isEqualTo(Duration.ofHours(1));
     }
 
     @Test
     void trustListMaxCacheTtl_parsesSeconds() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
         config.setTrustListMaxCacheTtlSeconds(120);
         assertThat(config.getTrustListMaxCacheTtl()).isEqualTo(Duration.ofSeconds(120));
     }
 
     @Test
     void trustListLoTEType_defaultsToEmpty() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
         assertThat(config.getTrustListLoTEType()).isNull();
     }
 
     @Test
     void trustListSigningCertPem_normalizesEscapedLineBreaks() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
         config.setTrustListSigningCertPem("-----BEGIN CERTIFICATE-----\\nabc\\n-----END CERTIFICATE-----");
         assertThat(config.getTrustListSigningCertPem())
                 .isEqualTo("-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----");
@@ -57,6 +53,7 @@ class EtsiTrustListIdentityProviderConfigTest {
 
     @Test
     void trustListSigningCertPem_keepsRealLineBreaks() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
         config.setTrustListSigningCertPem("-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----");
         assertThat(config.getTrustListSigningCertPem())
                 .isEqualTo("-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----");
@@ -64,6 +61,7 @@ class EtsiTrustListIdentityProviderConfigTest {
 
     @Test
     void trustListSigningCertPem_decodesBase64EncodedValue() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
         String pem = "-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----";
         config.setTrustListSigningCertPem(Base64.getEncoder().encodeToString(pem.getBytes(StandardCharsets.UTF_8)));
 
@@ -72,6 +70,7 @@ class EtsiTrustListIdentityProviderConfigTest {
 
     @Test
     void trustedCertificates_decodesBase64EncodedValue() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
         String pem = "-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----";
         config.setTrustedCertificates(Base64.getEncoder().encodeToString(pem.getBytes(StandardCharsets.UTF_8)));
 
@@ -80,12 +79,14 @@ class EtsiTrustListIdentityProviderConfigTest {
 
     @Test
     void trustListMaxCacheTtl_ignoresInvalidAndNegativeValues() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
         config.setTrustListMaxCacheTtlSeconds(-5);
-        assertThat(config.getTrustListMaxCacheTtl()).isNull();
+        assertThat(config.getTrustListMaxCacheTtl()).isEqualTo(Duration.ofHours(1));
     }
 
     @Test
     void trustListMaxStaleAge_defaultsToOneDayAndParsesSeconds() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
         assertThat(config.getTrustListMaxStaleAge()).isEqualTo(Duration.ofSeconds(86400));
 
         config.setTrustListMaxStaleAgeSeconds(0);
@@ -96,7 +97,17 @@ class EtsiTrustListIdentityProviderConfigTest {
     }
 
     @Test
+    void trustListServiceStatuses_parsesCommaSeparatedStatuses() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
+        assertThat(config.getTrustListServiceStatuses()).isEmpty();
+
+        config.getConfig().put(EtsiTrustListIdentityProviderConfig.TRUST_LIST_SERVICE_STATUSES, " urn:a , urn:b ,, ");
+        assertThat(config.getTrustListServiceStatuses()).containsExactly("urn:a", "urn:b");
+    }
+
+    @Test
     void requiredExtendedKeyUsages_parsesCommaSeparatedDistinctOids() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
         assertThat(config.getRequiredExtendedKeyUsages()).isEmpty();
 
         config.setRequiredExtendedKeyUsages(" 1.0.18013.5.1.2 , 1.3.6.1.5.5.7.3.3 , 1.0.18013.5.1.2 ,, ");
@@ -105,12 +116,14 @@ class EtsiTrustListIdentityProviderConfigTest {
 
     @Test
     void validate_acceptsTrustListUrlOnly() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
         config.setTrustListUrl("https://tl.example/list.jwt");
         config.validate(null);
     }
 
     @Test
     void parseTrustedCertificates_returnsEmptyForBlankOrGarbage() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
         assertThat(config.parseTrustedCertificates()).isEmpty();
 
         config.setTrustedCertificates("garbage");
@@ -119,6 +132,7 @@ class EtsiTrustListIdentityProviderConfigTest {
 
     @Test
     void validate_rejectsUnparsableTrustListSigningCert() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
         config.setTrustListUrl("https://tl.example/list.jwt");
         config.setTrustListSigningCertPem("garbage");
 
@@ -129,11 +143,13 @@ class EtsiTrustListIdentityProviderConfigTest {
 
     @Test
     void parseTrustListSigningCerts_returnsNullWhenUnset() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
         assertThat(config.parseTrustListSigningCerts()).isNull();
     }
 
     @Test
     void parseTrustListSigningCerts_throwsForGarbage() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
         config.setTrustListSigningCertPem("garbage");
         assertThatThrownBy(config::parseTrustListSigningCerts)
                 .isInstanceOf(IllegalArgumentException.class)
