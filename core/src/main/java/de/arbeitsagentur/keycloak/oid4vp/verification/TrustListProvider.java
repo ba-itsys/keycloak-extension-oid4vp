@@ -53,12 +53,13 @@ public class TrustListProvider {
 
     private static final Logger LOG = Logger.getLogger(TrustListProvider.class);
     private static final ConcurrentHashMap<CacheKey, CachedTrustList> CACHE = new ConcurrentHashMap<>();
-    private static final Set<String> WARNED_UNSIGNED_TRUST_LISTS = ConcurrentHashMap.newKeySet();
+    private static final Set<CacheKey> WARNED_UNSIGNED_TRUST_LISTS = ConcurrentHashMap.newKeySet();
     static final Duration DEFAULT_MAX_STALE_AGE = Duration.ofDays(1);
     private static final String SERVICE_TYPE_SUFFIX_ISSUANCE = "/Issuance";
     private static final String SERVICE_TYPE_SUFFIX_REVOCATION = "/Revocation";
 
     private final KeycloakSession session;
+    private final String providerId;
     private final String trustListUrl;
     private final List<X509Certificate> staticCertificates;
     private final Duration maxCacheTtl;
@@ -70,10 +71,6 @@ public class TrustListProvider {
         this(session, trustListUrl, null, null, null);
     }
 
-    /**
-     * @param signingCertificates the certificates that verify the trust list JWT signature, as
-     *     {@link X5cChainValidator} describes. Null or empty leaves the signature unverified.
-     */
     TrustListProvider(
             KeycloakSession session,
             String trustListUrl,
@@ -82,18 +79,25 @@ public class TrustListProvider {
         this(session, trustListUrl, maxCacheTtl, null, signingCertificates);
     }
 
-    /**
-     * @param maxStaleAge maximum age of an expired cache entry that may still serve as a fallback
-     *     when a trust list refresh fails. Null defaults to one day, and {@link Duration#ZERO}
-     *     disables the stale cache entirely.
-     */
-    public TrustListProvider(
+    TrustListProvider(
             KeycloakSession session,
             String trustListUrl,
             Duration maxCacheTtl,
             Duration maxStaleAge,
             List<X509Certificate> signingCertificates) {
+        this(session, null, trustListUrl, maxCacheTtl, maxStaleAge, signingCertificates);
+    }
+
+    // Keys the cache by provider id, so providers sharing a trust list stay isolated.
+    public TrustListProvider(
+            KeycloakSession session,
+            String providerId,
+            String trustListUrl,
+            Duration maxCacheTtl,
+            Duration maxStaleAge,
+            List<X509Certificate> signingCertificates) {
         this.session = session;
+        this.providerId = providerId;
         this.trustListUrl = trustListUrl;
         this.staticCertificates = null;
         this.maxCacheTtl = maxCacheTtl;
@@ -101,9 +105,9 @@ public class TrustListProvider {
         this.signingCertificates = signingCertificates;
     }
 
-    // Serves a fixed certificate list, such as a pasted PEM bundle.
     public TrustListProvider(List<X509Certificate> staticCertificates) {
         this.session = null;
+        this.providerId = null;
         this.trustListUrl = null;
         this.staticCertificates = staticCertificates != null ? List.copyOf(staticCertificates) : null;
         this.maxCacheTtl = null;
@@ -212,8 +216,8 @@ public class TrustListProvider {
      * because no certificate in a credential chain points at it.
      *
      * <p>The value is the Subject Key Identifier of the CA. A CA without one falls back to its AKI
-     * extension, which names its own issuer. No synthetic identifier is derived, because {@code aki}
-     * values stand for certificate extension values.
+     * extension, which names its own issuer. No synthetic identifier is derived, because an
+     * {@code aki} value has to be the value of a certificate extension.
      */
     public List<String> getTrustedAuthorityKeyIdentifiers() {
         return authorityKeyIdentifiersOf(getIssuanceCertificates().stream()
@@ -238,7 +242,7 @@ public class TrustListProvider {
 
     void verifySignature(String jwt) throws Exception {
         if (signingCertificates == null || signingCertificates.isEmpty()) {
-            if (WARNED_UNSIGNED_TRUST_LISTS.add(trustListUrl)) {
+            if (WARNED_UNSIGNED_TRUST_LISTS.add(cacheKey())) {
                 LOG.warnf(
                         "Trust list JWT signature not verified for %s: no signing certificate configured",
                         trustListUrl);
@@ -284,7 +288,8 @@ public class TrustListProvider {
     }
 
     CacheKey cacheKey() {
-        return new CacheKey(trustListUrl, CertificateFingerprints.of(signingCertificates), maxCacheTtl, maxStaleAge);
+        return new CacheKey(
+                providerId, trustListUrl, CertificateFingerprints.of(signingCertificates), maxCacheTtl, maxStaleAge);
     }
 
     static String extractAuthorityKeyIdentifier(X509Certificate certificate) {
@@ -525,12 +530,12 @@ public class TrustListProvider {
         return instant != null ? instant.toString() : "none";
     }
 
-    // For tests only.
+    // Exists for tests only.
     static void clearCache() {
         CACHE.clear();
     }
 
-    // For tests of the stale cache fallback.
+    // Exists for tests of the stale cache fallback.
     static void seedExpiredCache(
             TrustListProvider provider, List<X509Certificate> certificates, Instant expiredAt, Instant fetchedAt) {
         CACHE.put(
@@ -549,6 +554,7 @@ public class TrustListProvider {
     record FetchedTrustList(String jwt, Instant httpCacheExpiresAt) {}
 
     record CacheKey(
+            String providerId,
             String trustListUrl,
             List<String> signingCertificateFingerprints,
             Duration maxCacheTtl,
