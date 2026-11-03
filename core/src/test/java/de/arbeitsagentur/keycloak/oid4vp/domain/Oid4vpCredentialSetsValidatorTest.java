@@ -25,8 +25,8 @@ import org.junit.jupiter.api.Test;
 import org.keycloak.OID4VCConstants;
 
 /**
- * An empty credential map stands for an identity provider without mappers, so only the rules that
- * need no mapper knowledge apply there.
+ * An empty credential map means an identity provider without mappers, so only the rules that need no
+ * mapper knowledge apply there.
  */
 class Oid4vpCredentialSetsValidatorTest {
 

@@ -107,7 +107,6 @@ class CredentialTrustPlanTest {
         assertThat(plan.serves("urn:eudi:pid:de:1")).isFalse();
     }
 
-    // Advertises its trust domain but cannot serve the material behind it.
     private static class UnreachableTrustMaterialProvider
             implements Oid4vpTrustMaterialIdentityProvider<IdentityProviderModel> {
 

@@ -51,7 +51,6 @@ class KeycloakOid4vpTrustedAuthoritiesE2eIT extends AbstractOid4vpE2eTest {
     @InjectTestWallet
     TestWallet wallet;
 
-    // A certificate authority the wallet has no credential from.
     private final X509Certificate foreignAuthority = generateForeignAuthority();
 
     @Override

@@ -30,20 +30,14 @@ import org.testcontainers.containers.Network;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 
-/**
- * The OpenID Foundation conformance suite running locally in containers: MongoDB, the suite server
- * and nginx. Keycloak runs on the Docker host, where the suite reaches it at
- * {@link #KEYCLOAK_BASE_URI}.
- */
 public final class OpenIdConformanceSuite implements AutoCloseable {
 
     public static final String IMAGE_TAG_PROPERTY = "conformance.suite.imageTag";
 
-    // The suite URL within the container network, which the suite puts into the URLs it hands to
-    // Keycloak.
+    // The suite builds the URLs it hands to Keycloak from this address inside the container network.
     public static final URI INTERNAL_BASE_URI = URI.create("https://nginx:8443");
 
-    // The URL at which the suite containers reach Keycloak, set as the Keycloak hostname option.
+    // The suite containers reach Keycloak at this URL, so it is also the Keycloak hostname option.
     public static final URI KEYCLOAK_BASE_URI = URI.create("https://host.testcontainers.internal:8443");
 
     // Maven passes the tag from the pom, so this value only applies outside Maven.
@@ -147,7 +141,6 @@ public final class OpenIdConformanceSuite implements AutoCloseable {
         return baseUri;
     }
 
-    // Rewrites a suite-internal URI to one the test JVM can reach.
     public URI externalUri(URI internalUri) {
         if (INTERNAL_BASE_URI.getHost().equals(internalUri.getHost())) {
             return baseUri.resolve(internalUri.getRawPath()

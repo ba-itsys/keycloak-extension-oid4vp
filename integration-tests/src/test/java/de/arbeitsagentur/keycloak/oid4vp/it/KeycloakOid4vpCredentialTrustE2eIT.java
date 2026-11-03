@@ -27,13 +27,10 @@ import org.junit.jupiter.api.Test;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
 /**
- * End to end coverage of trust material identity providers that declare the credential types they
- * serve.
- *
- * <p>A response can carry credentials of several trust domains, and trust is resolved per
- * credential. A provider scoped to one credential type verifies presentations of that type and
- * advertises its trusted authorities on that credential's DCQL entry. A credential type no provider
- * serves has no trust material and cannot be verified.
+ * A response can carry credentials of several trust domains, and trust is resolved per credential. A
+ * provider scoped to one credential type verifies presentations of that type and advertises its trusted
+ * authorities on that credential's DCQL entry. A credential type no provider serves has no trust
+ * material and cannot be verified.
  */
 @KeycloakIntegrationTest(config = Oid4vpServerConfig.class)
 class KeycloakOid4vpCredentialTrustE2eIT extends AbstractOid4vpE2eTest {

@@ -37,16 +37,16 @@ public final class ConformanceApiClient {
 
     private static final Logger LOG = Logger.getLogger(ConformanceApiClient.class);
 
-    // A 1x1 transparent PNG uploaded as automated verification evidence.
+    // This is a 1x1 transparent PNG that the runner uploads as automated verification evidence.
     private static final String PLACEHOLDER_EVIDENCE_IMAGE = "data:image/png;base64,"
             + "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
     private final URI baseUri;
     private final HttpClient httpClient;
 
-    // Plans created for a plan variant, keyed by plan name and variant. Discovery creates a plan to
-    // read back its modules and the run reuses that same plan, so a plan variant is never provisioned
-    // on the suite twice.
+    // Holds the plan created for each plan variant, keyed by plan name and variant. Discovery creates a
+    // plan to read back its modules and the run reuses that same plan, so a plan variant is never
+    // provisioned on the suite twice.
     private final Map<String, JsonNode> createdPlans = new ConcurrentHashMap<>();
 
     public ConformanceApiClient(URI baseUri, SSLContext sslContext) {
@@ -78,11 +78,6 @@ public final class ConformanceApiClient {
 
     public record DiscoveredModule(String name, Map<String, String> variant) {}
 
-    /**
-     * Discovers every module and its variant combination from the suite for the given plan variant.
-     * The suite decides which modules and module variants exist, and a plan variant that does not
-     * apply yields an empty list.
-     */
     public List<DiscoveredModule> discoverPlanModules(
             String planName, Map<String, String> planVariant, JsonNode suiteConfig) {
         JsonNode plan;
@@ -111,10 +106,6 @@ public final class ConformanceApiClient {
         return map;
     }
 
-    /**
-     * Runs one module of a plan. Once the module waits for the verifier, the interaction is invoked
-     * with the module info and triggers the authorization request against the suite.
-     */
     public ConformanceModuleResult run(
             ConformanceModuleVariant module, JsonNode suiteConfig, VerifierInteraction interaction) {
         JsonNode plan = getOrCreatePlan(module.plan(), suiteConfig, module.planVariant());
@@ -172,7 +163,6 @@ public final class ConformanceApiClient {
                     }
                 }
             } catch (RuntimeException e) {
-                // Transient failures are tolerated until the deadline.
                 lastFailure = e;
             }
             sleep(Duration.ofSeconds(1));
@@ -205,8 +195,7 @@ public final class ConformanceApiClient {
                 200);
     }
 
-    // Returns the plan for this plan variant, creating it on the suite only the first time. The key
-    // leaves out the suite config, which is constant for a plan variant apart from a cosmetic alias.
+    // The key leaves out the suite config, which is constant for a plan variant apart from a cosmetic alias.
     private JsonNode getOrCreatePlan(String planName, JsonNode suiteConfig, Map<String, String> variants) {
         String key = planName + "|" + (variants == null ? "" : JsonSerialization.valueAsString(variants));
         JsonNode cached = createdPlans.get(key);
@@ -269,7 +258,6 @@ public final class ConformanceApiClient {
                     return lastInfo;
                 }
             } catch (RuntimeException e) {
-                // Transient failures are tolerated until the deadline.
                 lastFailure = e;
             }
             sleep(Duration.ofSeconds(1));

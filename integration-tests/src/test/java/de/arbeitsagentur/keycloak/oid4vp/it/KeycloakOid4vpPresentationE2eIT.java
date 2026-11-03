@@ -238,7 +238,6 @@ class KeycloakOid4vpPresentationE2eIT extends AbstractOid4vpE2eTest {
         assertThat(links(ALICE)).isEmpty();
     }
 
-    // Links the wallet's PID to the user through the required action, then starts over.
     private void linkWalletTo(String username) {
         flow.navigateToLoginPage(Map.of("kc_action", Oid4vpPresentationRequiredAction.PROVIDER_ID));
         loginWithPassword(username);
@@ -313,7 +312,6 @@ class KeycloakOid4vpPresentationE2eIT extends AbstractOid4vpE2eTest {
         }
     }
 
-    // Creates a browser flow of the given executions that ends with the presentation authenticator.
     private void ensureFlow(String alias, String identityProviderAlias, String... executionsBefore) {
         AuthenticationManagementResource flows = realm.admin().flows();
         if (flows.getFlows().stream().anyMatch(f -> alias.equals(f.getAlias()))) {
@@ -346,10 +344,7 @@ class KeycloakOid4vpPresentationE2eIT extends AbstractOid4vpE2eTest {
         }
     }
 
-    /**
-     * Binds the client's browser flow to the given flow, or to the realm's browser flow for null.
-     * Keycloak removes an override whose flow id is blank and keeps the ones a client update leaves out.
-     */
+    // Keycloak removes an override whose flow id is blank and keeps the ones a client update leaves out.
     private void useBrowserFlow(String alias) {
         String flowId = alias == null
                 ? ""

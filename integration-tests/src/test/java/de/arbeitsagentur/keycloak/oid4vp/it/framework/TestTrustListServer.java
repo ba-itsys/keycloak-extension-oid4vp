@@ -85,7 +85,7 @@ public final class TestTrustListServer implements AutoCloseable {
     private static void respondWithTrustList(HttpExchange exchange, String trustListJwt) throws IOException {
         byte[] body = trustListJwt.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/jwt");
-        // Neither Keycloak nor the wallet may serve a later test from a cached copy of this list.
+        // Forbids caching, so the wallet does not serve a later test from a cached copy of this list.
         exchange.getResponseHeaders().add("Cache-Control", "no-store");
         exchange.sendResponseHeaders(200, body.length);
         try (OutputStream responseBody = exchange.getResponseBody()) {

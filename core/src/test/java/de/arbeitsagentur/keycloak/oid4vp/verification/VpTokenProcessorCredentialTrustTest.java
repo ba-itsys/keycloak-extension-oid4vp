@@ -129,7 +129,6 @@ class VpTokenProcessorCredentialTrustTest {
     void aCredentialOfOneTrustDomainIsNotAcceptedUnderTheIdOfAnother() throws Exception {
         VpTokenProcessor processor = processor(twoTrustDomains());
 
-        // The badge issuer signs a credential and the wallet answers with it under the PID id.
         String credential = presentation(badgeIssuerKey, badgeIssuerCert, BADGE_ISSUER, PID_TYPE);
 
         String underPidId = objectMapper.writeValueAsString(Map.of("pid", credential));
@@ -239,7 +238,6 @@ class VpTokenProcessorCredentialTrustTest {
         List<RequestedCredential> requested = List.of(
                 new RequestedCredential("any", "dc+sd-jwt", List.of(PID_TYPE, BADGE_TYPE), List.of(), List.of()));
 
-        // The badge issuer signs a credential claiming to be a PID.
         String vpToken = objectMapper.writeValueAsString(
                 Map.of("any", presentation(badgeIssuerKey, badgeIssuerCert, BADGE_ISSUER, PID_TYPE)));
 
@@ -301,8 +299,6 @@ class VpTokenProcessorCredentialTrustTest {
 
     @Test
     void aProviderDeclaredForTheDerivedTypeJudgesItInsteadOfTheBaseTypesProvider() throws Exception {
-        // The badge issuer is the only issuer trusted for the German PID. The PID issuer is only
-        // trusted for the EUDI PID.
         CredentialTrustPlan plan = new CredentialTrustPlan(List.of(
                 FixedTrustMaterialIdentityProvider.serving(TestTrust.ofCertificates(pidIssuerCert), PID_TYPE),
                 FixedTrustMaterialIdentityProvider.serving(
@@ -368,10 +364,6 @@ class VpTokenProcessorCredentialTrustTest {
         return presentation(issuerKey, issuerCert, issuer, credentialType, keyId, List.of());
     }
 
-    /**
-     * Builds an SD-JWT VP without disclosures, the issuer signed JWT plus a key binding JWT, naming
-     * the given further types in {@code aka_vcts}.
-     */
     private String presentation(
             ECKey issuerKey,
             X509Certificate issuerCert,

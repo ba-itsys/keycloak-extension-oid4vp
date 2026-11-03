@@ -26,10 +26,6 @@ import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.models.Constants;
 import org.keycloak.models.IdentityProviderMapperModel;
 
-/**
- * Covers the mDoc specifics on top of the shared claim mapper behavior: elements are addressed
- * within their namespace, and the namespace falls back to the doctype.
- */
 class OID4VPMdocUserAttributeMapperTest {
 
     private static final String MDL_DOCTYPE = "org.iso.18013.5.1.mDL";
@@ -99,8 +95,6 @@ class OID4VPMdocUserAttributeMapperTest {
         assertThat(user.getAttributeStream("givenName")).containsExactly("Keep");
     }
 
-    // A well-configured mapper whose namespace the credential does not carry removes the
-    // attribute, as for any absent claim.
     @Test
     void updateRemovesAttributeWhenNamespaceIsAbsentFromTheCredential() throws Exception {
         BrokeredIdentityContext context = mdlContext("""

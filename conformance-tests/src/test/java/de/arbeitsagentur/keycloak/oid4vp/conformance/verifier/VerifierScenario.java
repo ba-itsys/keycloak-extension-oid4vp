@@ -17,7 +17,6 @@ package de.arbeitsagentur.keycloak.oid4vp.conformance.verifier;
 
 import java.util.Map;
 
-// The Keycloak verifier configuration matching one conformance plan variant.
 public record VerifierScenario(CredentialProfile profile, String clientIdScheme, String responseMode) {
 
     public static VerifierScenario fromVariant(String planName, Map<String, String> planVariant) {

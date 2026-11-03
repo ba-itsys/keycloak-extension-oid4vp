@@ -19,9 +19,8 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpRejectionResponse;
 import java.util.Map;
 
 /**
- * A conformance suite test module to run in one variant combination. The plan variant is chosen when
- * the plan is created and applies plan wide. A plan can contain the same module several times, and
- * the module variant picks which of them runs.
+ * The plan variant is chosen when the plan is created and applies plan wide. A plan can contain the same
+ * module several times, and the module variant picks which of them runs.
  */
 public record ConformanceModuleVariant(
         String plan,
@@ -51,17 +50,12 @@ public record ConformanceModuleVariant(
                 plan, planVariant, name, moduleVariant, expectedResult, allowSkipped, rejectionResponse);
     }
 
-    /**
-     * Returns a copy of this variant that also accepts a SKIPPED result from the suite. Only a module
-     * covering a feature the verifier does not advertise opts in. Every other module fails on an
-     * unexpected skip.
-     */
     public ConformanceModuleVariant allowingSkipped() {
         return new ConformanceModuleVariant(
                 plan, planVariant, name, moduleVariant, expectedResult, true, rejectionResponse);
     }
 
-    // Serves as the display name of a parameterized test run.
+    // JUnit uses this as the display name of a parameterized test run.
     @Override
     public String toString() {
         return name + " " + planVariant + " rejection=" + rejectionResponse.configValue();

@@ -45,11 +45,6 @@ import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.broker.provider.IdentityBrokerException;
 import org.keycloak.common.crypto.CryptoIntegration;
 
-/**
- * Covers subject resolution, allow-list enforcement, and requested-claims validation with a real
- * configuration and canned verification results. The verification pipeline itself is covered by
- * its own tests and the end-to-end suite.
- */
 class Oid4vpCallbackProcessorTest {
 
     private Oid4vpIdentityProviderConfig config;
@@ -145,9 +140,8 @@ class Oid4vpCallbackProcessorTest {
                 .hasMessageContaining("Issuer not allowed");
     }
 
-    // The allow-list must reject a disallowed issuer wherever it appears, not only on the first
-    // credential. In a multi-credential response the claims of every presented credential reach
-    // the mappers.
+    // The allow-list checks every presented credential, because in a multi-credential response the
+    // claims of all of them reach the mappers.
     @Test
     void process_multiCredentialWithDisallowedSecondIssuer_throws() {
         config.setAllowedIssuers("https://issuer.example");
@@ -520,8 +514,6 @@ class Oid4vpCallbackProcessorTest {
 
     @Test
     void process_subjectCredentialWithheldBinding_withoutFallbackSetting_fails() {
-        // Without allowMissingSubjectCredential the presentation has to carry a usable subject
-        // credential, and a withheld binding leaves nothing to identify the user.
         config.setPrincipalAttributes("cred-1:sub");
         VerifiedCredential subjectCredential = sdJwtCredential(Map.of("sub", "user1"));
         VerifiedCredential otherHoldersPid = new VerifiedCredential(

@@ -34,11 +34,11 @@ import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
 /**
- * End to end coverage of one credential entry accepting several VCTs. Mappers that name the EUDI PID
- * and the German PID together produce a DCQL entry listing both in {@code vct_values}, so a wallet
- * holding either one signs in through the same mappers. The two rulebooks name the birth name
- * differently, and the alternative claim of the birth name mapper bridges the difference. A request
- * naming the EUDI PID alone is answered by the German PID as its derived type.
+ * End to end coverage of one credential entry accepting several VCTs. Mappers that name the EUDI PID and
+ * the German PID together produce a DCQL entry listing both in {@code vct_values}, so a wallet holding
+ * either one signs in through the same mappers. The two rulebooks name the birth name differently, and
+ * the alternative claim of the birth name mapper covers the difference. A request naming the EUDI PID
+ * alone is answered by the German PID as its derived type.
  */
 @KeycloakIntegrationTest(config = Oid4vpServerConfig.class)
 class KeycloakOid4vpCredentialTypesE2eIT extends AbstractOid4vpE2eTest {

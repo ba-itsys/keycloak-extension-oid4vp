@@ -20,10 +20,6 @@ import java.net.URI;
 
 public record ModuleRun(JsonNode created, JsonNode info) {
 
-    /**
-     * Returns the authorization endpoint of the module's wallet. The suite exports it in the module
-     * info, and without that export it is derived from the module URL.
-     */
     public URI authorizationEndpoint() {
         String exported = info.path("exported").path("authorization_endpoint").asText("");
         if (!exported.isBlank()) {

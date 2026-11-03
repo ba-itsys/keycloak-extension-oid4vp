@@ -28,11 +28,6 @@ import org.keycloak.representations.idm.IdentityProviderMapperRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
-/**
- * End to end tests for DCQL claim_sets generated from mapper claim set ids. The wallet discloses the
- * most preferred claim set it can satisfy, and the verifier accepts only presentations that satisfy
- * one of the requested sets.
- */
 @KeycloakIntegrationTest(config = Oid4vpServerConfig.class)
 class KeycloakOid4vpClaimSetsE2eIT extends AbstractOid4vpE2eTest {
 

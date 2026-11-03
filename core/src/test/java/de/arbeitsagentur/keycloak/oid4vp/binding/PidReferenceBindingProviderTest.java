@@ -79,9 +79,9 @@ class PidReferenceBindingProviderTest {
 
     @Test
     void bindsToTheCredentialTypeTheClaimsWereReadFrom() {
-        // The same name and date of birth out of another credential is another statement. A
-        // credential of another type must not produce the same binding, even when the provider
-        // accepts any type.
+        // A credential of another type must not produce the same binding, even when the provider accepts
+        // any type, because the same name and date of birth read from another credential make a
+        // different statement.
         Map<String, Object> claims = new LinkedHashMap<>();
         claims.put("given_name", "Erika");
         claims.put("family_name", "Mustermann");

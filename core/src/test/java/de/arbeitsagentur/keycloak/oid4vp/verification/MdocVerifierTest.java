@@ -652,8 +652,6 @@ class MdocVerifierTest {
                     .hasMessageContaining("value digests");
         }
 
-        // Tampering with an issuer-signed element value breaks its MSO digest, and a presentation
-        // carrying the altered value is rejected.
         @Test
         void verifyPresentation_tamperedElementValue_isRejected() throws Exception {
             MdocDeviceResponseTestHelper helper = new MdocDeviceResponseTestHelper();

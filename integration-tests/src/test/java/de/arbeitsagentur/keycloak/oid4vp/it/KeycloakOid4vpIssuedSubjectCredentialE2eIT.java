@@ -136,7 +136,7 @@ class KeycloakOid4vpIssuedSubjectCredentialE2eIT extends AbstractOid4vpE2eTest {
 
     /**
      * A user can lose the credential this Keycloak issued, or decline to present it, so the login
-     * arrives without a subject a second time, now for a user already linked to this identity
+     * arrives without a subject a second time, this time for a user linked to this identity
      * provider.
      */
     @Test
@@ -182,7 +182,6 @@ class KeycloakOid4vpIssuedSubjectCredentialE2eIT extends AbstractOid4vpE2eTest {
                 .as("the credential says which presentation it was issued for")
                 .containsKey(REFERENCE_BINDING_CLAIM);
 
-        // The wallet keeps the issued credential but now holds the PID of another person.
         wallet().client().deleteCredentialsByType(Oid4vpTestKeycloakSetup.SD_JWT_PID_VCT);
         wallet().client()
                 .issueCredential(IssueRequest.pid(CredentialFormat.SD_JWT)
