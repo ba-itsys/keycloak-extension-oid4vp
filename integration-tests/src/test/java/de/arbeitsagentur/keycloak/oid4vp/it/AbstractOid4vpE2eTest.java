@@ -32,6 +32,7 @@ import com.nimbusds.jose.crypto.ECDHEncrypter;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jwt.SignedJWT;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
+import de.arbeitsagentur.keycloak.oid4vp.event.Oid4vpEventDetails;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectPlaywrightBrowser;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestApp;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestApp;
@@ -46,11 +47,13 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.keycloak.OAuth2Constants;
@@ -59,6 +62,7 @@ import org.keycloak.events.EventType;
 import org.keycloak.representations.idm.EventRepresentation;
 import org.keycloak.representations.idm.IdentityProviderMapperRepresentation;
 import org.keycloak.representations.idm.IdentityProviderRepresentation;
+import org.keycloak.representations.idm.RealmEventsConfigRepresentation;
 import org.keycloak.testframework.annotations.InjectKeycloakUrls;
 import org.keycloak.testframework.annotations.InjectRealm;
 import org.keycloak.testframework.realm.ManagedRealm;
@@ -68,6 +72,15 @@ import org.keycloak.testframework.server.KeycloakUrls;
 // class, so it and the injection annotations for class specific resources such as the wallet live
 // on the concrete test classes.
 abstract class AbstractOid4vpE2eTest {
+
+    private static final Duration EVENT_TIMEOUT = Duration.ofSeconds(10);
+    private static final int DIRECT_POST_ATTEMPTS = 2;
+    private static final long DIRECT_POST_RETRY_DELAY_MS = 200L;
+    private static final List<String> STORED_EVENT_TYPES = List.of(
+            EventType.IDENTITY_PROVIDER_RESPONSE.name(),
+            EventType.IDENTITY_PROVIDER_RESPONSE_ERROR.name(),
+            EventType.IDENTITY_PROVIDER_LOGIN_ERROR.name(),
+            EventType.LOGIN_ERROR.name());
 
     static final String REALM = Oid4vpRealmConfig.REALM;
     static final String CLIENT_ID = Oid4vpRealmConfig.CLIENT_ID;
@@ -102,6 +115,10 @@ abstract class AbstractOid4vpE2eTest {
         // The realm outlives a single test and so do its login events, so clearing them ties the
         // failure cause assertions to the login this test drove. It also means these classes cannot
         // run in parallel against the shared realm.
+        RealmEventsConfigRepresentation events = realm.admin().getRealmEventsConfig();
+        events.setEventsEnabled(true);
+        events.setEnabledEventTypes(STORED_EVENT_TYPES);
+        realm.admin().updateRealmEventsConfig(events);
         realm.admin().clearEvents();
         ensureIdentityProviderConfigured();
         context = newBrowserContext();
@@ -507,5 +524,56 @@ abstract class AbstractOid4vpE2eTest {
 
     protected static String urlEncode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    protected List<EventRepresentation> eventsOfType(String eventType, int expected) throws Exception {
+        long deadline = System.nanoTime() + EVENT_TIMEOUT.toNanos();
+        while (true) {
+            List<EventRepresentation> events = realm.admin().getEvents().stream()
+                    .filter(event -> event.getDetails() != null)
+                    .filter(event -> eventType.equals(event.getDetails().get(Oid4vpEventDetails.EVENT_TYPE)))
+                    .toList();
+            if (events.size() >= expected) {
+                return events;
+            }
+            if (System.nanoTime() > deadline) {
+                throw new TimeoutException("Found " + events.size() + " events of type " + eventType);
+            }
+            Thread.sleep(50);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    protected static Map<String, Object> encryptionJwkOf(SignedJWT requestObject) throws Exception {
+        Map<String, Object> clientMetadata =
+                (Map<String, Object>) requestObject.getJWTClaimsSet().getClaim("client_metadata");
+        Map<String, Object> jwks = (Map<String, Object>) clientMetadata.get("jwks");
+        return ((List<Map<String, Object>>) jwks.get("keys")).get(0);
+    }
+
+    protected HttpResponse<String> postDirectPost(HttpClient httpClient, String endpointUri, String formBody)
+            throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(endpointUri))
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(formBody))
+                .build();
+
+        HttpResponse<String> response = null;
+        for (int attempt = 1; attempt <= DIRECT_POST_ATTEMPTS; attempt++) {
+            response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (!isSessionExpiredResponse(response) || attempt == DIRECT_POST_ATTEMPTS) {
+                return response;
+            }
+            Thread.sleep(DIRECT_POST_RETRY_DELAY_MS);
+        }
+
+        return response;
+    }
+
+    private boolean isSessionExpiredResponse(HttpResponse<String> response) {
+        return response.statusCode() == 400
+                && response.body() != null
+                && response.body().contains("\"error\":\"session_expired\"");
     }
 }

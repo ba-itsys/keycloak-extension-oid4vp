@@ -27,6 +27,8 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.PrincipalAttribute;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VerifiedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.VpTokenResult;
+import de.arbeitsagentur.keycloak.oid4vp.event.Oid4vpEventService;
+import de.arbeitsagentur.keycloak.oid4vp.event.PresentationRefusedEvent;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpRequestObjectStore;
 import de.arbeitsagentur.keycloak.oid4vp.verification.VpTokenProcessor;
@@ -44,6 +46,7 @@ import org.keycloak.broker.provider.IdentityBrokerException;
 import org.keycloak.broker.provider.UserAuthenticationIdentityProvider;
 import org.keycloak.common.VerificationException;
 import org.keycloak.models.IdentityProviderModel;
+import org.keycloak.models.KeycloakSession;
 import org.keycloak.util.JWKSUtils;
 import org.keycloak.utils.StringUtil;
 
@@ -57,6 +60,7 @@ public class Oid4vpCallbackProcessor {
     private static final Logger LOG = Logger.getLogger(Oid4vpCallbackProcessor.class);
     private static final String GENERATED_SUBJECT_PREFIX = "oid4vp-";
 
+    private final KeycloakSession session;
     private final IdentityProviderModel idpModel;
     private final Oid4vpConfigProvider configProvider;
     private final UserAuthenticationIdentityProvider<?> provider;
@@ -64,11 +68,13 @@ public class Oid4vpCallbackProcessor {
     private final ReferenceBindingCheck referenceBindingCheck;
 
     public Oid4vpCallbackProcessor(
+            KeycloakSession session,
             IdentityProviderModel idpModel,
             Oid4vpConfigProvider configProvider,
             UserAuthenticationIdentityProvider<?> provider,
             VpTokenVerifier vpTokenVerifier,
             ReferenceBindingCheck referenceBindingCheck) {
+        this.session = session;
         this.idpModel = idpModel;
         this.referenceBindingCheck = referenceBindingCheck;
         this.configProvider = configProvider;
@@ -200,6 +206,7 @@ public class Oid4vpCallbackProcessor {
                                 + "presented alongside credentials a binding would cover, so it is not used as the "
                                 + "subject",
                         idpModel.getAlias(), principalAttribute.credentialId());
+                fireCredentialIgnored(principalAttribute.credentialId(), "No reference credential binding");
                 continue;
             }
             // The path starts at the root of the presentation, and an mDoc path names its own
@@ -235,6 +242,20 @@ public class Oid4vpCallbackProcessor {
                 .orElse(null);
     }
 
+    private void fireCredentialIgnored(String credentialId, String reason) {
+        Oid4vpEventService.fireOnce(
+                session,
+                "oid4vp.event.credential-ignored." + credentialId,
+                new PresentationRefusedEvent(
+                        Oid4vpEventService.realmId(session),
+                        idpModel.getAlias(),
+                        null,
+                        null,
+                        Oid4vpEventService.state(session),
+                        PresentationRefusedEvent.Refusal.CREDENTIAL_IGNORED,
+                        "Credential " + credentialId + ": " + reason));
+    }
+
     /**
      * Drops the credentials that were issued for another presentation. A credential this Keycloak
      * issued says which credentials it was issued alongside, and without that check a wallet holding
@@ -251,6 +272,7 @@ public class Oid4vpCallbackProcessor {
                 LOG.warnf(
                         "OID4VP IdP '%s': the credential '%s' was issued for another presentation and is ignored",
                         idpModel.getAlias(), credentialId);
+                fireCredentialIgnored(credentialId, "Issued for another presentation");
             }
         });
         if (kept.size() == vpResult.credentials().size()) {

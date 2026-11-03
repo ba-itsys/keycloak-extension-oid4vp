@@ -16,6 +16,8 @@
 package de.arbeitsagentur.keycloak.oid4vp.authentication;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpMessages;
+import de.arbeitsagentur.keycloak.oid4vp.event.Oid4vpEventService;
+import de.arbeitsagentur.keycloak.oid4vp.event.PresentationRefusedEvent;
 import jakarta.ws.rs.core.Response;
 import java.net.URI;
 import java.util.Map;
@@ -70,6 +72,17 @@ public class Oid4vpPresentationAuthenticator implements Authenticator {
         if (refusal.isPresent()) {
             Oid4vpPresentationSession.clear(authSession);
             context.getEvent().clone().detail(Details.IDENTITY_PROVIDER, alias).error(refusal.get());
+            UserModel user = context.getUser();
+            Oid4vpEventService.fire(
+                    context.getSession(),
+                    new PresentationRefusedEvent(
+                            context.getRealm().getId(),
+                            alias,
+                            authSession.getClient().getClientId(),
+                            user != null ? user.getId() : null,
+                            null,
+                            PresentationRefusedEvent.Refusal.USER_MISMATCH,
+                            refusal.get()));
             context.failureChallenge(AuthenticationFlowError.ACCESS_DENIED, errorPage(context, refusal.get()));
             return;
         }

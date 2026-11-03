@@ -31,6 +31,8 @@ import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpPresentationFlow;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PreparedDcqlQuery;
 import de.arbeitsagentur.keycloak.oid4vp.domain.RequestedCredential;
 import de.arbeitsagentur.keycloak.oid4vp.domain.TrustedAuthority;
+import de.arbeitsagentur.keycloak.oid4vp.event.Oid4vpEventService;
+import de.arbeitsagentur.keycloak.oid4vp.event.PresentationRefusedEvent;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpCallbackProcessor;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpRedirectFlowService;
@@ -102,6 +104,7 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
         this.qrCodeService = new Oid4vpQrCodeService();
 
         this.callbackProcessor = new Oid4vpCallbackProcessor(
+                session,
                 config,
                 config,
                 this,
@@ -186,6 +189,16 @@ public class Oid4vpIdentityProvider extends AbstractIdentityProvider<Oid4vpIdent
                             Details.REASON,
                             "No OID4VP flow is offered at the requested level of authentication " + requestedLoa)
                     .error(Errors.NOT_ALLOWED);
+            Oid4vpEventService.fire(
+                    session,
+                    new PresentationRefusedEvent(
+                            Oid4vpEventService.realmId(session),
+                            getConfig().getAlias(),
+                            authSession.getClient().getClientId(),
+                            null,
+                            null,
+                            PresentationRefusedEvent.Refusal.LEVEL_NOT_OFFERED,
+                            "Requested level " + requestedLoa));
             return ErrorPage.error(
                     session, authSession, Response.Status.FORBIDDEN, Oid4vpMessages.NOT_AVAILABLE_FOR_REQUESTED_LEVEL);
         }

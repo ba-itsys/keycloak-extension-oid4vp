@@ -18,6 +18,8 @@ package de.arbeitsagentur.keycloak.oid4vp.authentication;
 import de.arbeitsagentur.keycloak.oid4vp.binding.ReferenceCredentialBinding;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpIdentityKey;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpMessages;
+import de.arbeitsagentur.keycloak.oid4vp.event.Oid4vpEventService;
+import de.arbeitsagentur.keycloak.oid4vp.event.PresentationRefusedEvent;
 import jakarta.ws.rs.core.Response;
 import java.net.URI;
 import java.util.Map;
@@ -78,6 +80,16 @@ public class Oid4vpPresentationRequiredAction implements RequiredActionProvider 
         if (refusal.isPresent()) {
             Oid4vpPresentationSession.clear(authSession);
             context.getEvent().clone().detail(Details.IDENTITY_PROVIDER, alias).error(refusal.get());
+            Oid4vpEventService.fire(
+                    context.getSession(),
+                    new PresentationRefusedEvent(
+                            context.getRealm().getId(),
+                            alias,
+                            authSession.getClient().getClientId(),
+                            context.getUser().getId(),
+                            null,
+                            PresentationRefusedEvent.Refusal.USER_MISMATCH,
+                            refusal.get()));
             context.challenge(errorPage(context, refusal.get()));
             return;
         }

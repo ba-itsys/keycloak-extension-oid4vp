@@ -22,6 +22,7 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.authentication.Oid4vpPresentationAuthenticatorFactory;
 import de.arbeitsagentur.keycloak.oid4vp.authentication.Oid4vpPresentationRequiredAction;
+import de.arbeitsagentur.keycloak.oid4vp.event.Oid4vpEventDetails;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestCertificates;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestWallet;
@@ -206,7 +207,7 @@ class KeycloakOid4vpPresentationE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
-    void authenticatorRefusesAWalletLinkedToAnotherUser() {
+    void authenticatorRefusesAWalletLinkedToAnotherUser() throws Exception {
         linkWalletTo(BOB);
 
         useBrowserFlow(PASSWORD_AND_WALLET_FLOW);
@@ -215,6 +216,8 @@ class KeycloakOid4vpPresentationE2eIT extends AbstractOid4vpE2eTest {
         page.navigate(flow.submitToWallet(flow.getSameDeviceWalletUrl()).redirectUri());
 
         assertErrorPage("This wallet credential is linked to another account.");
+        assertThat(eventsOfType("PRESENTATION_REFUSED", 1).get(0).getDetails())
+                .containsEntry(Oid4vpEventDetails.REFUSAL, "USER_MISMATCH");
     }
 
     @Test
@@ -227,7 +230,7 @@ class KeycloakOid4vpPresentationE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
-    void requiredActionRefusesAWalletLinkedToAnotherUser() {
+    void requiredActionRefusesAWalletLinkedToAnotherUser() throws Exception {
         linkWalletTo(BOB);
 
         flow.navigateToLoginPage(Map.of("kc_action", Oid4vpPresentationRequiredAction.PROVIDER_ID));
@@ -236,6 +239,8 @@ class KeycloakOid4vpPresentationE2eIT extends AbstractOid4vpE2eTest {
 
         assertErrorPage("This wallet credential is linked to another account.");
         assertThat(links(ALICE)).isEmpty();
+        assertThat(eventsOfType("PRESENTATION_REFUSED", 1).get(0).getDetails())
+                .containsEntry(Oid4vpEventDetails.REFUSAL, "USER_MISMATCH");
     }
 
     private void linkWalletTo(String username) {

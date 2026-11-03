@@ -19,6 +19,9 @@ import static de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants.*;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.DecryptedResponse;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpMessages;
+import de.arbeitsagentur.keycloak.oid4vp.event.CompletionRejectedEvent;
+import de.arbeitsagentur.keycloak.oid4vp.event.Oid4vpEventService;
+import de.arbeitsagentur.keycloak.oid4vp.event.PresentationFailedEvent;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpCrossDeviceSseService;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpDirectPostService;
 import de.arbeitsagentur.keycloak.oid4vp.service.Oid4vpEndpointResponseFactory;
@@ -127,9 +130,12 @@ public class Oid4vpIdentityProviderEndpoint {
             @FormParam(OAuth2Constants.ERROR) String error,
             @FormParam(OAuth2Constants.ERROR_DESCRIPTION) String errorDescription) {
 
+        // Starts with the form state, which an encrypted post leaves empty.
+        String eventState = state;
         try {
             IncomingPost incomingPost = new IncomingPost(state, vpToken, encryptedResponse, error, errorDescription);
             ResolvedRequest resolvedRequest = resolveRequest(incomingPost.state(), incomingPost.encryptedResponse());
+            eventState = resolvedRequest.state();
             AuthenticationSessionModel authSession =
                     authSessionResolver.resolveFromRequestContext(resolvedRequest.requestContext());
             if (authSession == null) {
@@ -144,6 +150,18 @@ public class Oid4vpIdentityProviderEndpoint {
             // wallet error and be answered with 200.
             ensureEncryptedWhenRequired(submission.wasEncrypted());
             if (StringUtil.isNotBlank(submission.error())) {
+                Oid4vpRequestObjectStore.RequestContextEntry requestContext = resolvedRequest.requestContext();
+                Oid4vpEventService.fire(
+                        session,
+                        new PresentationFailedEvent(
+                                Oid4vpEventService.realmId(session),
+                                provider.getConfig().getAlias(),
+                                authSession.getClient().getClientId(),
+                                requestContext.state(),
+                                requestContext.flow(),
+                                PresentationFailedEvent.Origin.WALLET,
+                                submission.error(),
+                                submission.errorDescription()));
                 return handleWalletError(
                         submission.error(),
                         submission.errorDescription(),
@@ -162,11 +180,37 @@ public class Oid4vpIdentityProviderEndpoint {
             LOG.warnf(
                     "OID4VP IdP '%s': rejected wallet response for state=%s before verification: %s",
                     provider.getConfig().getAlias(), FailureDetails.singleLine(state), FailureDetails.causeChain(e));
+            fireTransportFailure(eventState, FailureDetails.causeChain(e));
             return handleError("identity_provider_error", e.getMessage());
         } catch (Exception e) {
             LOG.errorf(e, "Uncaught exception in handlePost: %s", e.getMessage());
+            Oid4vpEventService.fire(
+                    session,
+                    new PresentationFailedEvent(
+                            Oid4vpEventService.realmId(session),
+                            provider.getConfig().getAlias(),
+                            null,
+                            eventState,
+                            null,
+                            PresentationFailedEvent.Origin.SERVER,
+                            null,
+                            FailureDetails.causeChain(e)));
             return responseFactory.jsonErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "server_error", null);
         }
+    }
+
+    private void fireTransportFailure(String state, String reason) {
+        Oid4vpEventService.fire(
+                session,
+                new PresentationFailedEvent(
+                        Oid4vpEventService.realmId(session),
+                        provider.getConfig().getAlias(),
+                        null,
+                        state,
+                        null,
+                        PresentationFailedEvent.Origin.TRANSPORT,
+                        null,
+                        reason));
     }
 
     private record IncomingPost(
@@ -215,6 +259,7 @@ public class Oid4vpIdentityProviderEndpoint {
                 "OID4VP callback session resolution failed: state=%s encrypted=%s requestContextPresent=%s",
                 FailureDetails.singleLine(state), StringUtil.isNotBlank(encryptedResponse), requestContext != null);
         event.event(EventType.LOGIN_ERROR).error(Errors.SESSION_EXPIRED);
+        fireTransportFailure(state, "No authentication session for the state");
         return responseFactory.jsonErrorResponse(Response.Status.BAD_REQUEST, "session_expired", null);
     }
 
@@ -379,7 +424,7 @@ public class Oid4vpIdentityProviderEndpoint {
             @QueryParam(OAuth2Constants.STATE) String state,
             @QueryParam(OID4VCConstants.RESPONSE_CODE) String responseCode) {
         if (StringUtil.isBlank(state) || StringUtil.isBlank(responseCode)) {
-            return browserError(Oid4vpMessages.INVALID_LOGIN_RESPONSE);
+            return rejectIncompleteLink(state);
         }
         return directPostService.completeAuth(state, responseCode, callback, event);
     }
@@ -414,13 +459,17 @@ public class Oid4vpIdentityProviderEndpoint {
             @QueryParam(OAuth2Constants.STATE) String state,
             @QueryParam(OID4VCConstants.RESPONSE_CODE) String responseCode) {
         if (StringUtil.isBlank(state) || StringUtil.isBlank(responseCode)) {
-            return browserError(Oid4vpMessages.INVALID_LOGIN_RESPONSE);
+            return rejectIncompleteLink(state);
         }
 
         // Checks the browser before consuming the record, so another browser cannot burn it.
         AuthenticationSessionModel storedAuthSession = authSessionResolver.resolveFromStore(state);
         AuthenticationSessionModel authSession = authSessionResolver.sameBrowserSession(storedAuthSession);
         if (storedAuthSession != null && authSession == null) {
+            directPostService.fireCompletionRejected(
+                    state,
+                    CompletionRejectedEvent.Rejection.BROWSER_MISMATCH,
+                    "The browser is not the one that started the login");
             return browserError(Oid4vpMessages.BROWSER_SESSION_MISMATCH);
         }
         Oid4vpDirectPostService.LoginFailure failure = directPostService.consumeFailure(state, responseCode);
@@ -428,6 +477,10 @@ public class Oid4vpIdentityProviderEndpoint {
             LOG.warnf(
                     "No failure recorded for state=%s, or the response code did not match",
                     FailureDetails.singleLine(state));
+            directPostService.fireCompletionRejected(
+                    state,
+                    CompletionRejectedEvent.Rejection.RESPONSE_CODE,
+                    "No failure recorded for the state, or the response code did not match");
             return browserError(Oid4vpMessages.LOGIN_ENDED);
         }
         if (authSession == null) {
@@ -460,6 +513,7 @@ public class Oid4vpIdentityProviderEndpoint {
             String vpToken,
             boolean isCrossDeviceFlow) {
 
+        Oid4vpEventService.bindState(session, requestContext.state());
         BrokeredIdentityContext context;
         try {
             context = provider.getCallbackProcessor().process(requestContext, vpToken);
@@ -467,13 +521,46 @@ public class Oid4vpIdentityProviderEndpoint {
             LOG.warnf(
                     "OID4VP IdP '%s': presentation for state=%s rejected: %s",
                     provider.getConfig().getAlias(), FailureDetails.singleLine(state), FailureDetails.causeChain(e));
+            Oid4vpEventService.fire(
+                    session,
+                    new PresentationFailedEvent(
+                            Oid4vpEventService.realmId(session),
+                            provider.getConfig().getAlias(),
+                            authSession.getClient().getClientId(),
+                            requestContext.state(),
+                            requestContext.flow(),
+                            PresentationFailedEvent.Origin.VERIFIER,
+                            null,
+                            FailureDetails.causeChain(e)));
             return handleVerificationFailure(e.getMessage(), requestContext, isCrossDeviceFlow);
         } catch (Exception e) {
             LOG.errorf(e, "Failed to process VP token: %s", e.getMessage());
+            Oid4vpEventService.fire(
+                    session,
+                    new PresentationFailedEvent(
+                            Oid4vpEventService.realmId(session),
+                            provider.getConfig().getAlias(),
+                            authSession.getClient().getClientId(),
+                            requestContext.state(),
+                            requestContext.flow(),
+                            PresentationFailedEvent.Origin.SERVER,
+                            null,
+                            FailureDetails.causeChain(e)));
             return handleServerFailure(e.getMessage(), requestContext, isCrossDeviceFlow);
         }
         return directPostService.storeAndSignal(
-                authSession, requestContext.state(), requestContext.responseUri(), context, isCrossDeviceFlow);
+                authSession,
+                requestContext.state(),
+                requestContext.flow(),
+                requestContext.responseUri(),
+                context,
+                isCrossDeviceFlow);
+    }
+
+    private Response rejectIncompleteLink(String state) {
+        directPostService.fireCompletionRejected(
+                state, CompletionRejectedEvent.Rejection.RESPONSE_CODE, "The state or the response code is missing");
+        return browserError(Oid4vpMessages.INVALID_LOGIN_RESPONSE);
     }
 
     /**
