@@ -42,7 +42,7 @@ public final class TestTrust {
             }
         }
         List<IssuerTrustAnchors> issuerTrustAnchors =
-                anchors.isEmpty() ? List.of() : List.of(new IssuerTrustAnchors(anchors, List.of()));
+                anchors.isEmpty() ? List.of() : List.of(new IssuerTrustAnchors(anchors, List.of(), CrlPolicy.DEFAULT));
         return new ResolvedTrust(
                 issuerTrustAnchors, anyIssuer(endEntityCertificates), List.of(), certificates, List.of(), true);
     }

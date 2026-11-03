@@ -217,7 +217,7 @@ class Oid4vpTrustMaterialResolverTest {
                         TrustedAuthority.of(TrustedAuthorityType.AKI, List.of(authorityKeyIdentifier)).stream())
                 .toList();
         return new ResolvedTrust(
-                List.of(new IssuerTrustAnchors(Set.of(certificate), List.of())),
+                List.of(new IssuerTrustAnchors(Set.of(certificate), List.of(), CrlPolicy.DEFAULT)),
                 TestTrust.anyIssuer(List.of(certificate)),
                 List.of(),
                 List.of(certificate),

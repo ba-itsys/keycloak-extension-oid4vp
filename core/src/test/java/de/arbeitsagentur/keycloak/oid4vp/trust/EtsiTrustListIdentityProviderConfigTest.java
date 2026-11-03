@@ -38,6 +38,26 @@ class EtsiTrustListIdentityProviderConfigTest {
     }
 
     @Test
+    void crlEndpoint_blankMeansDistributionPoints() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
+        assertThat(config.getCrlEndpoint()).isNull();
+        config.setCrlEndpoint("  ");
+        assertThat(config.getCrlEndpoint()).isNull();
+        config.setCrlEndpoint("https://ca.example/ca.crl");
+        assertThat(config.getCrlEndpoint()).isEqualTo("https://ca.example/ca.crl");
+    }
+
+    @Test
+    void crlMaxCacheTtl_defaultsToOneHourAndParsesSeconds() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
+        assertThat(config.getCrlMaxCacheTtl()).isEqualTo(Duration.ofHours(1));
+        config.setCrlMaxCacheTtlSeconds(0);
+        assertThat(config.getCrlMaxCacheTtl()).isEqualTo(Duration.ZERO);
+        config.setCrlMaxCacheTtlSeconds(-1);
+        assertThat(config.getCrlMaxCacheTtl()).isEqualTo(Duration.ofHours(1));
+    }
+
+    @Test
     void trustListLoTEType_defaultsToEmpty() {
         EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
         assertThat(config.getTrustListLoTEType()).isNull();
@@ -112,6 +132,24 @@ class EtsiTrustListIdentityProviderConfigTest {
 
         config.setRequiredExtendedKeyUsages(" 1.0.18013.5.1.2 , 1.3.6.1.5.5.7.3.3 , 1.0.18013.5.1.2 ,, ");
         assertThat(config.getRequiredExtendedKeyUsages()).containsExactly("1.0.18013.5.1.2", "1.3.6.1.5.5.7.3.3");
+    }
+
+    @Test
+    void validate_rejectsACrlEndpointThatIsNoHttpUrl() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
+        config.setTrustListUrl("https://example.com/list.jwt");
+        config.setCrlEndpoint("ca.example/ca.crl");
+
+        assertThatThrownBy(() -> config.validate(null)).hasMessageContaining("http(s)");
+    }
+
+    @Test
+    void validate_rejectsACacheTimeOutOfRange() {
+        EtsiTrustListIdentityProviderConfig config = new EtsiTrustListIdentityProviderConfig();
+        config.setTrustListUrl("https://example.com/list.jwt");
+        config.getConfig().put(EtsiTrustListIdentityProviderConfig.CRL_MAX_CACHE_TTL_SECONDS, "99999999999999999");
+
+        assertThatThrownBy(() -> config.validate(null)).hasMessageContaining("number of seconds");
     }
 
     @Test

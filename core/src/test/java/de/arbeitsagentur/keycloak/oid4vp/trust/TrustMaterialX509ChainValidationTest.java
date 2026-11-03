@@ -129,7 +129,9 @@ class TrustMaterialX509ChainValidationTest {
 
             @Override
             public List<IssuerTrustAnchors> issuerTrustAnchors() {
-                return anchors.isEmpty() ? List.of() : List.of(new IssuerTrustAnchors(Set.copyOf(anchors), List.of()));
+                return anchors.isEmpty()
+                        ? List.of()
+                        : List.of(new IssuerTrustAnchors(Set.copyOf(anchors), List.of(), CrlPolicy.DEFAULT));
             }
 
             @Override
