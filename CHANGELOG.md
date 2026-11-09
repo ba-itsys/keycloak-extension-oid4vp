@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.17.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.16.1...v0.17.0) (2026-11-09)
+
+
+### Features
+
+* add a CRL verifier for issuer chains ([fa791dd](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/fa791dd0f6a4db3875809ef9febb0c7017b23054))
+* add CRL settings to trust list providers ([90841f2](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/90841f267caef6b2dde392fa27c58697b8b4f070))
+* add security events on Keycloak IdP events ([c2f9215](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/c2f921548a1321f6b8ac149b04cde95d1fb72f90))
+* check issuer chains against CRLs ([8e56fcb](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/8e56fcb7e7df7aab4d6049bae0306f2cd5a94db6))
+* fire security events from the login flow ([19400ca](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/19400ca6bb8222393a03f989d4eb26928d2ad28d))
+* report status list revocation and outages ([bd079f7](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/bd079f73b10e4c4b2802528febcae6983c6d8dce))
+
+
+### Bug Fixes
+
+* claim the state for the first presentation ([514818a](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/514818a68f574157689bb8e709eed5a86edc823d))
+* honor trust list NextUpdate and service statuses ([762dcb7](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/762dcb76714e5fb82b96c1befba6b2c66b27c4e7))
+* mark the encrypted request object with cty JWT ([34edae6](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/34edae685d0fd44c04ee46a6282d06d34a70b6d3))
+* report trust list outages as server failures ([80ced6c](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/80ced6ceb0ccce0cd8788869ac95abf326ceefa8))
+* require a docType in the mDoc MSO ([2472d33](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/2472d3396d9ae025954b43e2a06dd1b931c350b5))
+* require integer status list bits ([a03b40d](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/a03b40dc8e877e2b36c3364d9bfa3250129ad0b4))
+* separate the trust list cache per provider ([cd5a3da](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/cd5a3dac45921eb99dbc2afbbb04ad9502d0b31c))
+* validate cache times and the LoTE type ([af04e48](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/af04e48b48293afe9bfec68505e9e223815dce4f))
+* verify trust lists with pinned signer keys only ([a179519](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/a1795198886264ed4e0325121747954c3a9102bb))
+
+
+### Dependencies
+
+* **deps-dev:** Bump com.microsoft.playwright:playwright ([6e44270](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/6e4427084b664be1fe577edd8b8f01770223de59))
+* **deps-dev:** Bump io.github.dominikschlosser:testcontainers-eudi ([874b665](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/874b66550b13180c71df9d22cd90c71b264b2e6a))
+* **deps-dev:** Bump net.bytebuddy:byte-buddy-agent ([e326954](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/e3269542e6867d749cb60e46a0e0c4d1df13022d))
+* **deps-dev:** Bump org.apache.httpcomponents.client5:httpclient5 ([ad43e0a](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/ad43e0a7b0fb2467a33d19482ba0fb095ed604e6))
+* **deps-dev:** Bump org.apache.maven.plugins:maven-failsafe-plugin ([6edd56e](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/6edd56e0795fbc9b7910ec759f6a971344b4943a))
+* **deps-dev:** Bump org.jacoco:jacoco-maven-plugin ([3f2bd54](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/3f2bd54d4766108b20f5a7d054deb960aba48038))
+* **deps:** Bump ch.qos.logback:logback-classic from 1.6.3 to 1.6.6 ([9532879](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/9532879371300611f1e31ba66d975be8748ff039))
+* **deps:** Bump com.diffplug.spotless:spotless-maven-plugin ([938f073](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/938f0732c9f162c2302d2d8c7af925b4a1a9b715))
+* **deps:** Bump org.apache.maven.plugins:maven-surefire-plugin ([2d34f89](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/2d34f89ad12417f445a01043c9f7afdf93541691))
+* **deps:** Bump org.junit.jupiter:junit-jupiter from 6.1.1 to 6.1.3 ([f162ba2](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/f162ba2ab0a6f42d9c814534f9bad41c33165234))
+* **deps:** Bump org.projectlombok:lombok from 1.18.44 to 1.18.48 ([73cf3ff](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/73cf3ff8c97e23d682ff86a8e144071cda4aa8a7))
+* **deps:** Bump the bouncycastle group with 4 updates ([e04e477](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/e04e47753f8476fe4d005f7a29fffc0ebb3dea67))
+
+
+### Documentation
+
+* rewrite the docs in plain wording ([d417777](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/d41777726b9e8624abf23580d36ad8b447133d7e))
+
 ## [0.16.1](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.16.0...v0.16.1) (2026-10-22)
 
 
