@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.17.1](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.17.0...v0.17.1) (2026-11-10)
+
+
+### Dependencies
+
+* **deps-dev:** bump net.bytebuddy:byte-buddy-agent ([ea18331](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/ea1833197f5b083b13637401365f17cc431d8f9f))
+* **deps:** bump com.diffplug.spotless:spotless-maven-plugin ([b8e03b8](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/b8e03b8fb8b8b710f87f94809143ee4232c63fc2))
+* **deps:** bump the keycloak group across 1 directory with 4 updates ([0d76179](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/0d7617985c85e2e5d74ba5e406ae68e2b6b41d35))
+
 ## [0.17.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.16.1...v0.17.0) (2026-11-09)
 
 
