@@ -1,6 +1,6 @@
 services:
   keycloak:
-    image: quay.io/keycloak/keycloak:26.8.2-1
+    image: quay.io/keycloak/keycloak:26.8.2-2
     command:
       - start-dev
       - --verbose
