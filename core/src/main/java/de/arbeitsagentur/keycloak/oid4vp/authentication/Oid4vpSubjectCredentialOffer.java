@@ -39,8 +39,8 @@ import org.keycloak.utils.StringUtil;
 
 /**
  * Offers a user the subject credential of this Keycloak, so that the next presentation identifies
- * them. A presentation that lacks the subject credential is bound to a user through a subject derived
- * from the user, and the offered credential carries that subject.
+ * them. A presentation that lacks the subject credential is bound to a user through a random subject,
+ * and the offered credential carries that subject.
  */
 public final class Oid4vpSubjectCredentialOffer {
 
