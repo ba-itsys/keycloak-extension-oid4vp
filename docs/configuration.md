@@ -51,9 +51,8 @@ Mapper `credential.id`:
 | `principalAttributes` | none | Claims that identify the user, as comma separated `credentialId:claimPath` entries in the order tried, see [Subject Claim](#subject-claim) |
 | `allowMissingSubjectCredential` | `false` | Accepts a presentation without the [subject credential](#keycloak-issued-subject-credential). Requires `principalAttributes`, which names the credentials that may be missing |
 | `referenceBindingClaim` | `oid4vp_reference_binding` | Claim carrying the [reference credential binding](spi-reference.md#reference-credential-binding-spi) of a credential this Keycloak issues. Set the same name on `oid4vp-bound-subject-mapper` |
-| `doNotStoreUsers` | `false` | Native Keycloak IdP setting. Enables [transient login](#transient-login-mode) and ignores configured identifying claims. Requires the `transient-users` feature |
 
-Logins require `principalAttributes` unless transient users are enabled. Without it, the identity provider refuses logins and only serves the [presentation authenticator and required action](#presentation-authenticator-and-required-action).
+Without `principalAttributes`, every presentation gets a random subject. It identifies nobody, so each login runs the first broker login flow. See [Logins Without a Subject Claim](#logins-without-a-subject-claim).
 
 ### Subject Claim
 
@@ -110,11 +109,14 @@ The first broker login flow must authenticate the user: `idp-username-password-f
 | PID alone | The verifier generates a subject `oid4vp-<uuid>`. Keycloak runs the first broker login flow, and the user signs in with username and password. `oid4vp-subject-binding` sets the brokered identity to that user before Keycloak stores the link, entitles the user, and ends the login in the Keycloak credential offer required action |
 
 - The claim named in `principalAttributes` can be any claim the issuer writes the subject into. It must equal `claim.name` on the issuing mapper.
-- `oid4vp-bound-subject-mapper` writes the reference credential binding and a subject derived from the Keycloak user id with a realm secret, so wallets and verifiers read an opaque value.
+- `oid4vp-bound-subject-mapper` writes the reference credential binding and a random subject `oid4vp-<uuid>`, so wallets and verifiers read nothing about the account.
 - The offer is bound to its login. Keycloak accepts the pre-authorized code only while that session is logged in and the user and password are unchanged.
 - Keycloak offers a credential only to an entitled user. The authenticator grants the entitlement and records the subject and reference credential binding on it. An entitlement granted by an administrator yields a credential that identifies nobody.
 - The authenticator offers on every login it binds, even for an entitled user. It only runs when the presentation carried no subject credential.
-- A user who lost the credential signs in with a password again and receives a replacement. The authenticator replaces the existing link with the same identity.
+- A user who lost the credential signs in with a password again and receives a replacement with a new random subject. The authenticator replaces the existing link, so the old credential no longer identifies the user.
+- The first broker login flow writes the link when it ends, before the wallet receives the credential.
+- The required action writes the link right after the presentation.
+- A user who skips the offer keeps a link that no credential carries. Their next login without the subject credential links a new random subject.
 
 ```mermaid
 sequenceDiagram
@@ -163,7 +165,7 @@ sequenceDiagram
 - The brokered identity is `Base64Url(SHA-256(subject))` over the trimmed, lowercased subject, without issuer or format. Keycloak scopes it to the identity provider alias.
 - Keycloak stores it in the federated identity link when the first broker login flow finishes. No user attribute is written, and the user id is never stored, not even inside the link.
 
-**Warning:** every credential named in `principalAttributes` must come from an issuer that assigns the subject. A credential whose holder chooses the subject claim at issuance can name another credential's subject and reach that account. The credential this Keycloak issues avoids this with its derived subject and reference credential binding.
+**Warning:** every credential named in `principalAttributes` must come from an issuer that assigns the subject. A credential whose holder chooses the subject claim at issuance can name another credential's subject and reach that account. The credential this Keycloak issues avoids this with its random subject and reference credential binding.
 
 Issuer side of the realm:
 
@@ -183,19 +185,19 @@ Both have the id `oid4vp-presentation` and ask for a presentation with the OID4V
 
 | Provider | Behavior |
 |----------|----------|
-| Authenticator | Without a user in the flow: sets the linked user, so this authenticator alone logs in without a password. With a user: accepts only a presentation linked to that user, as second factor or step-up. Never links, because a username form identifies a user without authenticating them |
+| Authenticator | Without a user in the flow: sets the linked user, so this authenticator alone logs in without a password. With a user: accepts only a presentation linked to that user, as second factor or step-up. In a registration flow, after Keycloak's registration form: links the presentation to the new user like the required action, and the flow continues with the next step. It links no other user, because a username form identifies a user without authenticating them |
 | Required action | Links the presentation to the authenticated user, also as application initiated action (`kc_action=oid4vp-presentation`). Replaces the user's earlier link to the identity provider and refuses a presentation linked to another user |
 
 - Both use the same identity provider link as a login through that provider. A user linked by either can log in with the provider, and the other way round.
 - The mappers' session notes reach the authentication session, and the browser returns to the execution that asked.
 - A declined or rejected presentation shows the identity provider's error message.
-- For a presentation without the subject credential (`allowMissingSubjectCredential`), the required action acts like the [subject binding authenticator](#keycloak-issued-subject-credential): it links a subject derived from the user and offers the credential configured with `credentialConfigurationId` and `offerClientId`.
+- For a presentation without the subject credential (`allowMissingSubjectCredential`), the required action and the authenticator in a registration flow act like the [subject binding authenticator](#keycloak-issued-subject-credential): they link a random subject and offer the credential configured with `credentialConfigurationId` and `offerClientId`.
 
 Identity provider without `principalAttributes`:
 
 - Both providers keep the claims without touching links.
-- The provider refuses logins with "This wallet presentation cannot be used to log in" and stays hidden on the login page with `hideOnLogin`. Saving it without `hideOnLogin` logs a warning.
-- Each presentation gets a random unstored subject, so presentations of one person stay unlinkable.
+- Each presentation gets a random subject, so presentations of one person stay unlinkable.
+- A login through the provider itself runs the first broker login flow with that random subject. `hideOnLogin` only hides the button, and `kc_idp_hint` still starts such a login. For a provider that only serves these steps, configure a first broker login flow that denies the login.
 
 Extension points:
 
@@ -206,17 +208,13 @@ Extension points:
 | `verify(...)` | Derived `Oid4vpPresentationAuthenticator` and `Oid4vpPresentationRequiredAction` decide whether a verified presentation completes the execution |
 | `identify(...)`, `link(...)`, `identityLinks(...)` | Derived implementations change how users are found and linked |
 
-### Transient Login Mode
+### Logins Without a Subject Claim
 
-This mode suits a wallet connector without persisted Keycloak users, for credentials without a stable account identifier, such as German PID variants.
+Some credentials carry no stable account identifier, such as German PID variants. Leave `principalAttributes` empty for them.
 
-1. Start Keycloak with the `transient-users` feature.
-2. Enable the IdP's built-in **Do not store users** setting.
-3. Keep the normal first broker login flow. Keycloak creates a `LightweightUserAdapter` and a transient user session.
-
-- The extension generates a random per-login identifier and ignores `principalAttributes`.
-- OID4VP user-attribute mappers apply to the transient user, which is gone after the session ends.
-- Session-note mappers fit best when relying parties only need claims in the token.
+- Each presentation gets a random subject (`oid4vp-<uuid>`), which becomes the identity provider link. Presentations of one person stay unlinkable.
+- The first broker login flow decides what happens next, for example creating a user or linking an existing account.
+- To keep no users at all, start Keycloak with the `transient-users` feature and enable the identity provider's **Do not store users** setting. This is plain Keycloak behavior. The extension does not read the setting.
 
 ### Flow Control
 

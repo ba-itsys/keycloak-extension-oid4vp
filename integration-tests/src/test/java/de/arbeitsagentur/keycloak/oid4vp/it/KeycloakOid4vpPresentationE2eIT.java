@@ -42,6 +42,7 @@ import org.keycloak.representations.idm.CredentialRepresentation;
 import org.keycloak.representations.idm.FederatedIdentityRepresentation;
 import org.keycloak.representations.idm.IdentityProviderMapperRepresentation;
 import org.keycloak.representations.idm.IdentityProviderRepresentation;
+import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 
@@ -141,15 +142,29 @@ class KeycloakOid4vpPresentationE2eIT extends AbstractOid4vpE2eTest {
     }
 
     @Test
-    void identityProviderWithoutPrincipalAttributesRefusesTheLogin() {
+    void identityProviderWithoutPrincipalAttributesLinksARandomSubject() throws Exception {
         realm.updateIdentityProvider(PRESENTATION_IDP_ALIAS, idp -> idp.setHideOnLogin(false));
         flow.navigateToLoginPage();
         page.locator("a#social-" + PRESENTATION_IDP_ALIAS).click();
 
         page.navigate(flow.submitToWallet(flow.getSameDeviceWalletUrl()).redirectUri());
+        flow.completeFirstBrokerLoginIfNeeded("random-subject");
+        flow.assertLoginSucceeded();
 
-        assertThat(page.locator("body").textContent()).contains("This wallet presentation cannot be used to log in");
-        assertThat(flow.isCallbackUrl(page.url())).isFalse();
+        String username = idTokenOfCompletedLogin().getJWTClaimsSet().getStringClaim("preferred_username");
+        try {
+            assertThat(links(username)).singleElement().satisfies(link -> {
+                assertThat(link.getIdentityProvider()).isEqualTo(PRESENTATION_IDP_ALIAS);
+                assertThat(link.getUserName()).startsWith("oid4vp-");
+            });
+        } finally {
+            String userId = realm.admin()
+                    .users()
+                    .searchByUsername(username, true)
+                    .get(0)
+                    .getId();
+            realm.admin().users().get(userId).remove();
+        }
     }
 
     @Test
@@ -241,6 +256,53 @@ class KeycloakOid4vpPresentationE2eIT extends AbstractOid4vpE2eTest {
         assertThat(links(ALICE)).isEmpty();
         assertThat(eventsOfType("PRESENTATION_REFUSED", 1).get(0).getDetails())
                 .containsEntry(Oid4vpEventDetails.REFUSAL, "USER_MISMATCH");
+    }
+
+    /**
+     * The authenticator links the wallet to a user registered in the same flow, and the flow continues
+     * with the steps after it, here a second presentation of another identity provider.
+     */
+    @Test
+    void authenticatorLinksTheWalletToAUserRegisteredInTheSameFlow() throws Exception {
+        String registrationFlow = "wallet-registration";
+        ensureRegistrationFlow(registrationFlow);
+        String username = "registered-" + System.currentTimeMillis();
+        RealmRepresentation realmSettings = realm.admin().toRepresentation();
+        realmSettings.setRegistrationAllowed(true);
+        realmSettings.setRegistrationFlow(registrationFlow);
+        realm.admin().update(realmSettings);
+        try {
+            flow.navigateToLoginPage(Map.of("prompt", "create"));
+            page.locator("input[name='username']").fill(username);
+            page.locator("input[name='email']").fill(username + "@example.com");
+            page.locator("input[name='firstName']").fill("Registered");
+            page.locator("input[name='lastName']").fill("Example");
+            page.locator("input[name='password']").fill(PASSWORD);
+            page.locator("input[name='password-confirm']").fill(PASSWORD);
+            page.locator("input[type='submit'], button[type='submit']").first().click();
+
+            page.navigate(flow.submitToWallet(flow.getSameDeviceWalletUrl()).redirectUri());
+            page.navigate(flow.submitToWallet(flow.getSameDeviceWalletUrl()).redirectUri());
+            flow.assertLoginSucceeded();
+
+            assertThat(links(username))
+                    .extracting(FederatedIdentityRepresentation::getIdentityProvider)
+                    .containsExactly(PID_IDP_ALIAS);
+
+            testApp().reset();
+            flow.clearBrowserSession();
+            useBrowserFlow(WALLET_FLOW);
+            flow.navigateToLoginPage();
+            page.navigate(flow.submitToWallet(flow.getSameDeviceWalletUrl()).redirectUri());
+            flow.assertLoginSucceeded();
+            assertThat(idTokenOfCompletedLogin().getJWTClaimsSet().getStringClaim("preferred_username"))
+                    .isEqualTo(username);
+        } finally {
+            useBrowserFlow(null);
+            realmSettings.setRegistrationAllowed(false);
+            realmSettings.setRegistrationFlow("registration");
+            realm.admin().update(realmSettings);
+        }
     }
 
     private void linkWalletTo(String username) {
@@ -349,7 +411,42 @@ class KeycloakOid4vpPresentationE2eIT extends AbstractOid4vpE2eTest {
         }
     }
 
-    // Keycloak removes an override whose flow id is blank and keeps the ones a client update leaves out.
+    // Registers with Keycloak's form, then presents the PID wallet, then a presentation that identifies nobody.
+    private void ensureRegistrationFlow(String alias) {
+        AuthenticationManagementResource flows = realm.admin().flows();
+        if (flows.getFlows().stream().anyMatch(f -> alias.equals(f.getAlias()))) {
+            return;
+        }
+        AuthenticationFlowRepresentation flowRepresentation = new AuthenticationFlowRepresentation();
+        flowRepresentation.setAlias(alias);
+        flowRepresentation.setProviderId("basic-flow");
+        flowRepresentation.setTopLevel(true);
+        flowRepresentation.setBuiltIn(false);
+        try (Response response = flows.createFlow(flowRepresentation)) {
+            assertThat(response.getStatus()).isEqualTo(201);
+        }
+        String form = alias + " form";
+        flows.addExecutionFlow(alias, Map.of("alias", form, "type", "form-flow", "provider", "registration-page-form"));
+        flows.addExecution(form, Map.of("provider", "registration-user-creation"));
+        flows.addExecution(form, Map.of("provider", "registration-password-action"));
+        flows.addExecution(alias, Map.of("provider", Oid4vpPresentationAuthenticatorFactory.PROVIDER_ID));
+        flows.addExecution(alias, Map.of("provider", Oid4vpPresentationAuthenticatorFactory.PROVIDER_ID));
+        List<String> identityProviders = new ArrayList<>(List.of(PID_IDP_ALIAS, PRESENTATION_IDP_ALIAS));
+        for (AuthenticationExecutionInfoRepresentation execution : flows.getExecutions(alias)) {
+            execution.setRequirement("REQUIRED");
+            flows.updateExecutions(alias, execution);
+            if (Oid4vpPresentationAuthenticatorFactory.PROVIDER_ID.equals(execution.getProviderId())) {
+                String identityProvider = identityProviders.remove(0);
+                AuthenticatorConfigRepresentation config = new AuthenticatorConfigRepresentation();
+                config.setAlias(alias + "-" + identityProvider);
+                config.setConfig(Map.of(Oid4vpPresentationAuthenticatorFactory.IDENTITY_PROVIDER, identityProvider));
+                try (Response response = flows.newExecutionConfig(execution.getId(), config)) {
+                    assertThat(response.getStatus()).isEqualTo(201);
+                }
+            }
+        }
+    }
+
     private void useBrowserFlow(String alias) {
         String flowId = alias == null
                 ? ""

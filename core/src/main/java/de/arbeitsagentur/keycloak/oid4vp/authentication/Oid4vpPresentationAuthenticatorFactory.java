@@ -17,6 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp.authentication;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import org.keycloak.Config;
 import org.keycloak.authentication.Authenticator;
 import org.keycloak.authentication.AuthenticatorFactory;
@@ -90,12 +91,14 @@ public class Oid4vpPresentationAuthenticatorFactory implements AuthenticatorFact
     @Override
     public String getHelpText() {
         return "Identifies the user by an OID4VP presentation linked through an OID4VP identity provider. Works as a "
-                + "passwordless login or as a second factor.";
+                + "passwordless login or as a second factor. In a registration flow, it links the presentation to the "
+                + "new user.";
     }
 
     @Override
     public List<ProviderConfigProperty> getConfigProperties() {
-        return CONFIG_PROPERTIES;
+        return Stream.concat(CONFIG_PROPERTIES.stream(), Oid4vpSubjectCredentialOffer.CONFIG_PROPERTIES.stream())
+                .toList();
     }
 
     @Override
