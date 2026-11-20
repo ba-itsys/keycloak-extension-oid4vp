@@ -21,7 +21,6 @@ import java.security.MessageDigest;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
-import java.util.stream.Stream;
 import javax.crypto.Mac;
 import javax.crypto.SecretKey;
 import org.jboss.logging.Logger;
@@ -33,15 +32,14 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.util.JsonSerialization;
 
 /**
- * Computes the values that tie a credential this Keycloak issues to the login it was issued for. The
- * subject identifies the account. The reference credential binding records the credentials that were
- * presented when it was issued, so a credential presented next to the credentials of somebody else is
- * not accepted as the subject of a login. This differs from the holder binding of OID4VC, which ties a credential to a
- * wallet key.
+ * Computes the reference credential binding of a credential this Keycloak issues. It records the
+ * credentials that were presented when the credential was issued, so a credential presented next to the
+ * credentials of somebody else is not accepted as the subject of a login. This differs from the holder
+ * binding of OID4VC, which ties a credential to a wallet key.
  *
- * <p>Both are HMACs keyed with a realm secret, because the values travel in a credential the wallet
- * shows to other verifiers, and a plain hash of a name and a date of birth is recovered from a
- * candidate list in seconds.
+ * <p>The binding is an HMAC keyed with the dedicated realm key of {@link ReferenceBindingKeyProvider}.
+ * The wallet shows the credential to other verifiers, and they recover a plain hash of a name and a date
+ * of birth from a candidate list in seconds.
  */
 public final class ReferenceCredentialBinding {
 
@@ -52,11 +50,9 @@ public final class ReferenceCredentialBinding {
     public static final String REFERENCE_BINDING_ATTRIBUTE = "oid4vp.reference-binding";
 
     private static final Logger LOG = Logger.getLogger(ReferenceCredentialBinding.class);
-    private static final String HMAC_ALGORITHM = "HmacSHA256";
-    private static final String SUBJECT_CONTEXT = "oid4vp:subject:";
     private static final String REFERENCE_CONTEXT = "oid4vp:reference:";
 
-    // Narrows the Keycloak session to the HMAC secrets of one realm, so a typed double can replace it.
+    // Narrows the Keycloak session to the binding secrets of one realm, so a test can pass its own secrets.
     public interface RealmSecrets {
 
         SecretKey active();
@@ -100,15 +96,6 @@ public final class ReferenceCredentialBinding {
     }
 
     /**
-     * Derives the subject of the credential issued for the given user. It identifies the account without
-     * carrying the Keycloak user id into the wallet, where every verifier the credential is shown to
-     * would read it.
-     */
-    public String subjectOf(String userId) {
-        return digest(secrets.active(), SUBJECT_CONTEXT + userId);
-    }
-
-    /**
      * Computes the reference credential binding of a presentation over what the {@link
      * ReferenceCredentialBindingProvider} selects. Returns null when it selects nothing, and the issued
      * credential is then unbound.
@@ -119,7 +106,7 @@ public final class ReferenceCredentialBinding {
     }
 
     /**
-     * Reports whether the presentation is the one the credential was issued for. Passive realm keys are
+     * Reports whether the presentation is the one the credential was issued for. Passive binding keys are
      * accepted as well, so a key rotation does not invalidate every issued credential at once. A
      * credential carrying no binding is accepted in any presentation. That covers a credential of another
      * issuer and every credential issued without a binding.
@@ -159,7 +146,7 @@ public final class ReferenceCredentialBinding {
 
     private static String digest(SecretKey secret, String message) {
         try {
-            Mac mac = Mac.getInstance(HMAC_ALGORITHM);
+            Mac mac = Mac.getInstance(ReferenceBindingKeyProvider.HMAC_ALGORITHM);
             mac.init(secret);
             return Base64Url.encode(mac.doFinal(message.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception e) {
@@ -171,29 +158,17 @@ public final class ReferenceCredentialBinding {
 
         @Override
         public SecretKey active() {
-            SecretKey secret = session.keys().getActiveHmacKey(realm).getSecretKey();
-            if (secret == null) {
-                throw new IllegalStateException("Realm '" + realm.getName() + "' has no active HMAC key");
-            }
-            return secret;
+            return session.keys()
+                    .getActiveKey(realm, KeyUse.SIG, ReferenceBindingKeyProvider.ALGORITHM)
+                    .getSecretKey();
         }
 
         @Override
         public List<SecretKey> allAccepted() {
-            return acceptedSecrets(session.keys().getKeysStream(realm));
+            return session.keys()
+                    .getKeysStream(realm, KeyUse.SIG, ReferenceBindingKeyProvider.ALGORITHM)
+                    .map(KeyWrapper::getSecretKey)
+                    .toList();
         }
-    }
-
-    /**
-     * Collects every enabled realm key that can key an HMAC, so that a rotation does not invalidate what
-     * is issued while a disabled key stops verifying immediately.
-     */
-    static List<SecretKey> acceptedSecrets(Stream<KeyWrapper> realmKeys) {
-        return realmKeys
-                .filter(key -> key.getStatus() != null && key.getStatus().isEnabled())
-                .filter(key -> KeyUse.SIG.equals(key.getUse()))
-                .map(KeyWrapper::getSecretKey)
-                .filter(secret -> secret != null)
-                .toList();
     }
 }

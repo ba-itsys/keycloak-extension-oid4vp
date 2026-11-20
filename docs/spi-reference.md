@@ -7,7 +7,8 @@ The credential this Keycloak issues identifies an account on its own, so it need
 - The issued credential carries a keyed digest of the credential types and claims it was issued alongside.
 - The verifier recomputes the digest from the current presentation.
 - On a mismatch it treats the credential as not presented, so neither its subject nor its claims reach the login.
-- The digest is an HMAC over a realm secret, because a plain hash of names and dates can be recovered from a candidate list. Passive realm keys still verify, so a key rotation keeps issued credentials valid.
+- The digest is an HMAC over a realm key of its own, because a plain hash of names and dates can be recovered from a candidate list. Keycloak creates the key on first use with the provider `oid4vp-reference-binding-generated` and the algorithm `OID4VP-REFERENCE-BINDING`. The realm keys list it.
+- Passive binding keys still verify, so a key rotation keeps issued credentials valid. Disabling a binding key invalidates every binding it computed. Rotating or disabling the realm HMAC key has no effect on bindings.
 - The binding covers claims of the person, so re-issued and batch-issued PIDs keep it. Two people who share every bound claim share a binding.
 - Holder binding is separate: it ties a credential to a wallet key.
 
