@@ -38,7 +38,7 @@ public final class Oid4vpMapperUtils {
      */
     public static final String CONTEXT_PRESENTATION_FLOW_KEY = "oid4vp_presentation_flow";
 
-    // Marks a presentation to an identity provider without principal attributes, which refuses logins.
+    // Marks a presentation to an identity provider without principal attributes. Its random subject identifies nobody.
     public static final String CONTEXT_PRESENTATION_ONLY_KEY = "oid4vp_presentation_only";
 
     private Oid4vpMapperUtils() {}

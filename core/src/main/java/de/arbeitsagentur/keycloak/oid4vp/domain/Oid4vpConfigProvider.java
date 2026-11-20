@@ -36,7 +36,7 @@ public interface Oid4vpConfigProvider {
     /**
      * Returns the credentials the subject may be read from, each with the claim that carries it,
      * in the order they are tried. Nothing else in the configuration says which claim identifies
-     * the user, so the list is empty only when the subject comes from a transient user.
+     * the user. When it is empty, every presentation gets a random subject.
      */
     List<PrincipalAttribute> getPrincipalAttributes();
 
@@ -55,8 +55,6 @@ public interface Oid4vpConfigProvider {
     boolean isAllowMissingSubjectCredential();
 
     String getReferenceBindingClaim();
-
-    boolean isTransientUsersEnabled();
 
     int getClockSkewSeconds();
 }

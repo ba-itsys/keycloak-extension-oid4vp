@@ -15,7 +15,6 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.authentication;
 
-import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConstants;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import jakarta.ws.rs.core.Response;
@@ -125,9 +124,8 @@ public final class Oid4vpPresentationSession {
     static Response complete(AuthenticationSessionModel authSession, BrokeredIdentityContext context) {
         Map<String, Object> contextData = context.getContextData();
         boolean subjectCredentialMissing = contextData.containsKey(Oid4vpMapperUtils.CONTEXT_GENERATED_SUBJECT_KEY);
-        boolean identifiesNobody = subjectCredentialMissing
-                || contextData.containsKey(Oid4vpMapperUtils.CONTEXT_PRESENTATION_ONLY_KEY)
-                || new Oid4vpIdentityProviderConfig(context.getIdpConfig()).isTransientUsersEnabled();
+        boolean identifiesNobody =
+                subjectCredentialMissing || contextData.containsKey(Oid4vpMapperUtils.CONTEXT_PRESENTATION_ONLY_KEY);
         Oid4vpPresentation presentation = new Oid4vpPresentation(
                 authSession.getAuthNote(ALIAS_NOTE),
                 authSession.getAuthNote(EXECUTION_NOTE),

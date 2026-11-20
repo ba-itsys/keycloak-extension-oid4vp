@@ -32,21 +32,18 @@ public final class Oid4vpCredentialSetsValidator {
     private Oid4vpCredentialSetsValidator() {}
 
     /**
-     * Lists the problems of the configuration. {@code principalClaimRequested} is false when the subject
-     * comes from a transient user, so that no credential has to carry the principal claim.
-     * {@code subjectCredentialMayBeMissing} lifts the rule that every required credential set option
-     * carries the subject credential, because the login that follows establishes the subject instead of
-     * the presentation.
+     * Lists the problems of the configuration. {@code subjectCredentialMayBeMissing} lifts the rule
+     * that every required credential set option carries the subject credential, because the login that
+     * follows establishes the subject instead of the presentation.
      */
     public static List<String> problems(
             List<CredentialSet> credentialSets,
             Map<String, CredentialTypeSpec> credentials,
             List<PrincipalAttribute> principalAttributes,
-            boolean principalClaimRequested,
             boolean subjectCredentialMayBeMissing) {
 
         List<String> problems = referenceProblems(credentialSets, credentials);
-        if (problems.isEmpty() && principalClaimRequested) {
+        if (problems.isEmpty()) {
             problems = subjectProblems(credentialSets, credentials, principalAttributes, subjectCredentialMayBeMissing);
         }
         return List.copyOf(problems);
