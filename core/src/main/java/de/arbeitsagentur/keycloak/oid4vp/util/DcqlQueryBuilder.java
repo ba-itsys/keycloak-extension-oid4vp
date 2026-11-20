@@ -211,27 +211,25 @@ public class DcqlQueryBuilder {
                         .add(claimSpec);
             });
 
-            if (!config.isTransientUsersEnabled()) {
-                // Persistent users are looked up by the subject claim, so the credentials named as
-                // principal attributes request the claim they were named with.
-                Map<String, PrincipalAttribute> principalByCredentialId = new LinkedHashMap<>();
-                config.getPrincipalAttributes()
-                        .forEach(principal -> principalByCredentialId.put(principal.credentialId(), principal));
-                for (Map.Entry<String, List<ClaimSpec>> entry : claimsByCredentialId.entrySet()) {
-                    if (!principalByCredentialId.containsKey(entry.getKey())) {
-                        continue;
-                    }
-                    ClaimSpec principal = principalClaim(
-                            principalByCredentialId.get(entry.getKey()), typesByCredentialId.get(entry.getKey()));
-                    if (principal == null || principal.claimPath() == null) {
-                        continue;
-                    }
-                    boolean alreadyPresent = entry.getValue().stream()
-                            .anyMatch(spec -> spec.path().equals(principal.path())
-                                    && Objects.equals(spec.namespace(), principal.namespace()));
-                    if (!alreadyPresent) {
-                        entry.getValue().add(principal.withId(PRINCIPAL_CLAIM_ID));
-                    }
+            // Users are looked up by the subject claim, so each credential named in a principal
+            // attribute requests that attribute's claim.
+            Map<String, PrincipalAttribute> principalByCredentialId = new LinkedHashMap<>();
+            config.getPrincipalAttributes()
+                    .forEach(principal -> principalByCredentialId.put(principal.credentialId(), principal));
+            for (Map.Entry<String, List<ClaimSpec>> entry : claimsByCredentialId.entrySet()) {
+                if (!principalByCredentialId.containsKey(entry.getKey())) {
+                    continue;
+                }
+                ClaimSpec principal = principalClaim(
+                        principalByCredentialId.get(entry.getKey()), typesByCredentialId.get(entry.getKey()));
+                if (principal == null || principal.claimPath() == null) {
+                    continue;
+                }
+                boolean alreadyPresent = entry.getValue().stream()
+                        .anyMatch(spec -> spec.path().equals(principal.path())
+                                && Objects.equals(spec.namespace(), principal.namespace()));
+                if (!alreadyPresent) {
+                    entry.getValue().add(principal.withId(PRINCIPAL_CLAIM_ID));
                 }
             }
 

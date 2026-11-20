@@ -331,7 +331,7 @@ class DcqlQueryBuilderTest {
         IdentityProviderMapperModel mapper = sdJwtMapper("IdentityCredential", "given_name", " 1-full , 2-min ");
 
         Map<String, CredentialTypeSpec> result =
-                aggregate(Stream.of(mapper), config("oid4vp", false, "sdjwt_IdentityCredential:sub"));
+                aggregate(Stream.of(mapper), config("oid4vp", "sdjwt_IdentityCredential:sub"));
 
         assertThat(result).hasSize(1);
         CredentialTypeSpec type = result.values().iterator().next();
@@ -349,8 +349,7 @@ class DcqlQueryBuilderTest {
         IdentityProviderMapperModel mapper = mdocMapper("org.iso.18013.5.1.mDL", "org.iso.18013.5.1", "family_name");
 
         Map<String, CredentialTypeSpec> result = aggregate(
-                Stream.of(mapper),
-                config("oid4vp", false, "mdoc_org_iso_18013_5_1_mDL:org\\.iso\\.18013\\.5\\.1.given_name"));
+                Stream.of(mapper), config("oid4vp", "mdoc_org_iso_18013_5_1_mDL:org\\.iso\\.18013\\.5\\.1.given_name"));
 
         CredentialTypeSpec type = result.values().iterator().next();
         assertThat(type.format()).isEqualTo("mso_mdoc");
@@ -385,15 +384,14 @@ class DcqlQueryBuilderTest {
     }
 
     @Test
-    void aggregateFromMappers_transientUsersEnabled_skipsPrincipalClaim() {
+    void aggregateFromMappers_withoutPrincipalAttributes_requestsNoPrincipalClaim() {
         IdentityProviderMapperModel mapper = sdJwtMapper("IdentityCredential", "given_name", null);
 
-        Map<String, CredentialTypeSpec> result =
-                aggregate(Stream.of(mapper), config("oid4vp", true, "sdjwt_IdentityCredential:sub"));
+        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(mapper), config("oid4vp", ""));
 
         CredentialTypeSpec type = result.values().iterator().next();
         assertThat(type.claimSpecs())
-                .as("transient users need no subject, so the principal claim is not requested")
+                .as("a random subject replaces the principal claim, so it is not requested")
                 .extracting(ClaimSpec::path)
                 .containsExactly("given_name");
     }
@@ -767,7 +765,7 @@ class DcqlQueryBuilderTest {
     void build_principalClaimAddedForThePrincipalAttribute_isNamedPrincipal() throws Exception {
         Map<String, CredentialTypeSpec> credentials = aggregate(
                 Stream.of(namedMapper("given-name", "given_name", null, "1-full")),
-                config("oid4vp", false, "sdjwt_urn_eudi_pid_1:sub"));
+                config("oid4vp", "sdjwt_urn_eudi_pid_1:sub"));
         Map<String, Object> credential =
                 firstCredential(DcqlQueryBuilder.fromMapperSpecs(objectMapper, credentials, List.of(), Map.of())
                         .build());
@@ -884,8 +882,7 @@ class DcqlQueryBuilderTest {
         IdentityProviderMapperModel employee = sdJwtMapper("https://kc.example/employee", "employee_id", null);
         employee.getConfig().put(AbstractOID4VPClaimMapper.CREDENTIAL_ID, "employee");
 
-        Map<String, CredentialTypeSpec> result =
-                aggregate(Stream.of(pid, employee), config("oid4vp", false, "employee:sub"));
+        Map<String, CredentialTypeSpec> result = aggregate(Stream.of(pid, employee), config("oid4vp", "employee:sub"));
 
         assertThat(result.get("pid").claimSpecs())
                 .extracting(ClaimSpec::path)
@@ -903,11 +900,6 @@ class DcqlQueryBuilderTest {
     }
 
     private static Oid4vpConfigProvider config(String alias, String principalAttributes) {
-        return config(alias, false, principalAttributes);
-    }
-
-    private static Oid4vpConfigProvider config(
-            String alias, boolean transientUsersEnabled, String principalAttributes) {
         return new Oid4vpConfigProvider() {
             @Override
             public String getAlias() {
@@ -952,11 +944,6 @@ class DcqlQueryBuilderTest {
             @Override
             public String getReferenceBindingClaim() {
                 return ReferenceCredentialBinding.DEFAULT_REFERENCE_BINDING_CLAIM;
-            }
-
-            @Override
-            public boolean isTransientUsersEnabled() {
-                return transientUsersEnabled;
             }
 
             @Override

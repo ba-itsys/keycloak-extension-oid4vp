@@ -21,6 +21,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import de.arbeitsagentur.keycloak.oid4vp.binding.ReferenceBindingCheck;
 import de.arbeitsagentur.keycloak.oid4vp.domain.CredentialSet;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpConfigProvider;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpIdentityKey;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpPresentationFlow;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PresentedCredentials;
 import de.arbeitsagentur.keycloak.oid4vp.domain.PrincipalAttribute;
@@ -38,7 +39,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.oid4vp.mappers.ClaimPath;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
@@ -58,7 +58,6 @@ import org.keycloak.utils.StringUtil;
 public class Oid4vpCallbackProcessor {
 
     private static final Logger LOG = Logger.getLogger(Oid4vpCallbackProcessor.class);
-    private static final String GENERATED_SUBJECT_PREFIX = "oid4vp-";
 
     private final KeycloakSession session;
     private final IdentityProviderModel idpModel;
@@ -140,18 +139,14 @@ public class Oid4vpCallbackProcessor {
         String identityKey;
         boolean generatedSubject = false;
         boolean presentationOnly = false;
-        if (configProvider.isTransientUsersEnabled()) {
-            subject = buildTransientSubject(requestContext);
-            identityKey = primary.generateIdentityKey(subject);
-        } else if (configProvider.getPrincipalAttributes().isEmpty()) {
-            // A random subject keeps presentations of the same person unlinkable.
-            subject = generateSubject();
+        if (configProvider.getPrincipalAttributes().isEmpty()) {
+            subject = Oid4vpIdentityKey.randomSubject();
             identityKey = primary.generateCaseInsensitiveIdentityKey(subject);
             presentationOnly = true;
         } else {
             SubjectSource subjectSource = subjectSource(vpResult);
             if (subjectSource == null) {
-                subject = generateSubject();
+                subject = Oid4vpIdentityKey.randomSubject();
                 identityKey = primary.generateCaseInsensitiveIdentityKey(subject);
                 generatedSubject = true;
             } else {
@@ -312,21 +307,6 @@ public class Oid4vpCallbackProcessor {
         }
         return !referenceBindingCheck.bindsToOtherCredentials(
                 PresentedCredentials.of(vpResult.credentials()), subjectCredential.credentialId());
-    }
-
-    /**
-     * Generates a pseudonymous subject for a presentation that carried no subject credential. The
-     * login that follows establishes which user this subject belongs to, and an issuer then puts it
-     * into the credential that identifies them next time.
-     */
-    private static String generateSubject() {
-        return GENERATED_SUBJECT_PREFIX + UUID.randomUUID();
-    }
-
-    private String buildTransientSubject(Oid4vpRequestObjectStore.RequestContextEntry requestContext) {
-        String state = StringUtil.isNotBlank(requestContext.state()) ? requestContext.state() : "unknown";
-        LOG.debugf("OID4VP IdP '%s': generating transient subject for state '%s'", idpModel.getAlias(), state);
-        return "transient-" + state + "-" + UUID.randomUUID();
     }
 
     /**

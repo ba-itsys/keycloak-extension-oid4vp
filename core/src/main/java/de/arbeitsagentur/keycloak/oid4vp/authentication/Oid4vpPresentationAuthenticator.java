@@ -31,6 +31,7 @@ import org.keycloak.models.AuthenticatorConfigModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
+import org.keycloak.services.managers.AuthenticationManager;
 import org.keycloak.services.util.AuthenticationFlowURLHelper;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
@@ -100,10 +101,18 @@ public class Oid4vpPresentationAuthenticator implements Authenticator {
 
     /**
      * Sets the linked user when the flow has none, and otherwise requires the link to point to the
-     * user of the flow. It never links, because a username form alone identifies a user without
-     * authenticating them. Returns the message key of a refusal, or empty.
+     * user of the flow. It links only a user registered in this authentication session, because a
+     * username form alone identifies a user without authenticating them. Returns the message key of a
+     * refusal, or empty.
      */
     protected Optional<String> identify(AuthenticationFlowContext context, Oid4vpPresentation presentation) {
+        UserModel user = context.getUser();
+        AuthenticationSessionModel authSession = context.getAuthenticationSession();
+        if (user != null && Boolean.parseBoolean(authSession.getAuthNote(AuthenticationManager.NEW_USER_REGISTERED))) {
+            AuthenticatorConfigModel config = context.getAuthenticatorConfig();
+            return identityLinks(context.getSession(), context.getRealm())
+                    .bind(user, presentation, authSession, config == null ? Map.of() : config.getConfig());
+        }
         if (presentation.identityKey() == null) {
             return presentation.subjectCredentialMissing()
                     ? Optional.of(Oid4vpMessages.PRESENTATION_NOT_LINKED)
@@ -114,7 +123,6 @@ public class Oid4vpPresentationAuthenticator implements Authenticator {
         if (linked == null) {
             return Optional.of(Oid4vpMessages.PRESENTATION_NOT_LINKED);
         }
-        UserModel user = context.getUser();
         if (user == null) {
             context.setUser(linked);
             return Optional.empty();

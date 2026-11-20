@@ -16,9 +16,7 @@
 package de.arbeitsagentur.keycloak.oid4vp.authentication;
 
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpMessages;
-import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import jakarta.ws.rs.core.Response;
-import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.broker.provider.IdentityProviderMapper;
 import org.keycloak.broker.provider.UserAuthenticationIdentityProvider;
@@ -33,8 +31,6 @@ import org.keycloak.sessions.AuthenticationSessionModel;
  * hands every other one to Keycloak's broker as a login.
  */
 public final class Oid4vpAuthenticationCallback implements AuthenticationCallback {
-
-    private static final Logger LOG = Logger.getLogger(Oid4vpAuthenticationCallback.class);
 
     private final KeycloakSession session;
     private final UserAuthenticationIdentityProvider<?> provider;
@@ -58,10 +54,6 @@ public final class Oid4vpAuthenticationCallback implements AuthenticationCallbac
         if (Oid4vpPresentationSession.isPending(authSession, model.getAlias())) {
             preprocess(context);
             return Oid4vpPresentationSession.complete(authSession, context);
-        }
-        if (context.getContextData().containsKey(Oid4vpMapperUtils.CONTEXT_PRESENTATION_ONLY_KEY)) {
-            LOG.warnf("OID4VP IdP '%s' has no principalAttributes and refuses the login", model.getAlias());
-            return broker.error(model, Oid4vpMessages.PRESENTATION_ONLY);
         }
         return broker.authenticated(context);
     }

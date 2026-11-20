@@ -15,10 +15,15 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.authentication;
 
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpIdentityKey;
+import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpMessages;
+import java.util.Map;
+import java.util.Optional;
 import org.keycloak.models.FederatedIdentityModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
+import org.keycloak.sessions.AuthenticationSessionModel;
 
 /**
  * Finds and stores the user a presentation identifies through the identity provider link, the same
@@ -41,6 +46,37 @@ public class Oid4vpIdentityLinks {
                         realm,
                         new FederatedIdentityModel(
                                 presentation.identityProviderAlias(), presentation.identityKey(), null));
+    }
+
+    /**
+     * Links the presentation to the user who signed in or registered in this authentication session.
+     * Without the subject credential, the link gets a random subject. {@code offerConfig} decides how
+     * the credential with that subject is offered. Returns the message key of a refusal, or empty.
+     */
+    public Optional<String> bind(
+            UserModel user,
+            Oid4vpPresentation presentation,
+            AuthenticationSessionModel authSession,
+            Map<String, String> offerConfig) {
+        String alias = presentation.identityProviderAlias();
+        if (presentation.subjectCredentialMissing()) {
+            String subject = Oid4vpIdentityKey.randomSubject();
+            link(user, alias, Oid4vpIdentityKey.caseInsensitive(subject));
+            Oid4vpSubjectCredentialOffer.offer(
+                    session, realm, authSession, user, presentation.credentials(), subject, offerConfig);
+            return Optional.empty();
+        }
+        if (presentation.identityKey() == null) {
+            return Optional.empty();
+        }
+        UserModel linked = linkedUser(presentation);
+        if (linked == null) {
+            link(user, alias, presentation.identityKey());
+            return Optional.empty();
+        }
+        return linked.getId().equals(user.getId())
+                ? Optional.empty()
+                : Optional.of(Oid4vpMessages.PRESENTATION_OTHER_USER);
     }
 
     /**

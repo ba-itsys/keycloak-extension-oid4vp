@@ -44,6 +44,7 @@ import org.junit.jupiter.api.Test;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.broker.provider.IdentityBrokerException;
 import org.keycloak.common.crypto.CryptoIntegration;
+import org.keycloak.models.IdentityProviderModel;
 
 class Oid4vpCallbackProcessorTest {
 
@@ -183,17 +184,16 @@ class Oid4vpCallbackProcessorTest {
     }
 
     @Test
-    void process_missingPrincipalClaim_withTransientUsers_generatesTransientIdentity() {
-        config.setTransientUsersEnabled(true);
+    void process_doNotStoreUsers_stillReadsTheSubjectFromThePrincipalClaim() {
+        config.getConfig().put(IdentityProviderModel.DO_NOT_STORE_USERS, "true");
 
-        BrokeredIdentityContext result =
-                processor(resultOf(sdJwtCredential(Map.of()))).process(requestContext("state", "nonce"), "vp-token");
+        BrokeredIdentityContext result = processor(resultOf(sdJwtCredential(Map.of("sub", "stable-subject"))))
+                .process(requestContext("state", "nonce"), "vp-token");
 
-        assertThat(result.getUsername()).startsWith("transient-state-");
-        assertThat(result.getId()).isNotBlank();
-        assertThat(result.getId()).isNotEqualTo(result.getUsername());
-        assertThat(result.getContextData().get(Oid4vpMapperUtils.CONTEXT_SUBJECT_KEY))
-                .isEqualTo(result.getUsername());
+        assertThat(result.getUsername()).isEqualTo("stable-subject");
+        assertThat(result.getContextData())
+                .doesNotContainKey(Oid4vpMapperUtils.CONTEXT_GENERATED_SUBJECT_KEY)
+                .doesNotContainKey(Oid4vpMapperUtils.CONTEXT_PRESENTATION_ONLY_KEY);
     }
 
     @Test
@@ -549,7 +549,7 @@ class Oid4vpCallbackProcessorTest {
     }
 
     @Test
-    void process_withoutPrincipalAttributes_marksThePresentationForFlowStepsOnly() {
+    void process_withoutPrincipalAttributes_generatesARandomSubjectPerPresentation() {
         config.setPrincipalAttributes(null);
 
         BrokeredIdentityContext first = processor(resultOf(sdJwtCredential(Map.of("sub", "stable-subject"))))

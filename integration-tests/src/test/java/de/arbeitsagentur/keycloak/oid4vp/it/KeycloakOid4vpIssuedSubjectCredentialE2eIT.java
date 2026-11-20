@@ -21,6 +21,7 @@ import de.arbeitsagentur.keycloak.oid4vp.Oid4vpIdentityProviderConfig;
 import de.arbeitsagentur.keycloak.oid4vp.authentication.Oid4vpPresentationAuthenticatorFactory;
 import de.arbeitsagentur.keycloak.oid4vp.authentication.Oid4vpPresentationRequiredAction;
 import de.arbeitsagentur.keycloak.oid4vp.authentication.Oid4vpSubjectCredentialOffer;
+import de.arbeitsagentur.keycloak.oid4vp.binding.ReferenceBindingKeyProvider;
 import de.arbeitsagentur.keycloak.oid4vp.event.Oid4vpEventDetails;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.InjectTestWallet;
 import de.arbeitsagentur.keycloak.oid4vp.it.framework.TestCertificates;
@@ -61,6 +62,7 @@ import org.keycloak.representations.idm.ComponentRepresentation;
 import org.keycloak.representations.idm.CredentialRepresentation;
 import org.keycloak.representations.idm.IdentityProviderMapperRepresentation;
 import org.keycloak.representations.idm.IdentityProviderRepresentation;
+import org.keycloak.representations.idm.KeysMetadataRepresentation;
 import org.keycloak.representations.idm.ProtocolMapperRepresentation;
 import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
@@ -71,7 +73,7 @@ import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
  *
  * <p>The wallet holds the PID alone, which identifies nobody, so the user signs in with a password
  * and the login is bound to that account. The credential offer then issues the employee credential.
- * It carries a subject derived for that account and the reference credential binding of the PID it
+ * It carries a random subject linked to that account and the reference credential binding of the PID it
  * was issued alongside. The next presentation reaches the same account without a password.
  */
 @KeycloakIntegrationTest(config = Oid4vpServerConfig.class)
@@ -154,8 +156,8 @@ class KeycloakOid4vpIssuedSubjectCredentialE2eIT extends AbstractOid4vpE2eTest {
         firstPidOnlyLogin();
 
         assertThat(issuedCredential().claims().get("sub"))
-                .as("the subject is derived from the account, so the replacement reaches the same identity")
-                .isEqualTo(firstSubject);
+                .as("every binding gets a random subject, and the link moves to the new one")
+                .isNotEqualTo(firstSubject);
 
         testApp().reset();
         flow.clearBrowserSession();
@@ -205,6 +207,90 @@ class KeycloakOid4vpIssuedSubjectCredentialE2eIT extends AbstractOid4vpE2eTest {
                 .anySatisfy(event -> assertThat(event.getDetails())
                         .containsEntry(Oid4vpEventDetails.REFUSAL, "CREDENTIAL_IGNORED")
                         .containsKey(Oid4vpEventDetails.STATE));
+    }
+
+    /**
+     * The reference credential binding is keyed with a realm key of its own, so it does not depend on
+     * the HMAC key that signs tokens, and disabling it invalidates every binding it computed.
+     */
+    @Test
+    void theReferenceBindingUsesADedicatedRealmKey() throws Exception {
+        startFromAWalletHoldingThePidAlone();
+        firstPidOnlyLogin();
+
+        KeysMetadataRepresentation.KeyMetadataRepresentation bindingKey =
+                realm.admin().keys().getKeyMetadata().getKeys().stream()
+                        .filter(key -> ReferenceBindingKeyProvider.ALGORITHM.equals(key.getAlgorithm()))
+                        .findFirst()
+                        .orElseThrow(() -> new AssertionError("the realm has no reference binding key"));
+        ComponentRepresentation component =
+                realm.admin().components().component(bindingKey.getProviderId()).toRepresentation();
+        try {
+            component.getConfig().putSingle("enabled", "false");
+            realm.admin().components().component(component.getId()).update(component);
+            testApp().reset();
+            flow.clearBrowserSession();
+
+            flow.navigateToLoginPage();
+            flow.clickOid4vpIdpButton();
+            flow.waitForLoginCompletion(flow.submitToWallet(flow.getSameDeviceWalletUrl()));
+
+            page.waitForSelector("input[name='password']");
+            assertThat(page.locator("input[name='password']").count())
+                    .as("the key that computed the binding is disabled, so the credential identifies nobody")
+                    .isPositive();
+        } finally {
+            realm.admin().components().component(component.getId()).remove();
+        }
+    }
+
+    /**
+     * Disabling the realm's HMAC key leaves the reference binding valid, because the binding uses a key
+     * of its own.
+     */
+    @Test
+    void disablingTheRealmHmacKeyKeepsTheReferenceBindingValid() throws Exception {
+        startFromAWalletHoldingThePidAlone();
+        firstPidOnlyLogin();
+
+        List<String> hmacKeyProviders = realm.admin().keys().getKeyMetadata().getKeys().stream()
+                .filter(key -> "HS512".equals(key.getAlgorithm()))
+                .map(KeysMetadataRepresentation.KeyMetadataRepresentation::getProviderId)
+                .toList();
+        assertThat(hmacKeyProviders).as("the realm has an HMAC key").isNotEmpty();
+        try {
+            for (String providerId : hmacKeyProviders) {
+                setKeyProviderEnabled(providerId, false);
+            }
+            testApp().reset();
+            flow.clearBrowserSession();
+
+            flow.navigateToLoginPage();
+            flow.clickOid4vpIdpButton();
+            flow.waitForLoginCompletion(flow.submitToWallet(flow.getSameDeviceWalletUrl()));
+
+            flow.assertLoginSucceeded();
+            assertThat(page.locator("input[name='password']").count())
+                    .as("the binding key still verifies the binding, so no password is asked for")
+                    .isZero();
+        } finally {
+            for (String providerId : hmacKeyProviders) {
+                setKeyProviderEnabled(providerId, true);
+            }
+            realm.admin().keys().getKeyMetadata().getKeys().stream()
+                    .filter(key -> "HS512".equals(key.getAlgorithm()))
+                    .map(KeysMetadataRepresentation.KeyMetadataRepresentation::getProviderId)
+                    .filter(providerId -> !hmacKeyProviders.contains(providerId))
+                    .forEach(providerId ->
+                            realm.admin().components().component(providerId).remove());
+        }
+    }
+
+    private void setKeyProviderEnabled(String providerId, boolean enabled) {
+        ComponentRepresentation component =
+                realm.admin().components().component(providerId).toRepresentation();
+        component.getConfig().putSingle("enabled", String.valueOf(enabled));
+        realm.admin().components().component(providerId).update(component);
     }
 
     /**

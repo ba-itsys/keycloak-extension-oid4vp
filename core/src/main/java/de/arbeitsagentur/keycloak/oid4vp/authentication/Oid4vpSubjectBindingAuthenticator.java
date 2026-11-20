@@ -15,7 +15,6 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.authentication;
 
-import de.arbeitsagentur.keycloak.oid4vp.binding.ReferenceCredentialBinding;
 import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpIdentityKey;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import java.util.List;
@@ -40,11 +39,10 @@ import org.keycloak.utils.StringUtil;
  * Binds an OID4VP login that carried no subject credential to the user who signed in.
  *
  * <p>A presentation without the subject credential identifies nobody, so the verifier continues the
- * login with a generated subject and the user signs in another way. This authenticator then derives a
- * subject for that user and sets the brokered identity to its identity key. The first broker login flow
- * stores that key as the link, and the credential the user receives afterwards carries the same
- * subject, so the next presentation reaches the same account. Deriving the subject keeps the user id
- * hidden from every verifier the credential is shown to.
+ * login with a generated subject and the user signs in another way. This authenticator then sets the
+ * brokered identity to a new random subject. The first broker login flow stores that subject in the
+ * link. The credential the user receives afterwards carries the same subject, so the next presentation
+ * reaches the same account. The random subject tells no verifier anything about the user.
  *
  * <p>Place it in the first broker login flow after the step that authenticates the user. Logins that
  * carry a subject credential pass through untouched, and so do logins of other identity providers.
@@ -72,8 +70,7 @@ public class Oid4vpSubjectBindingAuthenticator implements Authenticator, Authent
             return;
         }
 
-        ReferenceCredentialBinding binding = ReferenceCredentialBinding.of(context.getSession(), context.getRealm());
-        String subject = binding.subjectOf(user.getId());
+        String subject = Oid4vpIdentityKey.randomSubject();
         bind(brokeredContext, subject, user.getUsername());
         brokeredContext.saveToAuthenticationSession(authSession, AbstractIdpAuthenticator.BROKERED_CONTEXT_NOTE);
         clearExistingLink(context, user, brokeredContext.getIdentityProviderId());
@@ -95,8 +92,8 @@ public class Oid4vpSubjectBindingAuthenticator implements Authenticator, Authent
     /**
      * Removes the link this identity provider already has to the user, so that the first broker login
      * flow can store the new one. A user who lost the issued credential arrives here a second time, and
-     * Keycloak fails that flow with "already linked" for a user it has linked. Removing the link loses
-     * nothing, because the subject is derived from the user and the new link holds the same identity.
+     * Keycloak fails that flow with "already linked" for a user it has linked. The credential issued
+     * next carries the new subject, and the old credential stops identifying the user.
      */
     private static void clearExistingLink(AuthenticationFlowContext context, UserModel user, String identityProvider) {
         if (StringUtil.isBlank(identityProvider)) {

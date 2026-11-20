@@ -15,9 +15,6 @@
  */
 package de.arbeitsagentur.keycloak.oid4vp.authentication;
 
-import de.arbeitsagentur.keycloak.oid4vp.binding.ReferenceCredentialBinding;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpIdentityKey;
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpMessages;
 import de.arbeitsagentur.keycloak.oid4vp.event.Oid4vpEventService;
 import de.arbeitsagentur.keycloak.oid4vp.event.PresentationRefusedEvent;
 import jakarta.ws.rs.core.Response;
@@ -33,7 +30,6 @@ import org.keycloak.models.Constants;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.RequiredActionConfigModel;
-import org.keycloak.models.UserModel;
 import org.keycloak.services.resources.LoginActionsService;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
@@ -107,41 +103,11 @@ public class Oid4vpPresentationRequiredAction implements RequiredActionProvider 
         return Optional.empty();
     }
 
-    /**
-     * Links the identity of the presentation to the user, who is authenticated at this point. A
-     * presentation without the subject credential gets a subject derived from the user, and the
-     * configured subject credential carrying it is offered. Returns the message key of a refusal, or
-     * empty.
-     */
+    // Links the presentation to the user, who is authenticated at this point. Returns the message key of a refusal, or
+    // empty.
     protected Optional<String> link(RequiredActionContext context, Oid4vpPresentation presentation) {
-        UserModel user = context.getUser();
-        Oid4vpIdentityLinks links = identityLinks(context.getSession(), context.getRealm());
-        String alias = presentation.identityProviderAlias();
-        if (presentation.subjectCredentialMissing()) {
-            String subject = ReferenceCredentialBinding.of(context.getSession(), context.getRealm())
-                    .subjectOf(user.getId());
-            links.link(user, alias, Oid4vpIdentityKey.caseInsensitive(subject));
-            Oid4vpSubjectCredentialOffer.offer(
-                    context.getSession(),
-                    context.getRealm(),
-                    context.getAuthenticationSession(),
-                    user,
-                    presentation.credentials(),
-                    subject,
-                    config(context));
-            return Optional.empty();
-        }
-        if (presentation.identityKey() == null) {
-            return Optional.empty();
-        }
-        UserModel linked = links.linkedUser(presentation);
-        if (linked == null) {
-            links.link(user, alias, presentation.identityKey());
-            return Optional.empty();
-        }
-        return linked.getId().equals(user.getId())
-                ? Optional.empty()
-                : Optional.of(Oid4vpMessages.PRESENTATION_OTHER_USER);
+        return identityLinks(context.getSession(), context.getRealm())
+                .bind(context.getUser(), presentation, context.getAuthenticationSession(), config(context));
     }
 
     protected Oid4vpIdentityLinks identityLinks(KeycloakSession session, RealmModel realm) {

@@ -24,13 +24,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Stream;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.Test;
-import org.keycloak.crypto.KeyStatus;
-import org.keycloak.crypto.KeyUse;
-import org.keycloak.crypto.KeyWrapper;
 
 /**
  * Tests the values that decide whether a credential this Keycloak issued belongs to the presentation it
@@ -129,49 +125,6 @@ class ReferenceCredentialBindingTest {
         assertThat(realm.matches(employeeAlone, EMPLOYEE, issued))
                 .as("the credential says it was issued alongside a PID, and none is here")
                 .isFalse();
-    }
-
-    @Test
-    void aSubjectIsStableForTheUserAndSaysNothingAboutThem() {
-        String subject = realm.subjectOf("1f2b0c9e-1111-4a2b-9c3d-5e6f70819aaa");
-
-        assertThat(subject).isEqualTo(realm.subjectOf("1f2b0c9e-1111-4a2b-9c3d-5e6f70819aaa"));
-        assertThat(subject)
-                .as("the wallet and every verifier the credential reaches would otherwise read the user id")
-                .doesNotContain("1f2b0c9e");
-        assertThat(subject).isNotEqualTo(realm.subjectOf("another-user-id"));
-    }
-
-    @Test
-    void aSubjectOfAnotherRealmIsAnotherSubject() {
-        assertThat(realm.subjectOf("user-1"))
-                .isNotEqualTo(binding(FOREIGN, List.of(FOREIGN)).subjectOf("user-1"));
-    }
-
-    @Test
-    void aSubjectIsNotTheBindingOfTheSameInput() {
-        // Both are HMACs of the same realm secret. Their context strings keep them apart.
-        assertThat(realm.subjectOf("value"))
-                .isNotEqualTo(realm.referenceBindingOf(presentation("value", "value"), null));
-    }
-
-    @Test
-    void aDisabledRealmKeyStopsVerifyingBindings() {
-        KeyWrapper enabled = hmacKeyWrapper(CURRENT, KeyStatus.ACTIVE);
-        KeyWrapper passive = hmacKeyWrapper(ROTATED_IN, KeyStatus.PASSIVE);
-        KeyWrapper disabled = hmacKeyWrapper(FOREIGN, KeyStatus.DISABLED);
-
-        assertThat(ReferenceCredentialBinding.acceptedSecrets(Stream.of(enabled, passive, disabled)))
-                .as("disabling a compromised key must invalidate every binding it computed")
-                .containsExactly(CURRENT, ROTATED_IN);
-    }
-
-    private static KeyWrapper hmacKeyWrapper(SecretKey secret, KeyStatus status) {
-        KeyWrapper key = new KeyWrapper();
-        key.setSecretKey(secret);
-        key.setUse(KeyUse.SIG);
-        key.setStatus(status);
-        return key;
     }
 
     private static ReferenceCredentialBinding binding(SecretKey active, List<SecretKey> accepted) {

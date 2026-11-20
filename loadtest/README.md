@@ -19,7 +19,7 @@ What it covers:
 - real browser-side SSE handling on `/cross-device/status`
 - real wallet request-object fetch and `direct_post` callback
 - clustered Keycloak nodes behind HAProxy
-- transient-user logins, so repeated concurrent runs do not need persistent brokered users
+- transient-user logins through Keycloak's own **Do not store users** setting, so repeated concurrent runs do not need persistent brokered users
 
 What it does not cover:
 
@@ -109,7 +109,7 @@ LOAD_WALLET_BASE_URI=http://host.docker.internal:18185 \
 
 During `setup()`, the k6 script updates the OID4VP IdP to keep the loadtest predictable:
 
-- enables transient users via `doNotStoreUsers=true`
+- enables Keycloak's transient users via `doNotStoreUsers=true`
 - disables same-device and keeps cross-device enabled
 - uses `clientIdScheme=plain`
 - keeps `responseMode=direct_post.jwt`

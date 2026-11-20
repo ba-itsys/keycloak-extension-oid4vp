@@ -37,7 +37,7 @@ Keycloak acts as an OID4VP verifier:
 - verifier configuration for the high assurance profile, including encrypted wallet responses
 - X.509-based verifier identification (`x509_san_dns`, `x509_hash`)
 - claim mappers for user attributes and session notes
-- transient wallet logins through Keycloak transient users (`doNotStoreUsers`)
+- wallet logins without an identifying claim, with a random subject per presentation
 
 ## High Level Flow
 
