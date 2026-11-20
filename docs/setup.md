@@ -20,8 +20,6 @@ cp core/target/keycloak-extension-oid4vp.jar /opt/keycloak/providers/
 3. Select **OID4VP**.
 4. Configure the provider settings.
 
-For transient wallet logins, start Keycloak with the `transient-users` feature and enable the IdP option **Do not store users**.
-
 Keycloak's experimental `oid4vc-vp` feature ships its own OID4VP identity provider and SD-JWT mappers under the same provider ids (`oid4vp`, `oid4vp-sd-jwt-user-attribute-idp-mapper`, `oid4vp-sd-jwt-user-session-attribute-idp-mapper`). The extension overrides them, so leave that feature disabled.
 
 Example realm import fragment:

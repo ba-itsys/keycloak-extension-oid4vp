@@ -36,7 +36,6 @@ import java.util.regex.Matcher;
 import org.jboss.logging.Logger;
 import org.keycloak.OID4VCConstants;
 import org.keycloak.broker.provider.AbstractIdentityProviderFactory;
-import org.keycloak.common.Profile;
 import org.keycloak.common.util.Base64Url;
 import org.keycloak.common.util.PemUtils;
 import org.keycloak.models.IdentityProviderModel;
@@ -129,9 +128,9 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
                         + "'sdjwt_urn_eudi_pid_1:sub, mdoc_eu_europa_ec_eudi_pid_1:eu\\.europa\\.ec\\.eudi\\.pid\\.1"
                         + ".family_name'. The first named credential a wallet presents supplies the subject. Every "
                         + "required credential set option has to contain one of the named credentials, and each of "
-                        + "them has to request its claim in every claim set option. Without entries and without "
-                        + "transient users, the identity provider refuses logins and only serves the "
-                        + "'oid4vp-presentation' authenticator and required action.")
+                        + "them has to request its claim in every claim set option. Without entries, every "
+                        + "presentation gets a random subject, so it identifies nobody and a login creates a new "
+                        + "user.")
                 .type(ProviderConfigProperty.STRING_TYPE)
                 .add()
                 .property()
@@ -315,24 +314,11 @@ public class Oid4vpIdentityProviderFactory extends AbstractIdentityProviderFacto
     @Override
     public Oid4vpIdentityProvider create(KeycloakSession session, IdentityProviderModel model) {
         Oid4vpIdentityProviderConfig config = new Oid4vpIdentityProviderConfig(model);
-        validateTransientUserMode(config);
-
         resolveX509SigningKey(config);
         validateVerifierCertificate(config);
         warnIfTrustMaterialIdpsAreMissing(config);
 
         return new Oid4vpIdentityProvider(session, config);
-    }
-
-    protected void validateTransientUserMode(Oid4vpIdentityProviderConfig config) {
-        if (config.isTransientUsersEnabled() && !isTransientUsersFeatureEnabled()) {
-            throw new IllegalStateException(
-                    "OID4VP transient users require the Keycloak feature 'transient-users' to be enabled.");
-        }
-    }
-
-    private boolean isTransientUsersFeatureEnabled() {
-        return Profile.getInstance() != null && Profile.isFeatureEnabled(Profile.Feature.TRANSIENT_USERS);
     }
 
     static void validateVerifierCertificate(Oid4vpIdentityProviderConfig config) {

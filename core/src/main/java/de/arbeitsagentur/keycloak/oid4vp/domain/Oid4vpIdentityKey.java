@@ -17,6 +17,7 @@ package de.arbeitsagentur.keycloak.oid4vp.domain;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.UUID;
 import org.keycloak.common.util.Base64Url;
 import org.keycloak.crypto.JavaAlgorithm;
 import org.keycloak.jose.jws.crypto.HashUtils;
@@ -30,6 +31,11 @@ import org.keycloak.jose.jws.crypto.HashUtils;
 public final class Oid4vpIdentityKey {
 
     private Oid4vpIdentityKey() {}
+
+    // Creates a subject that carries nothing about the user, so presentations of the same person stay unlinkable.
+    public static String randomSubject() {
+        return "oid4vp-" + UUID.randomUUID();
+    }
 
     public static String of(String subject) {
         return hash(normalize(subject));

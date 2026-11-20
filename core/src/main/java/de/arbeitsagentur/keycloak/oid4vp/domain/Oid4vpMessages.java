@@ -24,9 +24,6 @@ public final class Oid4vpMessages {
 
     public static final String PRESENTATION_REJECTED = "oid4vpPresentationRejected";
 
-    // Shown for a login through an identity provider without principal attributes.
-    public static final String PRESENTATION_ONLY = "oid4vpPresentationOnly";
-
     public static final String PRESENTATION_NOT_LINKED = "oid4vpPresentationNotLinked";
 
     public static final String PRESENTATION_OTHER_USER = "oid4vpPresentationOtherUser";
