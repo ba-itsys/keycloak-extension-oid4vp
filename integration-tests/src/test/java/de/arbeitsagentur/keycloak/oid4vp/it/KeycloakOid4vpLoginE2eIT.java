@@ -67,31 +67,12 @@ class KeycloakOid4vpLoginE2eIT extends AbstractOid4vpE2eTest {
         assertThat(countOid4vpUsers()).isEqualTo(1);
     }
 
-    @Test
-    void transientWalletLoginSucceedsWithoutPersistingUser() throws Exception {
-        testApp().reset();
-        flow.clearBrowserSession();
-        deleteAllOid4vpUsers();
-
-        replaceDcqlMappers(Oid4vpTestKeycloakSetup.sdJwtPidMappers());
-        // A transient login reads no claim of the presentation, so the credential carries no
-        // identifier the verifier could bind to.
-        setIdpConfig(Map.of(IdentityProviderModel.DO_NOT_STORE_USERS, "true"));
-
-        performSameDeviceLogin("transient-wallet-user");
-        flow.assertLoginSucceeded();
-
-        assertThat(countOid4vpUsers()).isZero();
-    }
-
     /**
-     * With transient users the subject never comes from the presentation. The configuration naming
-     * where to read it from is not needed, and an empty {@code principalAttributes} has to save and to
-     * log in. Requiring it would make operators configure a claim that is then ignored, and would
-     * reject a valid transient-only verifier at save time.
+     * Without principal attributes every presentation gets a random subject. Keycloak's own
+     * {@code doNotStoreUsers} then decides that the user is not stored.
      */
     @Test
-    void transientLoginNeedsNoPrincipalAttributes() throws Exception {
+    void walletLoginWithoutPrincipalAttributesAndDoNotStoreUsersPersistsNoUser() throws Exception {
         testApp().reset();
         flow.clearBrowserSession();
         deleteAllOid4vpUsers();
