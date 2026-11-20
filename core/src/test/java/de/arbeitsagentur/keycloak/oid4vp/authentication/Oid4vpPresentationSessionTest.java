@@ -84,21 +84,30 @@ class Oid4vpPresentationSessionTest {
     }
 
     @Test
-    void presentationsWithAThrowawaySubjectIdentifyNobody() {
-        BrokeredIdentityContext presentationOnly = presentedPid();
-        presentationOnly.getContextData().put(Oid4vpMapperUtils.CONTEXT_PRESENTATION_ONLY_KEY, "true");
-        BrokeredIdentityContext transientUser = presentedPid();
-        transientUser.getIdpConfig().getConfig().put(IdentityProviderModel.DO_NOT_STORE_USERS, "true");
+    void presentationWithARandomSubjectIdentifiesNobody() {
+        BrokeredIdentityContext context = presentedPid();
+        context.getContextData().put(Oid4vpMapperUtils.CONTEXT_PRESENTATION_ONLY_KEY, "true");
 
-        for (BrokeredIdentityContext context : new BrokeredIdentityContext[] {presentationOnly, transientUser}) {
-            waitFor(EXECUTION);
-            Oid4vpPresentationSession.complete(authSession, context);
+        waitFor(EXECUTION);
+        Oid4vpPresentationSession.complete(authSession, context);
 
-            Oid4vpPresentation presentation =
-                    Oid4vpPresentationSession.result(authSession).orElseThrow();
-            assertThat(presentation.identityKey()).isNull();
-            assertThat(presentation.subjectCredentialMissing()).isFalse();
-        }
+        Oid4vpPresentation presentation =
+                Oid4vpPresentationSession.result(authSession).orElseThrow();
+        assertThat(presentation.identityKey()).isNull();
+        assertThat(presentation.subjectCredentialMissing()).isFalse();
+    }
+
+    @Test
+    void doNotStoreUsersKeepsThePresentedSubject() {
+        BrokeredIdentityContext context = presentedPid();
+        context.getIdpConfig().getConfig().put(IdentityProviderModel.DO_NOT_STORE_USERS, "true");
+
+        waitFor(EXECUTION);
+        Oid4vpPresentationSession.complete(authSession, context);
+
+        Oid4vpPresentation presentation =
+                Oid4vpPresentationSession.result(authSession).orElseThrow();
+        assertThat(presentation.identityKey()).isEqualTo(context.getId());
     }
 
     @Test

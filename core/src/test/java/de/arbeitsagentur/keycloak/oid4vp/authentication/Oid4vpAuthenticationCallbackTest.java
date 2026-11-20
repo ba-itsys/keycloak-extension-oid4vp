@@ -17,7 +17,6 @@ package de.arbeitsagentur.keycloak.oid4vp.authentication;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import de.arbeitsagentur.keycloak.oid4vp.domain.Oid4vpMessages;
 import de.arbeitsagentur.keycloak.oid4vp.util.Oid4vpMapperUtils;
 import jakarta.ws.rs.core.Response;
 import java.util.ArrayList;
@@ -49,12 +48,12 @@ class Oid4vpAuthenticationCallbackTest {
     }
 
     @Test
-    void refusesTheLoginOfAnIdentityProviderWithoutPrincipalAttributes() {
+    void handsTheLoginOfAnIdentityProviderWithoutPrincipalAttributesToTheBroker() {
         context.getContextData().put(Oid4vpMapperUtils.CONTEXT_PRESENTATION_ONLY_KEY, "true");
 
         callback.authenticated(context);
 
-        assertThat(broker.calls).containsExactly("error:" + Oid4vpMessages.PRESENTATION_ONLY);
+        assertThat(broker.calls).containsExactly("authenticated");
     }
 
     private static final class RecordingBroker implements AuthenticationCallback {

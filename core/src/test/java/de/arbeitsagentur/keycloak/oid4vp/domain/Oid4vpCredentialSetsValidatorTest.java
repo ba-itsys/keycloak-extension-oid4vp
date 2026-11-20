@@ -137,7 +137,7 @@ class Oid4vpCredentialSetsValidatorTest {
         Map<String, CredentialTypeSpec> credentials = Map.of(PID, pidSpec(), MDL, pidSpec());
         List<CredentialSet> parsed = CredentialSet.parse(objectMapper, credentialSets);
 
-        assertThat(Oid4vpCredentialSetsValidator.problems(parsed, credentials, List.of(), true, true))
+        assertThat(Oid4vpCredentialSetsValidator.problems(parsed, credentials, List.of(), true))
                 .as("nothing says which subject credential may be missing")
                 .singleElement()
                 .asString()
@@ -152,7 +152,7 @@ class Oid4vpCredentialSetsValidatorTest {
         List<CredentialSet> parsed = CredentialSet.parse(objectMapper, credentialSets);
 
         assertThat(Oid4vpCredentialSetsValidator.problems(
-                        parsed, credentials, PrincipalAttribute.parse(MDL + ":sub"), true, true))
+                        parsed, credentials, PrincipalAttribute.parse(MDL + ":sub"), true))
                 .as("the subject credential is issued by this Keycloak, so it is absent from the first login")
                 .isEmpty();
     }
@@ -252,13 +252,13 @@ class Oid4vpCredentialSetsValidatorTest {
     }
 
     @Test
-    void validate_noPrincipalAttributes_isAPresentationOnlyProvider() {
+    void validate_noPrincipalAttributes_needsNoPrincipalClaim() {
         Map<String, CredentialTypeSpec> credentials = new LinkedHashMap<>();
         credentials.put(PID, pidSpec());
         credentials.put(MDL, pidSpec());
 
         assertThat(problems("", "", credentials))
-                .as("an identity provider without principal attributes serves presentations only")
+                .as("without principal attributes every presentation gets a random subject")
                 .isEmpty();
     }
 
@@ -294,19 +294,6 @@ class Oid4vpCredentialSetsValidatorTest {
                 .singleElement()
                 .asString()
                 .contains(MDL);
-    }
-
-    @Test
-    void validate_principalClaimNotRequested_skipsPrincipalRules() {
-        CredentialTypeSpec withoutPrincipal = new CredentialTypeSpec(
-                Oid4vpConstants.FORMAT_MSO_MDOC,
-                "org.iso.18013.5.1.mDL",
-                List.of(ClaimSpec.mdoc("org.iso.18013.5.1", "family_name")));
-
-        assertThat(Oid4vpCredentialSetsValidator.problems(
-                        List.of(), Map.of(MDL, withoutPrincipal), List.of(), false, false))
-                .as("transient users get a per-login subject, so no credential has to carry a principal claim")
-                .isEmpty();
     }
 
     @Test
@@ -355,6 +342,6 @@ class Oid4vpCredentialSetsValidatorTest {
         List<CredentialSet> credentialSets =
                 credentialSetsJson.isBlank() ? List.of() : CredentialSet.parse(objectMapper, credentialSetsJson);
         return Oid4vpCredentialSetsValidator.problems(
-                credentialSets, credentials, PrincipalAttribute.parse(principalAttributes), true, false);
+                credentialSets, credentials, PrincipalAttribute.parse(principalAttributes), false);
     }
 }

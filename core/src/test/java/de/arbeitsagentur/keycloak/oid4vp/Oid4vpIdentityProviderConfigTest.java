@@ -63,7 +63,6 @@ class Oid4vpIdentityProviderConfigTest {
     void defaultValues() {
         assertThat(config.getClientIdScheme()).isEqualTo("x509_hash");
         assertThat(config.getResponseMode()).isEqualTo("direct_post.jwt");
-        assertThat(config.isTransientUsersEnabled()).isFalse();
         assertThat(config.isRequireIssuerSanMatch()).isFalse();
         assertThat(config.isSameDeviceEnabled()).isTrue();
         assertThat(config.isCrossDeviceEnabled()).isTrue();

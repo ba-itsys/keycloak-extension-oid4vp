@@ -41,7 +41,6 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Assertions;
-import org.keycloak.common.Profile;
 import org.keycloak.representations.idm.IdentityProviderMapperRepresentation;
 import org.keycloak.representations.idm.IdentityProviderRepresentation;
 import org.keycloak.testframework.annotations.InjectKeycloakUrls;
@@ -313,7 +312,6 @@ public abstract class AbstractVerifierConformanceTest extends AbstractConformanc
             return config.dependency("de.arbeitsagentur.opdt", "keycloak-extension-oid4vp", true)
                     // The provider needs this at runtime and the production jar shades it in.
                     .dependency("com.authlete", "cbor")
-                    .features(Profile.Feature.TRANSIENT_USERS)
                     .option("hostname", OpenIdConformanceSuite.KEYCLOAK_BASE_URI.toString());
         }
     }
