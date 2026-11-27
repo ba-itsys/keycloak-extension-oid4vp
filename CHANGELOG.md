@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.18.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.17.0...v0.18.0) (2026-11-27)
+
+
+### Features
+
+* **oid4vp:** dedicated realm key for reference binding ([9b86869](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/9b8686924dddaa990158c3079817f964d1fa7b7f))
+* **oid4vp:** link wallet during registration ([e0318ed](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/e0318ed17af79eb01c3ab6a71653b031549a1f5b))
+* **oid4vp:** random subject for each binding ([3a7e6ea](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/3a7e6ea46d2fc7843a5b20dd4b751d75494f1606))
+
+
+### Dependencies
+
+* **deps-dev:** bump com.microsoft.playwright:playwright ([9c4448a](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/9c4448aa86da658bc6fa0d16dbfb48a44fc418ab))
+* **deps-dev:** bump com.microsoft.playwright:playwright ([91ce02c](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/91ce02c9fa28ca7ca7383bd1eb05d3ba34c72251))
+* **deps-dev:** bump io.github.dominikschlosser:testcontainers-eudi ([14362da](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/14362da70ccfe2b08b432f36657cefbe77e8dc52))
+* **deps-dev:** bump net.bytebuddy:byte-buddy-agent ([ea18331](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/ea1833197f5b083b13637401365f17cc431d8f9f))
+* **deps:** bump ch.qos.logback:logback-classic from 1.6.6 to 1.6.8 ([b7df2d2](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/b7df2d2f6ca053d163667c5a07b06385c3c1e716))
+* **deps:** bump com.diffplug.spotless:spotless-maven-plugin ([73f9f9e](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/73f9f9ebb756ddd0183f41945744d415484fb2e2))
+* **deps:** bump com.diffplug.spotless:spotless-maven-plugin ([b8e03b8](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/b8e03b8fb8b8b710f87f94809143ee4232c63fc2))
+* **deps:** bump org.keycloak:keycloak-admin-client ([70b2fd2](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/70b2fd23aed77f4e078ee3cbd82c12fa33f26e9f))
+* **deps:** bump the bouncycastle group with 4 updates ([0304305](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/0304305aa5304206fbea293adb8eb63b08421de6))
+* **deps:** bump the keycloak group across 1 directory with 4 updates ([0d76179](https://github.com/ba-itsys/keycloak-extension-oid4vp/commit/0d7617985c85e2e5d74ba5e406ae68e2b6b41d35))
+
 ## [0.17.0](https://github.com/ba-itsys/keycloak-extension-oid4vp/compare/v0.16.1...v0.17.0) (2026-11-09)
 
 
